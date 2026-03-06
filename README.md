@@ -1,4 +1,4 @@
-# Alpha Pod — AI-augmented fundamental research
+# Alpha Pod - AI-augmented fundamental research
 
 Alpha Pod separates deterministic research mechanics from selective LLM judgment.
 
@@ -14,6 +14,14 @@ Alpha Pod separates deterministic research mechanics from selective LLM judgment
 - [Architecture](ARCHITECTURE.md)
 - [Deterministic valuation workflow](docs/design-docs/deterministic-valuation-workflow.md)
 - [Config reference](docs/reference/config-reference.md)
+- [Local wiki setup](docs/reference/local-wiki.md)
+
+### Run docs locally
+
+```bash
+python -m pip install mkdocs mkdocs-material
+python -m mkdocs serve
+```
 
 ## Setup
 

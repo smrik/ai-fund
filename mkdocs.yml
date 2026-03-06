@@ -1,0 +1,57 @@
+site_name: Alpha Pod Docs
+site_description: Local wiki for the Alpha Pod research system
+repo_url: https://github.com/smrik/ai-fund
+repo_name: smrik/ai-fund
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - search.suggest
+    - content.code.copy
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+
+nav:
+  - Home: index.md
+  - Design Docs:
+    - Index: design-docs/index.md
+    - Core Beliefs: design-docs/core-beliefs.md
+    - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
+    - Hedge Fund Org Mapping: design-docs/hedge-fund-org-mapping.md
+    - Data Architecture (Legacy): design-docs/data-architecture-legacy.md
+  - Reference:
+    - Config Reference: reference/config-reference.md
+    - GitHub Workflow: reference/github-workflow.md
+    - Local Wiki Setup: reference/local-wiki.md
+  - Plans:
+    - Index: plans/index.md
+    - PLAN.md
+    - PLANS.md
+    - DCF Pipeline Plan: plans/2026-03-06-dcf-pipeline.md
+    - Config Consolidation Plan: plans/2026-03-06-config-consolidation.md
+  - Execution:
+    - Index: exec-plans/index.md
+    - Tech Debt Tracker: exec-plans/tech-debt-tracker.md
+    - Sprint 1 Deterministic Hardening: exec-plans/active/sprint-1-deterministic-hardening.md
+  - Product And Research:
+    - PRODUCT_SENSE.md
+    - QUALITY_SCORE.md
+    - Patrik's Notes: Patrik'sNotes.md

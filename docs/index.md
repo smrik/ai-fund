@@ -4,12 +4,13 @@ This directory is the start of the project wiki.
 
 ## Core
 
-- [Architecture](./../ARCHITECTURE.md)
 - [Design Docs](./design-docs/index.md)
+- [Deterministic Valuation Workflow](./design-docs/deterministic-valuation-workflow.md)
 - [Config Reference](./reference/config-reference.md)
 - [GitHub Workflow](./reference/github-workflow.md)
-- [Plan Index](./plans)
-- [Execution Plans](./exec-plans)
+- [Local Wiki Setup](./reference/local-wiki.md)
+- [Plan Index](./plans/index.md)
+- [Execution Plans](./exec-plans/index.md)
 
 ## Research And Product
 
@@ -29,4 +30,7 @@ Use this structure going forward:
 
 If a document explains how the system works today, it belongs in `design-docs` or `reference`. If it explains what to build next, it belongs in `plans`.
 
+## Local docs preview
+
+Run `python -m mkdocs serve` from the repository root to view this folder as a local wiki.
 
