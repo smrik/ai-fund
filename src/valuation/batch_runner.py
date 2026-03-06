@@ -124,6 +124,64 @@ def _get_sector_defaults(sector: str) -> dict:
     return SECTOR_ASSUMPTIONS.get(sector, SECTOR_ASSUMPTIONS["_default"])
 
 
+def reverse_dcf(
+    revenue: float,
+    assumptions: "DCFAssumptions",
+    target_price: float,
+    shares: float,
+    net_debt: float,
+    low: float = -0.05,
+    high: float = 0.50,
+    tol: float = 0.001,
+    max_iter: int = 50,
+) -> float | None:
+    """
+    Binary search for the near-term revenue growth rate that makes
+    base-case intrinsic value equal to target_price.
+
+    Returns the implied growth rate, or None if it falls outside [low, high].
+    """
+
+    def _iv(g: float) -> float:
+        a = DCFAssumptions(
+            revenue_growth_near=g,
+            revenue_growth_mid=g * 0.65,
+            revenue_growth_terminal=assumptions.revenue_growth_terminal,
+            ebit_margin=assumptions.ebit_margin,
+            tax_rate=assumptions.tax_rate,
+            capex_pct_revenue=assumptions.capex_pct_revenue,
+            da_pct_revenue=assumptions.da_pct_revenue,
+            nwc_change_pct_revenue=assumptions.nwc_change_pct_revenue,
+            wacc=assumptions.wacc,
+            exit_multiple=assumptions.exit_multiple,
+            net_debt=net_debt,
+            shares_outstanding=shares,
+        )
+        return run_dcf(revenue, a).intrinsic_value_per_share
+
+    # Check if target is achievable within [low, high]
+    try:
+        iv_low = _iv(low)
+        iv_high = _iv(high)
+    except Exception:
+        return None
+
+    if target_price < iv_low or target_price > iv_high:
+        return None  # Out of search range
+
+    for _ in range(max_iter):
+        mid = (low + high) / 2
+        iv_mid = _iv(mid)
+        if abs(iv_mid - target_price) / max(abs(target_price), 1) < tol:
+            return round(mid, 4)
+        if iv_mid < target_price:
+            low = mid
+        else:
+            high = mid
+
+    return round((low + high) / 2, 4)
+
+
 def value_single_ticker(ticker: str) -> dict | None:
     """
     Run full WACC + DCF valuation for a single ticker.
@@ -229,6 +287,15 @@ def value_single_ticker(ticker: str) -> dict | None:
         bull_iv = scenarios["bull"].intrinsic_value_per_share
         upside_base = (base_iv / price - 1) if price else 0
 
+        # Reverse DCF: implied growth rate at current price
+        implied_growth = reverse_dcf(
+            revenue=rev,
+            assumptions=assumptions,
+            target_price=price,
+            shares=shares,
+            net_debt=net_debt,
+        )
+
         return {
             # Identity
             "ticker": ticker,
@@ -287,6 +354,13 @@ def value_single_ticker(ticker: str) -> dict | None:
             "tv_pct_of_ev": round(
                 scenarios["base"].terminal_value / scenarios["base"].enterprise_value * 100, 0
             ) if scenarios["base"].enterprise_value else None,
+            "implied_growth_pct": round(implied_growth * 100, 1) if implied_growth is not None else None,
+            "tv_high_flag": (
+                True
+                if scenarios["base"].enterprise_value and
+                   scenarios["base"].terminal_value / scenarios["base"].enterprise_value > 0.75
+                else False
+            ),
 
             # Analyst comparison
             "analyst_target": mkt.get("analyst_target_mean"),
@@ -341,6 +415,7 @@ def export_to_excel(results: list[dict], output_path: Path):
             "exit_multiple_used", "wacc",
             "iv_bear", "iv_base", "iv_bull", "price",
             "upside_base_pct", "tv_pct_of_ev",
+            "implied_growth_pct", "tv_high_flag",
         ]
         df_dcf = df[[c for c in dcf_cols if c in df.columns]].copy()
         df_dcf.sort_values("upside_base_pct", ascending=False, inplace=True)
