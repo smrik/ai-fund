@@ -5,6 +5,9 @@ Provides prices, valuation multiples, analyst ratings, and news.
 
 import yfinance as yf
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def get_market_data(ticker: str) -> dict:
@@ -134,7 +137,13 @@ def _row(df, *keys):
     for key in keys:
         if key in df.index:
             vals = df.loc[key].dropna().tolist()
-            return [float(v) for v in vals[:3]]
+            result = []
+            for v in vals[:3]:
+                try:
+                    result.append(float(v))
+                except (TypeError, ValueError):
+                    pass
+            return result
     return []
 
 
@@ -148,6 +157,7 @@ def get_historical_financials(ticker: str) -> dict:
     Returns a dict with raw series (lists, newest first) and derived
     metrics (CAGR, average margins, etc.) used by the valuation layer.
     Never raises — returns dict of Nones on any failure.
+    NWC sign: positive nwc_change means working capital consumed cash (use in FCF as negative).
     """
     _none_result = {
         "revenue": [],
@@ -179,9 +189,9 @@ def get_historical_financials(ticker: str) -> dict:
         capex_raw = _row(cashflow, "Capital Expenditure")
         capex = [abs(v) for v in capex_raw]
         da = _row(cashflow, "Depreciation And Amortization", "Depreciation")
-        interest_expense_raw = _row(cashflow, "Interest Expense")
+        interest_expense_raw = _row(financials, "Interest Expense")
         if not interest_expense_raw:
-            interest_expense_raw = _row(financials, "Interest Expense")
+            interest_expense_raw = _row(cashflow, "Interest Expense Paid")
         interest_expense = [abs(v) for v in interest_expense_raw]
 
         tax_expense = _row(financials, "Tax Provision", "Income Tax Expense")
@@ -200,7 +210,7 @@ def get_historical_financials(ticker: str) -> dict:
         for i in range(n_nwc):
             ca = current_assets[i]
             cl = current_liabilities[i]
-            c = cash_bs[i] if i < len(cash_bs) else 0.0
+            c = cash_bs[i]
             nwc_series.append(ca - c - cl)
 
         nwc_change = []
@@ -209,7 +219,7 @@ def get_historical_financials(ticker: str) -> dict:
 
         # --- Derived metrics ---
 
-        # Revenue CAGR (newest / oldest) ^ (1 / n-1) - 1
+        # Revenue CAGR: (newest / oldest) ^ (1/(n-1)) - 1
         revenue_cagr_3yr = None
         if len(revenue) >= 2 and revenue[-1] != 0:
             n = len(revenue) - 1
@@ -292,5 +302,6 @@ def get_historical_financials(ticker: str) -> dict:
             "cost_of_debt_derived": cost_of_debt_derived,
         }
 
-    except Exception:
+    except Exception as e:
+        logger.warning("get_historical_financials(%s) failed: %s", ticker, e)
         return _none_result

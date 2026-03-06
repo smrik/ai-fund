@@ -1,12 +1,14 @@
 """
-BaseAgent — shared infrastructure for all 6 agents.
-Handles Claude client, streaming tool loop, and error recovery.
+BaseAgent — shared infrastructure for all agents.
+Handles Anthropic client, tool-call loop, and error recovery.
 """
 
 import json
-import anthropic
+import os
+from anthropic import Anthropic
 from typing import Any, Callable
-from config import CLAUDE_MODEL
+
+from config import LLM_MODEL
 
 
 ToolDefinition = dict[str, Any]
@@ -25,7 +27,7 @@ class BaseAgent:
     """
 
     def __init__(self):
-        self.client = anthropic.Anthropic()
+        self.client = Anthropic()  # Uses ANTHROPIC_API_KEY from environment
         self.name = "BaseAgent"
         self.system_prompt = "You are a financial research assistant."
         self.tools: list[ToolDefinition] = []
@@ -38,45 +40,38 @@ class BaseAgent:
             return f"Error: unknown tool '{tool_name}'"
         try:
             result = handler(tool_input)
-            # Handlers may return str or dict; normalise to str
             if isinstance(result, str):
                 return result
             return json.dumps(result, default=str)
         except Exception as e:
             return f"Tool error ({tool_name}): {e}"
 
-    def run(self, user_message: str, max_iterations: int = 8) -> str:
+    def run(self, user_message: str, max_iterations: int = 10) -> str:
         """
-        Run the agent with streaming + tool loop.
-        Returns the final text response from Claude.
+        Run the agent with tool-call loop.
+        Returns the final text response.
         """
         messages = [{"role": "user", "content": user_message}]
+        tools_param = self.tools if self.tools else None
 
         for _ in range(max_iterations):
-            # Stream each Claude call
-            with self.client.messages.stream(
-                model=CLAUDE_MODEL,
-                max_tokens=4096,
-                thinking={"type": "adaptive"},
-                system=self.system_prompt,
-                tools=self.tools if self.tools else anthropic.NOT_GIVEN,
-                messages=messages,
-            ) as stream:
-                response = stream.get_final_message()
+            kwargs = {
+                "model": LLM_MODEL,
+                "max_tokens": 8192,
+                "system": self.system_prompt,
+                "messages": messages,
+            }
+            if tools_param:
+                kwargs["tools"] = tools_param
 
-            # Collect text blocks for final return
-            text_blocks = [
-                b.text for b in response.content if b.type == "text"
-            ]
+            response = self.client.messages.create(**kwargs)
 
-            if response.stop_reason == "end_turn":
-                return "\n".join(text_blocks)
-
+            # Model wants to use tools
             if response.stop_reason == "tool_use":
-                # Append assistant turn (includes tool_use blocks)
+                # Append assistant's full response (includes tool_use blocks)
                 messages.append({"role": "assistant", "content": response.content})
 
-                # Execute each tool call and build tool_results
+                # Execute each tool use block
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
@@ -87,17 +82,21 @@ class BaseAgent:
                             "content": result_text,
                         })
 
+                # Append tool results as a user turn
                 messages.append({"role": "user", "content": tool_results})
                 continue
 
-            # Any other stop reason — return what we have
-            return "\n".join(text_blocks)
+            # Model finished — return text
+            for block in response.content:
+                if hasattr(block, "text"):
+                    return block.text
+            return ""
 
         return "Max iterations reached without a final response."
 
     @staticmethod
     def _tool(name: str, description: str, properties: dict, required: list[str]) -> ToolDefinition:
-        """Helper to build a clean Anthropic tool definition dict."""
+        """Helper to build an Anthropic tool definition."""
         return {
             "name": name,
             "description": description,
