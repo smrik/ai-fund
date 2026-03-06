@@ -164,7 +164,8 @@ def _parse_time_series_sheet(
     records: list[dict[str, Any]] = []
 
     section = "Uncategorized"
-    for r in range(period_row + 1, ws.max_row + 1):
+    max_scan_row = min(ws.max_row, 5000)
+    for r in range(period_row + 1, max_scan_row + 1):
         label = _safe_str(ws.cell(r, 1).value)
         if not label:
             continue
@@ -218,7 +219,8 @@ def _parse_comps_sheet(
     section = "Comps"
     headers: dict[int, str] = {}
 
-    for r in range(1, ws.max_row + 1):
+    max_scan_row = min(ws.max_row, 1200)
+    for r in range(1, max_scan_row + 1):
         c1 = _safe_str(ws.cell(r, 1).value)
         c3 = _safe_str(ws.cell(r, 3).value)
 
@@ -405,42 +407,46 @@ def _validate_contract(wb) -> dict[str, Any]:
     if missing:
         raise CIQTemplateContractError(f"Missing required sheets: {missing}")
 
+    # Anchor contract: required labels must exist on specific rows, but column position
+    # may shift between CIQ refreshes.
     anchors = {
         "Financial Statements": [
-            (1, 1, "Select Language"),
-            (2, 1, "Ticker"),
-            (9, 1, "INCOME STATEMENT"),
+            (1, "Select Language"),
+            (2, "Ticker"),
+            (9, "INCOME STATEMENT"),
         ],
         "Detailed Comps": [
-            (1, 1, "COMPARABLE COMPANY ANALYSIS"),
+            (1, "COMPARABLE COMPANY ANALYSIS"),
         ],
         "Summary Comps": [
-            (1, 1, "COMPARABLE COMPANY ANALYSIS"),
+            (1, "COMPARABLE COMPANY ANALYSIS"),
         ],
     }
 
+    found_anchors: dict[str, list[dict[str, Any]]] = {}
+
     for sheet_name, checks in anchors.items():
         ws = wb[sheet_name]
-        for row, col, needle in checks:
-            value = _safe_str(ws.cell(row, col).value)
-            if needle.lower() not in value.lower():
+        sheet_found: list[dict[str, Any]] = []
+        for row, needle in checks:
+            match_col = None
+            match_value = ""
+            for col in range(1, min(ws.max_column, 120) + 1):
+                value = _safe_str(ws.cell(row, col).value)
+                if needle.lower() in value.lower():
+                    match_col = col
+                    match_value = value
+                    break
+            if match_col is None:
                 raise CIQTemplateContractError(
-                    f"{sheet_name}!{row},{col} expected to contain '{needle}', got '{value}'"
+                    f"{sheet_name}!row {row} expected to contain '{needle}' in at least one column"
                 )
+            sheet_found.append({"row": row, "col": match_col, "value": match_value})
+        found_anchors[sheet_name] = sheet_found
 
     fp = {
         "sheets": wb.sheetnames,
-        "anchors": {
-            sheet: [
-                {
-                    "row": row,
-                    "col": col,
-                    "value": _safe_str(wb[sheet].cell(row, col).value),
-                }
-                for row, col, _ in checks
-            ]
-            for sheet, checks in anchors.items()
-        },
+        "anchors": found_anchors,
     }
     return fp
 
@@ -452,7 +458,7 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         raise FileNotFoundError(workbook_path)
 
     file_hash = _workbook_hash(workbook_path)
-    wb = load_workbook(workbook_path, data_only=True, read_only=True)
+    wb = load_workbook(workbook_path, data_only=True, read_only=False)
 
     fingerprint = _validate_contract(wb)
 
@@ -464,7 +470,11 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
 
     long_records: list[dict[str, Any]] = []
     long_records.extend(_parse_time_series_sheet(wb["Financial Statements"], ticker, workbook_path.name))
-    long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
+    try:
+        long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
+    except CIQTemplateContractError:
+        # Some CIQ Common Size layouts do not expose the same period header contract.
+        pass
 
     detailed_records, detailed_comps = _parse_comps_sheet(wb["Detailed Comps"], ticker, workbook_path.name)
     summary_records, summary_comps = _parse_comps_sheet(wb["Summary Comps"], ticker, workbook_path.name)
@@ -485,3 +495,8 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         comps_snapshot=comps_snapshot,
         rows_parsed=len(long_records),
     )
+
+
+
+
+
