@@ -1,0 +1,109 @@
+paths:
+  data_dir: data
+  db_path: data/alpha_pod.db
+  ciq_templates_dir: ciq/templates
+  ciq_exports_dir: data/exports
+  output_dir: output
+  screens_dir: output/screens
+  memos_dir: output/memos
+  reports_dir: output/reports
+  universe_path: config/universe.csv
+
+llm:
+  model: claude-haiku-4-5-20251001
+  fast_model: claude-haiku-4-5-20251001
+
+portfolio:
+  size_usd: 100000
+  max_position_pct: 0.08
+  conviction_multipliers:
+    high: 1.0
+    medium: 0.5
+    low: 0.25
+
+edgar:
+  base_url: https://data.sec.gov
+  user_agent: AI-Fund research@example.com
+  rate_limit_delay: 0.15
+
+ibkr:
+  host: 127.0.0.1
+  port: 7497
+  client_id: 1
+
+ciq:
+  refresh_wait_sec: 5
+  refresh_timeout_sec: 300
+  batch_size: 50
+
+risk_limits:
+  max_single_position_pct: 8.0
+  max_short_position_pct: 4.0
+  max_gross_exposure_pct: 150.0
+  min_net_exposure_pct: 20.0
+  max_net_exposure_pct: 80.0
+  max_sector_concentration_pct: 30.0
+  stop_loss_review_pct: -15.0
+  min_days_to_exit: 5
+
+screening_defaults:
+  min_market_cap_mm: 2000
+  min_avg_daily_volume_mm: 5
+
+schedule:
+  daily_refresh_time: "06:00"
+  weekly_screen_day: sunday
+  weekly_screen_time: "18:00"
+
+screening:
+  long_screen:
+    filters:
+      min_market_cap_mm: 2000
+      min_avg_daily_dollar_vol_mm: 5
+      min_roic: 10.0
+      min_roic_consecutive_years: 3
+      max_debt_to_ebitda: 3.0
+      exclude_sectors:
+        - Utilities
+    scoring:
+      roic_consistency:
+        weight: 0.25
+        description: Higher = more consistent ROIC above cost of capital
+      revenue_growth_vs_sector:
+        weight: 0.20
+        description: Revenue growth relative to sector median
+      margin_trend:
+        weight: 0.15
+        description: Expanding margins = positive signal
+      valuation_discount:
+        weight: 0.20
+        description: P/E vs own 5-year average - cheaper = better
+      estimate_revisions:
+        weight: 0.10
+        description: Positive estimate revisions = analysts getting more bullish
+      insider_buying:
+        weight: 0.10
+        description: Net insider buying in last 6 months
+  short_screen:
+    filters:
+      min_market_cap_mm: 2000
+      min_avg_daily_dollar_vol_mm: 5
+      min_roic_decline_quarters: 3
+      revenue_decelerating: true
+      debt_to_ebitda_rising: true
+    accounting_flags:
+      - dso_rising
+      - cffo_vs_ni_diverging
+      - accruals_ratio_elevated
+      - capex_rising_while_revenue_flat
+    scoring:
+      roic_deterioration:
+        weight: 0.25
+      revenue_deceleration:
+        weight: 0.20
+      margin_compression:
+        weight: 0.20
+      accounting_quality:
+        weight: 0.20
+      insider_selling:
+        weight: 0.15
