@@ -7,6 +7,7 @@ This directory is the start of the project wiki.
 - [Architecture](./../ARCHITECTURE.md)
 - [Design Docs](./design-docs/index.md)
 - [Config Reference](./reference/config-reference.md)
+- [GitHub Workflow](./reference/github-workflow.md)
 - [Plan Index](./plans)
 - [Execution Plans](./exec-plans)
 
@@ -27,3 +28,5 @@ Use this structure going forward:
 - `docs/exec-plans/` for active/completed execution tracking
 
 If a document explains how the system works today, it belongs in `design-docs` or `reference`. If it explains what to build next, it belongs in `plans`.
+
+
