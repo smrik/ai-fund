@@ -31,6 +31,15 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Handbook:
+    - Index: handbook/index.md
+    - End-to-End Workflow: handbook/workflow-end-to-end.md
+    - Finance Deep Dive: handbook/finance-deep-dive.md
+    - Valuation And DCF Logic: handbook/valuation-dcf-logic.md
+    - Valuation Task Breakdown: handbook/valuation-task-breakdown.md
+    - Engineering Deep Dive: handbook/engineering-deep-dive.md
+    - Operations Runbook: handbook/operations-runbook.md
+    - Quality And Verification: handbook/quality-and-verification.md
   - Design Docs:
     - Index: design-docs/index.md
     - Core Beliefs: design-docs/core-beliefs.md

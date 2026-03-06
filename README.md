@@ -11,6 +11,7 @@ Alpha Pod separates deterministic research mechanics from selective LLM judgment
 ## Documentation
 
 - [Docs index](docs/index.md)
+- [Handbook](docs/handbook/index.md)
 - [Architecture](ARCHITECTURE.md)
 - [Deterministic valuation workflow](docs/design-docs/deterministic-valuation-workflow.md)
 - [Config reference](docs/reference/config-reference.md)
