@@ -199,6 +199,91 @@ def create_tables(conn: sqlite3.Connection | None = None):
         updated_at              TEXT NOT NULL,
         PRIMARY KEY (sector, industry, week_key)
     );
+    -- CIQ ingest run tracking and contract audit
+    CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
+        id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_key                 TEXT NOT NULL UNIQUE,
+        source_file             TEXT NOT NULL,
+        file_hash               TEXT NOT NULL,
+        ticker                  TEXT,
+        parser_version          TEXT NOT NULL,
+        ingest_ts               TEXT NOT NULL,
+        status                  TEXT NOT NULL,
+        error_message           TEXT,
+        template_fingerprint    TEXT,
+        rows_parsed             INTEGER DEFAULT 0,
+        as_of_date              TEXT
+    );
+
+    -- CIQ long-form normalized data (source-of-truth)
+    CREATE TABLE IF NOT EXISTS ciq_long_form (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_id          INTEGER NOT NULL,
+        ticker          TEXT NOT NULL,
+        sheet_name      TEXT NOT NULL,
+        section_name    TEXT,
+        row_label       TEXT NOT NULL,
+        metric_key      TEXT,
+        period_date     TEXT,
+        calc_type       TEXT,
+        column_label    TEXT,
+        column_index    INTEGER,
+        value_raw       TEXT,
+        value_num       REAL,
+        unit            TEXT,
+        scale_factor    REAL DEFAULT 1.0,
+        source_file     TEXT NOT NULL,
+        UNIQUE(run_id, sheet_name, row_label, period_date, calc_type, column_index),
+        FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
+    );
+
+    -- CIQ compute-ready deterministic snapshot
+    CREATE TABLE IF NOT EXISTS ciq_valuation_snapshot (
+        ticker                  TEXT NOT NULL,
+        as_of_date              TEXT NOT NULL,
+        run_id                  INTEGER NOT NULL,
+        source_file             TEXT NOT NULL,
+        revenue_mm              REAL,
+        operating_income_mm     REAL,
+        capex_mm                REAL,
+        da_mm                   REAL,
+        total_debt_mm           REAL,
+        cash_mm                 REAL,
+        shares_out_mm           REAL,
+        ebit_margin             REAL,
+        op_margin_avg_3yr       REAL,
+        capex_pct_avg_3yr       REAL,
+        da_pct_avg_3yr          REAL,
+        effective_tax_rate      REAL,
+        effective_tax_rate_avg  REAL,
+        revenue_cagr_3yr        REAL,
+        debt_to_ebitda          REAL,
+        roic                    REAL,
+        fcf_yield               REAL,
+        pulled_at               TEXT,
+        PRIMARY KEY (ticker, as_of_date),
+        FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
+    );
+
+    -- CIQ comps snapshot for peer analytics
+    CREATE TABLE IF NOT EXISTS ciq_comps_snapshot (
+        target_ticker    TEXT NOT NULL,
+        peer_ticker      TEXT NOT NULL,
+        as_of_date       TEXT NOT NULL,
+        run_id           INTEGER NOT NULL,
+        source_file      TEXT NOT NULL,
+        source_sheet     TEXT NOT NULL,
+        peer_name        TEXT,
+        section_name     TEXT,
+        metric_key       TEXT NOT NULL,
+        metric_label     TEXT,
+        value_raw        TEXT,
+        value_num        REAL,
+        unit             TEXT,
+        is_target        INTEGER DEFAULT 0,
+        PRIMARY KEY (target_ticker, peer_ticker, as_of_date, source_sheet, metric_key),
+        FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
+    );
 
     -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_financials_ticker ON financials(ticker);
@@ -208,6 +293,10 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_screen_results_date ON screen_results(screen_date);
     CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trades(ticker);
     CREATE INDEX IF NOT EXISTS idx_industry_benchmarks_key ON industry_benchmarks(sector, industry, week_key);
+    CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
+    CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
+    CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
+    CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
 
     """)
 
@@ -220,3 +309,4 @@ def create_tables(conn: sqlite3.Connection | None = None):
 
 if __name__ == "__main__":
     create_tables()
+

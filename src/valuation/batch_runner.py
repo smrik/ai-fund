@@ -20,6 +20,8 @@ Usage:
     python -m src.valuation.batch_runner --ticker HALO   # Single ticker deep dive
 """
 
+from __future__ import annotations
+
 import sys
 import csv
 import time
@@ -27,7 +29,6 @@ import json
 import sqlite3
 from pathlib import Path
 from datetime import datetime
-from dataclasses import asdict
 
 import pandas as pd
 
@@ -35,7 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from config import DB_PATH
 from src.data import market_data as md_client
-from src.valuation.wacc import compute_wacc_from_yfinance, PeerData, WACCResult
+from src.data.ciq_adapter import get_ciq_snapshot
+from src.valuation.wacc import compute_wacc_from_yfinance
 from src.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
 
 
@@ -193,81 +195,121 @@ def value_single_ticker(ticker: str) -> dict | None:
     Returns dict with all valuation data, or None if data insufficient.
     """
     try:
-        # 1. Fetch market data
+        # 1. Fetch market data + CIQ snapshot (if available)
         mkt = md_client.get_market_data(ticker)
+        hist = md_client.get_historical_financials(ticker)
+        ciq = get_ciq_snapshot(ticker)
+
         price = mkt.get("current_price")
-        rev = mkt.get("revenue_ttm")
-        if not price or not rev or rev <= 0:
+        if not price or price <= 0:
+            return None
+
+        # Revenue base for DCF: CIQ first, then yfinance
+        rev_ciq = ciq.get("revenue_ttm") if ciq else None
+        rev_yf = mkt.get("revenue_ttm")
+        if rev_ciq and rev_ciq > 0:
+            rev = rev_ciq
+            revenue_source = "ciq"
+        elif rev_yf and rev_yf > 0:
+            rev = rev_yf
+            revenue_source = "yfinance"
+        else:
             return None
 
         sector = mkt.get("sector", "")
         defaults = _get_sector_defaults(sector)
 
-        # 1b. Fetch historical financials (3yr)
-        hist = md_client.get_historical_financials(ticker)
-
-        # 2. Compute WACC (falls back to own beta if no peers) — pass hist to avoid double fetch
+        # 2. Compute WACC (deterministic yfinance pipeline)
         wacc_result = compute_wacc_from_yfinance(ticker, hist=hist)
 
-        # 3. Derive assumptions from actual financials
-        op_margin = mkt.get("operating_margin")
-        rev_growth = mkt.get("revenue_growth")
+        # 3. Derive assumptions with CIQ precedence and deterministic fallbacks
+        op_margin_ttm = mkt.get("operating_margin")
+        ciq_op_margin = None
+        if ciq:
+            ciq_op_margin = ciq.get("op_margin_avg_3yr") or ciq.get("ebit_margin")
 
-        # EBIT margin — prefer 3yr avg, fallback to TTM, then sector default
-        op_margin_3yr = hist.get("op_margin_avg_3yr")
-        if op_margin_3yr and op_margin_3yr > 0:
-            ebit_margin = op_margin_3yr
-            ebit_margin_source = "3yr_avg"
-        elif op_margin and op_margin > 0:
-            ebit_margin = op_margin
-            ebit_margin_source = "ttm"
+        if ciq_op_margin and 0 < ciq_op_margin < 0.8:
+            ebit_margin = ciq_op_margin
+            ebit_margin_source = "ciq"
+        elif hist.get("op_margin_avg_3yr") and hist["op_margin_avg_3yr"] > 0:
+            ebit_margin = hist["op_margin_avg_3yr"]
+            ebit_margin_source = "yfinance"
+        elif op_margin_ttm and op_margin_ttm > 0:
+            ebit_margin = op_margin_ttm
+            ebit_margin_source = "yfinance"
         else:
             ebit_margin = defaults["ebit_margin_override"] or 0.15
-            ebit_margin_source = "sector_default"
+            ebit_margin_source = "default"
 
-        # Revenue growth — prefer 3yr CAGR, fallback to TTM, then sector default
-        rev_cagr_3yr = hist.get("revenue_cagr_3yr")
-        if rev_cagr_3yr is not None and rev_cagr_3yr > -0.10:
-            growth_near = max(min(rev_cagr_3yr, 0.30), 0.02)
-            growth_source = "3yr_cagr"
-        elif rev_growth and rev_growth > -0.10:
-            growth_near = max(min(rev_growth, 0.30), 0.02)
-            growth_source = "ttm"
+        rev_growth_ciq = ciq.get("revenue_cagr_3yr") if ciq else None
+        rev_growth_hist = hist.get("revenue_cagr_3yr")
+        rev_growth_ttm = mkt.get("revenue_growth")
+        if rev_growth_ciq is not None and rev_growth_ciq > -0.10:
+            growth_near = max(min(rev_growth_ciq, 0.30), 0.02)
+            growth_source = "ciq"
+        elif rev_growth_hist is not None and rev_growth_hist > -0.10:
+            growth_near = max(min(rev_growth_hist, 0.30), 0.02)
+            growth_source = "yfinance"
+        elif rev_growth_ttm and rev_growth_ttm > -0.10:
+            growth_near = max(min(rev_growth_ttm, 0.30), 0.02)
+            growth_source = "yfinance"
         else:
             growth_near = defaults["revenue_growth_near"]
-            growth_source = "sector_default"
+            growth_source = "default"
         growth_mid = growth_near * 0.65
 
-        # Capex % revenue — prefer 3yr avg, else sector default
-        capex_pct_3yr = hist.get("capex_pct_avg_3yr")
-        if capex_pct_3yr and 0.01 <= capex_pct_3yr <= 0.25:
-            capex_pct = capex_pct_3yr
-            capex_source = "3yr_avg"
+        capex_pct_ciq = ciq.get("capex_pct_avg_3yr") if ciq else None
+        capex_pct_hist = hist.get("capex_pct_avg_3yr")
+        if capex_pct_ciq and 0.01 <= capex_pct_ciq <= 0.25:
+            capex_pct = capex_pct_ciq
+            capex_source = "ciq"
+        elif capex_pct_hist and 0.01 <= capex_pct_hist <= 0.25:
+            capex_pct = capex_pct_hist
+            capex_source = "yfinance"
         else:
             capex_pct = defaults["capex_pct"]
-            capex_source = "sector_default"
+            capex_source = "default"
 
-        # D&A % revenue — prefer 3yr avg, else sector default
-        da_pct_3yr = hist.get("da_pct_avg_3yr")
-        if da_pct_3yr and 0.005 <= da_pct_3yr <= 0.20:
-            da_pct = da_pct_3yr
-            da_source = "3yr_avg"
+        da_pct_ciq = ciq.get("da_pct_avg_3yr") if ciq else None
+        da_pct_hist = hist.get("da_pct_avg_3yr")
+        if da_pct_ciq and 0.005 <= da_pct_ciq <= 0.20:
+            da_pct = da_pct_ciq
+            da_source = "ciq"
+        elif da_pct_hist and 0.005 <= da_pct_hist <= 0.20:
+            da_pct = da_pct_hist
+            da_source = "yfinance"
         else:
             da_pct = defaults["da_pct"]
-            da_source = "sector_default"
+            da_source = "default"
 
-        # Tax rate — prefer 3yr avg, else US default
+        tax_rate_ciq = ciq.get("effective_tax_rate_avg") if ciq else None
         tax_rate_hist = hist.get("effective_tax_rate_avg")
-        if tax_rate_hist and 0.05 <= tax_rate_hist <= 0.40:
+        if tax_rate_ciq and 0.05 <= tax_rate_ciq <= 0.40:
+            tax_rate = tax_rate_ciq
+            tax_source = "ciq"
+        elif tax_rate_hist and 0.05 <= tax_rate_hist <= 0.40:
             tax_rate = tax_rate_hist
-            tax_source = "3yr_avg"
+            tax_source = "yfinance"
         else:
             tax_rate = 0.21
-            tax_source = "us_default"
+            tax_source = "default"
 
-        # Net debt and shares
-        net_debt = (mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)
-        shares = mkt.get("shares_outstanding") or 1
+        # Net debt and shares with CIQ precedence
+        ciq_debt = ciq.get("total_debt") if ciq else None
+        ciq_cash = ciq.get("cash") if ciq else None
+        if ciq_debt is not None or ciq_cash is not None:
+            net_debt = (ciq_debt or 0) - (ciq_cash or 0)
+            net_debt_source = "ciq"
+        else:
+            net_debt = (mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)
+            net_debt_source = "yfinance"
+
+        if ciq and ciq.get("shares_outstanding") and ciq.get("shares_outstanding") > 0:
+            shares = ciq["shares_outstanding"]
+            shares_source = "ciq"
+        else:
+            shares = mkt.get("shares_outstanding") or 1
+            shares_source = "yfinance"
 
         # 4. Run DCF
         assumptions = DCFAssumptions(
@@ -292,7 +334,6 @@ def value_single_ticker(ticker: str) -> dict | None:
         bull_iv = scenarios["bull"].intrinsic_value_per_share
         upside_base = (base_iv / price - 1) if price else 0
 
-        # Reverse DCF: implied growth rate at current price
         implied_growth = reverse_dcf(
             revenue=rev,
             assumptions=assumptions,
@@ -300,6 +341,9 @@ def value_single_ticker(ticker: str) -> dict | None:
             shares=shares,
             net_debt=net_debt,
         )
+
+        display_op_margin = ciq_op_margin or op_margin_ttm
+        display_rev_growth = rev_growth_ciq if rev_growth_ciq is not None else rev_growth_ttm
 
         return {
             # Identity
@@ -318,11 +362,14 @@ def value_single_ticker(ticker: str) -> dict | None:
 
             # Financials
             "revenue_mm": round(rev / 1e6, 0),
-            "op_margin": round(op_margin * 100, 1) if op_margin else None,
+            "revenue_source": revenue_source,
+            "op_margin": round(display_op_margin * 100, 1) if display_op_margin is not None else None,
             "profit_margin": round((mkt.get("profit_margin") or 0) * 100, 1),
-            "rev_growth": round((rev_growth or 0) * 100, 1),
+            "rev_growth": round((display_rev_growth or 0) * 100, 1),
             "fcf_mm": round((mkt.get("free_cashflow") or 0) / 1e6, 0),
             "net_debt_mm": round(net_debt / 1e6, 0),
+            "net_debt_source": net_debt_source,
+            "shares_source": shares_source,
             "beta_raw": mkt.get("beta"),
 
             # WACC
@@ -343,7 +390,7 @@ def value_single_ticker(ticker: str) -> dict | None:
             "upside_bull_pct": round((bull_iv / price - 1) * 100, 1) if price else 0,
             "margin_of_safety": round((1 - price / base_iv) * 100, 1) if base_iv > 0 else None,
 
-            # Assumptions used (for review) — with source audit trail
+            # Assumptions used (source flags: ciq/yfinance/default)
             "growth_near": round(growth_near * 100, 1),
             "growth_mid": round(growth_mid * 100, 1),
             "growth_source": growth_source,
@@ -366,6 +413,12 @@ def value_single_ticker(ticker: str) -> dict | None:
                    scenarios["base"].terminal_value / scenarios["base"].enterprise_value > 0.75
                 else False
             ),
+
+            # CIQ lineage
+            "ciq_snapshot_used": bool(ciq),
+            "ciq_run_id": ciq.get("run_id") if ciq else None,
+            "ciq_source_file": ciq.get("source_file") if ciq else None,
+            "ciq_as_of_date": ciq.get("as_of_date") if ciq else None,
 
             # Analyst comparison
             "analyst_target": mkt.get("analyst_target_mean"),
@@ -421,6 +474,7 @@ def export_to_excel(results: list[dict], output_path: Path):
             "iv_bear", "iv_base", "iv_bull", "price",
             "upside_base_pct", "tv_pct_of_ev",
             "implied_growth_pct", "tv_high_flag",
+            "ciq_snapshot_used", "ciq_run_id", "ciq_source_file", "ciq_as_of_date",
         ]
         df_dcf = df[[c for c in dcf_cols if c in df.columns]].copy()
         df_dcf.sort_values("upside_base_pct", ascending=False, inplace=True)
@@ -541,7 +595,6 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
     results = []
     errors = 0
     for i, ticker in enumerate(tickers, 1):
-        pct = i / len(tickers) * 100
         print(f"  [{i:>3}/{len(tickers)}] {ticker:<8} ", end="", flush=True)
 
         result = value_single_ticker(ticker)
@@ -618,6 +671,7 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser(description="Batch valuation runner")
     parser.add_argument("--top", type=int, default=30, help="Show top N results")
     parser.add_argument("--ticker", type=str, help="Run single ticker deep dive")
@@ -636,7 +690,5 @@ if __name__ == "__main__":
         if args.limit:
             with open(UNIVERSE_CSV) as f:
                 reader = csv.DictReader(f)
-                tickers = [row["ticker"] for row in reader][:args.limit]
+                tickers = [row["ticker"] for row in reader][: args.limit]
         run_batch(tickers=tickers, top_n=args.top, export_xlsx=args.xlsx)
-
-

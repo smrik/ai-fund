@@ -211,3 +211,50 @@ def get_last_pipeline_run(conn: sqlite3.Connection, pipeline: str) -> dict | Non
     """, [pipeline])
     row = cur.fetchone()
     return dict(row) if row else None
+
+
+def get_ciq_snapshot(conn: sqlite3.Connection, ticker: str, as_of_date: str = None) -> dict | None:
+    """Get CIQ valuation snapshot for a ticker."""
+    if as_of_date:
+        cur = conn.execute(
+            """
+            SELECT * FROM ciq_valuation_snapshot
+            WHERE ticker = ? AND as_of_date = ?
+            LIMIT 1
+            """,
+            [ticker.upper(), as_of_date],
+        )
+    else:
+        cur = conn.execute(
+            """
+            SELECT * FROM ciq_valuation_snapshot
+            WHERE ticker = ?
+            ORDER BY as_of_date DESC, run_id DESC
+            LIMIT 1
+            """,
+            [ticker.upper()],
+        )
+    row = cur.fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_ciq_as_of_date(conn: sqlite3.Connection) -> str | None:
+    """Return most recent as_of_date in CIQ valuation snapshot."""
+    cur = conn.execute("SELECT MAX(as_of_date) AS as_of_date FROM ciq_valuation_snapshot")
+    row = cur.fetchone()
+    return row["as_of_date"] if row and row["as_of_date"] else None
+
+
+def get_ciq_metric_history(conn: sqlite3.Connection, ticker: str, metric_key: str, limit: int = 5) -> list[dict]:
+    """Get metric history from CIQ long-form table (latest periods first)."""
+    cur = conn.execute(
+        """
+        SELECT period_date, value_num, unit
+        FROM ciq_long_form
+        WHERE ticker = ? AND metric_key = ? AND period_date IS NOT NULL AND value_num IS NOT NULL
+        ORDER BY period_date DESC
+        LIMIT ?
+        """,
+        [ticker.upper(), metric_key, limit],
+    )
+    return _rows_to_dicts(cur)

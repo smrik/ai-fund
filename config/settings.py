@@ -1,10 +1,14 @@
 """Compatibility shim for code that still imports from config.settings."""
 from config import (
     CIQ_BATCH_SIZE,
+    CIQ_DROP_FOLDER,
+    CIQ_ENFORCE_TEMPLATE_LOCK,
     CIQ_EXPORTS_DIR,
+    CIQ_PARSER_VERSION,
     CIQ_REFRESH_TIMEOUT,
     CIQ_REFRESH_WAIT_SEC,
     CIQ_TEMPLATES_DIR,
+    CIQ_WORKBOOK_GLOB,
     CONFIG_PATH,
     DAILY_REFRESH_TIME,
     DATA_DIR,
@@ -35,10 +39,14 @@ from config import (
 
 __all__ = [
     "CIQ_BATCH_SIZE",
+    "CIQ_DROP_FOLDER",
+    "CIQ_ENFORCE_TEMPLATE_LOCK",
     "CIQ_EXPORTS_DIR",
+    "CIQ_PARSER_VERSION",
     "CIQ_REFRESH_TIMEOUT",
     "CIQ_REFRESH_WAIT_SEC",
     "CIQ_TEMPLATES_DIR",
+    "CIQ_WORKBOOK_GLOB",
     "CONFIG_PATH",
     "DAILY_REFRESH_TIME",
     "DATA_DIR",

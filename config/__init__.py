@@ -80,6 +80,10 @@ IBKR_CLIENT_ID = int(_ibkr["client_id"])
 CIQ_REFRESH_WAIT_SEC = int(_ciq["refresh_wait_sec"])
 CIQ_REFRESH_TIMEOUT = int(_ciq["refresh_timeout_sec"])
 CIQ_BATCH_SIZE = int(_ciq["batch_size"])
+CIQ_DROP_FOLDER = _resolve_path(_ciq.get("drop_folder", _paths["ciq_templates_dir"]))
+CIQ_WORKBOOK_GLOB = str(_ciq.get("workbook_glob", "*.xlsx"))
+CIQ_PARSER_VERSION = str(_ciq.get("parser_version", "ibm_standard_v1"))
+CIQ_ENFORCE_TEMPLATE_LOCK = bool(_ciq.get("enforce_template_lock", True))
 
 MAX_SINGLE_POSITION_PCT = float(_risk_limits["max_single_position_pct"])
 MAX_SHORT_POSITION_PCT = float(_risk_limits["max_short_position_pct"])
@@ -109,10 +113,14 @@ def get_screening_rules() -> dict:
 __all__ = [
     "APP_CONFIG",
     "CIQ_BATCH_SIZE",
+    "CIQ_DROP_FOLDER",
+    "CIQ_ENFORCE_TEMPLATE_LOCK",
     "CIQ_EXPORTS_DIR",
+    "CIQ_PARSER_VERSION",
     "CIQ_REFRESH_TIMEOUT",
     "CIQ_REFRESH_WAIT_SEC",
     "CIQ_TEMPLATES_DIR",
+    "CIQ_WORKBOOK_GLOB",
     "CONFIG_PATH",
     "CONVICTION_SIZING",
     "DAILY_REFRESH_TIME",

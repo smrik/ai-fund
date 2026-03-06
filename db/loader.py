@@ -170,3 +170,166 @@ def log_pipeline_run(conn: sqlite3.Connection, pipeline: str, status: str,
         VALUES (?, ?, ?, ?, ?)
     """, (_now(), pipeline, status, details, duration_sec))
     conn.commit()
+
+
+def register_ciq_ingest_run(conn: sqlite3.Connection, row: dict) -> tuple[int, bool]:
+    """
+    Register CIQ ingest run.
+
+    Returns (run_id, is_new). When a run_key already exists, returns existing id
+    and is_new=False (idempotent ingest gate).
+    """
+    existing = conn.execute(
+        "SELECT id FROM ciq_ingest_runs WHERE run_key = ?",
+        [row["run_key"]],
+    ).fetchone()
+    if existing:
+        return int(existing[0]), False
+
+    cur = conn.execute(
+        """
+        INSERT INTO ciq_ingest_runs (
+            run_key, source_file, file_hash, ticker, parser_version,
+            ingest_ts, status, error_message, template_fingerprint,
+            rows_parsed, as_of_date
+        ) VALUES (
+            :run_key, :source_file, :file_hash, :ticker, :parser_version,
+            :ingest_ts, :status, :error_message, :template_fingerprint,
+            :rows_parsed, :as_of_date
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cur.lastrowid), True
+
+
+def finalize_ciq_ingest_run(
+    conn: sqlite3.Connection,
+    run_id: int,
+    status: str,
+    error_message: str | None,
+    rows_parsed: int,
+):
+    """Finalize CIQ ingest run status and audit fields."""
+    conn.execute(
+        """
+        UPDATE ciq_ingest_runs
+        SET status = ?, error_message = ?, rows_parsed = ?
+        WHERE id = ?
+        """,
+        [status, error_message, rows_parsed, run_id],
+    )
+    conn.commit()
+
+
+def insert_ciq_long_form(conn: sqlite3.Connection, run_id: int, rows: list[dict[str, Any]]):
+    """Insert CIQ long-form records for a specific ingest run."""
+    if not rows:
+        return
+
+    payload = []
+    for row in rows:
+        item = dict(row)
+        item["run_id"] = run_id
+        payload.append(item)
+
+    conn.executemany(
+        """
+        INSERT OR REPLACE INTO ciq_long_form (
+            run_id, ticker, sheet_name, section_name, row_label,
+            metric_key, period_date, calc_type, column_label,
+            column_index, value_raw, value_num, unit, scale_factor,
+            source_file
+        ) VALUES (
+            :run_id, :ticker, :sheet_name, :section_name, :row_label,
+            :metric_key, :period_date, :calc_type, :column_label,
+            :column_index, :value_raw, :value_num, :unit, :scale_factor,
+            :source_file
+        )
+        """,
+        payload,
+    )
+    conn.commit()
+
+
+def upsert_ciq_valuation_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
+    """Upsert CIQ valuation snapshots keyed by (ticker, as_of_date)."""
+    if not rows:
+        return
+
+    conn.executemany(
+        """
+        INSERT INTO ciq_valuation_snapshot (
+            ticker, as_of_date, run_id, source_file,
+            revenue_mm, operating_income_mm, capex_mm, da_mm,
+            total_debt_mm, cash_mm, shares_out_mm,
+            ebit_margin, op_margin_avg_3yr, capex_pct_avg_3yr,
+            da_pct_avg_3yr, effective_tax_rate, effective_tax_rate_avg,
+            revenue_cagr_3yr, debt_to_ebitda, roic, fcf_yield, pulled_at
+        ) VALUES (
+            :ticker, :as_of_date, :run_id, :source_file,
+            :revenue_mm, :operating_income_mm, :capex_mm, :da_mm,
+            :total_debt_mm, :cash_mm, :shares_out_mm,
+            :ebit_margin, :op_margin_avg_3yr, :capex_pct_avg_3yr,
+            :da_pct_avg_3yr, :effective_tax_rate, :effective_tax_rate_avg,
+            :revenue_cagr_3yr, :debt_to_ebitda, :roic, :fcf_yield, :pulled_at
+        )
+        ON CONFLICT(ticker, as_of_date) DO UPDATE SET
+            run_id = excluded.run_id,
+            source_file = excluded.source_file,
+            revenue_mm = excluded.revenue_mm,
+            operating_income_mm = excluded.operating_income_mm,
+            capex_mm = excluded.capex_mm,
+            da_mm = excluded.da_mm,
+            total_debt_mm = excluded.total_debt_mm,
+            cash_mm = excluded.cash_mm,
+            shares_out_mm = excluded.shares_out_mm,
+            ebit_margin = excluded.ebit_margin,
+            op_margin_avg_3yr = excluded.op_margin_avg_3yr,
+            capex_pct_avg_3yr = excluded.capex_pct_avg_3yr,
+            da_pct_avg_3yr = excluded.da_pct_avg_3yr,
+            effective_tax_rate = excluded.effective_tax_rate,
+            effective_tax_rate_avg = excluded.effective_tax_rate_avg,
+            revenue_cagr_3yr = excluded.revenue_cagr_3yr,
+            debt_to_ebitda = excluded.debt_to_ebitda,
+            roic = excluded.roic,
+            fcf_yield = excluded.fcf_yield,
+            pulled_at = excluded.pulled_at
+        """,
+        rows,
+    )
+    conn.commit()
+
+
+def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
+    """Upsert CIQ comps snapshot rows keyed by target/peer/date/sheet/metric."""
+    if not rows:
+        return
+
+    conn.executemany(
+        """
+        INSERT INTO ciq_comps_snapshot (
+            target_ticker, peer_ticker, as_of_date, run_id, source_file,
+            source_sheet, peer_name, section_name, metric_key, metric_label,
+            value_raw, value_num, unit, is_target
+        ) VALUES (
+            :target_ticker, :peer_ticker, :as_of_date, :run_id, :source_file,
+            :source_sheet, :peer_name, :section_name, :metric_key, :metric_label,
+            :value_raw, :value_num, :unit, :is_target
+        )
+        ON CONFLICT(target_ticker, peer_ticker, as_of_date, source_sheet, metric_key)
+        DO UPDATE SET
+            run_id = excluded.run_id,
+            source_file = excluded.source_file,
+            peer_name = excluded.peer_name,
+            section_name = excluded.section_name,
+            metric_label = excluded.metric_label,
+            value_raw = excluded.value_raw,
+            value_num = excluded.value_num,
+            unit = excluded.unit,
+            is_target = excluded.is_target
+        """,
+        rows,
+    )
+    conn.commit()

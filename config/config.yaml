@@ -35,6 +35,10 @@ ciq:
   refresh_wait_sec: 5
   refresh_timeout_sec: 300
   batch_size: 50
+  drop_folder: ciq/templates
+  workbook_glob: "*.xlsx"
+  parser_version: ibm_standard_v1
+  enforce_template_lock: true
 
 risk_limits:
   max_single_position_pct: 8.0
@@ -107,3 +111,4 @@ screening:
         weight: 0.20
       insider_selling:
         weight: 0.15
+
