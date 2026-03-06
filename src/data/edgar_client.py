@@ -74,6 +74,34 @@ def get_recent_filings(cik: str, form_type: str, limit: int = 4) -> list[dict]:
     return results
 
 
+def get_10k_text(ticker: str, max_chars: int = 50_000) -> str | None:
+    """
+    Return the most recent 10-K primary document text for a ticker.
+    Returns None on any failure.
+    """
+    try:
+        cik = get_cik(ticker)
+        filings = get_recent_filings(cik, "10-K", limit=1)
+        if not filings:
+            return None
+
+        recent = filings[0]
+        accession_no = recent.get("accession_no")
+        primary_doc = recent.get("primary_doc")
+        if not accession_no or not primary_doc:
+            return None
+
+        filing_text = get_filing_text(accession_no, cik, primary_doc)
+        if filing_text is None:
+            return None
+
+        if max_chars <= 0:
+            return ""
+
+        return filing_text[:max_chars]
+    except Exception:
+        return None
+
 def extract_financial_facts(company_facts: dict) -> dict:
     """
     Pull key financial metrics from XBRL company facts.
@@ -113,3 +141,6 @@ def extract_financial_facts(company_facts: dict) -> dict:
         ]
 
     return result
+
+
+
