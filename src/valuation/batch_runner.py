@@ -5,15 +5,18 @@ Runs a deterministic WACC + DCF on every ticker in the universe.
 No LLM — all assumptions derived from financial data.
 
 Output:
-  1. Excel workbook (data/valuations/batch_valuation_YYYY-MM-DD.xlsx)
+  1. SQLite snapshot (data/alpha_pod.db, table: batch_valuations_latest)
+  2. CSV file (data/valuations/latest.csv) for Excel/Power Query
+  3. Optional Excel workbook (data/valuations/batch_valuation_YYYY-MM-DD.xlsx)
      - Summary tab: ranked by upside, filterable
      - WACC tab: full CAPM audit trail for each ticker
      - DCF tab: assumption details and sensitivity
-  2. Terminal: top 30 ranked by base-case upside
+  4. Terminal: top 30 ranked by base-case upside
 
 Usage:
     python -m src.valuation.batch_runner
     python -m src.valuation.batch_runner --top 50
+    python -m src.valuation.batch_runner --xlsx
     python -m src.valuation.batch_runner --ticker HALO   # Single ticker deep dive
 """
 
@@ -21,6 +24,7 @@ import sys
 import csv
 import time
 import json
+import sqlite3
 from pathlib import Path
 from datetime import datetime
 from dataclasses import asdict
@@ -29,6 +33,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from config import DB_PATH
 from src.data import market_data as md_client
 from src.valuation.wacc import compute_wacc_from_yfinance, PeerData, WACCResult
 from src.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
@@ -427,7 +432,90 @@ def export_to_excel(results: list[dict], output_path: Path):
     print(f"✓ Saved to {output_path}")
 
 
-def run_batch(tickers: list[str] = None, top_n: int = 30):
+def _safe_float(value):
+    """Convert values to float where possible, preserving None for nulls."""
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except TypeError:
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int]:
+    """
+    Persist valuation output to SQLite.
+
+    1) Replace full snapshot table: batch_valuations_latest
+    2) Upsert normalized valuation history into valuations table
+    """
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        df.to_sql("batch_valuations_latest", conn, if_exists="replace", index=False)
+
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS valuations (
+                ticker          TEXT NOT NULL,
+                date            TEXT NOT NULL,
+                market_cap_mm   REAL,
+                ev_mm           REAL,
+                pe_ttm          REAL,
+                pe_fwd          REAL,
+                ev_ebitda_ttm   REAL,
+                ev_ebitda_fwd   REAL,
+                ps_ttm          REAL,
+                pfcf_ttm        REAL,
+                dividend_yield  REAL,
+                pe_5yr_avg      REAL,
+                pe_vs_5yr_avg   REAL,
+                PRIMARY KEY (ticker, date)
+            )
+            """
+        )
+
+        valuation_rows = []
+        for _, row in df.iterrows():
+            valuation_rows.append(
+                (
+                    row.get("ticker"),
+                    snapshot_date,
+                    _safe_float(row.get("market_cap_mm")),
+                    _safe_float(row.get("ev_mm")),
+                    _safe_float(row.get("pe_trailing")),
+                    _safe_float(row.get("pe_forward")),
+                    _safe_float(row.get("ev_ebitda")),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+            )
+
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO valuations (
+                ticker, date, market_cap_mm, ev_mm, pe_ttm, pe_fwd,
+                ev_ebitda_ttm, ev_ebitda_fwd, ps_ttm, pfcf_ttm,
+                dividend_yield, pe_5yr_avg, pe_vs_5yr_avg
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            valuation_rows,
+        )
+        conn.commit()
+        return len(df), len(valuation_rows)
+    finally:
+        conn.close()
+
+
+def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = False):
     """
     Run batch valuation across universe and export results.
     """
@@ -484,17 +572,20 @@ def run_batch(tickers: list[str] = None, top_n: int = 30):
     today = datetime.now().strftime("%Y-%m-%d")
     df = pd.DataFrame(results)
 
-    # CSV: latest.csv (Power Query reads this) + dated backup
+    # CSV: latest.csv (Power Query reads this)
     latest_csv = OUTPUT_DIR / "latest.csv"
-    dated_csv = OUTPUT_DIR / f"batch_{today}.csv"
     df.to_csv(latest_csv, index=False)
-    df.to_csv(dated_csv, index=False)
     print(f"✓ CSV: {latest_csv}")
-    print(f"  Backup: {dated_csv}")
 
-    # Excel: dated snapshot
-    xlsx_path = OUTPUT_DIR / f"batch_valuation_{today}.xlsx"
-    export_to_excel(results, xlsx_path)
+    # SQLite: canonical persistence
+    latest_rows, valuation_rows = persist_results_to_db(df, snapshot_date=today)
+    print(f"✓ SQLite: {DB_PATH}")
+    print(f"  batch_valuations_latest={latest_rows}, valuations={valuation_rows}")
+
+    xlsx_path = None
+    if export_xlsx:
+        xlsx_path = OUTPUT_DIR / f"batch_valuation_{today}.xlsx"
+        export_to_excel(results, xlsx_path)
 
     # Terminal summary
     print()
@@ -516,7 +607,10 @@ def run_batch(tickers: list[str] = None, top_n: int = 30):
         )
 
     print()
-    print(f"Excel: {xlsx_path}")
+    if xlsx_path:
+        print(f"Excel: {xlsx_path}")
+    else:
+        print("Excel: skipped (pass --xlsx to export workbook)")
     print(f"CSV (for Power Query): {latest_csv}")
     print()
     print("To connect your Excel template: Data → Get Data → From Text/CSV → select latest.csv")
@@ -528,6 +622,7 @@ if __name__ == "__main__":
     parser.add_argument("--top", type=int, default=30, help="Show top N results")
     parser.add_argument("--ticker", type=str, help="Run single ticker deep dive")
     parser.add_argument("--limit", type=int, help="Limit number of tickers to value")
+    parser.add_argument("--xlsx", action="store_true", help="Export dated Excel workbook")
     args = parser.parse_args()
 
     if args.ticker:
@@ -542,4 +637,6 @@ if __name__ == "__main__":
             with open(UNIVERSE_CSV) as f:
                 reader = csv.DictReader(f)
                 tickers = [row["ticker"] for row in reader][:args.limit]
-        run_batch(tickers=tickers, top_n=args.top)
+        run_batch(tickers=tickers, top_n=args.top, export_xlsx=args.xlsx)
+
+

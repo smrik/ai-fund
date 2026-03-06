@@ -57,7 +57,7 @@ flowchart TD
     B --> C["Stage 1 filter<br/>cheap, broad, fast"]
     C --> D["config/universe.csv<br/>current working set"]
     D --> E["Batch valuation runner"]
-    E --> F["latest.csv / Excel snapshot"]
+    E --> F["SQLite snapshot + latest.csv"]
     F --> G["Human review"]
     G --> H["Optional judgment agents"]
     H --> I["Deep work / PM decision"]
@@ -92,7 +92,7 @@ Each task is deliberately small enough to inspect without getting lost.
 6. Run scenario DCF.
 7. Run reverse DCF.
 8. Compute warning flags.
-9. Export ranked outputs to CSV and Excel.
+9. Persist ranked outputs to SQLite and latest.csv (Excel optional).
 
 ### C. Human Review
 
@@ -686,3 +686,4 @@ If you remember only one thing, remember this:
 
 The DCF is the numeric frame that keeps the thesis honest.
 The thesis is still the human job.
+
