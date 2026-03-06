@@ -1,0 +1,18 @@
+# Python cache artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local agent state
+.agent/
+.claude/
+
+# Runtime data artifacts (generated)
+data/cache/
+data/valuations/
+data/alpha_pod.db
+data/stage1_survivors.csv
+
+# Editor/OS noise
+.DS_Store
+Thumbs.db
