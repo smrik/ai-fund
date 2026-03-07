@@ -5,25 +5,25 @@ This guide explains how the codebase is organized, why data is stored in multipl
 ## Repository Map
 
 Core implementation areas:
-- `src/data/`: market and filing data adapters
-- `src/valuation/`: deterministic valuation orchestration and WACC
-- `src/templates/`: valuation and memo data models
-- `src/agents/`: LLM-based research/context agents
-- `screening/`: Stage 1 and Stage 2 universe filters
+- `src/stage_00_data/`: market and filing data adapters
+- `src/stage_02_valuation/`: deterministic valuation orchestration and WACC
+- `src/stage_02_valuation/templates/`: valuation and memo data models
+- `src/stage_03_judgment/`: LLM-based research/context agents
+- `src/stage_01_screening/`: Stage 1 and Stage 2 universe filters
 - `db/`: SQLite schema and initialization
 - `config/`: central config loader and YAML defaults
 
 ## Architectural Boundary
 
 Deterministic compute path:
-- `screening/stage1_filter.py`
-- `src/data/market_data.py`
-- `src/valuation/wacc.py`
-- `src/templates/dcf_model.py`
-- `src/valuation/batch_runner.py`
+- `src/stage_01_screening/stage1_filter.py`
+- `src/stage_00_data/market_data.py`
+- `src/stage_02_valuation/wacc.py`
+- `src/stage_02_valuation/templates/dcf_model.py`
+- `src/stage_02_valuation/batch_runner.py`
 
 Judgment/context path:
-- `src/agents/*` (QoE, industry, memo synthesis agents)
+- `src/stage_03_judgment/*` (QoE, industry, memo synthesis agents)
 
 Design rule:
 - Deterministic outputs should remain reproducible without LLM calls.
@@ -91,27 +91,27 @@ This keeps committed behavior explicit while allowing machine-local secret/runti
 
 ## Key Deterministic Module Contracts
 
-### `src/data/market_data.py`
+### `src/stage_00_data/market_data.py`
 - `get_market_data(ticker) -> dict`
 - `get_historical_financials(ticker) -> dict` with derived 3Y metrics
 - Never raises outward on common data failures (returns null-friendly fields)
 
-### `src/valuation/wacc.py`
+### `src/stage_02_valuation/wacc.py`
 - `compute_wacc(target, peers) -> WACCResult`
 - Pure math/data transforms, deterministic for a given input set
 
-### `src/templates/dcf_model.py`
+### `src/stage_02_valuation/templates/dcf_model.py`
 - `run_dcf(base_revenue, assumptions) -> DCFResult`
 - `run_scenario_dcf(...) -> {bear, base, bull}`
 
-### `src/valuation/batch_runner.py`
+### `src/stage_02_valuation/batch_runner.py`
 - `value_single_ticker(ticker) -> row dict | None`
 - `run_batch(...)` for universe execution and persistence
 
 ## Agent Layer Contracts
 
 ### Base agent runtime
-- `src/agents/base_agent.py`
+- `src/stage_03_judgment/base_agent.py`
 - Anthropic message loop + optional tool-calling
 
 ### QoE agent
@@ -126,7 +126,7 @@ This keeps committed behavior explicit while allowing machine-local secret/runti
 
 ## Legacy Memo Orchestration Track
 
-`src/pipeline/orchestrator.py` runs a 6-agent narrative pipeline from CLI (`main.py`).
+`src/stage_04_pipeline/orchestrator.py` runs a 6-agent narrative pipeline from CLI (`main.py`).
 
 Recommendation:
 - Keep it as a research synthesis tool.
@@ -172,3 +172,5 @@ Recommendation:
 - Add range checks near data ingress
 - Make all fallbacks explicit and test-covered
 - Keep CLI outputs friendly, but never as primary persistence
+
+

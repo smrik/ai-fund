@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from db.schema import create_tables, get_connection
-from src.agents.base_agent import BaseAgent
+from src.stage_03_judgment.base_agent import BaseAgent
 
 
 SYSTEM_PROMPT = """You are a buy-side industry strategist.

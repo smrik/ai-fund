@@ -22,29 +22,29 @@ python setup.py
 
 ### Stage 1 Screen
 ```bash
-python -m screening.stage1_filter
+python -m src.stage_01_screening.stage1_filter
 ```
 
 Force fresh yfinance pull:
 ```bash
-python -m screening.stage1_filter --force
+python -m src.stage_01_screening.stage1_filter --force
 ```
 
 ### Deterministic Batch Valuation
 
 Run full batch with top table:
 ```bash
-python -m src.valuation.batch_runner --top 50
+python -m src.stage_02_valuation.batch_runner --top 50
 ```
 
 Single-name deep dive:
 ```bash
-python -m src.valuation.batch_runner --ticker HALO
+python -m src.stage_02_valuation.batch_runner --ticker HALO
 ```
 
 Optional workbook export:
 ```bash
-python -m src.valuation.batch_runner --top 50 --xlsx
+python -m src.stage_02_valuation.batch_runner --top 50 --xlsx
 ```
 
 ### Optional Legacy Memo Pipeline
@@ -134,3 +134,5 @@ Before merging runbook-impacting changes:
 - Treat `data/cache/*` as disposable refresh cache
 - Treat `data/valuations/latest.csv` as regenerated artifact
 - Keep generated artifacts out of git unless intentionally versioned
+
+

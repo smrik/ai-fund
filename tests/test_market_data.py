@@ -1,12 +1,12 @@
 """
-Tests for get_historical_financials() in src/data/market_data.py.
+Tests for get_historical_financials() in src/stage_00_data/market_data.py.
 """
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.data.market_data import get_historical_financials
+from src.stage_00_data.market_data import get_historical_financials
 
 
 def test_historical_financials_returns_revenue_series():
@@ -166,3 +166,4 @@ def test_historical_financials_mocked_tax_rate():
     t = result["effective_tax_rate_avg"]
     if t is not None:
         assert 0.05 <= t <= 0.40
+

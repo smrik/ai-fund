@@ -47,3 +47,4 @@
 - CIQ is primary fundamentals source once integrated; yfinance remains deterministic fallback.
 - Data and computation layers remain strictly non-LLM.
 - Existing duplicate architecture markdown is treated as stale and replaced with the layered architecture spec during implementation.
+

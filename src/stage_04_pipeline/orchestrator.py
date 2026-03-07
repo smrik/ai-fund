@@ -7,14 +7,14 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from src.agents.filings_agent import FilingsAgent
-from src.agents.earnings_agent import EarningsAgent
-from src.agents.valuation_agent import ValuationAgent
-from src.agents.sentiment_agent import SentimentAgent
-from src.agents.risk_agent import RiskAgent
-from src.agents.thesis_agent import ThesisAgent
-from src.data import market_data as md_client
-from src.templates.ic_memo import ICMemo
+from src.stage_03_judgment.filings_agent import FilingsAgent
+from src.stage_03_judgment.earnings_agent import EarningsAgent
+from src.stage_03_judgment.valuation_agent import ValuationAgent
+from src.stage_03_judgment.sentiment_agent import SentimentAgent
+from src.stage_03_judgment.risk_agent import RiskAgent
+from src.stage_03_judgment.thesis_agent import ThesisAgent
+from src.stage_00_data import market_data as md_client
+from src.stage_02_valuation.templates.ic_memo import ICMemo
 
 console = Console()
 
@@ -77,7 +77,7 @@ class PipelineOrchestrator:
                     _warn(f"  {flag}")
         except Exception as e:
             _warn(f"FilingsAgent error: {e}")
-            from src.templates.ic_memo import FilingsSummary
+            from src.stage_02_valuation.templates.ic_memo import FilingsSummary
             filings = FilingsSummary(raw_summary=f"Error: {e}")
 
         # --- Step 2: Earnings ---
@@ -90,7 +90,7 @@ class PipelineOrchestrator:
             )
         except Exception as e:
             _warn(f"EarningsAgent error: {e}")
-            from src.templates.ic_memo import EarningsSummary
+            from src.stage_02_valuation.templates.ic_memo import EarningsSummary
             earnings = EarningsSummary(raw_summary=f"Error: {e}")
 
         # --- Step 3: Valuation ---
@@ -104,7 +104,7 @@ class PipelineOrchestrator:
             )
         except Exception as e:
             _warn(f"ValuationAgent error: {e}")
-            from src.templates.ic_memo import ValuationRange
+            from src.stage_02_valuation.templates.ic_memo import ValuationRange
             p = mkt.get("current_price", 0) if "mkt" in dir() else 0
             valuation = ValuationRange(bear=p * 0.7, base=p, bull=p * 1.3, current_price=p)
 
@@ -118,7 +118,7 @@ class PipelineOrchestrator:
             )
         except Exception as e:
             _warn(f"SentimentAgent error: {e}")
-            from src.templates.ic_memo import SentimentOutput
+            from src.stage_02_valuation.templates.ic_memo import SentimentOutput
             sentiment = SentimentOutput(raw_summary=f"Error: {e}")
 
         # --- Step 5: Risk ---
@@ -131,7 +131,7 @@ class PipelineOrchestrator:
             )
         except Exception as e:
             _warn(f"RiskAgent error: {e}")
-            from src.templates.ic_memo import RiskOutput
+            from src.stage_02_valuation.templates.ic_memo import RiskOutput
             from config import PORTFOLIO_SIZE_USD, CONVICTION_SIZING
             risk = RiskOutput(
                 conviction="low",

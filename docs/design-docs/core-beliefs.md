@@ -11,7 +11,7 @@ When you disagree with a decision, check here first — if the belief is wrong, 
 The DCF model, WACC calculator, and screening filters produce numbers. Numbers must be reproducible.
 An LLM must never be in the path that produces a valuation output.
 
-**In practice:** `src/valuation/` and `src/templates/` have zero imports from `src/agents/`.
+**In practice:** `src/stage_02_valuation/` and `src/stage_02_valuation/templates/` have zero imports from `src/stage_03_judgment/`.
 Agents produce typed dataclasses (QoEResult, CompsResult, etc.) that a human or the batch runner
 may *choose* to consume. The choice is explicit, logged, and reversible.
 
@@ -111,3 +111,4 @@ If the CIQ record is > 7 days old or missing, it falls back to yfinance with a q
 
 **Why:** yfinance has TTM-only data and no peer lists. The quality of the valuation is directly
 proportional to the quality of the input data.
+

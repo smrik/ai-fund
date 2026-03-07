@@ -5,9 +5,9 @@ Returns a FilingsSummary.
 """
 
 import json
-from src.agents.base_agent import BaseAgent
-from src.data import edgar_client
-from src.templates.ic_memo import FilingsSummary
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import edgar_client
+from src.stage_02_valuation.templates.ic_memo import FilingsSummary
 
 
 SYSTEM_PROMPT = """You are a senior equity research analyst specializing in fundamental analysis of SEC filings.

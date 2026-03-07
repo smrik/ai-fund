@@ -4,9 +4,9 @@ Returns a SentimentOutput with direction, score, and key themes.
 """
 
 import json
-from src.agents.base_agent import BaseAgent
-from src.data import market_data as md_client
-from src.templates.ic_memo import SentimentOutput
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import market_data as md_client
+from src.stage_02_valuation.templates.ic_memo import SentimentOutput
 
 
 SYSTEM_PROMPT = """You are a market intelligence analyst specializing in news sentiment and narrative analysis.

@@ -141,3 +141,4 @@ Typical use:
 Use deterministic output to rank and triage.
 Use judgment layer to frame scenario quality.
 Keep final position sizing and conviction strictly human.
+

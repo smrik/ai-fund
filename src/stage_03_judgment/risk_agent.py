@@ -4,9 +4,9 @@ Returns a RiskOutput with dollar position size, portfolio %, and stop loss.
 """
 
 import json
-from src.agents.base_agent import BaseAgent
-from src.data import market_data as md_client
-from src.templates.ic_memo import RiskOutput, ValuationRange, SentimentOutput
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import market_data as md_client
+from src.stage_02_valuation.templates.ic_memo import RiskOutput, ValuationRange, SentimentOutput
 from config import PORTFOLIO_SIZE_USD, CONVICTION_SIZING
 
 

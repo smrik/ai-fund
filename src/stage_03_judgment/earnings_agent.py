@@ -5,9 +5,9 @@ Returns an EarningsSummary.
 """
 
 import json
-from src.agents.base_agent import BaseAgent
-from src.data import edgar_client, market_data
-from src.templates.ic_memo import EarningsSummary
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import edgar_client, market_data
+from src.stage_02_valuation.templates.ic_memo import EarningsSummary
 
 
 SYSTEM_PROMPT = """You are a buy-side equity analyst specializing in earnings quality analysis.

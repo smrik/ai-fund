@@ -4,7 +4,7 @@ Downloads a broad list of US-listed equities from NASDAQ's free listing files.
 No API keys needed. Results are cached locally.
 
 Usage:
-    python -m screening.seed_universe
+    python -m src.stage_01_screening.seed_universe
 """
 import csv
 import json

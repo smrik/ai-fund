@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.valuation import batch_runner
+from src.stage_02_valuation import batch_runner
 
 
 def _sample_row(ticker: str, upside: float) -> dict:

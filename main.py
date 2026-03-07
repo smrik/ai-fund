@@ -19,7 +19,7 @@ def main():
     ticker = sys.argv[1].upper()
 
     # Lazy import so env vars load first
-    from src.pipeline.orchestrator import PipelineOrchestrator
+    from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
 
     orchestrator = PipelineOrchestrator()
     memo = orchestrator.run(ticker)

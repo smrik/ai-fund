@@ -6,8 +6,8 @@ Produces ~200-300 survivors for the CIQ deep screen (Stage 2).
 All yfinance data is cached to avoid repeat API calls.
 
 Usage:
-    python -m screening.stage1_filter
-    python -m screening.stage1_filter --force   # Force yfinance refresh
+    python -m src.stage_01_screening.stage1_filter
+    python -m src.stage_01_screening.stage1_filter --force   # Force yfinance refresh
 """
 import json
 import sys
@@ -296,7 +296,7 @@ def run(force_refresh: bool = False):
 
     # Step 1: Load seed universe
     print("[1/4] Loading seed universe...")
-    from screening.seed_universe import fetch_seed_universe
+    from src.stage_01_screening.seed_universe import fetch_seed_universe
     seed = fetch_seed_universe()
     print(f"  → {len(seed)} total listings")
     print()

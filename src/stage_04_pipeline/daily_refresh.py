@@ -4,14 +4,14 @@ Runs every market morning. Pulls prices, updates positions, checks risk, generat
 
 Usage:
     cd alpha-pod
-    python -m pipeline.daily_refresh
+    python -m src.stage_04_pipeline.daily_refresh
 """
 import sys
 import time
 from pathlib import Path
 from datetime import datetime
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from config.settings import (
     MAX_SINGLE_POSITION_PCT, MAX_GROSS_EXPOSURE_PCT,
@@ -172,3 +172,4 @@ def run():
 
 if __name__ == "__main__":
     run()
+

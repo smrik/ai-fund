@@ -4,8 +4,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from types import SimpleNamespace
 
-from src.valuation import batch_runner
-from src.valuation.wacc import WACCResult
+from src.stage_02_valuation import batch_runner
+from src.stage_02_valuation.wacc import WACCResult
 
 
 class _ScenarioResult:

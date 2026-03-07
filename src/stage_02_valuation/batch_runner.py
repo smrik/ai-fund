@@ -14,10 +14,10 @@ Output:
   4. Terminal: top 30 ranked by base-case upside
 
 Usage:
-    python -m src.valuation.batch_runner
-    python -m src.valuation.batch_runner --top 50
-    python -m src.valuation.batch_runner --xlsx
-    python -m src.valuation.batch_runner --ticker HALO   # Single ticker deep dive
+    python -m src.stage_02_valuation.batch_runner
+    python -m src.stage_02_valuation.batch_runner --top 50
+    python -m src.stage_02_valuation.batch_runner --xlsx
+    python -m src.stage_02_valuation.batch_runner --ticker HALO   # Single ticker deep dive
 """
 
 from __future__ import annotations
@@ -35,10 +35,10 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from config import DB_PATH
-from src.data import market_data as md_client
-from src.data.ciq_adapter import get_ciq_snapshot
-from src.valuation.wacc import compute_wacc_from_yfinance
-from src.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
+from src.stage_00_data import market_data as md_client
+from src.stage_00_data.ciq_adapter import get_ciq_snapshot
+from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
+from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
 
 
 # ── Paths ──────────────────────────────────────────────

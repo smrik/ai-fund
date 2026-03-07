@@ -13,7 +13,7 @@ This is a step-by-step task board for running and reviewing one valuation cycle.
 
 1. Run:
 ```bash
-python -m src.valuation.batch_runner --top 50
+python -m src.stage_02_valuation.batch_runner --top 50
 ```
 2. Confirm no fatal errors in terminal output.
 3. Confirm `data/valuations/latest.csv` is regenerated.
@@ -94,3 +94,5 @@ For each candidate in top bucket:
 2. Improve fallback logic only with explicit tests.
 3. Keep deterministic and judgment layers separated in implementation.
 4. Re-run `python -m pytest -q` before merge.
+
+

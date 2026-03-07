@@ -5,8 +5,8 @@ QoEAgent — quality of earnings normalization from 10-K text.
 import json
 from typing import Any
 
-from src.agents.base_agent import BaseAgent
-from src.data import edgar_client
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import edgar_client
 
 
 SYSTEM_PROMPT = """You are a buy-side accounting analyst focused on quality-of-earnings (QoE).

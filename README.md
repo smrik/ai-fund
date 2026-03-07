@@ -4,9 +4,18 @@ Alpha Pod separates deterministic research mechanics from selective LLM judgment
 
 ## Core architecture
 
-- `src/data/`: deterministic data ingestion from yfinance, EDGAR, and CIQ
-- `src/valuation/` and `screening/`: deterministic DCF, reverse DCF, WACC, and ranking logic
-- `src/agents/`: judgment-only LLM agents that never feed numbers back into intrinsic value computation
+- `src/stage_00_data/`: deterministic data ingestion from yfinance, EDGAR, and CIQ
+- `src/stage_01_screening/` and `src/stage_02_valuation/`: deterministic DCF, reverse DCF, WACC, and ranking logic
+- `src/stage_03_judgment/`: judgment-only LLM agents that never feed numbers back into intrinsic value computation
+
+
+## Workflow-First Source Layout
+
+- `src/stage_00_data/`: deterministic data connectors/adapters
+- `src/stage_01_screening/`: deterministic universe + filter stages
+- `src/stage_02_valuation/`: deterministic valuation models and runners
+- `src/stage_03_judgment/`: LLM context agents (never in compute path)
+- `src/stage_04_pipeline/`: orchestration and scheduled runs
 
 ## Documentation
 

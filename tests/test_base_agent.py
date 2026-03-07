@@ -1,4 +1,4 @@
-from src.agents.base_agent import BaseAgent
+from src.stage_03_judgment.base_agent import BaseAgent
 
 
 def test_base_agent_initializes():

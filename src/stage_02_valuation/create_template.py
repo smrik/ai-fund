@@ -11,7 +11,7 @@ The template is designed to be connected to data/valuations/latest.csv
 via Power Query. The PM sets this up once, then just clicks Refresh All.
 
 Usage:
-    python -m src.valuation.create_template
+    python -m src.stage_02_valuation.create_template
 """
 
 import sys
@@ -73,7 +73,7 @@ def create_instructions_sheet(wb: Workbook):
         ("5. Done! The Data sheet now auto-refreshes from Python output", "A8", None),
         ("", "A9", None),
         ("DAILY WORKFLOW", "A10", Font(size=13, bold=True)),
-        ("1. Run:  python -m src.valuation.batch_runner", "A11", None),
+        ("1. Run:  python -m src.stage_02_valuation.batch_runner", "A11", None),
         ("2. Open this workbook → Data → Refresh All (Ctrl+Alt+F5)", "A12", None),
         ("3. Review the Dashboard tab — sorted by upside", "A13", None),
         ("4. To adjust assumptions: go to Overrides tab, enter your values", "A14", None),

@@ -33,16 +33,15 @@ config/         Settings, universe.csv, screening_rules.yaml, ciq_schema.yaml
 ciq/            Capital IQ Excel integration (xlwings)
 db/             SQLite schema, loader, queries
 ibkr/           Interactive Brokers API (Phase 3)
-pipeline/       Daily refresh orchestration
-screening/      Stage 1 + Stage 2 filter pipeline
-src/
-  agents/       LLM agents (judgment layer only)
-  data/         market_data.py, edgar_client.py (data layer)
-  templates/    dcf_model.py, ic_memo.py (computation layer)
-  valuation/    batch_runner.py, wacc.py (computation layer)
 monitoring/     Alerts and dashboard (Phase 3)
+src/
+  stage_00_data/        Deterministic data ingestion adapters (yfinance/CIQ/EDGAR)
+  stage_01_screening/   Deterministic screening pipeline
+  stage_02_valuation/   Deterministic WACC/DCF/batch valuation + templates
+  stage_03_judgment/    LLM agents (judgment layer only; not in compute path)
+  stage_04_pipeline/    Orchestration + refresh entrypoints
 tests/          All tests — run with pytest
-docs/           See docs/ structure below
+docs/           Product/design/operations docs
 skills/         Claude Code / Codex skills
 ```
 
@@ -67,13 +66,13 @@ docs/
 
 ```bash
 # Stage 1 screen (seed → ~300 quality companies)
-python -m screening.stage1_filter
+python -m src.stage_01_screening.stage1_filter
 
 # Batch DCF valuation (ranks all survivors)
-python -m src.valuation.batch_runner --top 50
+python -m src.stage_02_valuation.batch_runner --top 50
 
 # Single ticker deep dive
-python -m src.valuation.batch_runner --ticker HALO
+python -m src.stage_02_valuation.batch_runner --ticker HALO
 
 # CIQ refresh (requires Excel + CIQ plugin open)
 python -m ciq.ciq_refresh
@@ -90,12 +89,11 @@ Current active sprint: [`docs/exec-plans/active/sprint-1-deterministic-hardening
 
 ## Key Constraints (enforced, not negotiable)
 
-1. LLM agents live in `src/agents/` only — never imported by `src/valuation/` or `src/data/`
+1. LLM agents live in `src/stage_03_judgment/` only — never imported by `src/stage_00_data/`, `src/stage_01_screening/`, or `src/stage_02_valuation/`
 2. Every agent has a typed input/output dataclass — no raw dict passing between layers
 3. `config/universe.csv` is the canonical ticker list — all pipelines read from it
 4. All financial assumptions have an `assumption_source` audit field in output
-5. Sector defaults in `batch_runner.py` are fallbacks, not primaries — real data wins
-
+5. Sector defaults in `src/stage_02_valuation/batch_runner.py` are fallbacks, not primaries — real data wins
 ## Agent Triggers (when each LLM agent runs)
 
 | Agent | Trigger | Input | Output |
@@ -110,3 +108,7 @@ Current active sprint: [`docs/exec-plans/active/sprint-1-deterministic-hardening
 Anything not in this repository does not exist from the agent's perspective.
 Design decisions made in chat, Slack, or verbally must be encoded here.
 See `docs/design-docs/core-beliefs.md` for the current list.
+
+
+
+

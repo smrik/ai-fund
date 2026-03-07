@@ -5,8 +5,8 @@ Returns a completed ICMemo.
 """
 
 import json
-from src.agents.base_agent import BaseAgent
-from src.templates.ic_memo import (
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_02_valuation.templates.ic_memo import (
     ICMemo, FilingsSummary, EarningsSummary,
     ValuationRange, SentimentOutput, RiskOutput,
 )

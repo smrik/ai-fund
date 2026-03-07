@@ -3,9 +3,9 @@
 This document is the source-of-truth explanation for how intrinsic value is computed in code.
 
 Referenced modules:
-- `src/templates/dcf_model.py`
-- `src/valuation/wacc.py`
-- `src/valuation/batch_runner.py`
+- `src/stage_02_valuation/templates/dcf_model.py`
+- `src/stage_02_valuation/wacc.py`
+- `src/stage_02_valuation/batch_runner.py`
 
 ## 1. DCF Model Structure (10-Year Explicit Forecast)
 
@@ -76,7 +76,7 @@ Bull transforms:
 
 ## 5. WACC Construction
 
-WACC uses CAPM with beta unlevering/relevering in `src/valuation/wacc.py`.
+WACC uses CAPM with beta unlevering/relevering in `src/stage_02_valuation/wacc.py`.
 
 ### 5.1 Unlevering peer beta
 
@@ -180,3 +180,4 @@ Not yet modeled in deterministic core:
 - Detailed working-capital driver decomposition by account
 
 These can be added incrementally, but existing logic remains auditable and fast.
+

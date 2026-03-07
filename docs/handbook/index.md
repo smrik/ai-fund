@@ -3,8 +3,9 @@
 This handbook is the practical wiki for operating and extending Alpha Pod.
 
 It is written for two audiences:
-- Finance operators: how numbers are produced, what assumptions mean, and where human judgment belongs.
-- Software engineers: how data flows through the codebase, where to modify logic, and how to verify changes safely.
+
+1. **Finance operators**: how numbers are produced, what assumptions mean, and where human judgment belongs.
+2. **Software engineers**: how data flows through the codebase, where to modify logic, and how to verify changes safely.
 
 ## Read This First
 
@@ -21,12 +22,14 @@ It is written for two audiences:
 Alpha Pod has two analysis tracks in the repository:
 
 1. Deterministic valuation track (recommended production path)
+
 - Data ingest from yfinance/EDGAR/CIQ
 - WACC + DCF + reverse DCF in pure Python
 - Ranked outputs in SQLite + CSV
 
 2. Full memo synthesis track (agent-heavy)
-- Multi-agent IC memo orchestration in `src/pipeline/orchestrator.py`
+
+- Multi-agent IC memo orchestration in `src/stage_04_pipeline/orchestrator.py`
 - Useful for narrative synthesis
 - Not the authoritative path for deterministic intrinsic value ranking
 
@@ -55,3 +58,5 @@ LLM agents may explain or contextualize numbers, but they must not write numbers
 3. Finance deep dive (how to interpret and challenge outputs)
 4. Engineering deep dive (where to change code safely)
 5. Runbook and verification (how to operate and release changes)
+
+

@@ -89,7 +89,7 @@ python -m pytest -q
 
 2. Run sample deterministic batch:
 ```bash
-python -m src.valuation.batch_runner --limit 20 --top 10
+python -m src.stage_02_valuation.batch_runner --limit 20 --top 10
 ```
 
 3. Validate artifacts:
@@ -111,3 +111,5 @@ A valuation change is only done when:
 - tests pass
 - acceptance gates pass
 - docs in handbook are updated
+
+

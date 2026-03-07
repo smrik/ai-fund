@@ -6,11 +6,11 @@ import sys
 sys.path.insert(0, ".")
 
 from config import LLM_MODEL
-from src.agents.base_agent import BaseAgent
-from src.agents.valuation_agent import ValuationAgent
-from src.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
-from src.templates.ic_memo import ICMemo, ValuationRange
-from src.data.market_data import get_market_data
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_03_judgment.valuation_agent import ValuationAgent
+from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
+from src.stage_02_valuation.templates.ic_memo import ICMemo, ValuationRange
+from src.stage_00_data.market_data import get_market_data
 
 print("Testing imports...")
 print(f"  config: LLM_MODEL = {LLM_MODEL}")
@@ -73,8 +73,8 @@ def test_reverse_dcf_returns_plausible_growth():
     import sys
     import os
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from src.valuation.batch_runner import reverse_dcf
-    from src.templates.dcf_model import DCFAssumptions, run_dcf
+    from src.stage_02_valuation.batch_runner import reverse_dcf
+    from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf
 
     rev = 10e9
     assumptions = DCFAssumptions(

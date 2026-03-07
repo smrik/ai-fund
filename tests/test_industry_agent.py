@@ -9,9 +9,9 @@ import pytest
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import db.schema as schema
-import src.agents.base_agent as base_agent_module
-from src.agents.base_agent import BaseAgent
-from src.agents.industry_agent import IndustryAgent
+import src.stage_03_judgment.base_agent as base_agent_module
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_03_judgment.industry_agent import IndustryAgent
 
 
 @pytest.fixture

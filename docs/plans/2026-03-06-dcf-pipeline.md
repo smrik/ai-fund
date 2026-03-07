@@ -17,20 +17,20 @@ codex exec -m gpt-5-codex -s workspace-write -c model_reasoning_effort=high "<ta
 
 ## Sprint 1: Deterministic Engine Hardening
 **Unblocked. No CIQ, no LLM. Run on current Stage 1 survivors.**
-**Done when:** `python -m src.valuation.batch_runner` produces output with 3yr data, reverse DCF column, TV% flag, and zero silent failures on 95%+ of tickers.
+**Done when:** `python -m src.stage_02_valuation.batch_runner` produces output with 3yr data, reverse DCF column, TV% flag, and zero silent failures on 95%+ of tickers.
 
 ---
 
 ### Task 1.1: Historical financials pull
 
 **Files:**
-- Modify: `src/data/market_data.py`
+- Modify: `src/stage_00_data/market_data.py`
 - Create: `tests/test_market_data.py`
 
 **Step 1: Write the failing test**
 ```python
 # tests/test_market_data.py
-from src.data.market_data import get_historical_financials
+from src.stage_00_data.market_data import get_historical_financials
 
 def test_historical_financials_returns_three_years():
     result = get_historical_financials("MSFT")
@@ -62,7 +62,7 @@ pytest tests/test_market_data.py -v
 
 **Step 3: Implement**
 
-Add to `src/data/market_data.py`:
+Add to `src/stage_00_data/market_data.py`:
 ```python
 def get_historical_financials(ticker: str) -> dict:
     """
@@ -158,14 +158,14 @@ pytest tests/test_market_data.py -v
 
 **Step 5: Commit**
 ```bash
-git add src/data/market_data.py tests/test_market_data.py
+git add src/stage_00_data/market_data.py tests/test_market_data.py
 git commit -m "feat: add get_historical_financials with 3yr CAGR and averages"
 ```
 
 **Codex alternative:**
 ```bash
 codex exec -m gpt-5-codex -s workspace-write \
-  "Add get_historical_financials(ticker) to src/data/market_data.py. \
+  "Add get_historical_financials(ticker) to src/stage_00_data/market_data.py. \
    Pull 3yr annual revenue, op income, capex, D&A, NWC from yf.Ticker.financials/.cashflow/.balance_sheet. \
    Return dict with raw series + derived: revenue_cagr_3yr, op_margin_avg_3yr, capex_pct_avg_3yr, \
    da_pct_avg_3yr, nwc_pct_avg_3yr, effective_tax_rate_avg. \
@@ -177,13 +177,13 @@ codex exec -m gpt-5-codex -s workspace-write \
 ### Task 1.2: Wire historical data into batch_runner assumptions
 
 **Files:**
-- Modify: `src/valuation/batch_runner.py:127-178` (value_single_ticker)
+- Modify: `src/stage_02_valuation/batch_runner.py:127-178` (value_single_ticker)
 - Modify: `tests/test_valuation_pipeline.py`
 
 **Step 1: Write failing test**
 ```python
 # tests/test_valuation_pipeline.py
-from src.valuation.batch_runner import value_single_ticker
+from src.stage_02_valuation.batch_runner import value_single_ticker
 
 def test_value_single_ticker_uses_3yr_cagr_not_ttm():
     result = value_single_ticker("MSFT")
@@ -210,7 +210,7 @@ def test_data_quality_score_between_0_and_1():
 pytest tests/test_valuation_pipeline.py::test_value_single_ticker_uses_3yr_cagr_not_ttm -v
 ```
 
-**Step 3: Update `value_single_ticker` in `src/valuation/batch_runner.py`**
+**Step 3: Update `value_single_ticker` in `src/stage_02_valuation/batch_runner.py`**
 
 Replace lines 133–178 with:
 ```python
@@ -295,7 +295,7 @@ pytest tests/test_valuation_pipeline.py -v
 
 **Step 5: Commit**
 ```bash
-git add src/valuation/batch_runner.py tests/test_valuation_pipeline.py
+git add src/stage_02_valuation/batch_runner.py tests/test_valuation_pipeline.py
 git commit -m "feat: use 3yr historical financials for DCF assumptions with audit trail"
 ```
 
@@ -304,7 +304,7 @@ git commit -m "feat: use 3yr historical financials for DCF assumptions with audi
 ### Task 1.3: Add reverse DCF and TV% warning to batch output
 
 **Files:**
-- Modify: `src/valuation/batch_runner.py` (value_single_ticker return dict + export_to_excel)
+- Modify: `src/stage_02_valuation/batch_runner.py` (value_single_ticker return dict + export_to_excel)
 
 **Step 1: Write failing test**
 ```python
@@ -381,7 +381,7 @@ pytest tests/test_valuation_pipeline.py -v
 
 **Step 5: Commit**
 ```bash
-git add src/valuation/batch_runner.py tests/test_valuation_pipeline.py
+git add src/stage_02_valuation/batch_runner.py tests/test_valuation_pipeline.py
 git commit -m "feat: add reverse DCF implied growth and TV% flag to batch output"
 ```
 
@@ -390,13 +390,13 @@ git commit -m "feat: add reverse DCF implied growth and TV% flag to batch output
 ### Task 1.4: Cost of debt from actuals
 
 **Files:**
-- Modify: `src/data/market_data.py`
-- Modify: `src/valuation/wacc.py` (compute_wacc_from_yfinance)
+- Modify: `src/stage_00_data/market_data.py`
+- Modify: `src/stage_02_valuation/wacc.py` (compute_wacc_from_yfinance)
 
 **Step 1: Write failing test**
 ```python
 # tests/test_wacc.py
-from src.valuation.wacc import compute_wacc_from_yfinance
+from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
 
 def test_wacc_uses_derived_cost_of_debt():
     result = compute_wacc_from_yfinance("JPM")  # High debt company
@@ -407,7 +407,7 @@ def test_wacc_uses_derived_cost_of_debt():
 
 **Step 2: Add interest expense to `get_market_data` and `get_historical_financials`**
 
-In `src/data/market_data.py`, add to `get_market_data` return dict:
+In `src/stage_00_data/market_data.py`, add to `get_market_data` return dict:
 ```python
         "interest_expense": info.get("interestExpense"),
 ```
@@ -428,11 +428,11 @@ And to the return dict:
 
 **Step 3: Use derived cost of debt in `compute_wacc_from_yfinance`**
 
-In `src/valuation/wacc.py`, update `compute_wacc_from_yfinance`:
+In `src/stage_02_valuation/wacc.py`, update `compute_wacc_from_yfinance`:
 ```python
     hist = None
     try:
-        from src.data.market_data import get_historical_financials
+        from src.stage_00_data.market_data import get_historical_financials
         hist = get_historical_financials(ticker)
     except Exception:
         pass
@@ -463,7 +463,7 @@ pytest tests/test_wacc.py tests/test_market_data.py -v
 
 **Step 5: Commit**
 ```bash
-git add src/data/market_data.py src/valuation/wacc.py tests/test_wacc.py
+git add src/stage_00_data/market_data.py src/stage_02_valuation/wacc.py tests/test_wacc.py
 git commit -m "feat: derive cost of debt from interest expense / total debt"
 ```
 
@@ -473,7 +473,7 @@ git commit -m "feat: derive cost of debt from interest expense / total debt"
 
 **Step 1: Run full batch on Stage 1 universe**
 ```bash
-python -m src.valuation.batch_runner --top 50
+python -m src.stage_02_valuation.batch_runner --top 50
 ```
 
 **Step 2: Verify acceptance gates**
@@ -735,13 +735,13 @@ git commit -m "feat: load_ciq_csv normalizes headers and upserts to SQLite"
 ### Task 3.1: EDGAR 10-K text fetch
 
 **Files:**
-- Modify: `src/data/edgar_client.py`
+- Modify: `src/stage_00_data/edgar_client.py`
 - Create: `tests/test_edgar_client.py`
 
 **Step 1: Write failing test**
 ```python
 # tests/test_edgar_client.py
-from src.data.edgar_client import get_latest_10k_text, get_10k_sections
+from src.stage_00_data.edgar_client import get_latest_10k_text, get_10k_sections
 
 def test_get_latest_10k_returns_text():
     text = get_latest_10k_text("AAPL")
@@ -757,7 +757,7 @@ def test_get_10k_sections_returns_mda_and_risk():
 
 **Step 2: Implement**
 
-Read current `src/data/edgar_client.py` first, then add:
+Read current `src/stage_00_data/edgar_client.py` first, then add:
 ```python
 import requests
 import re
@@ -868,7 +868,7 @@ pytest tests/test_edgar_client.py -v
 
 **Step 4: Commit**
 ```bash
-git add src/data/edgar_client.py tests/test_edgar_client.py
+git add src/stage_00_data/edgar_client.py tests/test_edgar_client.py
 git commit -m "feat: EDGAR 10-K text fetch with MD&A and risk factor extraction"
 ```
 
@@ -877,13 +877,13 @@ git commit -m "feat: EDGAR 10-K text fetch with MD&A and risk factor extraction"
 ### Task 3.2: Quality of Earnings Agent
 
 **Files:**
-- Create: `src/agents/qoe_agent.py`
+- Create: `src/stage_03_judgment/qoe_agent.py`
 - Create: `tests/test_qoe_agent.py`
 
 **Step 1: Write failing test**
 ```python
 # tests/test_qoe_agent.py
-from src.agents.qoe_agent import QoEAgent, QoEResult
+from src.stage_03_judgment.qoe_agent import QoEAgent, QoEResult
 
 def test_qoe_agent_returns_result_schema():
     agent = QoEAgent()
@@ -901,7 +901,7 @@ def test_qoe_result_has_adjustment_magnitude():
     assert -0.15 <= result.margin_adjustment <= 0.15
 ```
 
-**Step 2: Create `src/agents/qoe_agent.py`**
+**Step 2: Create `src/stage_03_judgment/qoe_agent.py`**
 ```python
 """
 Quality of Earnings Agent.
@@ -918,9 +918,9 @@ import json
 from dataclasses import dataclass, field
 from anthropic import Anthropic
 
-from src.agents.base_agent import BaseAgent
-from src.data import market_data as md_client
-from src.data.edgar_client import get_10k_sections
+from src.stage_03_judgment.base_agent import BaseAgent
+from src.stage_00_data import market_data as md_client
+from src.stage_00_data.edgar_client import get_10k_sections
 
 
 @dataclass
@@ -1067,7 +1067,7 @@ pytest tests/test_qoe_agent.py -v
 
 **Step 4: Commit**
 ```bash
-git add src/agents/qoe_agent.py tests/test_qoe_agent.py
+git add src/stage_03_judgment/qoe_agent.py tests/test_qoe_agent.py
 git commit -m "feat: Quality of Earnings agent — normalize EBIT from 10-K footnotes"
 ```
 
@@ -1076,14 +1076,14 @@ git commit -m "feat: Quality of Earnings agent — normalize EBIT from 10-K foot
 ### Task 3.3: Wire QoE into batch_runner (optional flag)
 
 **Files:**
-- Modify: `src/valuation/batch_runner.py`
+- Modify: `src/stage_02_valuation/batch_runner.py`
 
 Add `--qoe` flag: when set, run QoE agent before computing DCF and use `adjusted_ebit_margin` instead of raw margin.
 
 ```python
 # In value_single_ticker, after margin derivation:
 if use_qoe:
-    from src.agents.qoe_agent import QoEAgent
+    from src.stage_03_judgment.qoe_agent import QoEAgent
     qoe = QoEAgent().analyze(ticker)
     if qoe.margin_adjustment != 0:
         ebit_margin = qoe.adjusted_ebit_margin
@@ -1105,12 +1105,12 @@ git commit -m "feat: --qoe flag wires QoE agent into batch_runner margin assumpt
 ### Task 4.1: Comps Matching Agent
 
 **Files:**
-- Create: `src/agents/comps_agent.py`
+- Create: `src/stage_03_judgment/comps_agent.py`
 - Create: `tests/test_comps_agent.py`
 
 **Step 1: Write failing test**
 ```python
-from src.agents.comps_agent import CompsAgent, CompsResult
+from src.stage_03_judgment.comps_agent import CompsAgent, CompsResult
 
 def test_comps_agent_returns_ranked_peers():
     # Requires CIQ data in DB for these tickers
@@ -1127,7 +1127,7 @@ def test_comps_agent_returns_ranked_peers():
         assert 0 <= peer["similarity_score"] <= 1
 ```
 
-**Step 2: Create `src/agents/comps_agent.py`**
+**Step 2: Create `src/stage_03_judgment/comps_agent.py`**
 
 See pattern from `qoe_agent.py`. Agent:
 - Takes target ticker + CIQ peer list (~50 tickers)
@@ -1152,13 +1152,13 @@ git commit -m "feat: Comps Matching agent scores CIQ peers by business similarit
 ### Task 5.1: Industry Research Agent + weekly cache
 
 **Files:**
-- Create: `src/agents/industry_agent.py`
+- Create: `src/stage_03_judgment/industry_agent.py`
 - Create: `data/industry_cache/` (output dir)
 - Create: `tests/test_industry_agent.py`
 
 **Step 1: Write failing test**
 ```python
-from src.agents.industry_agent import IndustryAgent, IndustryReport
+from src.stage_03_judgment.industry_agent import IndustryAgent, IndustryReport
 
 def test_industry_agent_returns_report():
     agent = IndustryAgent()
@@ -1199,12 +1199,12 @@ git commit -m "feat: Industry Research agent with weekly sector cache"
 ### Task 6.1: Scenario Agent
 
 **Files:**
-- Create: `src/agents/scenario_agent.py`
+- Create: `src/stage_03_judgment/scenario_agent.py`
 - Create: `tests/test_scenario_agent.py`
 
 **Step 1: Write failing test**
 ```python
-from src.agents.scenario_agent import ScenarioAgent, ScenarioSet
+from src.stage_03_judgment.scenario_agent import ScenarioAgent, ScenarioSet
 
 def test_scenario_agent_returns_named_scenarios():
     agent = ScenarioAgent()
@@ -1244,19 +1244,19 @@ Each sprint can be handed to Codex CLI. Use this pattern:
 # Sprint 1 — deterministic, safe to give workspace-write access
 codex exec -m gpt-5-codex -s workspace-write \
   "Implement Task 1.1 from docs/plans/2026-03-06-dcf-pipeline.md. \
-   Add get_historical_financials() to src/data/market_data.py. \
+   Add get_historical_financials() to src/stage_00_data/market_data.py. \
    Write tests first in tests/test_market_data.py. \
    Run tests before committing."
 
 # Sprint 3 — agent code, reads API
 codex exec -m gpt-5-codex -s workspace-write \
   "Implement Task 3.2 from docs/plans/2026-03-06-dcf-pipeline.md. \
-   Create src/agents/qoe_agent.py using the Anthropic SDK. \
+   Create src/stage_03_judgment/qoe_agent.py using the Anthropic SDK. \
    Follow the exact QoEResult dataclass schema in the plan."
 
 # Analysis / review tasks
 codex exec -m gpt-5 -s read-only \
-  "Review src/valuation/batch_runner.py and src/data/market_data.py. \
+  "Review src/stage_02_valuation/batch_runner.py and src/stage_00_data/market_data.py. \
    List every place where a sector default is used instead of actual data. \
    Output a table: location, what's hardcoded, what should replace it."
 ```
@@ -1287,3 +1287,5 @@ Sprint 6 (Scenario agent)              ← unblocked, runs parallel to Sprint 2
 | 4 | Comps agent selects 5-10 peers, WACC changes vs self-beta on 5 test tickers |
 | 5 | Industry cache populated for all 8 sectors, growth rates within published ranges |
 | 6 | Scenario agent names match actual business risks, probabilities sum to ~1.0 |
+
+

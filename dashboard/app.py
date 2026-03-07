@@ -63,7 +63,7 @@ if run_btn and ticker_input:
             placeholders[s].markdown(f"⏳ {s}")
 
         try:
-            from src.pipeline.orchestrator import PipelineOrchestrator
+            from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
 
             class StreamingOrchestrator(PipelineOrchestrator):
                 """Orchestrator that updates Streamlit status as it runs."""
@@ -78,8 +78,8 @@ if run_btn and ticker_input:
                     placeholders[step_name].markdown(msg)
 
                 def run(self, ticker: str):
-                    from src.data import market_data as md_client
-                    from src.templates.ic_memo import (
+                    from src.stage_00_data import market_data as md_client
+                    from src.stage_02_valuation.templates.ic_memo import (
                         FilingsSummary, EarningsSummary,
                         ValuationRange, SentimentOutput, RiskOutput, ICMemo,
                     )

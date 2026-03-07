@@ -228,7 +228,7 @@ def compute_wacc_from_yfinance(
         hist: Pre-fetched result of get_historical_financials(ticker). If None, fetches it.
               Pass this when the caller already has historical data to avoid a double fetch.
     """
-    from src.data import market_data as md_client
+    from src.stage_00_data import market_data as md_client
 
     # Fetch target data
     mkt = md_client.get_market_data(ticker)

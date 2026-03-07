@@ -11,7 +11,7 @@ See [`docs/plans/2026-03-06-dcf-pipeline.md`](../../plans/2026-03-06-dcf-pipelin
 
 ## Tasks
 
-- [ ] Task 1.1 — `get_historical_financials()` in `src/data/market_data.py`
+- [ ] Task 1.1 — `get_historical_financials()` in `src/stage_00_data/market_data.py`
 - [ ] Task 1.2 — Wire 3yr data into `batch_runner.py` assumptions + audit columns
 - [ ] Task 1.3 — Reverse DCF + TV% warning in batch output
 - [ ] Task 1.4 — Derived cost of debt in `wacc.py`
@@ -22,3 +22,4 @@ See [`docs/plans/2026-03-06-dcf-pipeline.md`](../../plans/2026-03-06-dcf-pipelin
 - 2026-03-06: Sector-specific defaults confirmed as the right approach (not uniform). See `batch_runner.SECTOR_ASSUMPTIONS`.
 - 2026-03-06: Margin trajectory (expansion modeling) deferred to Sprint 3 (QoE agent). Flat margin for now.
 - 2026-03-06: NWC change derived from balance sheet actuals (not hardcoded 1%) in Task 1.2.
+

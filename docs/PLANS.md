@@ -23,3 +23,4 @@ None yet.
 ## Full Implementation Detail
 
 [`plans/2026-03-06-dcf-pipeline.md`](./plans/2026-03-06-dcf-pipeline.md) — complete task-by-task plan with code, tests, and Codex exec commands for all sprints.
+

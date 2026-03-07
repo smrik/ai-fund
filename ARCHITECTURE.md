@@ -28,12 +28,12 @@
 
 ## Package Map
 
-### Data Layer (`src/data/`, `ciq/`, `ibkr/`)
+### Data Layer (`src/stage_00_data/`, `ciq/`, `ibkr/`)
 
 | Module | Purpose | Data source |
 |---|---|---|
-| `src/data/market_data.py` | Price, TTM financials, multiples, 3yr historical | yfinance |
-| `src/data/edgar_client.py` | 10-K/10-Q filing text, MD&A, risk factors | SEC EDGAR API |
+| `src/stage_00_data/market_data.py` | Price, TTM financials, multiples, 3yr historical | yfinance |
+| `src/stage_00_data/edgar_client.py` | 10-K/10-Q filing text, MD&A, risk factors | SEC EDGAR API |
 | `ciq/ciq_refresh.py` | Fundamental data refresh via Excel plugin | Capital IQ |
 | `ibkr/` | Live prices, positions, execution | Interactive Brokers TWS |
 | `db/` | SQLite persistence, schema, loader, queries | Local |
@@ -44,15 +44,15 @@
 - EDGAR: pulled per filing event, cached in `data/edgar/`
 - IBKR: real-time during market hours (Phase 3)
 
-### Computation Layer (`src/valuation/`, `src/templates/`, `screening/`)
+### Computation Layer (`src/stage_01_screening/`, `src/stage_02_valuation/`)
 
 | Module | Purpose |
 |---|---|
-| `src/templates/dcf_model.py` | 10-year DCF, bear/base/bull scenarios |
-| `src/valuation/wacc.py` | CAPM + Hamada unlevering/relevering, size premia |
-| `src/valuation/batch_runner.py` | Rank full universe by DCF upside |
-| `screening/stage1_filter.py` | MCap/ROE/volume screen → ~300 survivors |
-| `screening/stage2_filter.py` | CIQ deep screen → ~50 names for active research |
+| `src/stage_02_valuation/templates/dcf_model.py` | 10-year DCF, bear/base/bull scenarios |
+| `src/stage_02_valuation/wacc.py` | CAPM + Hamada unlevering/relevering, size premia |
+| `src/stage_02_valuation/batch_runner.py` | Rank full universe by DCF upside |
+| `src/stage_01_screening/stage1_filter.py` | MCap/ROE/volume screen → ~300 survivors |
+| `src/stage_01_screening/stage2_filter.py` | CIQ deep screen → ~50 names for active research |
 
 **Computation rules:**
 - All monetary values in absolute USD (not millions) inside functions; converted for display only
@@ -60,7 +60,7 @@
 - Every output record includes `assumption_source_*` audit fields
 - WACC uses Damodaran ERP (5.0%) and Duff & Phelps size premia — update annually
 
-### Judgment Layer (`src/agents/`)
+### Judgment Layer (`src/stage_03_judgment/`)
 
 | Agent | Model | Frequency | Blocking? |
 |---|---|---|---|
@@ -69,15 +69,15 @@
 | `industry_agent.py` | claude-sonnet-4-6 | Weekly per sector | No — cached, consumed by batch runner |
 | `scenario_agent.py` | claude-sonnet-4-6 | Per ticker + news | No — replaces generic DCF scalars |
 
-All agents inherit from `src/agents/base_agent.py`.
+All agents inherit from `src/stage_03_judgment/base_agent.py`.
 All agents return typed dataclasses — no raw dict outputs that leak into the compute layer.
 
-### Orchestration (`pipeline/`)
+### Orchestration (`src/stage_04_pipeline/`)
 
 | Script | Schedule | What it does |
 |---|---|---|
-| `pipeline/daily_refresh.py` | 6:00 AM weekdays | Prices → positions → risk report |
-| `screening/stage1_filter.py` | Sunday 6 PM | Full universe screen |
+| `src/stage_04_pipeline/daily_refresh.py` | 6:00 AM weekdays | Prices → positions → risk report |
+| `src/stage_01_screening/stage1_filter.py` | Sunday 6 PM | Full universe screen |
 | `ciq/ciq_refresh.py` | Sunday 6 PM (after Stage 1) | CIQ data refresh → DB |
 
 ---
@@ -87,18 +87,18 @@ All agents return typed dataclasses — no raw dict outputs that leak into the c
 Allowed imports (enforced by convention, to be enforced by linter):
 
 ```
-src/agents/     → src/data/, src/templates/, src/valuation/ (read-only)
-src/valuation/  → src/data/, src/templates/
-src/templates/  → nothing (pure computation)
-src/data/       → nothing (external APIs only)
-screening/      → src/data/, db/
-pipeline/       → src/valuation/, src/agents/, src/data/, db/
+src/stage_03_judgment/     → src/stage_00_data/, src/stage_02_valuation/templates/, src/stage_02_valuation/ (read-only)
+src/stage_02_valuation/  → src/stage_00_data/, src/stage_02_valuation/templates/
+src/stage_02_valuation/templates/  → nothing (pure computation)
+src/stage_00_data/       → nothing (external APIs only)
+src/stage_01_screening/      → src/stage_00_data/, db/
+src/stage_04_pipeline/       → src/stage_02_valuation/, src/stage_03_judgment/, src/stage_00_data/, db/
 ```
 
 **Never allowed:**
-- `src/data/` importing from `src/agents/`
-- `src/valuation/` importing from `src/agents/`
-- `src/templates/` importing from anywhere in `src/`
+- `src/stage_00_data/` importing from `src/stage_03_judgment/`
+- `src/stage_02_valuation/` importing from `src/stage_03_judgment/`
+- `src/stage_02_valuation/templates/` importing from anywhere in `src/`
 
 ---
 

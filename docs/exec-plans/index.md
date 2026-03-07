@@ -11,3 +11,4 @@
 ## Completed
 
 Move completed sprint execution notes into `docs/exec-plans/completed/`.
+

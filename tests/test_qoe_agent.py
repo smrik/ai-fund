@@ -4,8 +4,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.data import edgar_client
-from src.agents.qoe_agent import QoEAgent
+from src.stage_00_data import edgar_client
+from src.stage_03_judgment.qoe_agent import QoEAgent
 
 
 def _assert_qoe_schema(payload: dict) -> None:
@@ -88,7 +88,7 @@ def test_qoe_agent_analyze_parses_json_response(monkeypatch):
         self.tools = []
         self.tool_handlers = {}
 
-    monkeypatch.setattr("src.agents.qoe_agent.BaseAgent.__init__", fake_base_init)
+    monkeypatch.setattr("src.stage_03_judgment.qoe_agent.BaseAgent.__init__", fake_base_init)
     agent = QoEAgent()
 
     response = {
@@ -125,8 +125,8 @@ def test_qoe_agent_analyze_fallback_when_response_is_invalid(monkeypatch):
         self.tools = []
         self.tool_handlers = {}
 
-    monkeypatch.setattr("src.agents.qoe_agent.BaseAgent.__init__", fake_base_init)
-    monkeypatch.setattr("src.agents.qoe_agent.edgar_client.get_10k_text", lambda ticker: None)
+    monkeypatch.setattr("src.stage_03_judgment.qoe_agent.BaseAgent.__init__", fake_base_init)
+    monkeypatch.setattr("src.stage_03_judgment.qoe_agent.edgar_client.get_10k_text", lambda ticker: None)
 
     agent = QoEAgent()
     monkeypatch.setattr(agent, "run", lambda prompt: "not-json")
