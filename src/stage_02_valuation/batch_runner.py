@@ -1,34 +1,17 @@
 """
-Batch Valuation Runner — ranks Stage 1 survivors by DCF upside.
-
-Runs a deterministic WACC + DCF on every ticker in the universe.
-No LLM — all assumptions derived from financial data.
-
-Output:
-  1. SQLite snapshot (data/alpha_pod.db, table: batch_valuations_latest)
-  2. CSV file (data/valuations/latest.csv) for Excel/Power Query
-  3. Optional Excel workbook (data/valuations/batch_valuation_YYYY-MM-DD.xlsx)
-     - Summary tab: ranked by upside, filterable
-     - WACC tab: full CAPM audit trail for each ticker
-     - DCF tab: assumption details and sensitivity
-  4. Terminal: top 30 ranked by base-case upside
-
-Usage:
-    python -m src.stage_02_valuation.batch_runner
-    python -m src.stage_02_valuation.batch_runner --top 50
-    python -m src.stage_02_valuation.batch_runner --xlsx
-    python -m src.stage_02_valuation.batch_runner --ticker HALO   # Single ticker deep dive
+Batch Valuation Runner — deterministic professional DCF with lineage and audit exports.
 """
 
 from __future__ import annotations
 
-import sys
 import csv
-import time
 import json
 import sqlite3
-from pathlib import Path
+import sys
+import time
+from dataclasses import asdict, replace
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 
@@ -36,99 +19,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from config import DB_PATH
 from src.stage_00_data import market_data as md_client
-from src.stage_00_data.ciq_adapter import get_ciq_snapshot
-from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
-from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
+from src.stage_02_valuation.input_assembler import build_valuation_inputs
+from src.stage_02_valuation.professional_dcf import (
+    ForecastDrivers,
+    ScenarioSpec,
+    default_scenario_specs,
+    run_dcf_professional,
+    run_probabilistic_valuation,
+)
+from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf
 
 
-# ── Paths ──────────────────────────────────────────────
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
-CACHE_DIR = ROOT_DIR / "data" / "cache"
-
-
-# ── Sector-based assumption defaults ──────────────────
-# These are starting points — the whole point is to review and adjust
-SECTOR_ASSUMPTIONS = {
-    "Technology": {
-        "revenue_growth_near": 0.15,
-        "revenue_growth_mid": 0.10,
-        "ebit_margin_override": None,  # Use actual if available
-        "exit_multiple": 20.0,
-        "capex_pct": 0.06,
-        "da_pct": 0.04,
-    },
-    "Healthcare": {
-        "revenue_growth_near": 0.12,
-        "revenue_growth_mid": 0.08,
-        "ebit_margin_override": None,
-        "exit_multiple": 18.0,
-        "capex_pct": 0.05,
-        "da_pct": 0.04,
-    },
-    "Industrials": {
-        "revenue_growth_near": 0.08,
-        "revenue_growth_mid": 0.05,
-        "ebit_margin_override": None,
-        "exit_multiple": 14.0,
-        "capex_pct": 0.05,
-        "da_pct": 0.04,
-    },
-    "Consumer Cyclical": {
-        "revenue_growth_near": 0.10,
-        "revenue_growth_mid": 0.06,
-        "ebit_margin_override": None,
-        "exit_multiple": 14.0,
-        "capex_pct": 0.04,
-        "da_pct": 0.03,
-    },
-    "Consumer Defensive": {
-        "revenue_growth_near": 0.06,
-        "revenue_growth_mid": 0.04,
-        "ebit_margin_override": None,
-        "exit_multiple": 15.0,
-        "capex_pct": 0.04,
-        "da_pct": 0.03,
-    },
-    "Energy": {
-        "revenue_growth_near": 0.05,
-        "revenue_growth_mid": 0.03,
-        "ebit_margin_override": None,
-        "exit_multiple": 10.0,
-        "capex_pct": 0.08,
-        "da_pct": 0.06,
-    },
-    "Basic Materials": {
-        "revenue_growth_near": 0.06,
-        "revenue_growth_mid": 0.04,
-        "ebit_margin_override": None,
-        "exit_multiple": 11.0,
-        "capex_pct": 0.06,
-        "da_pct": 0.05,
-    },
-    "Communication Services": {
-        "revenue_growth_near": 0.10,
-        "revenue_growth_mid": 0.06,
-        "ebit_margin_override": None,
-        "exit_multiple": 16.0,
-        "capex_pct": 0.05,
-        "da_pct": 0.04,
-    },
-    "_default": {
-        "revenue_growth_near": 0.08,
-        "revenue_growth_mid": 0.05,
-        "ebit_margin_override": None,
-        "exit_multiple": 14.0,
-        "capex_pct": 0.05,
-        "da_pct": 0.04,
-    },
-}
-
-
-def _get_sector_defaults(sector: str) -> dict:
-    """Get sector-specific assumption defaults."""
-    return SECTOR_ASSUMPTIONS.get(sector, SECTOR_ASSUMPTIONS["_default"])
 
 
 def reverse_dcf(
@@ -142,12 +46,7 @@ def reverse_dcf(
     tol: float = 0.001,
     max_iter: int = 50,
 ) -> float | None:
-    """
-    Binary search for the near-term revenue growth rate that makes
-    base-case intrinsic value equal to target_price.
-
-    Returns the implied growth rate, or None if it falls outside [low, high].
-    """
+    """Binary search implied near-term revenue growth for a simple DCF target price."""
 
     def _iv(g: float) -> float:
         a = DCFAssumptions(
@@ -166,7 +65,6 @@ def reverse_dcf(
         )
         return run_dcf(revenue, a).intrinsic_value_per_share
 
-    # Check if target is achievable within [low, high]
     try:
         iv_low = _iv(low)
         iv_high = _iv(high)
@@ -174,7 +72,7 @@ def reverse_dcf(
         return None
 
     if target_price < iv_low or target_price > iv_high:
-        return None  # Out of search range
+        return None
 
     for _ in range(max_iter):
         mid = (low + high) / 2
@@ -189,305 +87,7 @@ def reverse_dcf(
     return round((low + high) / 2, 4)
 
 
-def value_single_ticker(ticker: str) -> dict | None:
-    """
-    Run full WACC + DCF valuation for a single ticker.
-    Returns dict with all valuation data, or None if data insufficient.
-    """
-    try:
-        # 1. Fetch market data + CIQ snapshot (if available)
-        mkt = md_client.get_market_data(ticker)
-        hist = md_client.get_historical_financials(ticker)
-        ciq = get_ciq_snapshot(ticker)
-
-        price = mkt.get("current_price")
-        if not price or price <= 0:
-            return None
-
-        # Revenue base for DCF: CIQ first, then yfinance
-        rev_ciq = ciq.get("revenue_ttm") if ciq else None
-        rev_yf = mkt.get("revenue_ttm")
-        if rev_ciq and rev_ciq > 0:
-            rev = rev_ciq
-            revenue_source = "ciq"
-        elif rev_yf and rev_yf > 0:
-            rev = rev_yf
-            revenue_source = "yfinance"
-        else:
-            return None
-
-        sector = mkt.get("sector", "")
-        defaults = _get_sector_defaults(sector)
-
-        # 2. Compute WACC (deterministic yfinance pipeline)
-        wacc_result = compute_wacc_from_yfinance(ticker, hist=hist)
-
-        # 3. Derive assumptions with CIQ precedence and deterministic fallbacks
-        op_margin_ttm = mkt.get("operating_margin")
-        ciq_op_margin = None
-        if ciq:
-            ciq_op_margin = ciq.get("op_margin_avg_3yr") or ciq.get("ebit_margin")
-
-        if ciq_op_margin and 0 < ciq_op_margin < 0.8:
-            ebit_margin = ciq_op_margin
-            ebit_margin_source = "ciq"
-        elif hist.get("op_margin_avg_3yr") and hist["op_margin_avg_3yr"] > 0:
-            ebit_margin = hist["op_margin_avg_3yr"]
-            ebit_margin_source = "yfinance"
-        elif op_margin_ttm and op_margin_ttm > 0:
-            ebit_margin = op_margin_ttm
-            ebit_margin_source = "yfinance"
-        else:
-            ebit_margin = defaults["ebit_margin_override"] or 0.15
-            ebit_margin_source = "default"
-
-        rev_growth_ciq = ciq.get("revenue_cagr_3yr") if ciq else None
-        rev_growth_hist = hist.get("revenue_cagr_3yr")
-        rev_growth_ttm = mkt.get("revenue_growth")
-        if rev_growth_ciq is not None and rev_growth_ciq > -0.10:
-            growth_near = max(min(rev_growth_ciq, 0.30), 0.02)
-            growth_source = "ciq"
-        elif rev_growth_hist is not None and rev_growth_hist > -0.10:
-            growth_near = max(min(rev_growth_hist, 0.30), 0.02)
-            growth_source = "yfinance"
-        elif rev_growth_ttm and rev_growth_ttm > -0.10:
-            growth_near = max(min(rev_growth_ttm, 0.30), 0.02)
-            growth_source = "yfinance"
-        else:
-            growth_near = defaults["revenue_growth_near"]
-            growth_source = "default"
-        growth_mid = growth_near * 0.65
-
-        capex_pct_ciq = ciq.get("capex_pct_avg_3yr") if ciq else None
-        capex_pct_hist = hist.get("capex_pct_avg_3yr")
-        if capex_pct_ciq and 0.01 <= capex_pct_ciq <= 0.25:
-            capex_pct = capex_pct_ciq
-            capex_source = "ciq"
-        elif capex_pct_hist and 0.01 <= capex_pct_hist <= 0.25:
-            capex_pct = capex_pct_hist
-            capex_source = "yfinance"
-        else:
-            capex_pct = defaults["capex_pct"]
-            capex_source = "default"
-
-        da_pct_ciq = ciq.get("da_pct_avg_3yr") if ciq else None
-        da_pct_hist = hist.get("da_pct_avg_3yr")
-        if da_pct_ciq and 0.005 <= da_pct_ciq <= 0.20:
-            da_pct = da_pct_ciq
-            da_source = "ciq"
-        elif da_pct_hist and 0.005 <= da_pct_hist <= 0.20:
-            da_pct = da_pct_hist
-            da_source = "yfinance"
-        else:
-            da_pct = defaults["da_pct"]
-            da_source = "default"
-
-        tax_rate_ciq = ciq.get("effective_tax_rate_avg") if ciq else None
-        tax_rate_hist = hist.get("effective_tax_rate_avg")
-        if tax_rate_ciq and 0.05 <= tax_rate_ciq <= 0.40:
-            tax_rate = tax_rate_ciq
-            tax_source = "ciq"
-        elif tax_rate_hist and 0.05 <= tax_rate_hist <= 0.40:
-            tax_rate = tax_rate_hist
-            tax_source = "yfinance"
-        else:
-            tax_rate = 0.21
-            tax_source = "default"
-
-        # Net debt and shares with CIQ precedence
-        ciq_debt = ciq.get("total_debt") if ciq else None
-        ciq_cash = ciq.get("cash") if ciq else None
-        if ciq_debt is not None or ciq_cash is not None:
-            net_debt = (ciq_debt or 0) - (ciq_cash or 0)
-            net_debt_source = "ciq"
-        else:
-            net_debt = (mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)
-            net_debt_source = "yfinance"
-
-        if ciq and ciq.get("shares_outstanding") and ciq.get("shares_outstanding") > 0:
-            shares = ciq["shares_outstanding"]
-            shares_source = "ciq"
-        else:
-            shares = mkt.get("shares_outstanding") or 1
-            shares_source = "yfinance"
-
-        # 4. Run DCF
-        assumptions = DCFAssumptions(
-            revenue_growth_near=growth_near,
-            revenue_growth_mid=growth_mid,
-            revenue_growth_terminal=0.03,
-            ebit_margin=ebit_margin,
-            tax_rate=tax_rate,
-            capex_pct_revenue=capex_pct,
-            da_pct_revenue=da_pct,
-            nwc_change_pct_revenue=0.01,
-            wacc=wacc_result.wacc,
-            exit_multiple=defaults["exit_multiple"],
-            net_debt=net_debt,
-            shares_outstanding=shares,
-        )
-
-        scenarios = run_scenario_dcf(rev, assumptions)
-
-        base_iv = scenarios["base"].intrinsic_value_per_share
-        bear_iv = scenarios["bear"].intrinsic_value_per_share
-        bull_iv = scenarios["bull"].intrinsic_value_per_share
-        upside_base = (base_iv / price - 1) if price else 0
-
-        implied_growth = reverse_dcf(
-            revenue=rev,
-            assumptions=assumptions,
-            target_price=price,
-            shares=shares,
-            net_debt=net_debt,
-        )
-
-        display_op_margin = ciq_op_margin or op_margin_ttm
-        display_rev_growth = rev_growth_ciq if rev_growth_ciq is not None else rev_growth_ttm
-
-        return {
-            # Identity
-            "ticker": ticker,
-            "company_name": mkt.get("name", ""),
-            "sector": sector,
-            "industry": mkt.get("industry", ""),
-
-            # Market data
-            "price": round(price, 2),
-            "market_cap_mm": round(mkt.get("market_cap", 0) / 1e6, 0),
-            "ev_mm": round((mkt.get("enterprise_value") or 0) / 1e6, 0),
-            "pe_trailing": mkt.get("pe_trailing"),
-            "pe_forward": mkt.get("pe_forward"),
-            "ev_ebitda": mkt.get("ev_ebitda"),
-
-            # Financials
-            "revenue_mm": round(rev / 1e6, 0),
-            "revenue_source": revenue_source,
-            "op_margin": round(display_op_margin * 100, 1) if display_op_margin is not None else None,
-            "profit_margin": round((mkt.get("profit_margin") or 0) * 100, 1),
-            "rev_growth": round((display_rev_growth or 0) * 100, 1),
-            "fcf_mm": round((mkt.get("free_cashflow") or 0) / 1e6, 0),
-            "net_debt_mm": round(net_debt / 1e6, 0),
-            "net_debt_source": net_debt_source,
-            "shares_source": shares_source,
-            "beta_raw": mkt.get("beta"),
-
-            # WACC
-            "wacc": round(wacc_result.wacc * 100, 2),
-            "cost_of_equity": round(wacc_result.cost_of_equity * 100, 2),
-            "beta_relevered": round(wacc_result.beta_relevered, 2),
-            "beta_unlevered": round(wacc_result.beta_unlevered_median, 2),
-            "size_premium": round(wacc_result.size_premium * 100, 1),
-            "equity_weight": round(wacc_result.equity_weight * 100, 0),
-            "peers_used": ", ".join(wacc_result.peers_used),
-
-            # DCF results
-            "iv_bear": round(bear_iv, 2),
-            "iv_base": round(base_iv, 2),
-            "iv_bull": round(bull_iv, 2),
-            "upside_base_pct": round(upside_base * 100, 1),
-            "upside_bear_pct": round((bear_iv / price - 1) * 100, 1) if price else 0,
-            "upside_bull_pct": round((bull_iv / price - 1) * 100, 1) if price else 0,
-            "margin_of_safety": round((1 - price / base_iv) * 100, 1) if base_iv > 0 else None,
-
-            # Assumptions used (source flags: ciq/yfinance/default)
-            "growth_near": round(growth_near * 100, 1),
-            "growth_mid": round(growth_mid * 100, 1),
-            "growth_source": growth_source,
-            "ebit_margin_used": round(ebit_margin * 100, 1),
-            "ebit_margin_source": ebit_margin_source,
-            "capex_pct_used": round(capex_pct * 100, 2),
-            "capex_source": capex_source,
-            "da_pct_used": round(da_pct * 100, 2),
-            "da_source": da_source,
-            "tax_rate_used": round(tax_rate * 100, 1),
-            "tax_source": tax_source,
-            "exit_multiple_used": defaults["exit_multiple"],
-            "tv_pct_of_ev": round(
-                scenarios["base"].terminal_value / scenarios["base"].enterprise_value * 100, 0
-            ) if scenarios["base"].enterprise_value else None,
-            "implied_growth_pct": round(implied_growth * 100, 1) if implied_growth is not None else None,
-            "tv_high_flag": (
-                True
-                if scenarios["base"].enterprise_value and
-                   scenarios["base"].terminal_value / scenarios["base"].enterprise_value > 0.75
-                else False
-            ),
-
-            # CIQ lineage
-            "ciq_snapshot_used": bool(ciq),
-            "ciq_run_id": ciq.get("run_id") if ciq else None,
-            "ciq_source_file": ciq.get("source_file") if ciq else None,
-            "ciq_as_of_date": ciq.get("as_of_date") if ciq else None,
-
-            # Analyst comparison
-            "analyst_target": mkt.get("analyst_target_mean"),
-            "analyst_recommendation": mkt.get("analyst_recommendation"),
-            "num_analysts": mkt.get("number_of_analysts"),
-        }
-
-    except Exception as e:
-        print(f"  ✗ {ticker}: {e}")
-        return None
-
-
-def export_to_excel(results: list[dict], output_path: Path):
-    """
-    Export valuation results to an Excel workbook with multiple tabs.
-    """
-    df = pd.DataFrame(results)
-
-    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
-        # Tab 1: Summary — the main review sheet
-        summary_cols = [
-            "ticker", "company_name", "sector", "price",
-            "iv_bear", "iv_base", "iv_bull",
-            "upside_base_pct", "margin_of_safety",
-            "market_cap_mm", "pe_trailing", "ev_ebitda",
-            "rev_growth", "op_margin", "wacc",
-            "analyst_target", "analyst_recommendation",
-        ]
-        df_summary = df[[c for c in summary_cols if c in df.columns]].copy()
-        df_summary.sort_values("upside_base_pct", ascending=False, inplace=True)
-        df_summary.to_excel(writer, sheet_name="Summary", index=False)
-
-        # Tab 2: WACC details
-        wacc_cols = [
-            "ticker", "sector", "price", "market_cap_mm",
-            "wacc", "cost_of_equity", "beta_raw", "beta_unlevered",
-            "beta_relevered", "size_premium", "equity_weight",
-            "net_debt_mm", "peers_used",
-        ]
-        df_wacc = df[[c for c in wacc_cols if c in df.columns]].copy()
-        df_wacc.sort_values("ticker", inplace=True)
-        df_wacc.to_excel(writer, sheet_name="WACC Detail", index=False)
-
-        # Tab 3: DCF assumptions — for review and adjustment
-        dcf_cols = [
-            "ticker", "sector", "revenue_mm",
-            "growth_near", "growth_mid", "growth_source",
-            "ebit_margin_used", "ebit_margin_source",
-            "capex_pct_used", "capex_source",
-            "da_pct_used", "da_source",
-            "tax_rate_used", "tax_source",
-            "exit_multiple_used", "wacc",
-            "iv_bear", "iv_base", "iv_bull", "price",
-            "upside_base_pct", "tv_pct_of_ev",
-            "implied_growth_pct", "tv_high_flag",
-            "ciq_snapshot_used", "ciq_run_id", "ciq_source_file", "ciq_as_of_date",
-        ]
-        df_dcf = df[[c for c in dcf_cols if c in df.columns]].copy()
-        df_dcf.sort_values("upside_base_pct", ascending=False, inplace=True)
-        df_dcf.to_excel(writer, sheet_name="DCF Assumptions", index=False)
-
-        # Tab 4: Full data dump
-        df.to_excel(writer, sheet_name="All Data", index=False)
-
-    print(f"✓ Saved to {output_path}")
-
-
 def _safe_float(value):
-    """Convert values to float where possible, preserving None for nulls."""
     if value is None:
         return None
     try:
@@ -501,13 +101,383 @@ def _safe_float(value):
         return None
 
 
-def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int]:
-    """
-    Persist valuation output to SQLite.
+def _scenario_by_name(results: dict, name: str):
+    if name in results:
+        return results[name]
+    if not results:
+        return None
+    return next(iter(results.values()))
 
-    1) Replace full snapshot table: batch_valuations_latest
-    2) Upsert normalized valuation history into valuations table
-    """
+
+def _drivers_from_json(value: str) -> ForecastDrivers | None:
+    if not value:
+        return None
+    try:
+        payload = json.loads(value)
+        return ForecastDrivers(**payload)
+    except Exception:
+        return None
+
+
+def _sensitivity_rows(ticker: str, drivers: ForecastDrivers) -> list[dict]:
+    rows: list[dict] = []
+    base = ScenarioSpec(name="base", probability=1.0)
+
+    for dw in (-0.01, 0.0, 0.01):
+        for dg in (-0.005, 0.0, 0.005):
+            d = replace(
+                drivers,
+                wacc=max(0.03, min(0.20, drivers.wacc + dw)),
+                revenue_growth_terminal=max(0.0, min(0.05, drivers.revenue_growth_terminal + dg)),
+            )
+            result = run_dcf_professional(d, base)
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "grid": "wacc_x_terminal_growth",
+                    "wacc": d.wacc,
+                    "terminal_growth": d.revenue_growth_terminal,
+                    "exit_multiple": d.exit_multiple,
+                    "iv": round(result.intrinsic_value_per_share, 4),
+                }
+            )
+
+    for dw in (-0.01, 0.0, 0.01):
+        for mult in (0.9, 1.0, 1.1):
+            d = replace(
+                drivers,
+                wacc=max(0.03, min(0.20, drivers.wacc + dw)),
+                exit_multiple=max(2.0, min(40.0, drivers.exit_multiple * mult)),
+            )
+            result = run_dcf_professional(d, base)
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "grid": "wacc_x_exit_multiple",
+                    "wacc": d.wacc,
+                    "terminal_growth": d.revenue_growth_terminal,
+                    "exit_multiple": d.exit_multiple,
+                    "iv": round(result.intrinsic_value_per_share, 4),
+                }
+            )
+
+    return rows
+
+
+def value_single_ticker(ticker: str) -> dict | None:
+    try:
+        ticker = ticker.upper().strip()
+        inputs = build_valuation_inputs(ticker)
+        if inputs is None:
+            return None
+
+        mkt = md_client.get_market_data(ticker)
+        price = inputs.current_price
+        lineage = inputs.source_lineage
+        ciq = inputs.ciq_lineage
+        wacc_inputs = inputs.wacc_inputs
+
+        row = {
+            "ticker": ticker,
+            "company_name": inputs.company_name,
+            "sector": inputs.sector,
+            "industry": inputs.industry,
+            "price": round(price, 2),
+            "market_cap_mm": round((mkt.get("market_cap") or 0) / 1e6, 0),
+            "ev_mm": round((mkt.get("enterprise_value") or 0) / 1e6, 0),
+            "pe_trailing": mkt.get("pe_trailing"),
+            "pe_forward": mkt.get("pe_forward"),
+            "ev_ebitda": mkt.get("ev_ebitda"),
+            "revenue_mm": round(inputs.drivers.revenue_base / 1e6, 0),
+            "revenue_source": lineage.get("revenue_base", "default"),
+            "op_margin": round(inputs.drivers.ebit_margin_start * 100, 1),
+            "profit_margin": round((mkt.get("profit_margin") or 0) * 100, 1),
+            "rev_growth": round(inputs.drivers.revenue_growth_near * 100, 1),
+            "fcf_mm": round((mkt.get("free_cashflow") or 0) / 1e6, 0),
+            "net_debt_mm": round(inputs.drivers.net_debt / 1e6, 0),
+            "net_debt_source": lineage.get("net_debt", "default"),
+            "shares_source": lineage.get("shares_outstanding", "default"),
+            "beta_raw": mkt.get("beta"),
+            "wacc": round((wacc_inputs.get("wacc") or inputs.drivers.wacc) * 100, 2),
+            "cost_of_equity": round((wacc_inputs.get("cost_of_equity") or 0) * 100, 2) if wacc_inputs.get("cost_of_equity") is not None else None,
+            "beta_relevered": round((wacc_inputs.get("beta_relevered") or 0), 2) if wacc_inputs.get("beta_relevered") is not None else None,
+            "beta_unlevered": round((wacc_inputs.get("beta_unlevered_median") or 0), 2) if wacc_inputs.get("beta_unlevered_median") is not None else None,
+            "size_premium": round((wacc_inputs.get("size_premium") or 0) * 100, 1) if wacc_inputs.get("size_premium") is not None else None,
+            "equity_weight": round((wacc_inputs.get("equity_weight") or 0) * 100, 0) if wacc_inputs.get("equity_weight") is not None else None,
+            "peers_used": ", ".join(wacc_inputs.get("peers_used") or []),
+            "growth_near": round(inputs.drivers.revenue_growth_near * 100, 1),
+            "growth_mid": round(inputs.drivers.revenue_growth_mid * 100, 1),
+            "growth_source": lineage.get("revenue_growth_near", "default"),
+            "ebit_margin_used": round(inputs.drivers.ebit_margin_start * 100, 1),
+            "ebit_margin_source": lineage.get("ebit_margin_start", "default"),
+            "capex_pct_used": round(inputs.drivers.capex_pct_start * 100, 2),
+            "capex_source": lineage.get("capex_pct_start", "default"),
+            "da_pct_used": round(inputs.drivers.da_pct_start * 100, 2),
+            "da_source": lineage.get("da_pct_start", "default"),
+            "tax_rate_used": round(inputs.drivers.tax_rate_start * 100, 1),
+            "tax_source": lineage.get("tax_rate_start", "default"),
+            "exit_multiple_used": round(inputs.drivers.exit_multiple, 2),
+            "exit_multiple_source": lineage.get("exit_multiple", "default"),
+            "exit_metric_used": inputs.drivers.exit_metric,
+            "model_applicability_status": inputs.model_applicability_status,
+            "ciq_snapshot_used": bool(ciq.get("snapshot_used")),
+            "ciq_run_id": ciq.get("snapshot_run_id"),
+            "ciq_source_file": ciq.get("snapshot_source_file"),
+            "ciq_as_of_date": ciq.get("snapshot_as_of_date"),
+            "ciq_comps_used": bool(ciq.get("comps_used")),
+            "ciq_comps_run_id": ciq.get("comps_run_id"),
+            "ciq_comps_source_file": ciq.get("comps_source_file"),
+            "ciq_comps_as_of_date": ciq.get("comps_as_of_date"),
+            "ciq_peer_count": ciq.get("peer_count"),
+            "peer_median_tev_ebitda_ltm": ciq.get("peer_median_tev_ebitda_ltm"),
+            "peer_median_pe_ltm": ciq.get("peer_median_pe_ltm"),
+            "comps_iv_ev_ebitda": ciq.get("comps_iv_ev_ebitda"),
+            "comps_iv_pe": ciq.get("comps_iv_pe"),
+            "comps_iv_base": ciq.get("comps_iv_base"),
+            "comps_upside_pct": (
+                round(((ciq.get("comps_iv_base") / price) - 1.0) * 100, 1)
+                if ciq.get("comps_iv_base") is not None and price > 0
+                else None
+            ),
+            "analyst_target": mkt.get("analyst_target_mean"),
+            "analyst_recommendation": mkt.get("analyst_recommendation"),
+            "num_analysts": mkt.get("number_of_analysts"),
+            "drivers_json": json.dumps(asdict(inputs.drivers), separators=(",", ":")),
+        }
+
+        if inputs.model_applicability_status != "dcf_applicable":
+            row.update(
+                {
+                    "iv_bear": None,
+                    "iv_base": None,
+                    "iv_bull": None,
+                    "expected_iv": None,
+                    "expected_upside_pct": None,
+                    "upside_base_pct": None,
+                    "upside_bear_pct": None,
+                    "upside_bull_pct": None,
+                    "margin_of_safety": None,
+                    "tv_pct_of_ev": None,
+                    "implied_growth_pct": None,
+                    "tv_high_flag": None,
+                    "iv_gordon": None,
+                    "iv_exit": None,
+                    "iv_blended": None,
+                    "tv_method_fallback_flag": None,
+                    "roic_consistency_flag": None,
+                    "nwc_driver_quality_flag": None,
+                    "scenario_prob_bear": 0.20,
+                    "scenario_prob_base": 0.60,
+                    "scenario_prob_bull": 0.20,
+                    "forecast_bridge_json": "[]",
+                }
+            )
+            return row
+
+        scenario_specs = default_scenario_specs()
+        probabilistic = run_probabilistic_valuation(inputs.drivers, scenario_specs, current_price=price)
+
+        bear = _scenario_by_name(probabilistic.scenario_results, "bear")
+        base = _scenario_by_name(probabilistic.scenario_results, "base")
+        bull = _scenario_by_name(probabilistic.scenario_results, "bull")
+
+        base_iv = base.intrinsic_value_per_share if base else None
+        bear_iv = bear.intrinsic_value_per_share if bear else None
+        bull_iv = bull.intrinsic_value_per_share if bull else None
+
+        upside_base = (base_iv / price - 1) if base_iv is not None and price > 0 else None
+        upside_bear = (bear_iv / price - 1) if bear_iv is not None and price > 0 else None
+        upside_bull = (bull_iv / price - 1) if bull_iv is not None and price > 0 else None
+
+        simple_assumptions = DCFAssumptions(
+            revenue_growth_near=inputs.drivers.revenue_growth_near,
+            revenue_growth_mid=inputs.drivers.revenue_growth_mid,
+            revenue_growth_terminal=inputs.drivers.revenue_growth_terminal,
+            ebit_margin=inputs.drivers.ebit_margin_start,
+            tax_rate=inputs.drivers.tax_rate_start,
+            capex_pct_revenue=inputs.drivers.capex_pct_start,
+            da_pct_revenue=inputs.drivers.da_pct_start,
+            nwc_change_pct_revenue=0.01,
+            wacc=inputs.drivers.wacc,
+            exit_multiple=inputs.drivers.exit_multiple,
+            net_debt=inputs.drivers.net_debt,
+            shares_outstanding=inputs.drivers.shares_outstanding,
+        )
+        implied_growth = reverse_dcf(
+            revenue=inputs.drivers.revenue_base,
+            assumptions=simple_assumptions,
+            target_price=price,
+            shares=inputs.drivers.shares_outstanding,
+            net_debt=inputs.drivers.net_debt,
+        )
+
+        row.update(
+            {
+                "iv_bear": round(bear_iv, 2) if bear_iv is not None else None,
+                "iv_base": round(base_iv, 2) if base_iv is not None else None,
+                "iv_bull": round(bull_iv, 2) if bull_iv is not None else None,
+                "upside_base_pct": round(upside_base * 100, 1) if upside_base is not None else None,
+                "upside_bear_pct": round(upside_bear * 100, 1) if upside_bear is not None else None,
+                "upside_bull_pct": round(upside_bull * 100, 1) if upside_bull is not None else None,
+                "margin_of_safety": round((1.0 - price / base_iv) * 100, 1) if base_iv and base_iv > 0 else None,
+                "expected_iv": round(probabilistic.expected_iv, 2),
+                "expected_upside_pct": round((probabilistic.expected_upside_pct or 0.0) * 100, 1)
+                if probabilistic.expected_upside_pct is not None
+                else None,
+                "tv_pct_of_ev": round((base.tv_pct_of_ev or 0.0) * 100, 1) if base and base.tv_pct_of_ev is not None else None,
+                "tv_high_flag": bool(base and base.tv_pct_of_ev is not None and base.tv_pct_of_ev > 0.75),
+                "implied_growth_pct": round(implied_growth * 100, 1) if implied_growth is not None else None,
+                "iv_gordon": round(base.iv_gordon, 2) if base and base.iv_gordon is not None else None,
+                "iv_exit": round(base.iv_exit, 2) if base and base.iv_exit is not None else None,
+                "iv_blended": round(base.iv_blended, 2) if base else None,
+                "tv_method_fallback_flag": bool(base.tv_method_fallback_flag) if base else None,
+                "roic_consistency_flag": bool(base.roic_consistency_flag) if base else None,
+                "nwc_driver_quality_flag": bool(base.nwc_driver_quality_flag) if base else None,
+                "scenario_prob_bear": next((s.probability for s in scenario_specs if s.name == "bear"), None),
+                "scenario_prob_base": next((s.probability for s in scenario_specs if s.name == "base"), None),
+                "scenario_prob_bull": next((s.probability for s in scenario_specs if s.name == "bull"), None),
+                "forecast_bridge_json": json.dumps([asdict(p) for p in (base.projections if base else [])], separators=(",", ":")),
+            }
+        )
+
+        return row
+
+    except Exception as exc:
+        print(f"  ✗ {ticker}: {exc}")
+        return None
+
+
+def export_to_excel(results: list[dict], output_path: Path):
+    df = pd.DataFrame(results)
+
+    with pd.ExcelWriter(output_path, engine="openpyxl") as writer:
+        sort_col = "expected_upside_pct" if "expected_upside_pct" in df.columns else "upside_base_pct"
+
+        summary_cols = [
+            "ticker",
+            "company_name",
+            "sector",
+            "price",
+            "iv_bear",
+            "iv_base",
+            "iv_bull",
+            "expected_iv",
+            "upside_base_pct",
+            "expected_upside_pct",
+            "wacc",
+            "model_applicability_status",
+        ]
+        df_summary = df[[c for c in summary_cols if c in df.columns]].copy()
+        df_summary.sort_values(sort_col, ascending=False, inplace=True, na_position="last")
+        df_summary.to_excel(writer, sheet_name="Summary", index=False)
+
+        assumptions_cols = [
+            "ticker",
+            "growth_near",
+            "growth_mid",
+            "growth_source",
+            "ebit_margin_used",
+            "ebit_margin_source",
+            "capex_pct_used",
+            "capex_source",
+            "da_pct_used",
+            "da_source",
+            "tax_rate_used",
+            "tax_source",
+            "exit_multiple_used",
+            "exit_multiple_source",
+            "exit_metric_used",
+            "revenue_source",
+            "net_debt_source",
+            "shares_source",
+            "ciq_run_id",
+            "ciq_source_file",
+            "ciq_as_of_date",
+            "ciq_comps_run_id",
+            "ciq_comps_source_file",
+            "ciq_comps_as_of_date",
+        ]
+        df_assumptions = df[[c for c in assumptions_cols if c in df.columns]].copy()
+        df_assumptions.to_excel(writer, sheet_name="Assumptions & Sources", index=False)
+
+        bridge_rows: list[dict] = []
+        for _, row in df.iterrows():
+            ticker = row.get("ticker")
+            payload = row.get("forecast_bridge_json")
+            if not payload:
+                continue
+            try:
+                points = json.loads(payload)
+            except Exception:
+                continue
+            for point in points:
+                bridge_rows.append({"ticker": ticker, **point})
+        pd.DataFrame(bridge_rows).to_excel(writer, sheet_name="Forecast Bridge (Y1-Y10)", index=False)
+
+        wacc_cols = [
+            "ticker",
+            "wacc",
+            "cost_of_equity",
+            "beta_relevered",
+            "beta_unlevered",
+            "size_premium",
+            "equity_weight",
+            "peers_used",
+        ]
+        df_wacc = df[[c for c in wacc_cols if c in df.columns]].copy()
+        df_wacc.to_excel(writer, sheet_name="WACC", index=False)
+
+        terminal_cols = [
+            "ticker",
+            "iv_gordon",
+            "iv_exit",
+            "iv_blended",
+            "tv_pct_of_ev",
+            "tv_method_fallback_flag",
+            "tv_high_flag",
+            "roic_consistency_flag",
+            "nwc_driver_quality_flag",
+        ]
+        df_terminal = df[[c for c in terminal_cols if c in df.columns]].copy()
+        df_terminal.to_excel(writer, sheet_name="Terminal Bridge (Gordon vs Exit vs Blend)", index=False)
+
+        scenario_cols = [
+            "ticker",
+            "scenario_prob_bear",
+            "scenario_prob_base",
+            "scenario_prob_bull",
+            "iv_bear",
+            "iv_base",
+            "iv_bull",
+            "expected_iv",
+            "expected_upside_pct",
+        ]
+        df_scenarios = df[[c for c in scenario_cols if c in df.columns]].copy()
+        df_scenarios.to_excel(writer, sheet_name="Scenarios (with probabilities)", index=False)
+
+        sensitivity_rows: list[dict] = []
+        top_for_sensitivity = (
+            df.sort_values(sort_col, ascending=False, na_position="last").head(25)
+            if sort_col in df.columns
+            else df.head(25)
+        )
+        for _, row in top_for_sensitivity.iterrows():
+            drivers = _drivers_from_json(row.get("drivers_json"))
+            if drivers is None:
+                continue
+            sensitivity_rows.extend(_sensitivity_rows(str(row.get("ticker")), drivers))
+        pd.DataFrame(sensitivity_rows).to_excel(
+            writer,
+            sheet_name="Sensitivity (2D WACCxGrowth WACCxMultiple)",
+            index=False,
+        )
+
+        df.to_excel(writer, sheet_name="All Data", index=False)
+
+    print(f"✓ Saved to {output_path}")
+
+
+def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int]:
     conn = sqlite3.connect(str(DB_PATH))
     try:
         df.to_sql("batch_valuations_latest", conn, if_exists="replace", index=False)
@@ -570,20 +540,16 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
 
 
 def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = False):
-    """
-    Run batch valuation across universe and export results.
-    """
     print("=" * 64)
     print("ALPHA POD — Batch Valuation Runner")
     print("=" * 64)
     print()
 
-    # Load universe
     if tickers is None:
         if not UNIVERSE_CSV.exists():
             print("✗ No universe.csv found. Run Stage 1 screener first.")
             return
-        with open(UNIVERSE_CSV) as f:
+        with open(UNIVERSE_CSV, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             tickers = [row["ticker"] for row in reader]
         print(f"Loaded {len(tickers)} tickers from universe.csv")
@@ -591,23 +557,26 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
         print(f"Running on {len(tickers)} tickers")
     print()
 
-    # Run valuations
     results = []
     errors = 0
     for i, ticker in enumerate(tickers, 1):
         print(f"  [{i:>3}/{len(tickers)}] {ticker:<8} ", end="", flush=True)
-
         result = value_single_ticker(ticker)
         if result:
             results.append(result)
-            upside = result["upside_base_pct"]
-            flag = "★" if upside > 20 else "·"
-            print(f"${result['price']:>8.2f} → ${result['iv_base']:>8.2f}  ({upside:>+6.1f}%)  WACC {result['wacc']:.1f}%  {flag}")
+            iv = result.get("expected_iv") if result.get("expected_iv") is not None else result.get("iv_base")
+            upside = result.get("expected_upside_pct")
+            if upside is None:
+                upside = result.get("upside_base_pct")
+            if iv is None:
+                print(f"${result['price']:>8.2f}  alt-model")
+            else:
+                print(f"${result['price']:>8.2f} → ${iv:>8.2f}  ({upside:>+6.1f}%)  WACC {result['wacc']:.1f}%")
         else:
             errors += 1
             print("skipped (insufficient data)")
 
-        time.sleep(0.3)  # Rate limiting
+        time.sleep(0.3)
 
     print()
     print(f"  Completed: {len(results)} valued, {errors} skipped")
@@ -617,20 +586,17 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
         print("No results to export.")
         return
 
-    # Sort by upside
-    results.sort(key=lambda r: r["upside_base_pct"], reverse=True)
+    sort_col = "expected_upside_pct" if any(r.get("expected_upside_pct") is not None for r in results) else "upside_base_pct"
+    results.sort(key=lambda r: (r.get(sort_col) is not None, r.get(sort_col) if r.get(sort_col) is not None else -1e9), reverse=True)
 
-    # Export
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     today = datetime.now().strftime("%Y-%m-%d")
     df = pd.DataFrame(results)
 
-    # CSV: latest.csv (Power Query reads this)
     latest_csv = OUTPUT_DIR / "latest.csv"
     df.to_csv(latest_csv, index=False)
     print(f"✓ CSV: {latest_csv}")
 
-    # SQLite: canonical persistence
     latest_rows, valuation_rows = persist_results_to_db(df, snapshot_date=today)
     print(f"✓ SQLite: {DB_PATH}")
     print(f"  batch_valuations_latest={latest_rows}, valuations={valuation_rows}")
@@ -640,23 +606,24 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
         xlsx_path = OUTPUT_DIR / f"batch_valuation_{today}.xlsx"
         export_to_excel(results, xlsx_path)
 
-    # Terminal summary
     print()
     print("=" * 64)
-    print(f"TOP {min(top_n, len(results))} BY BASE-CASE UPSIDE")
+    print(f"TOP {min(top_n, len(results))} BY {sort_col.upper()}")
     print("=" * 64)
-    print(f"{'Ticker':<8} {'Company':<30} {'Price':>8} {'Base IV':>8} {'Upside':>8} {'WACC':>6} {'PE':>6} {'Sector'}")
-    print("-" * 100)
+    print(f"{'Ticker':<8} {'Company':<30} {'Price':>8} {'Exp IV':>8} {'Exp Up':>8} {'Base IV':>8} {'WACC':>6} {'Status'}")
+    print("-" * 116)
 
     for r in results[:top_n]:
-        pe_str = f"{r['pe_trailing']:.0f}" if r.get("pe_trailing") else "N/A"
+        exp_iv = r.get("expected_iv")
+        exp_up = r.get("expected_upside_pct")
         print(
             f"{r['ticker']:<8} {r['company_name'][:29]:<30} "
-            f"${r['price']:>7.2f} ${r['iv_base']:>7.2f} "
-            f"{r['upside_base_pct']:>+7.1f}% "
+            f"${r['price']:>7.2f} "
+            f"{('$' + format(exp_iv, '7.2f')) if exp_iv is not None else '    N/A ':>8} "
+            f"{(format(exp_up, '+7.1f') + '%') if exp_up is not None else '   N/A ':>8} "
+            f"{('$' + format(r.get('iv_base'), '7.2f')) if r.get('iv_base') is not None else '    N/A ':>8} "
             f"{r['wacc']:>5.1f}% "
-            f"{pe_str:>5} "
-            f"{r['sector'][:15]}"
+            f"{r.get('model_applicability_status', '')}"
         )
 
     print()
@@ -665,8 +632,6 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
     else:
         print("Excel: skipped (pass --xlsx to export workbook)")
     print(f"CSV (for Power Query): {latest_csv}")
-    print()
-    print("To connect your Excel template: Data → Get Data → From Text/CSV → select latest.csv")
 
 
 if __name__ == "__main__":
@@ -688,7 +653,7 @@ if __name__ == "__main__":
     else:
         tickers = None
         if args.limit:
-            with open(UNIVERSE_CSV) as f:
+            with open(UNIVERSE_CSV, encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 tickers = [row["ticker"] for row in reader][: args.limit]
         run_batch(tickers=tickers, top_n=args.top, export_xlsx=args.xlsx)

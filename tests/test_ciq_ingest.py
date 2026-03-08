@@ -42,3 +42,21 @@ def test_ingest_ciq_folder_is_idempotent(tmp_path, monkeypatch):
     assert runs == 1
     assert snapshots == 1
     assert long_rows > 0
+
+
+def test_ingest_ciq_folder_skips_excel_lock_files(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+
+    monkeypatch.setattr(schema_module, "DB_PATH", db_path)
+    monkeypatch.setattr(schema_module, "DATA_DIR", tmp_path)
+
+    create_ibm_style_workbook(tmp_path / "TEST_Standard.xlsx")
+    # Simulate Excel lock file in drop folder.
+    (tmp_path / "~$TEST_Standard.xlsx").write_text("lock", encoding="utf-8")
+
+    report = ingest_ciq_folder(tmp_path)
+
+    assert report.total_files == 1
+    assert report.processed == 1
+    assert report.failed == 0
+    assert all(not r.file.startswith("~$") for r in report.results)

@@ -50,6 +50,8 @@ def ingest_ciq_folder(folder_path: str | Path | None = None, as_of_date: str | N
     run_as_of_date = as_of_date or datetime.now(timezone.utc).date().isoformat()
 
     files = sorted(folder.glob(CIQ_WORKBOOK_GLOB)) if folder.exists() else []
+    # Ignore temporary Excel lock files (e.g., ~$Workbook.xlsx).
+    files = [p for p in files if not p.name.startswith("~$")]
     results: list[IngestFileResult] = []
 
     conn = get_connection()

@@ -13,13 +13,13 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 
-PARSER_VERSION = "ibm_standard_v1"
+PARSER_VERSION = "ibm_standard_v2"
 REQUIRED_SHEETS = [
     "Financial Statements",
     "Common Size",
     "Detailed Comps",
-    "Summary Comps",
 ]
+OPTIONAL_SHEETS = ["Summary Comps"]
 
 
 class CIQTemplateContractError(ValueError):
@@ -44,13 +44,17 @@ _METRIC_MAP = {
     "Total Revenues": "revenue",
     "Operating Income": "operating_income",
     "Capital Expenditure": "capex",
+    "Capital Expenditures": "capex",
     "Depreciation & Amort.": "da",
-    "Income Tax Expense": "income_tax_expense",
+    "Depreciation And Amortization": "da",
+    "Income Tax Expense": "tax",
     "EBT Excl Unusual Items": "ebt_excl_unusual",
-    "Total Debt": "total_debt",
-    "Cash and Equivalents": "cash_and_equivalents",
-    "Cash & Equivalents": "cash_and_equivalents",
-    "Weighted Avg. Diluted Shares Out.": "shares_diluted",
+    "Total Debt": "debt",
+    "Cash and Equivalents": "cash",
+    "Cash And Equivalents": "cash",
+    "Cash & Equivalents": "cash",
+    "Weighted Avg. Diluted Shares Out.": "shares",
+    "Weighted Avg. Diluted Shares Out": "shares",
     "ROIC": "roic",
     "FCF Yield": "fcf_yield",
     "Total Debt/": "debt_to_ebitda",
@@ -114,7 +118,65 @@ def _default_unit_scale(sheet: str, section: str) -> tuple[str | None, float]:
     return None, 1.0
 
 
+def _to_iso_date(value: Any) -> str | None:
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    text = _safe_str(value)
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        return text
+    return None
+
+
+def _row_contains(ws: Worksheet, row: int, needle: str) -> tuple[int, str] | None:
+    for col in range(1, min(ws.max_column, 120) + 1):
+        value = _safe_str(ws.cell(row, col).value)
+        if needle.lower() in value.lower():
+            return col, value
+    return None
+
+
+def _contiguous_date_columns(
+    ws: Worksheet,
+    row: int,
+    start_col: int,
+    max_col: int,
+    header_row: int | None = None,
+) -> list[tuple[int, str]]:
+    period_cols: list[tuple[int, str]] = []
+    for c in range(start_col, max_col + 1):
+        period_date = _to_iso_date(ws.cell(row, c).value)
+        if period_date is None:
+            if period_cols:
+                break
+            continue
+
+        if header_row is not None:
+            header_val = _safe_str(ws.cell(header_row, c).value)
+            if not header_val:
+                if period_cols:
+                    break
+                continue
+
+        period_cols.append((c, period_date))
+
+    return period_cols
+
+
 def _period_columns(ws: Worksheet) -> tuple[int, list[tuple[int, str]], dict[int, str | None]]:
+    max_col = min(ws.max_column, 250)
+
+    clean_period_header = _safe_str(ws.cell(1, 1).value).lower() == "period"
+    clean_period_date = _safe_str(ws.cell(2, 1).value).lower().startswith("period date")
+    if clean_period_header and clean_period_date:
+        period_cols = _contiguous_date_columns(ws, row=2, start_col=2, max_col=max_col, header_row=1)
+        if not period_cols:
+            raise CIQTemplateContractError(f"{ws.title}: no clean period columns detected")
+
+        calc_types = {c: (_safe_str(ws.cell(1, c).value) or None) for c, _ in period_cols}
+        return 3, period_cols, calc_types
+
     period_row = None
     for r in range(1, min(ws.max_row, 250) + 1):
         if _safe_str(ws.cell(r, 1).value) == "Period Date":
@@ -124,35 +186,23 @@ def _period_columns(ws: Worksheet) -> tuple[int, list[tuple[int, str]], dict[int
     if period_row is None:
         raise CIQTemplateContractError(f"{ws.title}: missing 'Period Date' header row")
 
-    period_cols: list[tuple[int, str]] = []
-    for c in range(4, min(ws.max_column, 80) + 1):
-        value = ws.cell(period_row, c).value
-        if isinstance(value, datetime):
-            period_cols.append((c, value.date().isoformat()))
-        elif isinstance(value, date):
-            period_cols.append((c, value.isoformat()))
-        elif value in (None, ""):
-            if c > 8:
-                break
-        else:
-            text = _safe_str(value)
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-                period_cols.append((c, text))
-
+    period_cols = _contiguous_date_columns(ws, row=period_row, start_col=2, max_col=max_col)
     if not period_cols:
         raise CIQTemplateContractError(f"{ws.title}: no period columns detected")
 
     calc_types: dict[int, str | None] = {}
     calc_row = period_row + 1
     if _safe_str(ws.cell(calc_row, 1).value) == "Calculation Type":
+        data_start_row = calc_row + 1
         for c, _ in period_cols:
             calc_val = _safe_str(ws.cell(calc_row, c).value)
             calc_types[c] = calc_val or None
     else:
+        data_start_row = period_row + 1
         for c, _ in period_cols:
             calc_types[c] = None
 
-    return period_row, period_cols, calc_types
+    return data_start_row, period_cols, calc_types
 
 
 def _parse_time_series_sheet(
@@ -160,12 +210,12 @@ def _parse_time_series_sheet(
     ticker: str,
     source_file: str,
 ) -> list[dict[str, Any]]:
-    period_row, period_cols, calc_types = _period_columns(ws)
+    data_start_row, period_cols, calc_types = _period_columns(ws)
     records: list[dict[str, Any]] = []
 
     section = "Uncategorized"
     max_scan_row = min(ws.max_row, 5000)
-    for r in range(period_row + 1, max_scan_row + 1):
+    for r in range(data_start_row, max_scan_row + 1):
         label = _safe_str(ws.cell(r, 1).value)
         if not label:
             continue
@@ -208,60 +258,109 @@ def _parse_time_series_sheet(
     return records
 
 
+def _find_header_row(
+    ws: Worksheet,
+    header: str = "Ticker",
+    max_rows: int = 200,
+    max_cols: int = 120,
+) -> tuple[int, int] | None:
+    for r in range(1, min(ws.max_row, max_rows) + 1):
+        for c in range(1, min(ws.max_column, max_cols) + 1):
+            if _safe_str(ws.cell(r, c).value).lower() == header.lower():
+                return r, c
+    return None
+
+
+def _header_columns(
+    ws: Worksheet,
+    header_row: int,
+    start_col: int,
+    *,
+    contiguous: bool,
+) -> dict[int, str]:
+    headers: dict[int, str] = {}
+    max_col = min(ws.max_column, 250)
+
+    for c in range(start_col, max_col + 1):
+        value = _safe_str(ws.cell(header_row, c).value)
+        if not value:
+            if contiguous and headers:
+                break
+            continue
+        headers[c] = value
+
+    return headers
+
+
 def _parse_comps_sheet(
     ws: Worksheet,
     target_ticker: str,
     source_file: str,
+    *,
+    contiguous_headers: bool,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     records: list[dict[str, Any]] = []
     comps_rows: list[dict[str, Any]] = []
 
+    header_pos = _find_header_row(ws, "Ticker")
+    if header_pos is None:
+        raise CIQTemplateContractError(f"{ws.title}: missing 'Ticker' header row")
+
+    header_row, ticker_col = header_pos
+    headers = _header_columns(ws, header_row, ticker_col, contiguous=contiguous_headers)
+    headers.setdefault(ticker_col, "Ticker")
+    if len(headers) <= 1 and contiguous_headers:
+        headers = _header_columns(ws, header_row, ticker_col, contiguous=False)
+        headers.setdefault(ticker_col, "Ticker")
+    if len(headers) <= 1:
+        raise CIQTemplateContractError(f"{ws.title}: no comps metric columns detected")
+
+    metric_keys: dict[int, str | None] = {}
+    metric_seen: dict[str, int] = {}
+    for c, metric_label in headers.items():
+        if c == ticker_col:
+            continue
+        base_key = _metric_key(metric_label)
+        if base_key is None:
+            metric_keys[c] = None
+            continue
+        count = metric_seen.get(base_key, 0) + 1
+        metric_seen[base_key] = count
+        metric_keys[c] = base_key if count == 1 else f"{base_key}__{count}"
+
     section = "Comps"
-    headers: dict[int, str] = {}
+    name_col = next((c for c, h in headers.items() if h.lower() == "name"), None)
 
     max_scan_row = min(ws.max_row, 1200)
-    for r in range(1, max_scan_row + 1):
-        c1 = _safe_str(ws.cell(r, 1).value)
-        c3 = _safe_str(ws.cell(r, 3).value)
-
-        if c3 in {
-            "Trading Data and Size",
-            "Leverage and Trading Multiples",
-            "Operating Statistics",
-        }:
-            section = c3
-
-        if c1 == "Ticker":
-            headers = {}
-            for c in range(1, min(ws.max_column, 80) + 1):
-                h = _safe_str(ws.cell(r, c).value)
-                if h:
-                    headers[c] = h
+    for r in range(header_row + 1, max_scan_row + 1):
+        raw_row_ticker = _safe_str(ws.cell(r, ticker_col).value)
+        if not raw_row_ticker:
+            continue
+        if raw_row_ticker.startswith("Source:") or raw_row_ticker.startswith("Copyright"):
             continue
 
-        if not c1:
-            continue
-        if c1.startswith("Source:") or c1.startswith("Copyright"):
-            continue
+        row_ticker = _normalize_ticker(raw_row_ticker)
+        row_name = _safe_str(ws.cell(r, name_col).value) if name_col is not None else ""
 
-        row_ticker = _normalize_ticker(c1)
-        row_name = c3
+        for c, metric_label in headers.items():
+            if c == ticker_col:
+                continue
+            metric_key = metric_keys.get(c)
+            if metric_key is None:
+                continue
 
-        for c in range(2, min(ws.max_column, 80) + 1):
             raw_value = ws.cell(r, c).value
             if raw_value in (None, ""):
                 continue
-            header = headers.get(c) or f"col_{c}"
+
             value_num = _to_num(raw_value)
-            metric_label = header
-            metric_key = _metric_key(metric_label)
 
             records.append(
                 {
                     "ticker": target_ticker,
                     "sheet_name": ws.title,
                     "section_name": section,
-                    "row_label": c1,
+                    "row_label": raw_row_ticker,
                     "metric_key": metric_key,
                     "period_date": None,
                     "calc_type": None,
@@ -328,7 +427,7 @@ def _build_valuation_snapshot(
     operating_income = _series(long_records, {"operating_income"})
     capex = _series(long_records, {"capex"})
     da = _series(long_records, {"da"})
-    tax_exp = _series(long_records, {"income_tax_expense"})
+    tax_exp = _series(long_records, {"tax", "income_tax_expense"})
     ebt = _series(long_records, {"ebt_excl_unusual"})
 
     revenue_vals = [v for _, v in revenue[:4]]
@@ -378,9 +477,9 @@ def _build_valuation_snapshot(
         "operating_income_mm": op_vals[0] if op_vals else None,
         "capex_mm": capex_vals[0] if capex_vals else None,
         "da_mm": da_vals[0] if da_vals else None,
-        "total_debt_mm": _latest_value(long_records, {"total_debt"}),
-        "cash_mm": _latest_value(long_records, {"cash_and_equivalents"}),
-        "shares_out_mm": _latest_value(long_records, {"shares_diluted"}),
+        "total_debt_mm": _latest_value(long_records, {"debt", "total_debt"}),
+        "cash_mm": _latest_value(long_records, {"cash", "cash_and_equivalents"}),
+        "shares_out_mm": _latest_value(long_records, {"shares", "shares_diluted"}),
         "ebit_margin": op_margins[0] if op_margins else None,
         "op_margin_avg_3yr": _avg(op_margins[:3]),
         "capex_pct_avg_3yr": _avg(capex_pct[:3]),
@@ -407,48 +506,97 @@ def _validate_contract(wb) -> dict[str, Any]:
     if missing:
         raise CIQTemplateContractError(f"Missing required sheets: {missing}")
 
-    # Anchor contract: required labels must exist on specific rows, but column position
-    # may shift between CIQ refreshes.
-    anchors = {
-        "Financial Statements": [
-            (1, "Select Language"),
-            (2, "Ticker"),
-            (9, "INCOME STATEMENT"),
-        ],
-        "Detailed Comps": [
-            (1, "COMPARABLE COMPANY ANALYSIS"),
-        ],
-        "Summary Comps": [
-            (1, "COMPARABLE COMPANY ANALYSIS"),
-        ],
-    }
-
     found_anchors: dict[str, list[dict[str, Any]]] = {}
 
-    for sheet_name, checks in anchors.items():
-        ws = wb[sheet_name]
+    fs = wb["Financial Statements"]
+    fs_clean = _safe_str(fs.cell(1, 1).value).lower() == "period" and _safe_str(fs.cell(2, 1).value).lower().startswith(
+        "period date"
+    )
+    if fs_clean:
+        start_row, period_cols, _ = _period_columns(fs)
+        found_anchors["Financial Statements"] = [
+            {
+                "layout": "clean",
+                "data_start_row": start_row,
+                "first_period_col": period_cols[0][0],
+                "period_count": len(period_cols),
+            }
+        ]
+    else:
+        legacy_checks = [(1, "Select Language"), (2, "Ticker"), (9, "INCOME STATEMENT")]
         sheet_found: list[dict[str, Any]] = []
-        for row, needle in checks:
-            match_col = None
-            match_value = ""
-            for col in range(1, min(ws.max_column, 120) + 1):
-                value = _safe_str(ws.cell(row, col).value)
-                if needle.lower() in value.lower():
-                    match_col = col
-                    match_value = value
-                    break
-            if match_col is None:
+        for row, needle in legacy_checks:
+            match = _row_contains(fs, row, needle)
+            if match is None:
                 raise CIQTemplateContractError(
-                    f"{sheet_name}!row {row} expected to contain '{needle}' in at least one column"
+                    f"Financial Statements!row {row} expected to contain '{needle}' in at least one column"
                 )
-            sheet_found.append({"row": row, "col": match_col, "value": match_value})
-        found_anchors[sheet_name] = sheet_found
+            col, value = match
+            sheet_found.append({"row": row, "col": col, "value": value})
+        found_anchors["Financial Statements"] = sheet_found
+
+    cs = wb["Common Size"]
+    cs_start_row, cs_period_cols, _ = _period_columns(cs)
+    found_anchors["Common Size"] = [
+        {
+            "data_start_row": cs_start_row,
+            "first_period_col": cs_period_cols[0][0],
+            "period_count": len(cs_period_cols),
+        }
+    ]
+
+    detailed = wb["Detailed Comps"]
+    detailed_header = _find_header_row(detailed, "Ticker")
+    if detailed_header is None:
+        raise CIQTemplateContractError("Detailed Comps: missing 'Ticker' header row")
+
+    header_row, ticker_col = detailed_header
+    detailed_headers = _header_columns(detailed, header_row, ticker_col, contiguous=True)
+    header_mode = "contiguous"
+    if len(detailed_headers) <= 1:
+        detailed_headers = _header_columns(detailed, header_row, ticker_col, contiguous=False)
+        header_mode = "sparse_legacy"
+    if len(detailed_headers) <= 1:
+        raise CIQTemplateContractError("Detailed Comps: missing metric headers after 'Ticker'")
+
+    found_anchors["Detailed Comps"] = [
+        {
+            "header_row": header_row,
+            "ticker_col": ticker_col,
+            "header_count": len(detailed_headers),
+            "header_mode": header_mode,
+        }
+    ]
+
+    if "Summary Comps" in wb.sheetnames:
+        summary = wb["Summary Comps"]
+        summary_header = _find_header_row(summary, "Ticker")
+        if summary_header is not None:
+            found_anchors["Summary Comps"] = [
+                {
+                    "header_row": summary_header[0],
+                    "ticker_col": summary_header[1],
+                }
+            ]
 
     fp = {
         "sheets": wb.sheetnames,
         "anchors": found_anchors,
     }
     return fp
+
+
+def _resolve_ticker(wb) -> str:
+    if "Input" in wb.sheetnames:
+        input_ticker = _normalize_ticker(_safe_str(wb["Input"].cell(2, 2).value))
+        if input_ticker:
+            return input_ticker
+
+    fs_ticker = _normalize_ticker(_safe_str(wb["Financial Statements"].cell(2, 3).value))
+    if fs_ticker:
+        return fs_ticker
+
+    raise CIQTemplateContractError("Could not resolve ticker from Input!B2 or Financial Statements!C2")
 
 
 def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
@@ -461,25 +609,34 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
     wb = load_workbook(workbook_path, data_only=True, read_only=False)
 
     fingerprint = _validate_contract(wb)
-
-    fs = wb["Financial Statements"]
-    raw_ticker = _safe_str(fs.cell(2, 3).value)
-    ticker = _normalize_ticker(raw_ticker)
-    if not ticker:
-        raise CIQTemplateContractError("Could not resolve ticker from Financial Statements!C2")
+    ticker = _resolve_ticker(wb)
 
     long_records: list[dict[str, Any]] = []
     long_records.extend(_parse_time_series_sheet(wb["Financial Statements"], ticker, workbook_path.name))
-    try:
-        long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
-    except CIQTemplateContractError:
-        # Some CIQ Common Size layouts do not expose the same period header contract.
-        pass
+    long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
 
-    detailed_records, detailed_comps = _parse_comps_sheet(wb["Detailed Comps"], ticker, workbook_path.name)
-    summary_records, summary_comps = _parse_comps_sheet(wb["Summary Comps"], ticker, workbook_path.name)
+    detailed_records, detailed_comps = _parse_comps_sheet(
+        wb["Detailed Comps"],
+        ticker,
+        workbook_path.name,
+        contiguous_headers=True,
+    )
     long_records.extend(detailed_records)
-    long_records.extend(summary_records)
+
+    summary_records: list[dict[str, Any]] = []
+    summary_comps: list[dict[str, Any]] = []
+    if "Summary Comps" in wb.sheetnames:
+        try:
+            summary_records, summary_comps = _parse_comps_sheet(
+                wb["Summary Comps"],
+                ticker,
+                workbook_path.name,
+                contiguous_headers=False,
+            )
+            long_records.extend(summary_records)
+        except CIQTemplateContractError:
+            # Summary Comps is optional in newer templates.
+            pass
 
     valuation_snapshot = _build_valuation_snapshot(ticker, workbook_path.name, long_records)
     comps_snapshot = detailed_comps + summary_comps
@@ -495,8 +652,4 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         comps_snapshot=comps_snapshot,
         rows_parsed=len(long_records),
     )
-
-
-
-
 

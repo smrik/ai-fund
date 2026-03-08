@@ -1,0 +1,9 @@
+# Deterministic analyst overrides for valuation inputs.
+# Precedence: global -> sectors[sector] -> tickers[TICKER]
+# Keys must match ForecastDrivers fields in src/stage_02_valuation/professional_dcf.py.
+
+global: {}
+
+sectors: {}
+
+tickers: {}

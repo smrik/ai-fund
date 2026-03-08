@@ -38,3 +38,50 @@ def test_parse_ciq_workbook_keeps_unknown_metrics(tmp_path):
     unknown = [r for r in payload.long_form_records if r["row_label"] == "My Custom KPI"]
     assert unknown
     assert unknown[0]["metric_key"] == "my_custom_kpi"
+
+
+def test_parse_cleandata_workbook_contract_and_snapshots():
+    workbook = Path("ciq/templates/ciq_cleandata.xlsx")
+    payload = parse_ciq_workbook(workbook)
+
+    assert payload.ticker == "IBM"
+    assert payload.rows_parsed > 0
+
+    snap = payload.valuation_snapshot
+    assert snap["revenue_mm"] is not None
+    assert snap["op_margin_avg_3yr"] is not None
+    assert snap["revenue_cagr_3yr"] is not None
+
+    assert payload.comps_snapshot
+    target_rows = [r for r in payload.comps_snapshot if r.get("is_target") == 1]
+    assert target_rows
+
+
+def test_parse_cleandata_ignores_trailing_formatted_columns():
+    workbook = Path("ciq/templates/ciq_cleandata.xlsx")
+    payload = parse_ciq_workbook(workbook)
+
+    fs_cols = [
+        r["column_index"] for r in payload.long_form_records if r["sheet_name"] == "Financial Statements"
+    ]
+    cs_cols = [
+        r["column_index"] for r in payload.long_form_records if r["sheet_name"] == "Common Size"
+    ]
+    dc_cols = [
+        r["column_index"] for r in payload.long_form_records if r["sheet_name"] == "Detailed Comps"
+    ]
+
+    assert fs_cols and max(fs_cols) <= 13
+    assert cs_cols and max(cs_cols) <= 13
+    assert dc_cols and max(dc_cols) <= 86
+
+
+def test_parse_cleandata_disambiguates_duplicate_comps_metric_keys():
+    workbook = Path("ciq/templates/ciq_cleandata.xlsx")
+    payload = parse_ciq_workbook(workbook)
+
+    ibm_rows = [r for r in payload.comps_snapshot if r.get("peer_ticker") == "IBM"]
+    keys = {r.get("metric_key") for r in ibm_rows}
+
+    assert "ebitda_ltm" in keys
+    assert any(k and k.startswith("ebitda_ltm__") for k in keys)
