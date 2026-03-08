@@ -167,3 +167,103 @@ def test_historical_financials_mocked_tax_rate():
     if t is not None:
         assert 0.05 <= t <= 0.40
 
+
+
+def test_historical_financials_mocked_nwc_driver_days_derived():
+    ticker_mock = mock.MagicMock()
+    ticker_mock.financials = _make_financials()
+    ticker_mock.cashflow = _make_cashflow()
+
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    balance = pd.DataFrame(
+        {
+            "Accounts Receivable": [20e9, 18e9, 16e9],
+            "Inventory": [10e9, 9e9, 8e9],
+            "Accounts Payable": [12e9, 11e9, 10e9],
+            "Current Assets": [80e9, 72e9, 64e9],
+            "Current Liabilities": [40e9, 36e9, 32e9],
+            "Cash And Cash Equivalents": [20e9, 18e9, 16e9],
+            "Total Debt": [50e9, 45e9, 40e9],
+        },
+        index=pd.Index(dates, name=""),
+    ).T
+    ticker_mock.balance_sheet = balance
+
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        result = get_historical_financials("FAKE")
+
+    assert result["dso_derived"] is not None
+    assert result["dio_derived"] is not None
+    assert result["dpo_derived"] is not None
+    assert result["dso_derived"] > 0
+    assert result["dio_derived"] > 0
+    assert result["dpo_derived"] > 0
+
+
+def test_nwc_day_drivers_prefer_cogs_for_dio_and_dpo():
+    ticker_mock = mock.MagicMock()
+
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    financials = pd.DataFrame(
+        {
+            "Total Revenue": [200e9, 180e9, 160e9],
+            "Cost Of Revenue": [100e9, 90e9, 80e9],
+            "Operating Income": [60e9, 54e9, 48e9],
+            "Tax Provision": [12e9, 10e9, 9e9],
+            "Pretax Income": [55e9, 50e9, 45e9],
+        },
+        index=pd.Index(dates, name=""),
+    ).T
+
+    balance = pd.DataFrame(
+        {
+            "Accounts Receivable": [20e9, 18e9, 16e9],
+            "Inventory": [10e9, 9e9, 8e9],
+            "Accounts Payable": [12e9, 11e9, 10e9],
+            "Current Assets": [80e9, 72e9, 64e9],
+            "Current Liabilities": [40e9, 36e9, 32e9],
+            "Cash And Cash Equivalents": [20e9, 18e9, 16e9],
+            "Total Debt": [50e9, 45e9, 40e9],
+        },
+        index=pd.Index(dates, name=""),
+    ).T
+
+    ticker_mock.financials = financials
+    ticker_mock.cashflow = _make_cashflow()
+    ticker_mock.balance_sheet = balance
+
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        result = get_historical_financials("FAKE")
+
+    # Inventory / COGS and AP / COGS should be materially higher than revenue-denominator days.
+    assert result["dio_derived"] is not None
+    assert result["dpo_derived"] is not None
+    assert abs(result["dio_derived"] - 36.5) < 0.5
+    assert abs(result["dpo_derived"] - 44.7) < 0.5
+
+
+
+def test_effective_tax_rate_handles_negative_sign_convention():
+    ticker_mock = mock.MagicMock()
+
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    financials = pd.DataFrame(
+        {
+            "Total Revenue": [120e9, 110e9, 100e9],
+            "Operating Income": [24e9, 22e9, 20e9],
+            "Tax Provision": [-10e9, -9e9, -8e9],
+            "Pretax Income": [-50e9, -45e9, -40e9],
+        },
+        index=pd.Index(dates, name=""),
+    ).T
+
+    ticker_mock.financials = financials
+    ticker_mock.cashflow = _make_cashflow()
+    ticker_mock.balance_sheet = _make_balance()
+
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        result = get_historical_financials("FAKE")
+
+    assert result["effective_tax_rate_avg"] is not None
+    assert abs(result["effective_tax_rate_avg"] - 0.20) < 0.001
+

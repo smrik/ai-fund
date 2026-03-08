@@ -30,6 +30,16 @@ _METRIC_ALIASES = {
     "target_cash": ("cash", "cash_and_equivalents"),
 }
 
+_LONG_FORM_DAY_ALIASES = {
+    "dso": ("dso", "days_sales_outstanding"),
+    "dio": ("dio", "days_inventory_outstanding", "days_inventory"),
+    "dpo": ("dpo", "days_payables_outstanding", "days_payable_outstanding"),
+    "accounts_receivable": ("accounts_receivable", "receivables", "trade_receivables", "net_receivables"),
+    "inventory": ("inventory", "inventories"),
+    "accounts_payable": ("accounts_payable", "trade_payables", "payables"),
+    "revenue": ("revenue", "total_revenue", "revenues"),
+}
+
 
 def _connect() -> sqlite3.Connection | None:
     try:
@@ -49,6 +59,58 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _matches_metric_alias(metric_key: str, aliases: tuple[str, ...]) -> bool:
+    return any(metric_key == alias or metric_key.startswith(f"{alias}__") for alias in aliases)
+
+
+def _extract_nwc_day_drivers(conn: sqlite3.Connection, ticker: str, run_id: int) -> dict[str, float | None]:
+    out: dict[str, float | None] = {"dso": None, "dio": None, "dpo": None}
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT metric_key, value_num, period_date, column_index
+            FROM ciq_long_form
+            WHERE run_id = ? AND ticker = ? AND value_num IS NOT NULL
+            ORDER BY COALESCE(period_date, '') DESC, column_index DESC
+            """,
+            [run_id, ticker],
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return out
+
+    latest: dict[str, float] = {}
+    for row in rows:
+        metric_key = str(row["metric_key"] or "")
+        value = _to_float(row["value_num"])
+        if not metric_key or value is None:
+            continue
+
+        for canonical, aliases in _LONG_FORM_DAY_ALIASES.items():
+            if canonical in latest:
+                continue
+            if _matches_metric_alias(metric_key, aliases):
+                latest[canonical] = value
+
+    if "dso" in latest:
+        out["dso"] = round(float(latest["dso"]), 1)
+    if "dio" in latest:
+        out["dio"] = round(float(latest["dio"]), 1)
+    if "dpo" in latest:
+        out["dpo"] = round(float(latest["dpo"]), 1)
+
+    revenue = latest.get("revenue")
+    if revenue and revenue > 0:
+        if out["dso"] is None and "accounts_receivable" in latest:
+            out["dso"] = round(365.0 * latest["accounts_receivable"] / revenue, 1)
+        if out["dio"] is None and "inventory" in latest:
+            out["dio"] = round(365.0 * latest["inventory"] / revenue, 1)
+        if out["dpo"] is None and "accounts_payable" in latest:
+            out["dpo"] = round(365.0 * latest["accounts_payable"] / revenue, 1)
+
+    return out
+
+
 def _row_to_snapshot(row: sqlite3.Row) -> dict[str, Any]:
     data = dict(row)
     out: dict[str, Any] = {
@@ -66,6 +128,9 @@ def _row_to_snapshot(row: sqlite3.Row) -> dict[str, Any]:
         "debt_to_ebitda": data.get("debt_to_ebitda"),
         "roic": data.get("roic"),
         "fcf_yield": data.get("fcf_yield"),
+        "dso": _to_float(data.get("dso")),
+        "dio": _to_float(data.get("dio")),
+        "dpo": _to_float(data.get("dpo")),
     }
 
     for mm_key, out_key in _MM_FIELDS.items():
@@ -106,7 +171,18 @@ def get_ciq_snapshot(ticker: str, as_of_date: str | None = None) -> dict[str, An
                 """,
                 [ticker.upper()],
             ).fetchone()
-        return _row_to_snapshot(row) if row else None
+
+        if row is None:
+            return None
+
+        snapshot = _row_to_snapshot(row)
+        run_id = snapshot.get("run_id")
+        if run_id is not None:
+            long_form_days = _extract_nwc_day_drivers(conn, ticker.upper(), int(run_id))
+            for key, value in long_form_days.items():
+                if snapshot.get(key) is None and value is not None:
+                    snapshot[key] = value
+        return snapshot
     except sqlite3.OperationalError:
         return None
     finally:

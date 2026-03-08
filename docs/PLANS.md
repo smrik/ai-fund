@@ -5,6 +5,7 @@
 | Sprint | Plan | Status | Goal |
 |---|---|---|---|
 | Sprint 1 | [`exec-plans/active/sprint-1-deterministic-hardening.md`](./exec-plans/active/sprint-1-deterministic-hardening.md) | IN PROGRESS | 3yr historical data in batch runner |
+| Sprint 1A | [`exec-plans/active/2026-03-08-deterministic-audit-master-todo.md`](./exec-plans/active/2026-03-08-deterministic-audit-master-todo.md) | IN PROGRESS | End-to-end deterministic valuation audit using 7-step loop |
 
 ## Queued (dependency order)
 
@@ -23,4 +24,3 @@ None yet.
 ## Full Implementation Detail
 
 [`plans/2026-03-06-dcf-pipeline.md`](./plans/2026-03-06-dcf-pipeline.md) — complete task-by-task plan with code, tests, and Codex exec commands for all sprints.
-

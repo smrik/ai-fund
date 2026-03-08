@@ -69,39 +69,49 @@ print("  The LLM agent adds judgment for assumption calibration, not computation
 # ── Pytest tests ────────────────────────────────────────────────────────────
 
 def test_reverse_dcf_returns_plausible_growth():
-    """reverse_dcf should return a growth rate that reproduces the target price."""
-    import sys
-    import os
-    sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-    from src.stage_02_valuation.batch_runner import reverse_dcf
-    from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf
+    """reverse_dcf_professional should recover a growth rate close to the original setup."""
+    from src.stage_02_valuation.professional_dcf import (
+        ForecastDrivers,
+        ScenarioSpec,
+        reverse_dcf_professional,
+        run_dcf_professional,
+    )
 
-    rev = 10e9
-    assumptions = DCFAssumptions(
+    drivers = ForecastDrivers(
+        revenue_base=10e9,
         revenue_growth_near=0.10,
         revenue_growth_mid=0.065,
         revenue_growth_terminal=0.03,
-        ebit_margin=0.20,
-        tax_rate=0.21,
-        capex_pct_revenue=0.05,
-        da_pct_revenue=0.04,
-        nwc_change_pct_revenue=0.01,
+        ebit_margin_start=0.20,
+        ebit_margin_target=0.20,
+        tax_rate_start=0.21,
+        tax_rate_target=0.21,
+        capex_pct_start=0.05,
+        capex_pct_target=0.05,
+        da_pct_start=0.04,
+        da_pct_target=0.04,
+        dso_start=50.0,
+        dso_target=50.0,
+        dio_start=50.0,
+        dio_target=50.0,
+        dpo_start=45.0,
+        dpo_target=45.0,
         wacc=0.09,
         exit_multiple=15.0,
+        exit_metric="ev_ebitda",
         net_debt=1e9,
         shares_outstanding=100e6,
     )
-    base_result = run_dcf(rev, assumptions)
+
+    base_result = run_dcf_professional(drivers, ScenarioSpec(name="base", probability=1.0))
     target_price = base_result.intrinsic_value_per_share
 
-    implied = reverse_dcf(
-        revenue=rev,
-        assumptions=assumptions,
+    implied = reverse_dcf_professional(
+        drivers=drivers,
         target_price=target_price,
-        shares=100e6,
-        net_debt=1e9,
+        scenario="base",
     )
 
     assert implied is not None
-    # Should recover approximately the original growth rate (10%)
     assert abs(implied - 0.10) < 0.01
+

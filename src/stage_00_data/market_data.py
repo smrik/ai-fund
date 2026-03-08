@@ -173,6 +173,9 @@ def get_historical_financials(ticker: str) -> dict:
         "nwc_pct_avg_3yr": None,
         "effective_tax_rate_avg": None,
         "cost_of_debt_derived": None,
+        "dso_derived": None,
+        "dio_derived": None,
+        "dpo_derived": None,
     }
 
     try:
@@ -185,6 +188,7 @@ def get_historical_financials(ticker: str) -> dict:
 
         # --- Raw series extraction ---
         revenue = _row(financials, "Total Revenue")
+        cost_of_revenue = _row(financials, "Cost Of Revenue", "Cost of Revenue", "Cost of Goods Sold", "Cost Of Goods Sold")
         operating_income = _row(financials, "Operating Income", "EBIT")
         capex_raw = _row(cashflow, "Capital Expenditure")
         capex = [abs(v) for v in capex_raw]
@@ -201,6 +205,10 @@ def get_historical_financials(ticker: str) -> dict:
         current_liabilities = _row(balance, "Current Liabilities")
         cash_bs = _row(balance, "Cash And Cash Equivalents", "Cash")
         total_debt = _row(balance, "Total Debt", "Long Term Debt")
+
+        accounts_receivable = _row(balance, "Accounts Receivable", "Net Receivables", "Receivables")
+        inventory = _row(balance, "Inventory", "Inventories")
+        accounts_payable = _row(balance, "Accounts Payable", "Payables And Accrued Expenses", "Trade Payables")
 
         # --- NWC change series ---
         # NWC[i] = (CurrentAssets[i] - Cash[i]) - CurrentLiabilities[i]
@@ -268,17 +276,62 @@ def get_historical_financials(ticker: str) -> dict:
             if pcts:
                 nwc_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
 
-        # Effective tax rate average (only where pretax > 0, bounds [0.05, 0.40])
+
+        # NWC day-driver approximations (using revenue denominator)
+        # NWC day-driver approximations
+        # DSO uses revenue denominator.
+        # DIO/DPO prefer COGS denominator when available, falling back to revenue.
+        dso_derived = None
+        dso_values = []
+        for i in range(min(len(accounts_receivable), len(revenue))):
+            if revenue[i] and revenue[i] > 0:
+                dso = 365.0 * accounts_receivable[i] / revenue[i]
+                if 0 < dso <= 365:
+                    dso_values.append(dso)
+        if dso_values:
+            dso_derived = round(sum(dso_values) / len(dso_values), 1)
+
+        dio_derived = None
+        dio_values = []
+        for i in range(min(len(inventory), len(revenue))):
+            denom = None
+            if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
+                denom = cost_of_revenue[i]
+            elif revenue[i] and revenue[i] > 0:
+                denom = revenue[i]
+            if denom:
+                dio = 365.0 * inventory[i] / denom
+                if 0 < dio <= 500:
+                    dio_values.append(dio)
+        if dio_values:
+            dio_derived = round(sum(dio_values) / len(dio_values), 1)
+
+        dpo_derived = None
+        dpo_values = []
+        for i in range(min(len(accounts_payable), len(revenue))):
+            denom = None
+            if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
+                denom = cost_of_revenue[i]
+            elif revenue[i] and revenue[i] > 0:
+                denom = revenue[i]
+            if denom:
+                dpo = 365.0 * accounts_payable[i] / denom
+                if 0 < dpo <= 365:
+                    dpo_values.append(dpo)
+        if dpo_values:
+            dpo_derived = round(sum(dpo_values) / len(dpo_values), 1)
+
+        # Effective tax rate average (use absolute ratio to handle sign convention variability)
         effective_tax_rate_avg = None
         rates = []
         for i in range(min(len(tax_expense), len(pretax_income))):
-            if pretax_income[i] > 0:
-                rate = tax_expense[i] / pretax_income[i]
+            denom = abs(pretax_income[i]) if pretax_income[i] is not None else 0
+            if denom > 0:
+                rate = abs(tax_expense[i]) / denom
                 if 0.05 <= rate <= 0.40:
                     rates.append(rate)
         if rates:
             effective_tax_rate_avg = round(sum(rates) / len(rates), 4)
-
         # Cost of debt derived: interest_expense[0] / total_debt[0]
         cost_of_debt_derived = None
         if interest_expense and total_debt and total_debt[0] > 0:
@@ -300,8 +353,15 @@ def get_historical_financials(ticker: str) -> dict:
             "nwc_pct_avg_3yr": nwc_pct_avg_3yr,
             "effective_tax_rate_avg": effective_tax_rate_avg,
             "cost_of_debt_derived": cost_of_debt_derived,
+            "dso_derived": dso_derived,
+            "dio_derived": dio_derived,
+            "dpo_derived": dpo_derived,
         }
 
     except Exception as e:
         logger.warning("get_historical_financials(%s) failed: %s", ticker, e)
         return _none_result
+
+
+
+

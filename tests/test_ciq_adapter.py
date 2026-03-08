@@ -175,3 +175,148 @@ def test_get_ciq_comps_valuation_includes_ev_ebit_outputs(monkeypatch):
     assert out is not None
     assert out["peer_median_tev_ebit_ltm"] == 10.0
     assert out["implied_price_ev_ebit"] == 8.75
+
+
+def test_get_ciq_snapshot_includes_nwc_day_drivers_from_long_form(tmp_path, monkeypatch):
+    db_path = tmp_path / "ciq_snapshot.sqlite"
+    monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE ciq_valuation_snapshot (
+            ticker TEXT,
+            as_of_date TEXT,
+            run_id INTEGER,
+            source_file TEXT,
+            revenue_mm REAL,
+            operating_income_mm REAL,
+            capex_mm REAL,
+            da_mm REAL,
+            total_debt_mm REAL,
+            cash_mm REAL,
+            shares_out_mm REAL,
+            ebit_margin REAL,
+            op_margin_avg_3yr REAL,
+            capex_pct_avg_3yr REAL,
+            da_pct_avg_3yr REAL,
+            effective_tax_rate REAL,
+            effective_tax_rate_avg REAL,
+            revenue_cagr_3yr REAL,
+            debt_to_ebitda REAL,
+            roic REAL,
+            fcf_yield REAL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE ciq_long_form (
+            run_id INTEGER,
+            ticker TEXT,
+            metric_key TEXT,
+            value_num REAL,
+            period_date TEXT,
+            column_index INTEGER
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        INSERT INTO ciq_valuation_snapshot (
+            ticker, as_of_date, run_id, source_file, revenue_mm, operating_income_mm,
+            capex_mm, da_mm, total_debt_mm, cash_mm, shares_out_mm
+        ) VALUES ('IBM', '2025-12-31', 7, 'ciq.xlsx', 1000, 200, 60, 40, 300, 100, 900)
+        """
+    )
+    conn.executemany(
+        "INSERT INTO ciq_long_form (run_id, ticker, metric_key, value_num, period_date, column_index) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (7, "IBM", "dso", 50.0, "2025-12-31", 1),
+            (7, "IBM", "dio", 45.0, "2025-12-31", 1),
+            (7, "IBM", "dpo", 40.0, "2025-12-31", 1),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    out = ciq_adapter.get_ciq_snapshot("IBM")
+
+    assert out is not None
+    assert out["dso"] == 50.0
+    assert out["dio"] == 45.0
+    assert out["dpo"] == 40.0
+
+
+def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(tmp_path, monkeypatch):
+    db_path = tmp_path / "ciq_snapshot_derived.sqlite"
+    monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE ciq_valuation_snapshot (
+            ticker TEXT,
+            as_of_date TEXT,
+            run_id INTEGER,
+            source_file TEXT,
+            revenue_mm REAL,
+            operating_income_mm REAL,
+            capex_mm REAL,
+            da_mm REAL,
+            total_debt_mm REAL,
+            cash_mm REAL,
+            shares_out_mm REAL,
+            ebit_margin REAL,
+            op_margin_avg_3yr REAL,
+            capex_pct_avg_3yr REAL,
+            da_pct_avg_3yr REAL,
+            effective_tax_rate REAL,
+            effective_tax_rate_avg REAL,
+            revenue_cagr_3yr REAL,
+            debt_to_ebitda REAL,
+            roic REAL,
+            fcf_yield REAL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE ciq_long_form (
+            run_id INTEGER,
+            ticker TEXT,
+            metric_key TEXT,
+            value_num REAL,
+            period_date TEXT,
+            column_index INTEGER
+        )
+        """
+    )
+
+    conn.execute(
+        """
+        INSERT INTO ciq_valuation_snapshot (
+            ticker, as_of_date, run_id, source_file, revenue_mm, operating_income_mm,
+            capex_mm, da_mm, total_debt_mm, cash_mm, shares_out_mm
+        ) VALUES ('IBM', '2025-12-31', 8, 'ciq.xlsx', 1000, 200, 60, 40, 300, 100, 900)
+        """
+    )
+    conn.executemany(
+        "INSERT INTO ciq_long_form (run_id, ticker, metric_key, value_num, period_date, column_index) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+            (8, "IBM", "accounts_receivable", 120.0, "2025-12-31", 1),
+            (8, "IBM", "inventory", 80.0, "2025-12-31", 1),
+            (8, "IBM", "accounts_payable", 60.0, "2025-12-31", 1),
+            (8, "IBM", "revenue", 1000.0, "2025-12-31", 1),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    out = ciq_adapter.get_ciq_snapshot("IBM")
+
+    assert out is not None
+    assert out["dso"] == 43.8
+    assert out["dio"] == 29.2
+    assert out["dpo"] == 21.9

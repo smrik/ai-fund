@@ -1,0 +1,11 @@
+global:
+  moat_strength: 3
+  pricing_power: 3
+  cyclicality: medium
+  capital_intensity: medium
+  governance_risk: medium
+  competitive_advantage_years: 7
+
+sectors: {}
+
+tickers: {}

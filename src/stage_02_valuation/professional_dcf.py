@@ -1,7 +1,7 @@
 """Professional deterministic DCF engine with explicit driver paths and terminal decomposition."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace
 from typing import Literal
 
 
@@ -44,6 +44,21 @@ class ForecastDrivers:
     terminal_blend_gordon_weight: float = 0.60
     terminal_blend_exit_weight: float = 0.40
 
+    # Institutional hardening extensions.
+    invested_capital_start: float | None = None
+    ronic_terminal: float = 0.12
+
+    non_operating_assets: float = 0.0
+    minority_interest: float = 0.0
+    preferred_equity: float = 0.0
+    pension_deficit: float = 0.0
+    lease_liabilities: float = 0.0
+    options_value: float = 0.0
+    convertibles_value: float = 0.0
+
+    cost_of_equity: float | None = None
+    debt_weight: float = 0.20
+
 
 @dataclass(slots=True)
 class ScenarioSpec:
@@ -81,6 +96,15 @@ class ProjectionYear:
     discount_factor: float
     pv_fcff: float
 
+    reinvestment: float = 0.0
+    invested_capital_start: float = 0.0
+    invested_capital_end: float = 0.0
+    roic: float | None = None
+    economic_profit: float | None = None
+    pv_economic_profit: float | None = None
+    fcfe: float | None = None
+    pv_fcfe: float | None = None
+
 
 @dataclass(slots=True)
 class TerminalBreakdown:
@@ -93,6 +117,12 @@ class TerminalBreakdown:
     pv_tv_gordon: float | None
     pv_tv_exit: float | None
     pv_tv_blended: float
+
+    terminal_growth: float = 0.0
+    ronic_terminal: float | None = None
+    fcff_11_bridge: float | None = None
+    fcff_11_value_driver: float | None = None
+    gordon_formula_mode: str = "legacy"
 
 
 @dataclass(slots=True)
@@ -111,6 +141,34 @@ class DCFComputationResult:
     tv_pct_of_ev: float | None
     roic_consistency_flag: bool
     nwc_driver_quality_flag: bool
+
+    enterprise_value_operations: float | None = None
+    enterprise_value_total: float | None = None
+    non_operating_assets: float = 0.0
+    non_equity_claims: float = 0.0
+
+    ep_enterprise_value: float | None = None
+    ep_intrinsic_value_per_share: float | None = None
+    dcf_ep_gap_pct: float | None = None
+    ep_reconcile_flag: bool | None = None
+
+    fcfe_intrinsic_value_per_share: float | None = None
+    fcfe_equity_value: float | None = None
+    fcfe_pv_sum: float | None = None
+    fcfe_terminal_value: float | None = None
+    cost_of_equity_used: float | None = None
+
+    health_flags: dict[str, bool] | None = None
+
+
+@dataclass(slots=True)
+class FCFEComputationResult:
+    scenario: str
+    intrinsic_value_per_share: float
+    equity_value: float
+    pv_fcfe_sum: float
+    terminal_value: float
+    cost_of_equity: float
 
 
 @dataclass(slots=True)
@@ -148,9 +206,17 @@ def _validate_drivers(drivers: ForecastDrivers) -> None:
         ("da_pct_target", drivers.da_pct_target, 0.00, 0.25),
         ("wacc", drivers.wacc, 0.03, 0.20),
         ("exit_multiple", drivers.exit_multiple, 2.0, 40.0),
+        ("ronic_terminal", drivers.ronic_terminal, 0.04, 0.45),
+        ("debt_weight", drivers.debt_weight, 0.00, 0.80),
     ]:
         if not (low <= value <= high):
             raise ValueError(f"{name} outside bounds [{low}, {high}]")
+
+    if drivers.cost_of_equity is not None and not (0.04 <= drivers.cost_of_equity <= 0.30):
+        raise ValueError("cost_of_equity outside bounds [0.04, 0.30]")
+
+    if drivers.invested_capital_start is not None and drivers.invested_capital_start <= 0:
+        raise ValueError("invested_capital_start must be > 0 when provided")
 
     if drivers.exit_metric not in {"ev_ebitda", "ev_ebit"}:
         raise ValueError("exit_metric must be ev_ebitda or ev_ebit")
@@ -181,10 +247,39 @@ def _nwc_components(revenue: float, dso: float, dio: float, dpo: float) -> tuple
     return ar, inv, ap, nwc
 
 
+def _claims_total(d: ForecastDrivers) -> float:
+    return (
+        d.net_debt
+        + d.minority_interest
+        + d.preferred_equity
+        + d.pension_deficit
+        + d.lease_liabilities
+        + d.options_value
+        + d.convertibles_value
+    )
+
+
+def _derive_initial_invested_capital(d: ForecastDrivers, nwc_start: float) -> float:
+    if d.invested_capital_start is not None and d.invested_capital_start > 0:
+        return d.invested_capital_start
+
+    # Deterministic operating-capital proxy fallback when source systems do not provide IC.
+    ppne_proxy = max(
+        d.revenue_base * max(d.capex_pct_start * 3.0, d.da_pct_start * 4.0, 0.15),
+        1.0,
+    )
+    ic = nwc_start + ppne_proxy
+    return max(ic, d.revenue_base * 0.25)
+
+
 def _apply_scenario(drivers: ForecastDrivers, scenario: ScenarioSpec) -> ForecastDrivers:
     near = _clamp(drivers.revenue_growth_near * scenario.growth_multiplier, -0.20, 0.50)
     mid = _clamp(drivers.revenue_growth_mid * scenario.growth_multiplier, -0.20, 0.40)
     terminal = _clamp(drivers.revenue_growth_terminal * scenario.growth_multiplier + scenario.terminal_growth_shift, 0.00, 0.05)
+
+    ke = drivers.cost_of_equity
+    if ke is not None:
+        ke = _clamp(ke + scenario.wacc_shift, 0.04, 0.30)
 
     return ForecastDrivers(
         revenue_base=drivers.revenue_base,
@@ -212,7 +307,54 @@ def _apply_scenario(drivers: ForecastDrivers, scenario: ScenarioSpec) -> Forecas
         shares_outstanding=drivers.shares_outstanding,
         terminal_blend_gordon_weight=drivers.terminal_blend_gordon_weight,
         terminal_blend_exit_weight=drivers.terminal_blend_exit_weight,
+        invested_capital_start=drivers.invested_capital_start,
+        ronic_terminal=drivers.ronic_terminal,
+        non_operating_assets=drivers.non_operating_assets,
+        minority_interest=drivers.minority_interest,
+        preferred_equity=drivers.preferred_equity,
+        pension_deficit=drivers.pension_deficit,
+        lease_liabilities=drivers.lease_liabilities,
+        options_value=drivers.options_value,
+        convertibles_value=drivers.convertibles_value,
+        cost_of_equity=ke,
+        debt_weight=drivers.debt_weight,
     )
+
+
+def _compute_fcfe(
+    d: ForecastDrivers,
+    projections: list[ProjectionYear],
+    fcff_11_for_gordon: float,
+    nopat_11: float,
+    non_equity_claims: float,
+) -> tuple[float | None, float | None, float | None, float]:
+    ke = d.cost_of_equity if d.cost_of_equity is not None else _clamp(d.wacc + 0.015, 0.04, 0.30)
+
+    pv_fcfe_sum = 0.0
+    for p in projections:
+        net_borrowing = p.reinvestment * d.debt_weight
+        fcfe = p.fcff + net_borrowing
+        pv_fcfe = fcfe / ((1.0 + ke) ** p.year)
+        p.fcfe = fcfe
+        p.pv_fcfe = pv_fcfe
+        pv_fcfe_sum += pv_fcfe
+
+    terminal_growth = d.revenue_growth_terminal
+    terminal_reinvestment = max(0.0, nopat_11 - fcff_11_for_gordon)
+    fcfe_11 = fcff_11_for_gordon + terminal_reinvestment * d.debt_weight
+    denominator_ke = ke - terminal_growth
+    terminal_value = fcfe_11 / denominator_ke if denominator_ke > 0.002 and fcfe_11 > 0 else None
+    pv_terminal = terminal_value / ((1.0 + ke) ** 10) if terminal_value is not None else 0.0
+
+    # FCFE already flows to equity; do not subtract net debt again.
+    non_debt_claims = non_equity_claims - d.net_debt
+    equity_value = pv_fcfe_sum + pv_terminal + d.non_operating_assets - non_debt_claims
+
+    iv = None
+    if d.shares_outstanding > 0:
+        iv = equity_value / d.shares_outstanding
+
+    return iv, equity_value, terminal_value, ke
 
 
 def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) -> DCFComputationResult:
@@ -223,8 +365,10 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
 
     revenue = d.revenue_base
     _, _, _, prev_nwc = _nwc_components(revenue, d.dso_start, d.dio_start, d.dpo_start)
+    ic_prev = _derive_initial_invested_capital(d, prev_nwc)
 
     pv_fcff_sum = 0.0
+    pv_ep_sum = 0.0
 
     for year in range(1, 11):
         growth_rate = _growth_for_year(d.revenue_growth_near, d.revenue_growth_mid, year)
@@ -247,10 +391,19 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         delta_nwc = nwc - prev_nwc
         prev_nwc = nwc
 
+        reinvestment = capex - da + delta_nwc
         fcff = nopat + da - capex - delta_nwc
+
         discount_factor = (1.0 + d.wacc) ** year
         pv_fcff = fcff / discount_factor
         pv_fcff_sum += pv_fcff
+
+        roic = nopat / ic_prev if ic_prev > 0 else None
+        economic_profit = nopat - d.wacc * ic_prev
+        pv_economic_profit = economic_profit / discount_factor
+        pv_ep_sum += pv_economic_profit
+
+        ic_end = max(ic_prev + reinvestment, 1.0)
 
         projections.append(
             ProjectionYear(
@@ -276,8 +429,16 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
                 fcff=fcff,
                 discount_factor=discount_factor,
                 pv_fcff=pv_fcff,
+                reinvestment=reinvestment,
+                invested_capital_start=ic_prev,
+                invested_capital_end=ic_end,
+                roic=roic,
+                economic_profit=economic_profit,
+                pv_economic_profit=pv_economic_profit,
             )
         )
+
+        ic_prev = ic_end
 
     y10 = projections[-1]
     revenue_11 = y10.revenue * (1.0 + d.revenue_growth_terminal)
@@ -287,10 +448,21 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     capex_11 = revenue_11 * y10.capex_pct
     _, _, _, nwc_11 = _nwc_components(revenue_11, y10.dso, y10.dio, y10.dpo)
     delta_nwc_11 = nwc_11 - y10.nwc
-    fcff_11 = nopat_11 + da_11 - capex_11 - delta_nwc_11
+    fcff_11_bridge = nopat_11 + da_11 - capex_11 - delta_nwc_11
 
-    denominator = d.wacc - d.revenue_growth_terminal
-    tv_gordon = fcff_11 / denominator if denominator > 0.002 and fcff_11 > 0 else None
+    terminal_growth = d.revenue_growth_terminal
+    ronic_terminal = max(d.ronic_terminal, terminal_growth + 0.005)
+    fcff_11_value_driver = None
+    gordon_formula_mode = "bridge"
+    if nopat_11 > 0 and ronic_terminal > terminal_growth + 0.0005:
+        reinvestment_rate_terminal = _clamp(terminal_growth / ronic_terminal, 0.0, 0.95)
+        fcff_11_value_driver = nopat_11 * (1.0 - reinvestment_rate_terminal)
+        gordon_formula_mode = "value_driver"
+
+    fcff_11_for_gordon = fcff_11_value_driver if fcff_11_value_driver is not None else fcff_11_bridge
+
+    denominator = d.wacc - terminal_growth
+    tv_gordon = fcff_11_for_gordon / denominator if denominator > 0.002 and fcff_11_for_gordon > 0 else None
 
     terminal_metric_10 = y10.ebit + y10.da if d.exit_metric == "ev_ebitda" else y10.ebit
     tv_exit = terminal_metric_10 * d.exit_multiple if terminal_metric_10 > 0 and d.exit_multiple > 0 else None
@@ -326,23 +498,26 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         pv_tv_blended = 0.0
         method_used = "none"
 
-    enterprise_value = pv_fcff_sum + pv_tv_blended
-    equity_value = enterprise_value - d.net_debt
+    enterprise_value_operations = pv_fcff_sum + pv_tv_blended
+    enterprise_value_total = enterprise_value_operations + d.non_operating_assets
+    non_equity_claims = _claims_total(d)
+
+    equity_value = enterprise_value_total - non_equity_claims
     iv_blended = equity_value / d.shares_outstanding
 
     iv_gordon = None
     if gordon_valid and pv_tv_gordon is not None:
-        iv_gordon = (pv_fcff_sum + pv_tv_gordon - d.net_debt) / d.shares_outstanding
+        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / d.shares_outstanding
 
     iv_exit = None
     if exit_valid and pv_tv_exit is not None:
-        iv_exit = (pv_fcff_sum + pv_tv_exit - d.net_debt) / d.shares_outstanding
+        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / d.shares_outstanding
 
-    reinvestment_10 = y10.capex - y10.da + y10.delta_nwc
+    reinvestment_10 = y10.reinvestment
     reinvestment_rate_10 = reinvestment_10 / y10.nopat if y10.nopat > 0 else None
     implied_roic = None
     if reinvestment_rate_10 is not None and reinvestment_rate_10 > 0:
-        implied_roic = d.revenue_growth_terminal / reinvestment_rate_10
+        implied_roic = terminal_growth / reinvestment_rate_10
 
     roic_consistency_flag = bool(
         implied_roic is not None and (implied_roic < 0.02 or implied_roic > 0.35)
@@ -352,8 +527,49 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     )
 
     tv_pct_of_ev = None
-    if enterprise_value > 0:
-        tv_pct_of_ev = pv_tv_blended / enterprise_value
+    if enterprise_value_operations > 0:
+        tv_pct_of_ev = pv_tv_blended / enterprise_value_operations
+
+    ic0 = projections[0].invested_capital_start if projections else None
+    ic10 = projections[-1].invested_capital_end if projections else None
+    terminal_ep = None
+    pv_terminal_ep = None
+    if ic10 is not None:
+        ep_11 = nopat_11 - d.wacc * ic10
+        if denominator > 0.002:
+            terminal_ep = ep_11 / denominator
+            pv_terminal_ep = terminal_ep / ((1.0 + d.wacc) ** 10)
+
+    ep_enterprise_value = None
+    ep_intrinsic_value_per_share = None
+    dcf_ep_gap_pct = None
+    ep_reconcile_flag = None
+    if ic0 is not None:
+        ep_enterprise_value = ic0 + pv_ep_sum + (pv_terminal_ep or 0.0)
+        if enterprise_value_operations != 0:
+            dcf_ep_gap_pct = (ep_enterprise_value - enterprise_value_operations) / enterprise_value_operations
+            ep_reconcile_flag = abs(dcf_ep_gap_pct) <= 0.15
+        ep_equity = ep_enterprise_value + d.non_operating_assets - non_equity_claims
+        ep_intrinsic_value_per_share = ep_equity / d.shares_outstanding
+
+    fcfe_iv, fcfe_equity_value, fcfe_terminal_value, cost_of_equity_used = _compute_fcfe(
+        d=d,
+        projections=projections,
+        fcff_11_for_gordon=fcff_11_for_gordon,
+        nopat_11=nopat_11,
+        non_equity_claims=non_equity_claims,
+    )
+
+    health_flags = {
+        "tv_high_flag": bool(tv_pct_of_ev is not None and tv_pct_of_ev > 0.75),
+        "tv_extreme_flag": bool(tv_pct_of_ev is not None and tv_pct_of_ev > 0.90),
+        "terminal_growth_guardrail_flag": bool(terminal_growth > 0.04),
+        "terminal_ronic_guardrail_flag": bool(d.ronic_terminal <= terminal_growth + 0.005),
+        "terminal_denominator_guardrail_flag": bool(denominator <= 0.002),
+        "tv_method_fallback_flag": bool(method_used != "blend"),
+        "fcff_interest_contamination_flag": False,
+        "ep_reconcile_flag": bool(ep_reconcile_flag) if ep_reconcile_flag is not None else False,
+    }
 
     terminal_breakdown = TerminalBreakdown(
         method_used=method_used,
@@ -365,12 +581,17 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         pv_tv_gordon=pv_tv_gordon,
         pv_tv_exit=pv_tv_exit,
         pv_tv_blended=pv_tv_blended,
+        terminal_growth=terminal_growth,
+        ronic_terminal=ronic_terminal,
+        fcff_11_bridge=fcff_11_bridge,
+        fcff_11_value_driver=fcff_11_value_driver,
+        gordon_formula_mode=gordon_formula_mode,
     )
 
     return DCFComputationResult(
         scenario=scenario_spec.name,
         intrinsic_value_per_share=iv_blended,
-        enterprise_value=enterprise_value,
+        enterprise_value=enterprise_value_total,
         equity_value=equity_value,
         pv_fcff_sum=pv_fcff_sum,
         iv_gordon=iv_gordon,
@@ -382,6 +603,37 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         tv_pct_of_ev=tv_pct_of_ev,
         roic_consistency_flag=roic_consistency_flag,
         nwc_driver_quality_flag=nwc_driver_quality_flag,
+        enterprise_value_operations=enterprise_value_operations,
+        enterprise_value_total=enterprise_value_total,
+        non_operating_assets=d.non_operating_assets,
+        non_equity_claims=non_equity_claims,
+        ep_enterprise_value=ep_enterprise_value,
+        ep_intrinsic_value_per_share=ep_intrinsic_value_per_share,
+        dcf_ep_gap_pct=dcf_ep_gap_pct,
+        ep_reconcile_flag=ep_reconcile_flag,
+        fcfe_intrinsic_value_per_share=fcfe_iv,
+        fcfe_equity_value=fcfe_equity_value,
+        fcfe_pv_sum=sum((p.pv_fcfe or 0.0) for p in projections),
+        fcfe_terminal_value=fcfe_terminal_value,
+        cost_of_equity_used=cost_of_equity_used,
+        health_flags=health_flags,
+    )
+
+
+def run_fcfe_valuation(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) -> FCFEComputationResult:
+    """Direct FCFE branch using the same deterministic forecast path and bridge assumptions."""
+    result = run_dcf_professional(drivers, scenario_spec)
+
+    if result.fcfe_intrinsic_value_per_share is None or result.fcfe_equity_value is None:
+        raise ValueError("FCFE valuation could not be computed for the provided assumptions")
+
+    return FCFEComputationResult(
+        scenario=result.scenario,
+        intrinsic_value_per_share=result.fcfe_intrinsic_value_per_share,
+        equity_value=result.fcfe_equity_value,
+        pv_fcfe_sum=result.fcfe_pv_sum or 0.0,
+        terminal_value=result.fcfe_terminal_value or 0.0,
+        cost_of_equity=result.cost_of_equity_used or _clamp(drivers.wacc + 0.015, 0.04, 0.30),
     )
 
 
@@ -424,3 +676,62 @@ def run_probabilistic_valuation(
         expected_iv=expected_iv,
         expected_upside_pct=expected_upside_pct,
     )
+
+
+def reverse_dcf_professional(
+    drivers: ForecastDrivers,
+    target_price: float,
+    scenario: ScenarioSpec | str = "base",
+    low: float = -0.10,
+    high: float = 0.50,
+    tol: float = 0.001,
+    max_iter: int = 60,
+) -> float | None:
+    """Solve implied near-term growth using the professional deterministic DCF engine."""
+    if target_price is None or target_price <= 0:
+        return None
+
+    _validate_drivers(drivers)
+
+    scenario_spec = scenario if isinstance(scenario, ScenarioSpec) else ScenarioSpec(name=str(scenario), probability=1.0)
+
+    fade_ratio = 0.65
+    if abs(drivers.revenue_growth_near) > 1e-9:
+        fade_ratio = drivers.revenue_growth_mid / drivers.revenue_growth_near
+
+    def _iv(growth_near: float) -> float:
+        growth_mid = _clamp(growth_near * fade_ratio, -0.20, 0.40)
+        probe = replace(
+            drivers,
+            revenue_growth_near=growth_near,
+            revenue_growth_mid=growth_mid,
+        )
+        result = run_dcf_professional(probe, scenario_spec)
+        return result.intrinsic_value_per_share
+
+    try:
+        iv_low = _iv(low)
+        iv_high = _iv(high)
+    except Exception:
+        return None
+
+    if iv_low > iv_high:
+        low, high = high, low
+        iv_low, iv_high = iv_high, iv_low
+
+    if target_price < iv_low or target_price > iv_high:
+        return None
+
+    for _ in range(max_iter):
+        mid = (low + high) / 2
+        iv_mid = _iv(mid)
+
+        if abs(iv_mid - target_price) / max(abs(target_price), 1.0) < tol:
+            return round(mid, 4)
+
+        if iv_mid < target_price:
+            low = mid
+        else:
+            high = mid
+
+    return round((low + high) / 2, 4)

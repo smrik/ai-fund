@@ -24,67 +24,15 @@ from src.stage_02_valuation.professional_dcf import (
     ForecastDrivers,
     ScenarioSpec,
     default_scenario_specs,
+    reverse_dcf_professional,
     run_dcf_professional,
     run_probabilistic_valuation,
 )
-from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
-
-
-def reverse_dcf(
-    revenue: float,
-    assumptions: "DCFAssumptions",
-    target_price: float,
-    shares: float,
-    net_debt: float,
-    low: float = -0.05,
-    high: float = 0.50,
-    tol: float = 0.001,
-    max_iter: int = 50,
-) -> float | None:
-    """Binary search implied near-term revenue growth for a simple DCF target price."""
-
-    def _iv(g: float) -> float:
-        a = DCFAssumptions(
-            revenue_growth_near=g,
-            revenue_growth_mid=g * 0.65,
-            revenue_growth_terminal=assumptions.revenue_growth_terminal,
-            ebit_margin=assumptions.ebit_margin,
-            tax_rate=assumptions.tax_rate,
-            capex_pct_revenue=assumptions.capex_pct_revenue,
-            da_pct_revenue=assumptions.da_pct_revenue,
-            nwc_change_pct_revenue=assumptions.nwc_change_pct_revenue,
-            wacc=assumptions.wacc,
-            exit_multiple=assumptions.exit_multiple,
-            net_debt=net_debt,
-            shares_outstanding=shares,
-        )
-        return run_dcf(revenue, a).intrinsic_value_per_share
-
-    try:
-        iv_low = _iv(low)
-        iv_high = _iv(high)
-    except Exception:
-        return None
-
-    if target_price < iv_low or target_price > iv_high:
-        return None
-
-    for _ in range(max_iter):
-        mid = (low + high) / 2
-        iv_mid = _iv(mid)
-        if abs(iv_mid - target_price) / max(abs(target_price), 1) < tol:
-            return round(mid, 4)
-        if iv_mid < target_price:
-            low = mid
-        else:
-            high = mid
-
-    return round((low + high) / 2, 4)
 
 
 def _safe_float(value):
@@ -99,6 +47,24 @@ def _safe_float(value):
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _mm(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(value / 1e6, 0)
+
+
+def _pct(value: float | None, digits: int = 1) -> float | None:
+    if value is None:
+        return None
+    return round(value * 100.0, digits)
+
+
+def _flag(value: bool | None) -> bool | None:
+    if value is None:
+        return None
+    return bool(value)
 
 
 def _scenario_by_name(results: dict, name: str):
@@ -200,14 +166,21 @@ def value_single_ticker(ticker: str) -> dict | None:
             "beta_raw": mkt.get("beta"),
             "wacc": round((wacc_inputs.get("wacc") or inputs.drivers.wacc) * 100, 2),
             "cost_of_equity": round((wacc_inputs.get("cost_of_equity") or 0) * 100, 2) if wacc_inputs.get("cost_of_equity") is not None else None,
+            "cost_of_equity_source": lineage.get("cost_of_equity", "yfinance_capm"),
             "beta_relevered": round((wacc_inputs.get("beta_relevered") or 0), 2) if wacc_inputs.get("beta_relevered") is not None else None,
             "beta_unlevered": round((wacc_inputs.get("beta_unlevered_median") or 0), 2) if wacc_inputs.get("beta_unlevered_median") is not None else None,
             "size_premium": round((wacc_inputs.get("size_premium") or 0) * 100, 1) if wacc_inputs.get("size_premium") is not None else None,
             "equity_weight": round((wacc_inputs.get("equity_weight") or 0) * 100, 0) if wacc_inputs.get("equity_weight") is not None else None,
+            "debt_weight_source": lineage.get("debt_weight", "yfinance_capm"),
             "peers_used": ", ".join(wacc_inputs.get("peers_used") or []),
             "growth_near": round(inputs.drivers.revenue_growth_near * 100, 1),
             "growth_mid": round(inputs.drivers.revenue_growth_mid * 100, 1),
             "growth_source": lineage.get("revenue_growth_near", "default"),
+            "growth_source_detail": lineage.get("growth_source_detail", "unknown"),
+            "revenue_period_type": lineage.get("revenue_period_type", "unknown"),
+            "growth_period_type": lineage.get("growth_period_type", "unknown"),
+            "revenue_alignment_flag": lineage.get("revenue_alignment_flag", "unknown"),
+            "revenue_data_quality_flag": lineage.get("revenue_data_quality_flag", "needs_review"),
             "ebit_margin_used": round(inputs.drivers.ebit_margin_start * 100, 1),
             "ebit_margin_source": lineage.get("ebit_margin_start", "default"),
             "capex_pct_used": round(inputs.drivers.capex_pct_start * 100, 2),
@@ -216,10 +189,36 @@ def value_single_ticker(ticker: str) -> dict | None:
             "da_source": lineage.get("da_pct_start", "default"),
             "tax_rate_used": round(inputs.drivers.tax_rate_start * 100, 1),
             "tax_source": lineage.get("tax_rate_start", "default"),
+            "dso_used": round(inputs.drivers.dso_start, 1),
+            "dso_source": lineage.get("dso_start", "default"),
+            "dio_used": round(inputs.drivers.dio_start, 1),
+            "dio_source": lineage.get("dio_start", "default"),
+            "dpo_used": round(inputs.drivers.dpo_start, 1),
+            "dpo_source": lineage.get("dpo_start", "default"),
+            "ronic_terminal_used": _pct(inputs.drivers.ronic_terminal, 2),
+            "ronic_terminal_source": lineage.get("ronic_terminal", "default"),
+            "invested_capital_source": lineage.get("invested_capital_start", "default"),
+            "non_operating_assets_used_mm": _mm(inputs.drivers.non_operating_assets),
+            "non_operating_assets_source": lineage.get("non_operating_assets", "default"),
+            "minority_interest_used_mm": _mm(inputs.drivers.minority_interest),
+            "minority_interest_source": lineage.get("minority_interest", "default"),
+            "preferred_equity_used_mm": _mm(inputs.drivers.preferred_equity),
+            "preferred_equity_source": lineage.get("preferred_equity", "default"),
+            "pension_deficit_used_mm": _mm(inputs.drivers.pension_deficit),
+            "pension_deficit_source": lineage.get("pension_deficit", "default"),
+            "lease_liabilities_used_mm": _mm(inputs.drivers.lease_liabilities),
+            "lease_liabilities_source": lineage.get("lease_liabilities", "default"),
+            "options_value_used_mm": _mm(inputs.drivers.options_value),
+            "options_value_source": lineage.get("options_value", "default"),
+            "convertibles_value_used_mm": _mm(inputs.drivers.convertibles_value),
+            "convertibles_value_source": lineage.get("convertibles_value", "default"),
             "exit_multiple_used": round(inputs.drivers.exit_multiple, 2),
             "exit_multiple_source": lineage.get("exit_multiple", "default"),
             "exit_metric_used": inputs.drivers.exit_metric,
             "model_applicability_status": inputs.model_applicability_status,
+            "story_profile_source": lineage.get("story_profile", "default"),
+            "story_profile_json": json.dumps(getattr(inputs, "story_profile", {}) or {}, separators=(",", ":")),
+            "story_adjustments_json": json.dumps(getattr(inputs, "story_adjustments", {}) or {}, separators=(",", ":")),
             "ciq_snapshot_used": bool(ciq.get("snapshot_used")),
             "ciq_run_id": ciq.get("snapshot_run_id"),
             "ciq_source_file": ciq.get("snapshot_source_file"),
@@ -230,8 +229,10 @@ def value_single_ticker(ticker: str) -> dict | None:
             "ciq_comps_as_of_date": ciq.get("comps_as_of_date"),
             "ciq_peer_count": ciq.get("peer_count"),
             "peer_median_tev_ebitda_ltm": ciq.get("peer_median_tev_ebitda_ltm"),
+            "peer_median_tev_ebit_ltm": ciq.get("peer_median_tev_ebit_ltm"),
             "peer_median_pe_ltm": ciq.get("peer_median_pe_ltm"),
             "comps_iv_ev_ebitda": ciq.get("comps_iv_ev_ebitda"),
+            "comps_iv_ev_ebit": ciq.get("comps_iv_ev_ebit"),
             "comps_iv_pe": ciq.get("comps_iv_pe"),
             "comps_iv_base": ciq.get("comps_iv_base"),
             "comps_upside_pct": (
@@ -266,6 +267,35 @@ def value_single_ticker(ticker: str) -> dict | None:
                     "tv_method_fallback_flag": None,
                     "roic_consistency_flag": None,
                     "nwc_driver_quality_flag": None,
+                    "ev_operations_mm": None,
+                    "ev_total_mm": None,
+                    "non_operating_assets_mm": None,
+                    "non_equity_claims_mm": None,
+                    "ep_ev_operations_mm": None,
+                    "ep_iv_base": None,
+                    "dcf_ep_gap_pct": None,
+                    "ep_reconcile_flag": None,
+                    "fcfe_iv_base": None,
+                    "fcfe_equity_mm": None,
+                    "fcfe_pv_sum_mm": None,
+                    "fcfe_terminal_value_mm": None,
+                    "cost_of_equity_model": None,
+                    "tv_gordon_mm": None,
+                    "tv_exit_mm": None,
+                    "tv_blended_mm": None,
+                    "pv_tv_gordon_mm": None,
+                    "pv_tv_exit_mm": None,
+                    "pv_tv_blended_mm": None,
+                    "terminal_growth_pct": None,
+                    "terminal_ronic_pct": None,
+                    "terminal_fcff_11_bridge_mm": None,
+                    "terminal_fcff_11_value_driver_mm": None,
+                    "gordon_formula_mode": None,
+                    "health_tv_extreme_flag": None,
+                    "health_terminal_growth_guardrail_flag": None,
+                    "health_terminal_ronic_guardrail_flag": None,
+                    "health_terminal_denominator_guardrail_flag": None,
+                    "health_fcff_interest_contamination_flag": None,
                     "scenario_prob_bear": 0.20,
                     "scenario_prob_base": 0.60,
                     "scenario_prob_bull": 0.20,
@@ -289,50 +319,64 @@ def value_single_ticker(ticker: str) -> dict | None:
         upside_bear = (bear_iv / price - 1) if bear_iv is not None and price > 0 else None
         upside_bull = (bull_iv / price - 1) if bull_iv is not None and price > 0 else None
 
-        simple_assumptions = DCFAssumptions(
-            revenue_growth_near=inputs.drivers.revenue_growth_near,
-            revenue_growth_mid=inputs.drivers.revenue_growth_mid,
-            revenue_growth_terminal=inputs.drivers.revenue_growth_terminal,
-            ebit_margin=inputs.drivers.ebit_margin_start,
-            tax_rate=inputs.drivers.tax_rate_start,
-            capex_pct_revenue=inputs.drivers.capex_pct_start,
-            da_pct_revenue=inputs.drivers.da_pct_start,
-            nwc_change_pct_revenue=0.01,
-            wacc=inputs.drivers.wacc,
-            exit_multiple=inputs.drivers.exit_multiple,
-            net_debt=inputs.drivers.net_debt,
-            shares_outstanding=inputs.drivers.shares_outstanding,
-        )
-        implied_growth = reverse_dcf(
-            revenue=inputs.drivers.revenue_base,
-            assumptions=simple_assumptions,
+        implied_growth = reverse_dcf_professional(
+            drivers=inputs.drivers,
             target_price=price,
-            shares=inputs.drivers.shares_outstanding,
-            net_debt=inputs.drivers.net_debt,
+            scenario="base",
         )
+
+        health = (base.health_flags or {}) if base else {}
+        terminal = base.terminal_breakdown if base else None
 
         row.update(
             {
                 "iv_bear": round(bear_iv, 2) if bear_iv is not None else None,
                 "iv_base": round(base_iv, 2) if base_iv is not None else None,
                 "iv_bull": round(bull_iv, 2) if bull_iv is not None else None,
-                "upside_base_pct": round(upside_base * 100, 1) if upside_base is not None else None,
-                "upside_bear_pct": round(upside_bear * 100, 1) if upside_bear is not None else None,
-                "upside_bull_pct": round(upside_bull * 100, 1) if upside_bull is not None else None,
+                "upside_base_pct": _pct(upside_base),
+                "upside_bear_pct": _pct(upside_bear),
+                "upside_bull_pct": _pct(upside_bull),
                 "margin_of_safety": round((1.0 - price / base_iv) * 100, 1) if base_iv and base_iv > 0 else None,
                 "expected_iv": round(probabilistic.expected_iv, 2),
-                "expected_upside_pct": round((probabilistic.expected_upside_pct or 0.0) * 100, 1)
-                if probabilistic.expected_upside_pct is not None
-                else None,
-                "tv_pct_of_ev": round((base.tv_pct_of_ev or 0.0) * 100, 1) if base and base.tv_pct_of_ev is not None else None,
-                "tv_high_flag": bool(base and base.tv_pct_of_ev is not None and base.tv_pct_of_ev > 0.75),
-                "implied_growth_pct": round(implied_growth * 100, 1) if implied_growth is not None else None,
+                "expected_upside_pct": _pct(probabilistic.expected_upside_pct),
+                "tv_pct_of_ev": _pct(base.tv_pct_of_ev) if base and base.tv_pct_of_ev is not None else None,
+                "tv_high_flag": _flag(base.tv_pct_of_ev > 0.75) if base and base.tv_pct_of_ev is not None else None,
+                "implied_growth_pct": _pct(implied_growth),
                 "iv_gordon": round(base.iv_gordon, 2) if base and base.iv_gordon is not None else None,
                 "iv_exit": round(base.iv_exit, 2) if base and base.iv_exit is not None else None,
                 "iv_blended": round(base.iv_blended, 2) if base else None,
-                "tv_method_fallback_flag": bool(base.tv_method_fallback_flag) if base else None,
-                "roic_consistency_flag": bool(base.roic_consistency_flag) if base else None,
-                "nwc_driver_quality_flag": bool(base.nwc_driver_quality_flag) if base else None,
+                "tv_method_fallback_flag": _flag(base.tv_method_fallback_flag) if base else None,
+                "roic_consistency_flag": _flag(base.roic_consistency_flag) if base else None,
+                "nwc_driver_quality_flag": _flag(base.nwc_driver_quality_flag) if base else None,
+                "ev_operations_mm": _mm(base.enterprise_value_operations) if base else None,
+                "ev_total_mm": _mm(base.enterprise_value_total) if base else None,
+                "non_operating_assets_mm": _mm(base.non_operating_assets) if base else None,
+                "non_equity_claims_mm": _mm(base.non_equity_claims) if base else None,
+                "ep_ev_operations_mm": _mm(base.ep_enterprise_value) if base else None,
+                "ep_iv_base": round(base.ep_intrinsic_value_per_share, 2) if base and base.ep_intrinsic_value_per_share is not None else None,
+                "dcf_ep_gap_pct": _pct(base.dcf_ep_gap_pct, 2) if base and base.dcf_ep_gap_pct is not None else None,
+                "ep_reconcile_flag": _flag(base.ep_reconcile_flag) if base else None,
+                "fcfe_iv_base": round(base.fcfe_intrinsic_value_per_share, 2) if base and base.fcfe_intrinsic_value_per_share is not None else None,
+                "fcfe_equity_mm": _mm(base.fcfe_equity_value) if base else None,
+                "fcfe_pv_sum_mm": _mm(base.fcfe_pv_sum) if base else None,
+                "fcfe_terminal_value_mm": _mm(base.fcfe_terminal_value) if base else None,
+                "cost_of_equity_model": _pct(base.cost_of_equity_used, 2) if base and base.cost_of_equity_used is not None else None,
+                "tv_gordon_mm": _mm(terminal.tv_gordon) if terminal else None,
+                "tv_exit_mm": _mm(terminal.tv_exit) if terminal else None,
+                "tv_blended_mm": _mm(terminal.tv_blended) if terminal else None,
+                "pv_tv_gordon_mm": _mm(terminal.pv_tv_gordon) if terminal else None,
+                "pv_tv_exit_mm": _mm(terminal.pv_tv_exit) if terminal else None,
+                "pv_tv_blended_mm": _mm(terminal.pv_tv_blended) if terminal else None,
+                "terminal_growth_pct": _pct(terminal.terminal_growth, 2) if terminal else None,
+                "terminal_ronic_pct": _pct(terminal.ronic_terminal, 2) if terminal and terminal.ronic_terminal is not None else None,
+                "terminal_fcff_11_bridge_mm": _mm(terminal.fcff_11_bridge) if terminal else None,
+                "terminal_fcff_11_value_driver_mm": _mm(terminal.fcff_11_value_driver) if terminal else None,
+                "gordon_formula_mode": terminal.gordon_formula_mode if terminal else None,
+                "health_tv_extreme_flag": _flag(health.get("tv_extreme_flag")),
+                "health_terminal_growth_guardrail_flag": _flag(health.get("terminal_growth_guardrail_flag")),
+                "health_terminal_ronic_guardrail_flag": _flag(health.get("terminal_ronic_guardrail_flag")),
+                "health_terminal_denominator_guardrail_flag": _flag(health.get("terminal_denominator_guardrail_flag")),
+                "health_fcff_interest_contamination_flag": _flag(health.get("fcff_interest_contamination_flag")),
                 "scenario_prob_bear": next((s.probability for s in scenario_specs if s.name == "bear"), None),
                 "scenario_prob_base": next((s.probability for s in scenario_specs if s.name == "base"), None),
                 "scenario_prob_bull": next((s.probability for s in scenario_specs if s.name == "bull"), None),
@@ -362,6 +406,8 @@ def export_to_excel(results: list[dict], output_path: Path):
             "iv_base",
             "iv_bull",
             "expected_iv",
+            "ep_iv_base",
+            "fcfe_iv_base",
             "upside_base_pct",
             "expected_upside_pct",
             "wacc",
@@ -376,6 +422,11 @@ def export_to_excel(results: list[dict], output_path: Path):
             "growth_near",
             "growth_mid",
             "growth_source",
+            "growth_source_detail",
+            "revenue_period_type",
+            "growth_period_type",
+            "revenue_alignment_flag",
+            "revenue_data_quality_flag",
             "ebit_margin_used",
             "ebit_margin_source",
             "capex_pct_used",
@@ -384,12 +435,38 @@ def export_to_excel(results: list[dict], output_path: Path):
             "da_source",
             "tax_rate_used",
             "tax_source",
+            "dso_used",
+            "dso_source",
+            "dio_used",
+            "dio_source",
+            "dpo_used",
+            "dpo_source",
+            "ronic_terminal_used",
+            "ronic_terminal_source",
+            "invested_capital_source",
+            "non_operating_assets_used_mm",
+            "non_operating_assets_source",
+            "minority_interest_used_mm",
+            "minority_interest_source",
+            "preferred_equity_used_mm",
+            "preferred_equity_source",
+            "pension_deficit_used_mm",
+            "pension_deficit_source",
+            "lease_liabilities_used_mm",
+            "lease_liabilities_source",
+            "options_value_used_mm",
+            "options_value_source",
+            "convertibles_value_used_mm",
+            "convertibles_value_source",
             "exit_multiple_used",
             "exit_multiple_source",
             "exit_metric_used",
             "revenue_source",
             "net_debt_source",
             "shares_source",
+            "cost_of_equity_source",
+            "debt_weight_source",
+            "story_profile_source",
             "ciq_run_id",
             "ciq_source_file",
             "ciq_as_of_date",
@@ -429,14 +506,43 @@ def export_to_excel(results: list[dict], output_path: Path):
 
         terminal_cols = [
             "ticker",
+            "ev_operations_mm",
+            "ev_total_mm",
+            "non_operating_assets_mm",
+            "non_equity_claims_mm",
             "iv_gordon",
             "iv_exit",
             "iv_blended",
+            "ep_iv_base",
+            "fcfe_iv_base",
+            "tv_gordon_mm",
+            "tv_exit_mm",
+            "tv_blended_mm",
+            "pv_tv_gordon_mm",
+            "pv_tv_exit_mm",
+            "pv_tv_blended_mm",
+            "terminal_growth_pct",
+            "terminal_ronic_pct",
+            "terminal_fcff_11_bridge_mm",
+            "terminal_fcff_11_value_driver_mm",
+            "gordon_formula_mode",
             "tv_pct_of_ev",
             "tv_method_fallback_flag",
             "tv_high_flag",
             "roic_consistency_flag",
             "nwc_driver_quality_flag",
+            "health_tv_extreme_flag",
+            "health_terminal_growth_guardrail_flag",
+            "health_terminal_ronic_guardrail_flag",
+            "health_terminal_denominator_guardrail_flag",
+            "health_fcff_interest_contamination_flag",
+            "ep_ev_operations_mm",
+            "dcf_ep_gap_pct",
+            "ep_reconcile_flag",
+            "fcfe_equity_mm",
+            "fcfe_pv_sum_mm",
+            "fcfe_terminal_value_mm",
+            "cost_of_equity_model",
         ]
         df_terminal = df[[c for c in terminal_cols if c in df.columns]].copy()
         df_terminal.to_excel(writer, sheet_name="Terminal Bridge (Gordon vs Exit vs Blend)", index=False)
@@ -451,6 +557,8 @@ def export_to_excel(results: list[dict], output_path: Path):
             "iv_bull",
             "expected_iv",
             "expected_upside_pct",
+            "ep_iv_base",
+            "fcfe_iv_base",
         ]
         df_scenarios = df[[c for c in scenario_cols if c in df.columns]].copy()
         df_scenarios.to_excel(writer, sheet_name="Scenarios (with probabilities)", index=False)

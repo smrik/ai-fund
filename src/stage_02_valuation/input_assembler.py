@@ -1,7 +1,7 @@
 """Deterministic valuation input assembly with source lineage and manual overrides."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ from config import ROOT_DIR
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_valuation, get_ciq_snapshot
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
+from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
 from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
 
 
@@ -18,16 +19,16 @@ OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"
 
 
 SECTOR_DEFAULTS = {
-    "Technology": {"growth_near": 0.12, "margin": 0.20, "capex_pct": 0.06, "da_pct": 0.04, "dso": 45.0, "dio": 35.0, "dpo": 38.0, "exit_multiple": 16.0},
-    "Communication Services": {"growth_near": 0.10, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 30.0, "dpo": 42.0, "exit_multiple": 14.0},
-    "Healthcare": {"growth_near": 0.09, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 52.0, "dio": 45.0, "dpo": 40.0, "exit_multiple": 14.0},
-    "Consumer Cyclical": {"growth_near": 0.08, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 42.0, "dio": 55.0, "dpo": 48.0, "exit_multiple": 12.0},
-    "Consumer Defensive": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.04, "da_pct": 0.03, "dso": 40.0, "dio": 58.0, "dpo": 50.0, "exit_multiple": 12.0},
-    "Industrials": {"growth_near": 0.06, "margin": 0.13, "capex_pct": 0.06, "da_pct": 0.04, "dso": 55.0, "dio": 60.0, "dpo": 50.0, "exit_multiple": 11.0},
-    "Energy": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.08, "da_pct": 0.06, "dso": 38.0, "dio": 45.0, "dpo": 46.0, "exit_multiple": 9.0},
-    "Basic Materials": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.07, "da_pct": 0.05, "dso": 48.0, "dio": 65.0, "dpo": 52.0, "exit_multiple": 9.0},
-    "Utilities": {"growth_near": 0.04, "margin": 0.15, "capex_pct": 0.09, "da_pct": 0.07, "dso": 42.0, "dio": 20.0, "dpo": 45.0, "exit_multiple": 10.0},
-    "_default": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 50.0, "dpo": 45.0, "exit_multiple": 12.0},
+    "Technology": {"growth_near": 0.12, "margin": 0.20, "capex_pct": 0.06, "da_pct": 0.04, "dso": 45.0, "dio": 35.0, "dpo": 38.0, "exit_multiple": 16.0, "ic_turnover": 1.60, "ronic_terminal": 0.15},
+    "Communication Services": {"growth_near": 0.10, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 30.0, "dpo": 42.0, "exit_multiple": 14.0, "ic_turnover": 1.50, "ronic_terminal": 0.14},
+    "Healthcare": {"growth_near": 0.09, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 52.0, "dio": 45.0, "dpo": 40.0, "exit_multiple": 14.0, "ic_turnover": 1.30, "ronic_terminal": 0.13},
+    "Consumer Cyclical": {"growth_near": 0.08, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 42.0, "dio": 55.0, "dpo": 48.0, "exit_multiple": 12.0, "ic_turnover": 1.80, "ronic_terminal": 0.12},
+    "Consumer Defensive": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.04, "da_pct": 0.03, "dso": 40.0, "dio": 58.0, "dpo": 50.0, "exit_multiple": 12.0, "ic_turnover": 2.00, "ronic_terminal": 0.11},
+    "Industrials": {"growth_near": 0.06, "margin": 0.13, "capex_pct": 0.06, "da_pct": 0.04, "dso": 55.0, "dio": 60.0, "dpo": 50.0, "exit_multiple": 11.0, "ic_turnover": 1.70, "ronic_terminal": 0.11},
+    "Energy": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.08, "da_pct": 0.06, "dso": 38.0, "dio": 45.0, "dpo": 46.0, "exit_multiple": 9.0, "ic_turnover": 1.40, "ronic_terminal": 0.10},
+    "Basic Materials": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.07, "da_pct": 0.05, "dso": 48.0, "dio": 65.0, "dpo": 52.0, "exit_multiple": 9.0, "ic_turnover": 1.30, "ronic_terminal": 0.10},
+    "Utilities": {"growth_near": 0.04, "margin": 0.15, "capex_pct": 0.09, "da_pct": 0.07, "dso": 42.0, "dio": 20.0, "dpo": 45.0, "exit_multiple": 10.0, "ic_turnover": 1.10, "ronic_terminal": 0.09},
+    "_default": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 50.0, "dpo": 45.0, "exit_multiple": 12.0, "ic_turnover": 1.50, "ronic_terminal": 0.11},
 }
 
 
@@ -60,6 +61,8 @@ class ValuationInputsWithLineage:
     source_lineage: dict[str, str]
     ciq_lineage: dict[str, Any]
     wacc_inputs: dict[str, Any]
+    story_profile: dict[str, Any] | None = None
+    story_adjustments: dict[str, Any] | None = None
 
 
 def _bounded(value: float | None, low: float, high: float, default: float) -> float:
@@ -73,6 +76,24 @@ def _pick(values: list[tuple[Any, str]], default_value: Any, default_source: str
         if value is not None:
             return value, source
     return default_value, default_source
+
+
+def _canonical_source(source_detail: str) -> str:
+    if source_detail.startswith("ciq"):
+        return "ciq"
+    if source_detail.startswith("yfinance"):
+        return "yfinance"
+    return source_detail
+
+
+def _growth_period_type(source_detail: str) -> str:
+    if source_detail in {"ciq_cagr_3yr", "yfinance_cagr_3yr"}:
+        return "cagr_3yr"
+    if source_detail == "yfinance_ttm_yoy":
+        return "ttm_yoy"
+    if source_detail == "default":
+        return "default"
+    return "unknown"
 
 
 def select_exit_metric_for_sector(sector: str) -> str:
@@ -117,6 +138,45 @@ def _apply_overrides(
     _apply(overrides.get("tickers", {}).get(ticker.upper(), {}), "override_ticker")
 
 
+def _derive_invested_capital_start(
+    revenue_base: float,
+    tax_start: float,
+    ciq: dict[str, Any] | None,
+    defaults: dict[str, float],
+) -> tuple[float, str]:
+    ciq_roic = (ciq or {}).get("roic")
+    ciq_ebit = (ciq or {}).get("operating_income_ttm")
+    ciq_ic_from_roic = None
+    if ciq_roic and ciq_roic > 0.03 and ciq_ebit is not None:
+        ciq_ic_from_roic = float(ciq_ebit) * (1.0 - tax_start) / float(ciq_roic)
+
+    raw, source = _pick(
+        [
+            ((ciq or {}).get("invested_capital"), "ciq"),
+            (ciq_ic_from_roic, "ciq_derived_nopat_over_roic"),
+        ],
+        revenue_base / defaults["ic_turnover"],
+        "default",
+    )
+    value = _bounded(raw, revenue_base * 0.15, revenue_base * 4.0, revenue_base / defaults["ic_turnover"])
+    return float(value), source
+
+
+def _derive_non_operating_assets(revenue_base: float, ciq: dict[str, Any] | None, mkt: dict[str, Any]) -> tuple[float, str]:
+    cash = (ciq or {}).get("cash")
+    source = "ciq_cash_excess"
+    if cash is None:
+        cash = mkt.get("cash")
+        source = "yfinance_cash_excess"
+
+    if cash is None:
+        return 0.0, "default"
+
+    operating_cash_buffer = 0.02 * revenue_base
+    excess_cash = max(float(cash) - operating_cash_buffer, 0.0)
+    return excess_cash, source
+
+
 def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> ValuationInputsWithLineage | None:
     ticker = ticker.upper().strip()
     mkt = md_client.get_market_data(ticker)
@@ -143,15 +203,37 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     if not revenue_base or revenue_base <= 0:
         return None
 
-    growth_near_raw, growth_source = _pick(
+    growth_near_raw, growth_source_detail = _pick(
         [
-            ((ciq or {}).get("revenue_cagr_3yr"), "ciq"),
-            (hist.get("revenue_cagr_3yr"), "yfinance"),
-            (mkt.get("revenue_growth"), "yfinance"),
+            ((ciq or {}).get("revenue_cagr_3yr"), "ciq_cagr_3yr"),
+            (hist.get("revenue_cagr_3yr"), "yfinance_cagr_3yr"),
+            (mkt.get("revenue_growth"), "yfinance_ttm_yoy"),
         ],
         defaults["growth_near"],
         "default",
     )
+    growth_source = _canonical_source(growth_source_detail)
+    growth_period_type = _growth_period_type(growth_source_detail)
+    revenue_period_type = "ttm" if revenue_source in {"ciq", "yfinance"} else "unknown"
+
+    if revenue_period_type == "ttm" and growth_period_type == "ttm_yoy":
+        revenue_alignment_flag = "aligned_ttm"
+    elif revenue_period_type == "ttm" and growth_period_type == "cagr_3yr":
+        revenue_alignment_flag = "mixed_ttm_vs_cagr"
+    elif growth_period_type == "default":
+        revenue_alignment_flag = "default_growth"
+    else:
+        revenue_alignment_flag = "unknown"
+
+    if revenue_source == "default" or growth_source == "default":
+        revenue_data_quality_flag = "low_quality"
+    elif revenue_alignment_flag == "mixed_ttm_vs_cagr":
+        revenue_data_quality_flag = "needs_review"
+    elif revenue_alignment_flag == "aligned_ttm":
+        revenue_data_quality_flag = "ok"
+    else:
+        revenue_data_quality_flag = "needs_review"
+
     growth_near = _bounded(growth_near_raw, -0.10, 0.35, defaults["growth_near"])
     growth_mid = _bounded(growth_near * 0.65, -0.08, 0.25, defaults["growth_near"] * 0.65)
 
@@ -165,7 +247,7 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
     margin_start = _bounded(margin_start_raw, 0.02, 0.60, defaults["margin"])
-    margin_target = _bounded(max(margin_start, defaults["margin"]), 0.03, 0.65, defaults["margin"])
+    margin_target = _bounded(defaults["margin"], 0.03, 0.65, defaults["margin"])
 
     tax_start_raw, tax_source = _pick(
         [
@@ -202,6 +284,10 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
 
     wacc_result = compute_wacc_from_yfinance(ticker, hist=hist)
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
+    cost_of_equity = _bounded(getattr(wacc_result, "cost_of_equity", None), 0.04, 0.30, max(0.06, wacc + 0.015))
+    equity_weight = getattr(wacc_result, "equity_weight", None)
+    debt_weight_raw = (1.0 - equity_weight) if equity_weight is not None else getattr(wacc_result, "debt_weight", None)
+    debt_weight = _bounded(debt_weight_raw, 0.00, 0.80, 0.20)
 
     exit_metric = select_exit_metric_for_sector(sector)
     if exit_metric == "ev_ebit":
@@ -227,7 +313,7 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     net_debt_raw, net_debt_source = _pick(
         [
             (((ciq or {}).get("total_debt") or 0) - ((ciq or {}).get("cash") or 0) if ciq else None, "ciq"),
-            (((mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)), "yfinance"),
+            ((((mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)) if (mkt.get("total_debt") is not None or mkt.get("cash") is not None) else None), "yfinance"),
         ],
         0.0,
         "default",
@@ -238,6 +324,100 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
             (mkt.get("shares_outstanding"), "yfinance"),
         ],
         1.0,
+        "default",
+    )
+
+    dso_raw, dso_source = _pick(
+        [
+            ((ciq or {}).get("dso"), "ciq"),
+            (hist.get("dso_derived"), "yfinance"),
+        ],
+        defaults["dso"],
+        "default",
+    )
+    dso_start = _bounded(dso_raw, 5.0, 180.0, defaults["dso"])
+    dso_target = _bounded(defaults["dso"], 5.0, 180.0, defaults["dso"])
+
+    dio_raw, dio_source = _pick(
+        [
+            ((ciq or {}).get("dio"), "ciq"),
+            (hist.get("dio_derived"), "yfinance"),
+        ],
+        defaults["dio"],
+        "default",
+    )
+    dio_start = _bounded(dio_raw, 5.0, 220.0, defaults["dio"])
+    dio_target = _bounded(defaults["dio"], 5.0, 220.0, defaults["dio"])
+
+    dpo_raw, dpo_source = _pick(
+        [
+            ((ciq or {}).get("dpo"), "ciq"),
+            (hist.get("dpo_derived"), "yfinance"),
+        ],
+        defaults["dpo"],
+        "default",
+    )
+    dpo_start = _bounded(dpo_raw, 5.0, 180.0, defaults["dpo"])
+    dpo_target = _bounded(defaults["dpo"], 5.0, 180.0, defaults["dpo"])
+
+    invested_capital_start, invested_capital_source = _derive_invested_capital_start(
+        revenue_base=float(revenue_base),
+        tax_start=float(tax_start),
+        ciq=ciq,
+        defaults=defaults,
+    )
+
+    ronic_terminal_raw, ronic_terminal_source = _pick(
+        [
+            ((ciq or {}).get("roic"), "ciq_roic"),
+        ],
+        defaults["ronic_terminal"],
+        "default",
+    )
+    ronic_terminal = _bounded(ronic_terminal_raw, 0.06, 0.30, defaults["ronic_terminal"])
+
+    non_operating_assets, non_operating_assets_source = _derive_non_operating_assets(float(revenue_base), ciq=ciq, mkt=mkt)
+
+    minority_interest_raw, minority_interest_source = _pick(
+        [
+            ((ciq or {}).get("minority_interest"), "ciq"),
+        ],
+        0.0,
+        "default",
+    )
+    preferred_equity_raw, preferred_equity_source = _pick(
+        [
+            ((ciq or {}).get("preferred_equity"), "ciq"),
+        ],
+        0.0,
+        "default",
+    )
+    pension_deficit_raw, pension_deficit_source = _pick(
+        [
+            ((ciq or {}).get("pension_deficit"), "ciq"),
+        ],
+        0.0,
+        "default",
+    )
+    lease_liabilities_raw, lease_liabilities_source = _pick(
+        [
+            ((ciq or {}).get("lease_liabilities"), "ciq"),
+        ],
+        0.0,
+        "default",
+    )
+    options_value_raw, options_value_source = _pick(
+        [
+            ((ciq or {}).get("options_value"), "ciq"),
+        ],
+        0.0,
+        "default",
+    )
+    convertibles_value_raw, convertibles_value_source = _pick(
+        [
+            ((ciq or {}).get("convertibles_value"), "ciq"),
+        ],
+        0.0,
         "default",
     )
 
@@ -254,12 +434,12 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         capex_pct_target=float(capex_target),
         da_pct_start=float(da_start),
         da_pct_target=float(da_target),
-        dso_start=float(defaults["dso"]),
-        dso_target=float(defaults["dso"]),
-        dio_start=float(defaults["dio"]),
-        dio_target=float(defaults["dio"]),
-        dpo_start=float(defaults["dpo"]),
-        dpo_target=float(defaults["dpo"]),
+        dso_start=float(dso_start),
+        dso_target=float(dso_target),
+        dio_start=float(dio_start),
+        dio_target=float(dio_target),
+        dpo_start=float(dpo_start),
+        dpo_target=float(dpo_target),
         wacc=float(wacc),
         exit_multiple=float(exit_multiple),
         exit_metric=exit_metric,
@@ -267,32 +447,85 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         shares_outstanding=float(max(shares_raw, 1.0)),
         terminal_blend_gordon_weight=0.60,
         terminal_blend_exit_weight=0.40,
+        invested_capital_start=float(invested_capital_start),
+        ronic_terminal=float(ronic_terminal),
+        non_operating_assets=float(non_operating_assets),
+        minority_interest=float(_bounded(minority_interest_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        preferred_equity=float(_bounded(preferred_equity_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        pension_deficit=float(_bounded(pension_deficit_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        lease_liabilities=float(_bounded(lease_liabilities_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        options_value=float(_bounded(options_value_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        convertibles_value=float(_bounded(convertibles_value_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
+        cost_of_equity=float(cost_of_equity),
+        debt_weight=float(debt_weight),
     )
 
     source_lineage = {
         "revenue_base": revenue_source,
         "revenue_growth_near": growth_source,
         "revenue_growth_mid": growth_source,
+        "growth_source_detail": growth_source_detail,
+        "revenue_period_type": revenue_period_type,
+        "growth_period_type": growth_period_type,
+        "revenue_alignment_flag": revenue_alignment_flag,
+        "revenue_data_quality_flag": revenue_data_quality_flag,
         "ebit_margin_start": margin_source,
-        "ebit_margin_target": margin_source,
+        "ebit_margin_target": "default",
         "tax_rate_start": tax_source,
         "tax_rate_target": "default",
         "capex_pct_start": capex_source,
         "capex_pct_target": capex_source,
         "da_pct_start": da_source,
         "da_pct_target": da_source,
-        "dso_start": "default",
+        "dso_start": dso_source,
         "dso_target": "default",
-        "dio_start": "default",
+        "dio_start": dio_source,
         "dio_target": "default",
-        "dpo_start": "default",
+        "dpo_start": dpo_source,
         "dpo_target": "default",
         "wacc": "yfinance_capm",
+        "cost_of_equity": "yfinance_capm",
+        "debt_weight": "yfinance_capm",
         "exit_multiple": exit_source,
         "exit_metric": "sector_policy",
         "net_debt": net_debt_source,
         "shares_outstanding": shares_source,
+        "invested_capital_start": invested_capital_source,
+        "ronic_terminal": ronic_terminal_source,
+        "non_operating_assets": non_operating_assets_source,
+        "minority_interest": minority_interest_source,
+        "preferred_equity": preferred_equity_source,
+        "pension_deficit": pension_deficit_source,
+        "lease_liabilities": lease_liabilities_source,
+        "options_value": options_value_source,
+        "convertibles_value": convertibles_value_source,
     }
+
+    story_profile, story_profile_source = resolve_story_driver_profile(ticker=ticker, sector=sector)
+    story_adjustments = apply_story_driver_adjustments(drivers, story_profile)
+    source_lineage["story_profile"] = story_profile_source
+
+    # Only stamp story as driver source when there is an actual adjustment.
+    growth_story_active = abs(float(story_adjustments.get("growth_add", 0.0))) > 1e-12 or abs(float(story_adjustments.get("cyclicality_growth_multiplier", 1.0)) - 1.0) > 1e-12
+    if growth_story_active:
+        source_lineage["revenue_growth_near"] = f"{source_lineage['revenue_growth_near']}|{story_profile_source}"
+        source_lineage["revenue_growth_mid"] = f"{source_lineage['revenue_growth_mid']}|{story_profile_source}"
+
+    margin_story_active = abs(float(story_adjustments.get("margin_add", 0.0))) > 1e-12
+    if margin_story_active:
+        source_lineage["ebit_margin_target"] = story_profile_source
+
+    wacc_story_active = abs(float(story_adjustments.get("cyclicality_wacc_add", 0.0)) + float(story_adjustments.get("governance_wacc_add", 0.0))) > 1e-12
+    if wacc_story_active:
+        source_lineage["wacc"] = f"{source_lineage['wacc']}|{story_profile_source}"
+        source_lineage["cost_of_equity"] = f"{source_lineage['cost_of_equity']}|{story_profile_source}"
+
+    capex_story_active = abs(float(story_adjustments.get("capex_target_add", 0.0))) > 1e-12
+    da_story_active = abs(float(story_adjustments.get("da_target_add", 0.0))) > 1e-12
+    if capex_story_active:
+        source_lineage["capex_pct_target"] = story_profile_source
+    if da_story_active:
+        source_lineage["da_pct_target"] = story_profile_source
 
     _apply_overrides(drivers, source_lineage, ticker=ticker, sector=sector)
 
@@ -331,10 +564,9 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
             "beta_unlevered_median": getattr(wacc_result, "beta_unlevered_median", None),
             "size_premium": getattr(wacc_result, "size_premium", None),
             "equity_weight": getattr(wacc_result, "equity_weight", None),
+            "debt_weight": getattr(wacc_result, "debt_weight", None),
             "peers_used": getattr(wacc_result, "peers_used", None),
         },
+        story_profile=asdict(story_profile),
+        story_adjustments=story_adjustments,
     )
-
-
-
-
