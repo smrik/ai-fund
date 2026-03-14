@@ -32,6 +32,7 @@ with st.sidebar:
         "ValuationAgent",
         "SentimentAgent",
         "RiskAgent",
+        "RiskImpactAgent",
         "ThesisAgent",
     ]
 
@@ -55,7 +56,7 @@ with st.sidebar:
     )
 
     st.divider()
-    st.caption("**Pipeline:** Industry → Filings → Earnings → QoE → Accounting Recast → Valuation → Sentiment → Risk → Thesis")
+    st.caption("**Pipeline:** Industry → Filings → Earnings → QoE → Accounting Recast → Valuation → Sentiment → Risk → Risk Impact → Thesis")
     st.caption("**Data:** SEC EDGAR (free) + yfinance")
     st.caption(f"**Primary LLM:** {LLM_MODEL}")
 
@@ -117,6 +118,134 @@ def _input_step(unit: str) -> float:
     return 0.01
 
 
+def _render_dcf_charts(audit: dict) -> None:
+    try:
+        import plotly.graph_objects as go
+    except ImportError:
+        st.info("Plotly is not installed. Add `plotly` to requirements to enable browser-native DCF charts.")
+        return
+
+    chart_series = audit.get("chart_series") or {}
+    forecast_tab, valuation_tab, sensitivity_tab, risk_tab = st.tabs(
+        ["Forecast", "Valuation", "Sensitivity", "Risk Impact"]
+    )
+
+    with forecast_tab:
+        projection = chart_series.get("projection_curve") or []
+        if projection:
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(
+                x=[row["year"] for row in projection],
+                y=[row["revenue_mm"] for row in projection],
+                name="Revenue ($mm)",
+                mode="lines+markers",
+                yaxis="y1",
+            ))
+            fig.add_trace(go.Scatter(
+                x=[row["year"] for row in projection],
+                y=[row["ebit_margin_pct"] for row in projection],
+                name="EBIT Margin (%)",
+                mode="lines+markers",
+                yaxis="y2",
+            ))
+            fig.update_layout(
+                height=420,
+                margin=dict(l=20, r=20, t=40, b=20),
+                yaxis=dict(title="Revenue ($mm)"),
+                yaxis2=dict(title="EBIT Margin (%)", overlaying="y", side="right"),
+                legend=dict(orientation="h"),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+
+        fcff = chart_series.get("fcff_curve") or []
+        if fcff:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[row["year"] for row in fcff],
+                y=[row["fcff_mm"] for row in fcff],
+                name="FCFF ($mm)",
+            ))
+            fig.add_trace(go.Scatter(
+                x=[row["year"] for row in fcff],
+                y=[row["nopat_mm"] for row in fcff],
+                name="NOPAT ($mm)",
+                mode="lines+markers",
+            ))
+            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20), legend=dict(orientation="h"))
+            st.plotly_chart(fig, use_container_width=True)
+
+    with valuation_tab:
+        scenario_iv = chart_series.get("scenario_iv") or []
+        if scenario_iv:
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[row["scenario"].title() for row in scenario_iv],
+                y=[row["intrinsic_value"] for row in scenario_iv],
+                name="Intrinsic Value",
+            ))
+            current_price = audit.get("current_price")
+            if current_price is not None:
+                fig.add_hline(y=current_price, line_dash="dash", annotation_text=f"Current Price ${current_price:,.2f}")
+            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+        ev_bridge = chart_series.get("ev_bridge_waterfall") or []
+        if ev_bridge:
+            fig = go.Figure(go.Waterfall(
+                x=[row["component"] for row in ev_bridge],
+                y=[row["value_mm"] for row in ev_bridge],
+                measure=["relative", "relative", "relative", "relative", "total"],
+            ))
+            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+    with sensitivity_tab:
+        heat_cols = st.columns(2)
+        sens_growth = audit.get("sensitivity", {}).get("wacc_x_terminal_growth") or []
+        sens_exit = audit.get("sensitivity", {}).get("wacc_x_exit_multiple") or []
+        if sens_growth:
+            x_labels = [key for key in sens_growth[0].keys() if key != "wacc_pct"]
+            y_vals = [row["wacc_pct"] for row in sens_growth]
+            z_vals = [[row[key] for key in x_labels] for row in sens_growth]
+            fig = go.Figure(data=go.Heatmap(x=x_labels, y=y_vals, z=z_vals, colorbar_title="IV"))
+            fig.update_layout(height=400, margin=dict(l=20, r=20, t=40, b=20), title="WACC × Terminal Growth")
+            heat_cols[0].plotly_chart(fig, use_container_width=True)
+        if sens_exit:
+            x_labels = [key for key in sens_exit[0].keys() if key != "wacc_pct"]
+            y_vals = [row["wacc_pct"] for row in sens_exit]
+            z_vals = [[row[key] for key in x_labels] for row in sens_exit]
+            fig = go.Figure(data=go.Heatmap(x=x_labels, y=y_vals, z=z_vals, colorbar_title="IV"))
+            fig.update_layout(height=400, margin=dict(l=20, r=20, t=40, b=20), title="WACC × Exit Multiple")
+            heat_cols[1].plotly_chart(fig, use_container_width=True)
+
+    with risk_tab:
+        risk_view = audit.get("risk_impact")
+        overlays = chart_series.get("risk_overlay") or []
+        if not risk_view or not risk_view.get("available") or not overlays:
+            st.info("No quantified risk overlays are available for this run.")
+        else:
+            top = st.columns(3)
+            top[0].metric("Base IV", f"${risk_view.get('base_iv', 0):,.2f}")
+            top[1].metric("Risk-Adjusted Expected IV", f"${risk_view.get('risk_adjusted_expected_iv', 0):,.2f}")
+            delta = risk_view.get("risk_adjusted_delta_pct")
+            top[2].metric("Risk Adjustment", f"{delta*100:+.1f}%" if delta is not None else "—")
+
+            fig = go.Figure()
+            fig.add_trace(go.Bar(
+                x=[row["risk_name"] for row in overlays],
+                y=[row["stressed_iv"] for row in overlays],
+                text=[f"p={row['probability']:.0%}" for row in overlays],
+                textposition="outside",
+                name="Stressed IV",
+            ))
+            fig.add_hline(y=risk_view.get("base_iv", 0), line_dash="dash", annotation_text="Base IV")
+            fig.add_hline(y=risk_view.get("risk_adjusted_expected_iv", 0), line_dash="dot", annotation_text="Risk-Adj. EV")
+            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+            st.dataframe(risk_view.get("overlay_results") or [], use_container_width=True, hide_index=True)
+
+
 # ── Run pipeline ──────────────────────────────────────────────────────────────
 if run_btn and ticker_input:
     st.session_state.running = True
@@ -124,7 +253,7 @@ if run_btn and ticker_input:
     st.session_state.recommendations = None
     st.session_state.run_trace = []
 
-    with st.status(f"Running 9-agent analysis for **{ticker_input}**...", expanded=True) as status:
+    with st.status(f"Running 10-agent analysis for **{ticker_input}**...", expanded=True) as status:
         steps = [
             "Fetching market snapshot",
             "0a/9  IndustryAgent — sector benchmarks & recent events",
@@ -135,6 +264,7 @@ if run_btn and ticker_input:
             "3/9  ValuationAgent — running DCF + comps",
             "4/9  SentimentAgent — scoring news & analyst positioning",
             "5/9  RiskAgent — sizing position",
+            "5a/9  RiskImpactAgent — converting key risks into valuation overlays",
             "6/9  ThesisAgent — synthesizing IC memo",
         ]
         placeholders = {s: st.empty() for s in steps}
@@ -205,6 +335,7 @@ if memo is None:
 | **ValuationAgent** | Runs deterministic DCF + comps, produces bear/base/bull intrinsic value |
 | **SentimentAgent** | Scores news narrative and analyst positioning |
 | **RiskAgent** | Sizes position based on conviction + volatility |
+| **RiskImpactAgent** | Converts top risks into downside valuation overlays and risk-adjusted IV |
 | **ThesisAgent** | Synthesizes the IC memo and forces the decision |
 
 > **Your job:** Write the variant thesis. The AI surfaces what's known; you identify why the market is wrong.
@@ -313,7 +444,7 @@ if selected_section == "🧮 DCF Audit":
     try:
         from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 
-        audit = build_dcf_audit_view(memo.ticker)
+        audit = build_dcf_audit_view(memo.ticker, risk_output=memo.risk_impact)
     except Exception as e:
         audit = None
         st.error(f"DCF audit load error: {e}")
@@ -346,6 +477,9 @@ if selected_section == "🧮 DCF Audit":
         with col_ev:
             st.subheader("EV → Equity Bridge")
             st.dataframe([audit["ev_bridge"]], use_container_width=True, hide_index=True)
+
+        st.subheader("Charts")
+        _render_dcf_charts(audit)
 
         sens_a, sens_b = st.columns(2)
         with sens_a:
@@ -427,6 +561,15 @@ if selected_section == "⚖️ Risk":
 
     st.subheader("Sizing Rationale")
     st.write(r.rationale)
+
+    if memo.risk_impact and memo.risk_impact.overlays:
+        st.subheader("Risk-to-Valuation Overlays")
+        st.caption("Advisory-only downside scenarios inferred from qualitative risks. These do not change the base DCF.")
+        st.dataframe(
+            [overlay.model_dump(mode="python") for overlay in memo.risk_impact.overlays],
+            use_container_width=True,
+            hide_index=True,
+        )
 
 if selected_section == "🔄 Pipeline":
     st.subheader("Pipeline Trace")
@@ -756,3 +899,129 @@ if selected_section == "🔍 Raw JSON":
         mime="application/json",
     )
     st.json(json.loads(memo.model_dump_json()))
+
+st.divider()
+with st.expander("Agent Audit Trail", expanded=False):
+    st.caption("Exact agent prompts, tool traces, raw outputs, and parsed artifacts for recent runs.")
+    try:
+        from src.stage_04_pipeline.agent_cache import (
+            artifact_has_meaningful_io,
+            load_agent_run_artifact,
+            load_latest_agent_artifacts_by_ticker,
+        )
+
+        audit_rows = load_latest_agent_artifacts_by_ticker(memo.ticker, limit=100)
+    except Exception as e:
+        audit_rows = []
+        st.error(f"Agent artifact load error: {e}")
+
+    if not audit_rows:
+        st.info("No stored agent artifacts available yet for this ticker.")
+    else:
+        agent_options = sorted({row["agent_name"] for row in audit_rows})
+        selected_agent = st.selectbox("Agent", options=agent_options, key=f"audit_agent_{memo.ticker}")
+        filtered = [row for row in audit_rows if row["agent_name"] == selected_agent]
+        run_labels = [
+            f"{row['run_ts']} | {row['status']} | {'cache' if row['cache_hit'] else 'exec'} | {row['run_log_id']}"
+            for row in filtered
+        ]
+        selected_label = st.selectbox("Run", options=run_labels, key=f"audit_run_{memo.ticker}_{selected_agent}")
+        selected_row = filtered[run_labels.index(selected_label)]
+        artifact = load_agent_run_artifact(selected_row["run_log_id"])
+        artifact_needs_refresh = not artifact_has_meaningful_io(artifact, selected_agent)
+
+        meta_cols = st.columns(6)
+        meta_cols[0].metric("Status", selected_row["status"])
+        meta_cols[1].metric("Cache", "yes" if selected_row["cache_hit"] else "no")
+        meta_cols[2].metric("Forced Refresh", "yes" if selected_row["forced_refresh"] else "no")
+        meta_cols[3].metric("Duration", f"{selected_row['duration_ms']} ms" if selected_row["duration_ms"] is not None else "—")
+        meta_cols[4].metric("Model", selected_row["model"] or "—")
+        meta_cols[5].metric("Prompt Version", selected_row["prompt_version"] or "—")
+
+        if artifact_needs_refresh:
+            st.warning(
+                "This looks like a legacy cached run without full prompt/output artifacts. "
+                "Refresh the selected agent to store a complete audit payload under the current schema."
+            )
+            if st.button(
+                "Refresh artifact by rerunning this agent",
+                key=f"refresh_artifact_{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}",
+                use_container_width=True,
+            ):
+                with st.spinner(f"Refreshing {selected_agent} for {memo.ticker}..."):
+                    from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
+                    from src.stage_04_pipeline.recommendations import write_recommendations
+
+                    orch = PipelineOrchestrator()
+                    refreshed_memo = orch.run(
+                        memo.ticker,
+                        use_cache=True,
+                        force_refresh_agents={selected_agent},
+                    )
+                    st.session_state.memo = refreshed_memo
+                    st.session_state.run_trace = orch.last_run_trace
+                    try:
+                        recs = orch.collect_recommendations(memo.ticker)
+                        write_recommendations(recs)
+                        st.session_state.recommendations = recs
+                    except Exception:
+                        st.session_state.recommendations = None
+                st.rerun()
+
+        if artifact is None:
+            st.info("No artifact payload stored for this run.")
+        else:
+            token_cols = st.columns(3)
+            token_cols[0].metric("Prompt Tokens", artifact.get("prompt_tokens") or "—")
+            token_cols[1].metric("Completion Tokens", artifact.get("completion_tokens") or "—")
+            token_cols[2].metric("Total Tokens", artifact.get("total_tokens") or "—")
+
+            no_llm = not artifact.get("user_prompt") and selected_agent == "ValuationAgent"
+            if no_llm:
+                st.info("No LLM call: deterministic valuation adapter.")
+
+            prompt_tab, user_tab, schema_tab, trace_tab, raw_tab, parsed_tab = st.tabs(
+                ["System Prompt", "User Prompt", "Tool Schema", "Tool Trace", "Raw Final Output", "Parsed Output"]
+            )
+            with prompt_tab:
+                st.code(artifact.get("system_prompt") or "—", language="text")
+            with user_tab:
+                st.code(artifact.get("user_prompt") or "—", language="text")
+            with schema_tab:
+                if artifact.get("tool_schema_json") is not None:
+                    st.json(artifact["tool_schema_json"])
+                else:
+                    st.write("No tool schema for this run.")
+            with trace_tab:
+                if artifact.get("api_trace_json"):
+                    st.json(artifact["api_trace_json"])
+                else:
+                    st.write("No tool calls for this run.")
+            with raw_tab:
+                st.text_area(
+                    "raw_output",
+                    value=artifact.get("raw_final_output") or "—",
+                    height=240,
+                    label_visibility="collapsed",
+                    key=f"raw_output_{selected_row['run_log_id']}",
+                )
+            with parsed_tab:
+                if artifact.get("parsed_output_json") is not None:
+                    st.json(artifact["parsed_output_json"])
+                else:
+                    st.write("No parsed output stored for this run.")
+
+            st.download_button(
+                "Download Artifact JSON",
+                data=json.dumps(artifact, indent=2, default=str),
+                file_name=f"{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}_artifact.json",
+                mime="application/json",
+                key=f"artifact_dl_{selected_row['run_log_id']}",
+            )
+            st.download_button(
+                "Download Raw Output",
+                data=artifact.get("raw_final_output") or "",
+                file_name=f"{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}_raw.txt",
+                mime="text/plain",
+                key=f"raw_dl_{selected_row['run_log_id']}",
+            )

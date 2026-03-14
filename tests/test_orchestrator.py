@@ -9,7 +9,9 @@ from src.stage_02_valuation.templates.ic_memo import (
     EarningsSummary,
     FilingsSummary,
     ICMemo,
+    RiskImpactOutput,
     RiskOutput,
+    RiskScenarioOverlay,
     SentimentOutput,
     ValuationRange,
 )
@@ -115,6 +117,7 @@ class _StubThesisAgent:
         valuation,
         sentiment,
         risk,
+        risk_impact_context="",
         qoe_context="",
         industry_context="",
         accounting_recast_context="",
@@ -131,7 +134,42 @@ class _StubThesisAgent:
             action="WATCH",
             conviction="medium",
             one_liner="Stub memo",
-            variant_thesis_prompt=accounting_recast_context,
+            variant_thesis_prompt=f"{accounting_recast_context}\n{risk_impact_context}",
+        )
+
+
+class _StubRiskImpactAgent:
+    def analyze(
+        self,
+        ticker,
+        company_name,
+        sector,
+        filings_red_flags,
+        management_guidance,
+        earnings_key_themes,
+        sentiment_risk_narratives,
+        qoe_context,
+        accounting_recast_context,
+        valuation_context,
+    ):
+        return RiskImpactOutput(
+            raw_summary="Risk impact summary",
+            overlays=[
+                RiskScenarioOverlay(
+                    risk_name="Competitive Displacement",
+                    source_type="sentiment_risk_narrative",
+                    source_text="AI entrants",
+                    probability=0.25,
+                    horizon="24m",
+                    revenue_growth_near_bps=-300,
+                    revenue_growth_mid_bps=-200,
+                    ebit_margin_bps=-150,
+                    wacc_bps=50,
+                    exit_multiple_pct=-10.0,
+                    rationale="Competitive pressure",
+                    confidence="medium",
+                )
+            ],
         )
 
 
@@ -144,6 +182,7 @@ def test_orchestrator_includes_accounting_recast_without_mutating_valuation(monk
     monkeypatch.setattr(orch_mod, "ValuationAgent", _StubValuationAgent)
     monkeypatch.setattr(orch_mod, "SentimentAgent", _StubSentimentAgent)
     monkeypatch.setattr(orch_mod, "RiskAgent", _StubRiskAgent)
+    monkeypatch.setattr(orch_mod, "RiskImpactAgent", _StubRiskImpactAgent)
     monkeypatch.setattr(orch_mod, "ThesisAgent", _StubThesisAgent)
     monkeypatch.setattr(
         orch_mod.md_client,
@@ -162,6 +201,25 @@ def test_orchestrator_includes_accounting_recast_without_mutating_valuation(monk
         "get_historical_financials",
         lambda ticker: {"operating_income": [2000000000.0]},
     )
+    monkeypatch.setattr(
+        orch_mod,
+        "quantify_risk_impact",
+        lambda ticker, risk_output, as_of_date=None, apply_overrides=True: {
+            "available": True,
+            "base_iv": 100.0,
+            "risk_adjusted_expected_iv": 92.5,
+            "risk_adjusted_delta_pct": -0.075,
+            "residual_base_probability": 0.75,
+            "overlay_results": [
+                {
+                    "risk_name": "Competitive Displacement",
+                    "probability": 0.25,
+                    "stressed_iv": 70.0,
+                    "iv_delta_pct": -30.0,
+                }
+            ],
+        },
+    )
 
     memo = orch_mod.PipelineOrchestrator().run("IBM")
 
@@ -169,6 +227,8 @@ def test_orchestrator_includes_accounting_recast_without_mutating_valuation(monk
     assert memo.accounting_recast["approval_required"] is True
     assert memo.accounting_recast["override_candidates"]["lease_liabilities"] == 900000000.0
     assert "Accounting recast" in memo.variant_thesis_prompt
+    assert memo.risk_impact.overlays[0].risk_name == "Competitive Displacement"
+    assert "Risk-adjusted expected IV" in memo.variant_thesis_prompt
 
 
 def test_collect_recommendations_passes_filings_metrics(monkeypatch):

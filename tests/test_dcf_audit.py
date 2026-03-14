@@ -77,6 +77,12 @@ def test_build_dcf_audit_view_shapes_key_tables(monkeypatch):
     assert len(audit["driver_rows"]) >= 5
     assert len(audit["sensitivity"]["wacc_x_terminal_growth"]) == 3
     assert len(audit["sensitivity"]["wacc_x_exit_multiple"]) == 3
+    assert "chart_series" in audit
+    assert len(audit["chart_series"]["projection_curve"]) == 10
+    assert len(audit["chart_series"]["fcff_curve"]) == 10
+    assert len(audit["chart_series"]["scenario_iv"]) == 4
+    assert len(audit["chart_series"]["ev_bridge_waterfall"]) >= 4
+    assert audit["chart_series"]["risk_overlay"] == []
 
 
 def test_build_dcf_audit_view_returns_unavailable_when_inputs_missing(monkeypatch):

@@ -23,6 +23,7 @@ python-dateutil>=2.8.0
 # LLM
 anthropic>=0.40.0
 sentence-transformers>=3.0.0
+plotly>=5.0.0
 
 # Development
 pytest>=7.0.0

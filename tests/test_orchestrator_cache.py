@@ -9,7 +9,9 @@ from src.stage_02_valuation.templates.ic_memo import (
     EarningsSummary,
     FilingsSummary,
     ICMemo,
+    RiskImpactOutput,
     RiskOutput,
+    RiskScenarioOverlay,
     SentimentOutput,
     ValuationRange,
 )
@@ -151,6 +153,7 @@ class _StubThesisAgent:
         valuation,
         sentiment,
         risk,
+        risk_impact_context="",
         qoe_context="",
         industry_context="",
         accounting_recast_context="",
@@ -168,7 +171,48 @@ class _StubThesisAgent:
             action="WATCH",
             conviction="medium",
             one_liner="Stub memo",
-            variant_thesis_prompt=accounting_recast_context,
+            variant_thesis_prompt=f"{accounting_recast_context}\n{risk_impact_context}",
+        )
+
+
+class _StubRiskImpactAgent:
+    name = "RiskImpactAgent"
+    model = "stub"
+    system_prompt = "risk-impact"
+    prompt_version = "v-test"
+
+    def analyze(
+        self,
+        ticker,
+        company_name,
+        sector,
+        filings_red_flags,
+        management_guidance,
+        earnings_key_themes,
+        sentiment_risk_narratives,
+        qoe_context,
+        accounting_recast_context,
+        valuation_context,
+    ):
+        _bump("RiskImpactAgent")
+        return RiskImpactOutput(
+            raw_summary="Risk impact summary",
+            overlays=[
+                RiskScenarioOverlay(
+                    risk_name="Competitive Displacement",
+                    source_type="sentiment_risk_narrative",
+                    source_text="AI entrants",
+                    probability=0.25,
+                    horizon="24m",
+                    revenue_growth_near_bps=-300,
+                    revenue_growth_mid_bps=-200,
+                    ebit_margin_bps=-150,
+                    wacc_bps=50,
+                    exit_multiple_pct=-10.0,
+                    rationale="Competitive pressure",
+                    confidence="medium",
+                )
+            ],
         )
 
 
@@ -192,6 +236,7 @@ def _setup_orchestrator(monkeypatch, tmp_path: Path):
     monkeypatch.setattr(orch_mod, "ValuationAgent", _StubValuationAgent)
     monkeypatch.setattr(orch_mod, "SentimentAgent", _StubSentimentAgent)
     monkeypatch.setattr(orch_mod, "RiskAgent", _StubRiskAgent)
+    monkeypatch.setattr(orch_mod, "RiskImpactAgent", _StubRiskImpactAgent)
     monkeypatch.setattr(orch_mod, "ThesisAgent", _StubThesisAgent)
     monkeypatch.setattr(
         orch_mod.md_client,
@@ -214,6 +259,32 @@ def _setup_orchestrator(monkeypatch, tmp_path: Path):
         orch_mod,
         "get_sec_filing_metrics",
         lambda ticker: None,
+    )
+    monkeypatch.setattr(
+        orch_mod,
+        "quantify_risk_impact",
+        lambda ticker, risk_output, as_of_date=None, apply_overrides=True: {
+            "available": True,
+            "base_iv": 100.0,
+            "risk_adjusted_expected_iv": 92.5,
+            "risk_adjusted_delta_pct": -0.075,
+            "residual_base_probability": 0.75,
+            "overlay_results": [
+                {
+                    "risk_name": "Competitive Displacement",
+                    "probability": 0.25,
+                    "stressed_iv": 70.0,
+                    "iv_delta_pct": -30.0,
+                    "applied_shifts": {
+                        "revenue_growth_near_bps": -300,
+                        "revenue_growth_mid_bps": -200,
+                        "ebit_margin_bps": -150,
+                        "wacc_bps": 50,
+                        "exit_multiple_pct": -10.0,
+                    },
+                }
+            ],
+        },
     )
 
     import src.stage_04_pipeline.agent_cache as cache_mod
@@ -267,3 +338,15 @@ def test_agent_run_history_includes_model_and_prompt_metadata(monkeypatch, tmp_p
     assert filings_row["model"] == "stub"
     assert filings_row["prompt_version"] == "v-test"
     assert filings_row["prompt_hash"]
+
+
+def test_orchestrator_caches_risk_impact_and_attaches_to_memo(monkeypatch, tmp_path):
+    _setup_orchestrator(monkeypatch, tmp_path)
+
+    orch = orch_mod.PipelineOrchestrator()
+    memo = orch.run("IBM", use_cache=True)
+
+    assert COUNTS["RiskImpactAgent"] == 1
+    assert memo.risk_impact.overlays[0].risk_name == "Competitive Displacement"
+    assert orch.last_risk_impact_view["risk_adjusted_expected_iv"] == 92.5
+    assert "Competitive Displacement" in memo.variant_thesis_prompt

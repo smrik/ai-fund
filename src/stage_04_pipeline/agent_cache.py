@@ -70,6 +70,10 @@ def _deserialize_output(row: Any) -> Any:
     return payload
 
 
+def _parsed_output_from_serialized(serialized: dict[str, Any]) -> Any:
+    return json.loads(serialized["output_payload"])
+
+
 class AgentRunCache:
     def __init__(self, connection_factory: Callable[[], Any] | None = None):
         self._connection_factory = connection_factory or get_connection
@@ -160,10 +164,10 @@ class AgentRunCache:
         duration_ms: int,
         output_hash: str | None = None,
         error: str | None = None,
-    ) -> None:
+    ) -> int:
         with self._connection_factory() as conn:
             create_tables(conn)
-            conn.execute(
+            cursor = conn.execute(
                 """
                 INSERT INTO agent_run_log (
                     run_ts, ticker, agent_name, status, cache_hit, forced_refresh,
@@ -190,6 +194,85 @@ class AgentRunCache:
                 ],
             )
             conn.commit()
+            return int(cursor.lastrowid)
+
+    def _insert_artifact(
+        self,
+        *,
+        run_log_id: int,
+        ticker: str,
+        agent_name: str,
+        artifact_source: str,
+        artifact: dict[str, Any] | None,
+    ) -> None:
+        artifact = artifact or {}
+        with self._connection_factory() as conn:
+            create_tables(conn)
+            conn.execute(
+                """
+                INSERT INTO agent_run_artifacts (
+                    run_log_id, ticker, agent_name, artifact_source,
+                    system_prompt, user_prompt, tool_schema_json, api_trace_json,
+                    raw_final_output, parsed_output_json,
+                    prompt_tokens, completion_tokens, total_tokens, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    run_log_id,
+                    ticker,
+                    agent_name,
+                    artifact_source,
+                    artifact.get("system_prompt"),
+                    artifact.get("user_prompt"),
+                    json.dumps(_normalize(artifact.get("tool_schema")), default=str),
+                    json.dumps(_normalize(artifact.get("api_trace")), default=str),
+                    artifact.get("raw_final_output"),
+                    json.dumps(_normalize(artifact.get("parsed_output")), default=str),
+                    artifact.get("prompt_tokens"),
+                    artifact.get("completion_tokens"),
+                    artifact.get("total_tokens"),
+                    _now(),
+                ],
+            )
+            conn.commit()
+
+    def _load_cached_artifact(
+        self,
+        *,
+        ticker: str,
+        agent_name: str,
+        input_hash: str,
+        model: str,
+        prompt_hash: str,
+    ) -> dict[str, Any] | None:
+        with self._connection_factory() as conn:
+            create_tables(conn)
+            row = conn.execute(
+                """
+                SELECT a.system_prompt, a.user_prompt, a.tool_schema_json, a.api_trace_json,
+                       a.raw_final_output, a.parsed_output_json,
+                       a.prompt_tokens, a.completion_tokens, a.total_tokens
+                FROM agent_run_artifacts a
+                JOIN agent_run_log l ON l.id = a.run_log_id
+                WHERE l.ticker = ? AND l.agent_name = ? AND l.input_hash = ? AND l.model = ? AND l.prompt_hash = ?
+                ORDER BY a.id DESC
+                LIMIT 1
+                """,
+                [ticker, agent_name, input_hash, model, prompt_hash],
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "system_prompt": row["system_prompt"],
+            "user_prompt": row["user_prompt"],
+            "tool_schema": json.loads(row["tool_schema_json"]) if row["tool_schema_json"] else None,
+            "api_trace": json.loads(row["api_trace_json"]) if row["api_trace_json"] else [],
+            "raw_final_output": row["raw_final_output"],
+            "parsed_output": json.loads(row["parsed_output_json"]) if row["parsed_output_json"] else None,
+            "prompt_tokens": row["prompt_tokens"],
+            "completion_tokens": row["completion_tokens"],
+            "total_tokens": row["total_tokens"],
+        }
 
     def run_cached(
         self,
@@ -222,7 +305,7 @@ class AgentRunCache:
                 finished = _now()
                 duration_ms = int((time.perf_counter() - started_perf) * 1000)
                 output = _deserialize_output(row)
-                self._insert_log(
+                run_log_id = self._insert_log(
                     ticker=ticker,
                     agent_name=agent_name,
                     input_hash=input_hash,
@@ -236,6 +319,19 @@ class AgentRunCache:
                     finished_at=finished,
                     duration_ms=duration_ms,
                     output_hash=row["output_hash"],
+                )
+                self._insert_artifact(
+                    run_log_id=run_log_id,
+                    ticker=ticker,
+                    agent_name=agent_name,
+                    artifact_source="cache_reused",
+                    artifact=self._load_cached_artifact(
+                        ticker=ticker,
+                        agent_name=agent_name,
+                        input_hash=input_hash,
+                        model=model,
+                        prompt_hash=prompt_hash,
+                    ),
                 )
                 return output, {
                     "cache_hit": True,
@@ -259,7 +355,7 @@ class AgentRunCache:
             )
             finished = _now()
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
-            self._insert_log(
+            run_log_id = self._insert_log(
                 ticker=ticker,
                 agent_name=agent_name,
                 input_hash=input_hash,
@@ -274,6 +370,15 @@ class AgentRunCache:
                 duration_ms=duration_ms,
                 output_hash=serialized["output_hash"],
             )
+            artifact_payload = dict(getattr(agent, "last_run_artifact", None) or {})
+            artifact_payload["parsed_output"] = _parsed_output_from_serialized(serialized)
+            self._insert_artifact(
+                run_log_id=run_log_id,
+                ticker=ticker,
+                agent_name=agent_name,
+                artifact_source="executed",
+                artifact=artifact_payload,
+            )
             return output, {
                 "cache_hit": False,
                 "forced_refresh": force_refresh,
@@ -284,7 +389,7 @@ class AgentRunCache:
         except Exception as exc:
             finished = _now()
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
-            self._insert_log(
+            run_log_id = self._insert_log(
                 ticker=ticker,
                 agent_name=agent_name,
                 input_hash=input_hash,
@@ -299,6 +404,13 @@ class AgentRunCache:
                 duration_ms=duration_ms,
                 error=str(exc),
             )
+            self._insert_artifact(
+                run_log_id=run_log_id,
+                ticker=ticker,
+                agent_name=agent_name,
+                artifact_source="executed",
+                artifact=getattr(agent, "last_run_artifact", None),
+            )
             raise
 
 
@@ -308,11 +420,88 @@ def load_agent_run_history(ticker: str, limit: int = 100) -> list[dict[str, Any]
         create_tables(conn)
         rows = conn.execute(
             """
-            SELECT run_ts, agent_name, status, cache_hit, forced_refresh, duration_ms,
+            SELECT id, run_ts, agent_name, status, cache_hit, forced_refresh, duration_ms,
                    model, prompt_version, prompt_hash, error
             FROM agent_run_log
             WHERE ticker = ?
             ORDER BY id DESC
+            LIMIT ?
+            """,
+            [ticker, limit],
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def load_agent_run_artifact(
+    run_log_id: int,
+    *,
+    connection_factory: Callable[[], Any] | None = None,
+) -> dict[str, Any] | None:
+    connection_factory = connection_factory or get_connection
+    with connection_factory() as conn:
+        create_tables(conn)
+        row = conn.execute(
+            """
+            SELECT run_log_id, ticker, agent_name, artifact_source,
+                   system_prompt, user_prompt, tool_schema_json, api_trace_json,
+                   raw_final_output, parsed_output_json,
+                   prompt_tokens, completion_tokens, total_tokens, created_at
+            FROM agent_run_artifacts
+            WHERE run_log_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            [run_log_id],
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "run_log_id": row["run_log_id"],
+        "ticker": row["ticker"],
+        "agent_name": row["agent_name"],
+        "artifact_source": row["artifact_source"],
+        "system_prompt": row["system_prompt"],
+        "user_prompt": row["user_prompt"],
+        "tool_schema_json": json.loads(row["tool_schema_json"]) if row["tool_schema_json"] else None,
+        "api_trace_json": json.loads(row["api_trace_json"]) if row["api_trace_json"] else [],
+        "raw_final_output": row["raw_final_output"],
+        "parsed_output_json": json.loads(row["parsed_output_json"]) if row["parsed_output_json"] else None,
+        "prompt_tokens": row["prompt_tokens"],
+        "completion_tokens": row["completion_tokens"],
+        "total_tokens": row["total_tokens"],
+        "created_at": row["created_at"],
+    }
+
+
+def artifact_has_meaningful_io(artifact: dict[str, Any] | None, agent_name: str) -> bool:
+    if artifact is None:
+        return False
+    if agent_name == "ValuationAgent":
+        return True
+    return any(
+        [
+            artifact.get("system_prompt"),
+            artifact.get("user_prompt"),
+            artifact.get("tool_schema_json"),
+            artifact.get("api_trace_json"),
+            artifact.get("raw_final_output"),
+        ]
+    )
+
+
+def load_latest_agent_artifacts_by_ticker(ticker: str, limit: int = 50) -> list[dict[str, Any]]:
+    ticker = ticker.upper().strip()
+    with get_connection() as conn:
+        create_tables(conn)
+        rows = conn.execute(
+            """
+            SELECT l.id AS run_log_id, l.run_ts, l.agent_name, l.status, l.cache_hit, l.forced_refresh,
+                   l.duration_ms, l.model, l.prompt_version, l.prompt_hash, l.error,
+                   a.artifact_source, a.prompt_tokens, a.completion_tokens, a.total_tokens
+            FROM agent_run_log l
+            LEFT JOIN agent_run_artifacts a ON a.run_log_id = l.id
+            WHERE l.ticker = ?
+            ORDER BY l.id DESC
             LIMIT ?
             """,
             [ticker, limit],

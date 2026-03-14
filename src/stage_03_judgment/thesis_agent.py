@@ -65,6 +65,7 @@ class ThesisAgent(BaseAgent):
         valuation: ValuationRange,
         sentiment: SentimentOutput,
         risk: RiskOutput,
+        risk_impact_context: str = "",
         qoe_context: str = "",
         industry_context: str = "",
         accounting_recast_context: str = "",
@@ -73,6 +74,7 @@ class ThesisAgent(BaseAgent):
 
         qoe_block = f"\n=== QUALITY OF EARNINGS ===\n{qoe_context}" if qoe_context else ""
         industry_block = f"\n=== INDUSTRY / RECENT EVENTS ===\n{industry_context}" if industry_context else ""
+        risk_impact_block = f"\n=== RISK IMPACT OVERLAYS ===\n{risk_impact_context}" if risk_impact_context else ""
         accounting_recast_block = (
             f"\n=== ACCOUNTING RECAST ===\n{accounting_recast_context}"
             if accounting_recast_context
@@ -89,7 +91,7 @@ SECTOR: {sector}
 
 === EARNINGS ANALYSIS ===
 {earnings.model_dump_json(indent=2)}
-{qoe_block}{accounting_recast_block}{industry_block}
+{qoe_block}{accounting_recast_block}{industry_block}{risk_impact_block}
 === VALUATION ===
 {valuation.model_dump_json(indent=2)}
 

@@ -330,6 +330,25 @@ def create_tables(conn: sqlite3.Connection | None = None):
         duration_ms     INTEGER,
         error           TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS agent_run_artifacts (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_log_id          INTEGER NOT NULL,
+        ticker              TEXT NOT NULL,
+        agent_name          TEXT NOT NULL,
+        artifact_source     TEXT NOT NULL,
+        system_prompt       TEXT,
+        user_prompt         TEXT,
+        tool_schema_json    TEXT,
+        api_trace_json      TEXT,
+        raw_final_output    TEXT,
+        parsed_output_json  TEXT,
+        prompt_tokens       INTEGER,
+        completion_tokens   INTEGER,
+        total_tokens        INTEGER,
+        created_at          TEXT NOT NULL,
+        FOREIGN KEY (run_log_id) REFERENCES agent_run_log(id)
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,6 +450,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_override_audit_ticker_ts ON valuation_override_audit(ticker, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_log_ticker_ts ON agent_run_log(ticker, run_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
+    CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_run_log_id ON agent_run_artifacts(run_log_id);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);

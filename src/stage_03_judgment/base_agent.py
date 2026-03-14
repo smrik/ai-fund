@@ -45,6 +45,7 @@ class BaseAgent:
         self.system_prompt = "You are a financial research assistant."
         self.tools: list[ToolDefinition] = []
         self.tool_handlers: dict[str, ToolHandler] = {}
+        self.last_run_artifact: dict[str, Any] = {}
 
     def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
         """Dispatch a tool call to the registered handler."""
@@ -131,6 +132,18 @@ class BaseAgent:
             {"role": "user", "content": user_message},
         ]
         tools_param = self.tools if self.tools else None
+        artifact: dict[str, Any] = {
+            "system_prompt": self.system_prompt,
+            "user_prompt": user_message,
+            "tool_schema": self.tools,
+            "api_trace": [],
+            "raw_final_output": "",
+            "parsed_output": None,
+            "prompt_tokens": None,
+            "completion_tokens": None,
+            "total_tokens": None,
+        }
+        self.last_run_artifact = artifact
 
         for _ in range(max_iterations):
             kwargs = {
@@ -143,12 +156,23 @@ class BaseAgent:
 
             response = self._create_with_retry(**kwargs)
             choice = response.choices[0]
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                artifact["prompt_tokens"] = getattr(usage, "prompt_tokens", artifact["prompt_tokens"])
+                artifact["completion_tokens"] = getattr(usage, "completion_tokens", artifact["completion_tokens"])
+                artifact["total_tokens"] = getattr(usage, "total_tokens", artifact["total_tokens"])
+            trace_row: dict[str, Any] = {
+                "request_messages": json.loads(json.dumps(messages)),
+                "finish_reason": choice.finish_reason,
+                "assistant_message": self._serialize_assistant_message(choice.message),
+            }
 
             # Model wants to use tools
             if choice.finish_reason == "tool_calls":
                 # Preserve provider-specific tool-call metadata such as Gemini
                 # thought signatures when passing the assistant turn back.
                 messages.append(self._serialize_assistant_message(choice.message))
+                trace_row["tool_results"] = []
 
                 # Execute each tool call and append results
                 for tc in choice.message.tool_calls:
@@ -157,17 +181,34 @@ class BaseAgent:
                     except Exception:
                         tool_input = {}
                     result_text = self._execute_tool(tc.function.name, tool_input)
+                    trace_row["tool_results"].append(
+                        {
+                            "tool_call_id": tc.id,
+                            "tool_name": tc.function.name,
+                            "tool_input": tool_input,
+                            "tool_output": result_text,
+                        }
+                    )
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc.id,
                         "content": result_text,
                     })
+                artifact["api_trace"].append(trace_row)
                 continue
 
             # Model finished — return text
-            return choice.message.content or ""
+            final_text = choice.message.content or ""
+            artifact["api_trace"].append(trace_row)
+            artifact["raw_final_output"] = final_text
+            artifact["parsed_output"] = final_text
+            self.last_run_artifact = artifact
+            return final_text
 
-        return "Max iterations reached without a final response."
+        artifact["raw_final_output"] = "Max iterations reached without a final response."
+        artifact["parsed_output"] = artifact["raw_final_output"]
+        self.last_run_artifact = artifact
+        return artifact["raw_final_output"]
 
     @staticmethod
     def extract_json(raw: str) -> dict:

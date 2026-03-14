@@ -10,6 +10,8 @@ from src.stage_02_valuation.professional_dcf import (
     run_dcf_professional,
     run_probabilistic_valuation,
 )
+from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
+from src.stage_04_pipeline.risk_impact import quantify_risk_impact
 
 
 def _pct(value: float | None) -> float | None:
@@ -187,11 +189,64 @@ def _sensitivity_matrix(
     return rows
 
 
+def _chart_series(audit: dict, risk_impact_view: dict | None) -> dict:
+    projection_curve = [
+        {
+            "year": row["year"],
+            "revenue_mm": row["revenue_mm"],
+            "ebit_margin_pct": row["ebit_margin_pct"],
+        }
+        for row in audit["forecast_bridge"]
+    ]
+    fcff_curve = [
+        {
+            "year": row["year"],
+            "fcff_mm": row["fcff_mm"],
+            "nopat_mm": row["nopat_mm"],
+        }
+        for row in audit["forecast_bridge"]
+    ]
+    scenario_iv = [
+        {
+            "scenario": row["scenario"],
+            "intrinsic_value": row["intrinsic_value"],
+            "upside_pct": row["upside_pct"],
+        }
+        for row in audit["scenario_summary"]
+    ]
+    ev_bridge_waterfall = [
+        {"component": "PV Explicit FCFF", "value_mm": audit["ev_bridge"]["pv_fcff_sum_mm"]},
+        {"component": "PV Terminal Value", "value_mm": audit["terminal_bridge"]["pv_tv_blended_mm"]},
+        {"component": "Non-Operating Assets", "value_mm": audit["ev_bridge"]["non_operating_assets_mm"]},
+        {"component": "Non-Equity Claims", "value_mm": -1.0 * (audit["ev_bridge"]["non_equity_claims_mm"] or 0.0)},
+        {"component": "Equity Value", "value_mm": audit["ev_bridge"]["equity_value_mm"]},
+    ]
+    risk_overlay = []
+    if risk_impact_view and risk_impact_view.get("available"):
+        risk_overlay = [
+            {
+                "risk_name": row["risk_name"],
+                "probability": row["probability"],
+                "stressed_iv": row["stressed_iv"],
+                "iv_delta_pct": row["iv_delta_pct"],
+            }
+            for row in risk_impact_view.get("overlay_results", [])
+        ]
+    return {
+        "projection_curve": projection_curve,
+        "fcff_curve": fcff_curve,
+        "scenario_iv": scenario_iv,
+        "ev_bridge_waterfall": ev_bridge_waterfall,
+        "risk_overlay": risk_overlay,
+    }
+
+
 def build_dcf_audit_view(
     ticker: str,
     *,
     as_of_date: str | None = None,
     apply_overrides: bool = True,
+    risk_output: RiskImpactOutput | None = None,
 ) -> dict:
     ticker = ticker.upper().strip()
     inputs = build_valuation_inputs(ticker, as_of_date=as_of_date, apply_overrides=apply_overrides)
@@ -205,7 +260,16 @@ def build_dcf_audit_view(
     )
     base_result = prob_result.scenario_results["base"]
 
-    return {
+    risk_impact_view = None
+    if risk_output is not None:
+        risk_impact_view = quantify_risk_impact(
+            ticker,
+            risk_output,
+            as_of_date=as_of_date,
+            apply_overrides=apply_overrides,
+        )
+
+    audit = {
         "ticker": ticker,
         "available": True,
         "company_name": inputs.company_name,
@@ -222,4 +286,7 @@ def build_dcf_audit_view(
             "wacc_x_terminal_growth": _sensitivity_matrix(inputs.drivers, grid="wacc_x_terminal_growth"),
             "wacc_x_exit_multiple": _sensitivity_matrix(inputs.drivers, grid="wacc_x_exit_multiple"),
         },
+        "risk_impact": risk_impact_view,
     }
+    audit["chart_series"] = _chart_series(audit, risk_impact_view)
+    return audit

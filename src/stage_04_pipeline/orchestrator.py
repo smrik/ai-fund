@@ -16,6 +16,7 @@ from src.stage_02_valuation.templates.ic_memo import (
     EarningsSummary,
     FilingsSummary,
     ICMemo,
+    RiskImpactOutput,
     RiskOutput,
     SentimentOutput,
     ValuationRange,
@@ -29,10 +30,12 @@ from src.stage_03_judgment.filings_agent import FilingsAgent
 from src.stage_03_judgment.industry_agent import IndustryAgent
 from src.stage_03_judgment.qoe_agent import QoEAgent
 from src.stage_03_judgment.risk_agent import RiskAgent
+from src.stage_03_judgment.risk_impact_agent import RiskImpactAgent
 from src.stage_03_judgment.sentiment_agent import SentimentAgent
 from src.stage_03_judgment.thesis_agent import ThesisAgent
 from src.stage_03_judgment.valuation_agent import ValuationAgent
 from src.stage_04_pipeline.agent_cache import AgentRunCache
+from src.stage_04_pipeline.risk_impact import quantify_risk_impact
 
 console = Console()
 
@@ -59,6 +62,7 @@ class PipelineOrchestrator:
         self.valuation_agent = ValuationAgent()
         self.sentiment_agent = SentimentAgent()
         self.risk_agent = RiskAgent()
+        self.risk_impact_agent = RiskImpactAgent()
         self.thesis_agent = ThesisAgent()
         self.agent_cache = AgentRunCache()
 
@@ -66,6 +70,8 @@ class PipelineOrchestrator:
         self.last_accounting_recast_result: dict = {}
         self.last_industry_result: dict = {}
         self.last_filings_metrics = None
+        self.last_risk_impact_result = RiskImpactOutput()
+        self.last_risk_impact_view: dict = {}
         self.last_run_trace: list[dict] = []
 
     def _on_step(self, label: str) -> None:
@@ -434,6 +440,62 @@ class PipelineOrchestrator:
                 rationale=f"Error: {exc}",
             )
 
+        risk_impact = RiskImpactOutput()
+        risk_impact_context = ""
+        risk_impact_view: dict = {}
+        try:
+            risk_impact = self._run_cached_step(
+                ticker=ticker,
+                display_label="5a/9  RiskImpactAgent — converting key risks into valuation overlays",
+                agent_name="RiskImpactAgent",
+                agent=self.risk_impact_agent,
+                input_payload={
+                    "ticker": ticker,
+                    "company_name": company_name,
+                    "sector": sector,
+                    "filings_red_flags": filings.red_flags,
+                    "management_guidance": filings.management_guidance,
+                    "earnings_key_themes": earnings.key_themes,
+                    "sentiment_risk_narratives": sentiment.risk_narratives,
+                    "qoe_context": qoe_context,
+                    "accounting_recast_context": accounting_recast_context,
+                    "valuation": valuation.model_dump(mode="python"),
+                },
+                runner=lambda: self.risk_impact_agent.analyze(
+                    ticker=ticker,
+                    company_name=company_name,
+                    sector=sector,
+                    filings_red_flags=filings.red_flags,
+                    management_guidance=filings.management_guidance,
+                    earnings_key_themes=earnings.key_themes,
+                    sentiment_risk_narratives=sentiment.risk_narratives,
+                    qoe_context=qoe_context,
+                    accounting_recast_context=accounting_recast_context,
+                    valuation_context=valuation.model_dump_json(indent=2),
+                ),
+                use_cache=use_cache,
+                force_refresh_agents=force_refresh_agents,
+                detail_builder=lambda result: f"Overlays: {len(result.overlays)}",
+            )
+            risk_impact_view = quantify_risk_impact(ticker, risk_impact)
+            self.last_risk_impact_result = risk_impact
+            self.last_risk_impact_view = risk_impact_view
+            if risk_impact_view.get("available"):
+                risk_impact_context = (
+                    f"Risk-adjusted expected IV: ${risk_impact_view.get('risk_adjusted_expected_iv', 0):,.2f} "
+                    f"vs base ${risk_impact_view.get('base_iv', 0):,.2f}\n"
+                )
+                for row in risk_impact_view.get("overlay_results", [])[:3]:
+                    risk_impact_context += (
+                        f"- {row['risk_name']}: p={row['probability']:.0%}, "
+                        f"stressed IV ${row['stressed_iv']:,.2f}, "
+                        f"delta {row['iv_delta_pct']:+.1f}%\n"
+                    )
+        except Exception as exc:
+            self._on_warn(f"RiskImpactAgent error: {exc}")
+            self.last_risk_impact_result = RiskImpactOutput(raw_summary=f"Error: {exc}")
+            self.last_risk_impact_view = {}
+
         try:
             memo = self._run_cached_step(
                 ticker=ticker,
@@ -449,9 +511,11 @@ class PipelineOrchestrator:
                     "valuation": valuation.model_dump(mode="python"),
                     "sentiment": sentiment.model_dump(mode="python"),
                     "risk": risk.model_dump(mode="python"),
+                    "risk_impact": risk_impact.model_dump(mode="python"),
                     "qoe_context": qoe_context,
                     "industry_context": industry_context,
                     "accounting_recast_context": accounting_recast_context,
+                    "risk_impact_context": risk_impact_context,
                 },
                 runner=lambda: self.thesis_agent.synthesize(
                     ticker=ticker,
@@ -462,6 +526,7 @@ class PipelineOrchestrator:
                     valuation=valuation,
                     sentiment=sentiment,
                     risk=risk,
+                    risk_impact_context=risk_impact_context,
                     qoe_context=qoe_context,
                     industry_context=industry_context,
                     accounting_recast_context=accounting_recast_context,
@@ -471,6 +536,7 @@ class PipelineOrchestrator:
                 detail_builder=lambda result: f"Action: {result.action}  |  {result.one_liner}",
             )
             memo.accounting_recast = accounting_recast_result
+            memo.risk_impact = risk_impact
         except Exception as exc:
             self._on_warn(f"ThesisAgent error: {exc}")
             memo = ICMemo(
@@ -482,6 +548,7 @@ class PipelineOrchestrator:
                 valuation=valuation,
                 sentiment=sentiment,
                 risk=risk,
+                risk_impact=risk_impact,
                 accounting_recast=accounting_recast_result,
                 action="WATCH",
                 conviction="low",

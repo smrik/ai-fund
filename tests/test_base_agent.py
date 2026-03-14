@@ -109,3 +109,8 @@ def test_run_preserves_gemini_thought_signature_in_tool_calls():
     second_call_kwargs = agent.client.chat.completions.create.call_args_list[1].kwargs
     assistant_turn = second_call_kwargs["messages"][2]
     assert assistant_turn["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig_123"
+    assert agent.last_run_artifact["system_prompt"] == agent.system_prompt
+    assert agent.last_run_artifact["user_prompt"] == "test prompt"
+    assert agent.last_run_artifact["raw_final_output"] == "final"
+    assert agent.last_run_artifact["parsed_output"] == "final"
+    assert agent.last_run_artifact["api_trace"][0]["finish_reason"] == "tool_calls"

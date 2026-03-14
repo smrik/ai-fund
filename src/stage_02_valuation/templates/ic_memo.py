@@ -56,6 +56,30 @@ class RiskOutput(BaseModel):
     rationale: str = ""
 
 
+class RiskScenarioOverlay(BaseModel):
+    risk_name: str
+    source_type: str
+    source_text: str
+    probability: float
+    horizon: str
+    revenue_growth_near_bps: int = 0
+    revenue_growth_mid_bps: int = 0
+    ebit_margin_bps: int = 0
+    wacc_bps: int = 0
+    exit_multiple_pct: float = 0.0
+    rationale: str = ""
+    confidence: str = "medium"
+
+
+class RiskImpactOutput(BaseModel):
+    base_iv: Optional[float] = None
+    risk_adjusted_expected_iv: Optional[float] = None
+    risk_adjusted_delta_pct: Optional[float] = None
+    residual_base_probability: float = 1.0
+    overlays: list[RiskScenarioOverlay] = Field(default_factory=list)
+    raw_summary: str = ""
+
+
 class ICMemo(BaseModel):
     # Header
     ticker: str
@@ -77,6 +101,7 @@ class ICMemo(BaseModel):
     valuation: ValuationRange = Field(default_factory=lambda: ValuationRange(bear=0, base=0, bull=0))
     sentiment: SentimentOutput = Field(default_factory=SentimentOutput)
     risk: RiskOutput = Field(default_factory=RiskOutput)
+    risk_impact: RiskImpactOutput = Field(default_factory=RiskImpactOutput)
     accounting_recast: dict = Field(default_factory=dict)
 
     # The thesis (what Claude synthesizes; you refine)
