@@ -9,6 +9,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import json
 import streamlit as st
+from config import LLM_MODEL
 
 st.set_page_config(
     page_title="AI Research Pod",
@@ -22,6 +23,18 @@ with st.sidebar:
     st.caption("Tiger-style fundamental analysis pipeline")
     st.divider()
 
+    AGENT_OPTIONS = [
+        "IndustryAgent",
+        "FilingsAgent",
+        "EarningsAgent",
+        "QoEAgent",
+        "AccountingRecastAgent",
+        "ValuationAgent",
+        "SentimentAgent",
+        "RiskAgent",
+        "ThesisAgent",
+    ]
+
     ticker_input = st.text_input(
         "Ticker",
         placeholder="e.g. AAPL, MSFT, NVDA",
@@ -29,11 +42,22 @@ with st.sidebar:
     ).upper().strip()
 
     run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
+    use_agent_cache = st.checkbox(
+        "Use agent cache",
+        value=True,
+        help="Reuse cached agent outputs when inputs, prompt, and model hashes have not changed.",
+    )
+    force_refresh_agents = st.multiselect(
+        "Force refresh agents",
+        options=AGENT_OPTIONS,
+        default=[],
+        help="Bypass cache for only these steps. Downstream agents still reuse cache if their hashed inputs are unchanged.",
+    )
 
     st.divider()
-    st.caption("**Pipeline:** FilingsAgent → EarningsAgent → ValuationAgent → SentimentAgent → RiskAgent → ThesisAgent")
+    st.caption("**Pipeline:** Industry → Filings → Earnings → QoE → Accounting Recast → Valuation → Sentiment → Risk → Thesis")
     st.caption("**Data:** SEC EDGAR (free) + yfinance")
-    st.caption("**Model:** claude-opus-4-6 + adaptive thinking")
+    st.caption(f"**Primary LLM:** {LLM_MODEL}")
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
@@ -43,6 +67,54 @@ if "running" not in st.session_state:
     st.session_state.running = False
 if "recommendations" not in st.session_state:
     st.session_state.recommendations = None
+if "workbench_preview" not in st.session_state:
+    st.session_state.workbench_preview = None
+if "run_trace" not in st.session_state:
+    st.session_state.run_trace = []
+
+
+def _to_display_value(value: float | None, unit: str) -> float:
+    if value is None:
+        return 0.0
+    if unit == "pct":
+        return float(value) * 100.0
+    if unit == "usd":
+        return float(value) / 1_000_000.0
+    return float(value)
+
+
+def _from_display_value(value: float, unit: str) -> float:
+    if unit == "pct":
+        return float(value) / 100.0
+    if unit == "usd":
+        return float(value) * 1_000_000.0
+    return float(value)
+
+
+def _format_value(value: float | None, unit: str) -> str:
+    if value is None:
+        return "—"
+    if unit == "pct":
+        return f"{float(value) * 100:.1f}%"
+    if unit == "usd":
+        return f"${float(value) / 1_000_000:,.0f}mm"
+    if unit == "days":
+        return f"{float(value):,.1f}d"
+    if unit == "x":
+        return f"{float(value):,.1f}x"
+    return f"{float(value):,.4f}"
+
+
+def _input_step(unit: str) -> float:
+    if unit == "pct":
+        return 0.5
+    if unit == "usd":
+        return 10.0
+    if unit == "days":
+        return 1.0
+    if unit == "x":
+        return 0.25
+    return 0.01
 
 
 # ── Run pipeline ──────────────────────────────────────────────────────────────
@@ -50,19 +122,20 @@ if run_btn and ticker_input:
     st.session_state.running = True
     st.session_state.memo = None
     st.session_state.recommendations = None
+    st.session_state.run_trace = []
 
     with st.status(f"Running 9-agent analysis for **{ticker_input}**...", expanded=True) as status:
         steps = [
             "Fetching market snapshot",
-            "IndustryAgent — sector benchmarks",
-            "FilingsAgent — SEC 10-K / 10-Q",
-            "EarningsAgent — earnings call analysis",
-            "QoEAgent — quality of earnings",
-            "AccountingRecastAgent — recast proposals",
-            "ValuationAgent — DCF + comps",
-            "SentimentAgent — news & analyst positioning",
-            "RiskAgent — position sizing",
-            "ThesisAgent — IC memo synthesis",
+            "0a/9  IndustryAgent — sector benchmarks & recent events",
+            "1/9  FilingsAgent — parsing SEC 10-K / 10-Q",
+            "2/9  EarningsAgent — analysing earnings calls",
+            "2a/9  QoEAgent — quality-of-earnings signals + EBIT normalisation",
+            "2b/9  AccountingRecastAgent — proposing EBIT and EV-bridge reclassifications",
+            "3/9  ValuationAgent — running DCF + comps",
+            "4/9  SentimentAgent — scoring news & analyst positioning",
+            "5/9  RiskAgent — sizing position",
+            "6/9  ThesisAgent — synthesizing IC memo",
         ]
         placeholders = {s: st.empty() for s in steps}
         for s in steps:
@@ -72,195 +145,28 @@ if run_btn and ticker_input:
             from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
 
             class StreamingOrchestrator(PipelineOrchestrator):
-                """Orchestrator that updates Streamlit status as it runs."""
+                def _on_step(self, step_name: str) -> None:
+                    if step_name in placeholders:
+                        placeholders[step_name].markdown(f"🔄 **{step_name}**")
 
-                def _step_ui(self, step_name: str):
-                    placeholders[step_name].markdown(f"🔄 **{step_name}**")
+                def _on_done(self, step_name: str, detail: str = "") -> None:
+                    if step_name in placeholders:
+                        msg = f"✅ {step_name}"
+                        if detail:
+                            msg += f" — {detail}"
+                        placeholders[step_name].markdown(msg)
 
-                def _done_ui(self, step_name: str, detail: str = ""):
-                    msg = f"✅ {step_name}"
-                    if detail:
-                        msg += f" — {detail}"
-                    placeholders[step_name].markdown(msg)
-
-                def run(self, ticker: str):
-                    from src.stage_00_data import market_data as md_client
-                    from src.stage_02_valuation.templates.ic_memo import (
-                        FilingsSummary, EarningsSummary,
-                        ValuationRange, SentimentOutput, RiskOutput, ICMemo,
-                    )
-                    from src.stage_03_judgment.accounting_recast_agent import build_accounting_recast_context
-                    from config import PORTFOLIO_SIZE_USD, CONVICTION_SIZING
-
-                    ticker = ticker.upper().strip()
-
-                    self._step_ui("Fetching market snapshot")
-                    mkt = {}
-                    try:
-                        mkt = md_client.get_market_data(ticker)
-                        company_name = mkt.get("name") or ticker
-                        sector = mkt.get("sector") or ""
-                        industry = mkt.get("industry") or ""
-                        price = mkt.get("current_price") or 0
-                        mktcap = mkt.get("market_cap") or 0
-                        self._done_ui("Fetching market snapshot", f"${price:,.2f} | Mkt Cap ${mktcap/1e9:.1f}B")
-                    except Exception as e:
-                        self._done_ui("Fetching market snapshot", f"⚠ {e}")
-                        company_name = ticker
-                        sector = ""
-                        industry = ""
-
-                    self._step_ui("IndustryAgent — sector benchmarks")
-                    industry_context = ""
-                    if sector:
-                        try:
-                            ind_result = self.industry_agent.research(sector, industry or sector)
-                            self.last_industry_result = ind_result
-                            ind_events = self.industry_agent.get_recent_events(ticker, sector)
-                            g = ind_result.get("consensus_growth_near", 0) or 0
-                            m = ind_result.get("margin_benchmark", 0) or 0
-                            self._done_ui("IndustryAgent — sector benchmarks", f"Growth {g*100:.1f}% | Margin bm {m*100:.1f}%")
-                            events_list = ind_events.get("recent_events") or []
-                            tailwinds = ind_events.get("sector_tailwinds") or []
-                            headwinds = ind_events.get("sector_headwinds") or []
-                            industry_context = (
-                                f"Sector: {sector} | Industry: {industry or sector}\n"
-                                f"Consensus growth (near/mid): {g*100:.1f}% / "
-                                f"{(ind_result.get('consensus_growth_mid') or 0)*100:.1f}%"
-                                f" | Margin benchmark: {m*100:.1f}%\n"
-                            )
-                            if events_list:
-                                industry_context += "Recent events:\n" + "\n".join(f"  • {e}" for e in events_list[:6]) + "\n"
-                            if tailwinds:
-                                industry_context += "Tailwinds: " + "; ".join(tailwinds[:3]) + "\n"
-                            if headwinds:
-                                industry_context += "Headwinds: " + "; ".join(headwinds[:3]) + "\n"
-                        except Exception as e:
-                            self._done_ui("IndustryAgent — sector benchmarks", f"⚠ {e}")
-                    else:
-                        self._done_ui("IndustryAgent — sector benchmarks", "⚠ Sector unknown — skipped")
-
-                    self._step_ui("FilingsAgent — SEC 10-K / 10-Q")
-                    try:
-                        filings = self.filings_agent.analyze(ticker)
-                        self._done_ui("FilingsAgent — SEC 10-K / 10-Q", f"{filings.revenue_trend} revenue | {len(filings.red_flags)} flags")
-                    except Exception as e:
-                        filings = FilingsSummary(raw_summary=f"Error: {e}")
-                        self._done_ui("FilingsAgent — SEC 10-K / 10-Q", f"⚠ {e}")
-
-                    self._step_ui("EarningsAgent — earnings call analysis")
-                    try:
-                        earnings = self.earnings_agent.analyze(ticker, filings.raw_summary)
-                        self._done_ui("EarningsAgent — earnings call analysis", f"{earnings.guidance_trend} guidance | {earnings.management_tone} tone")
-                    except Exception as e:
-                        earnings = EarningsSummary(raw_summary=f"Error: {e}")
-                        self._done_ui("EarningsAgent — earnings call analysis", f"⚠ {e}")
-
-                    self._step_ui("QoEAgent — quality of earnings")
-                    qoe_context = ""
-                    reported_ebit = float(mkt.get("ebitda_ttm") or 0) * 0.85
-                    try:
-                        hist = md_client.get_historical_financials(ticker)
-                        op_income = hist.get("operating_income") or []
-                        reported_ebit = float(op_income[0]) if op_income else reported_ebit
-                        qoe_result = self.qoe_agent.analyze(ticker=ticker, reported_ebit=reported_ebit)
-                        self.last_qoe_result = qoe_result
-                        qoe_score = qoe_result.get("qoe_score")
-                        qoe_flag = qoe_result.get("qoe_flag", "")
-                        llm_b = qoe_result.get("llm") or {}
-                        haircut = llm_b.get("ebit_haircut_pct")
-                        haircut_str = f" | Haircut {haircut:+.1f}%" if haircut is not None else ""
-                        self._done_ui("QoEAgent — quality of earnings", f"Score {qoe_score}/5 ({qoe_flag}){haircut_str}")
-                        det = qoe_result.get("deterministic") or {}
-                        flags = [f"{k}: {v}" for k, v in (det.get("signal_scores") or {}).items() if v in ("amber", "red")]
-                        qoe_context = f"QoE score: {qoe_score}/5 ({qoe_flag})\n"
-                        if flags:
-                            qoe_context += "Flagged: " + ", ".join(flags) + "\n"
-                        if haircut is not None:
-                            qoe_context += f"EBIT haircut: {haircut:+.1f}%\n"
-                    except Exception as e:
-                        self._done_ui("QoEAgent — quality of earnings", f"⚠ {e}")
-
-                    self._step_ui("AccountingRecastAgent — recast proposals")
-                    accounting_recast_context = ""
-                    try:
-                        ar_result = self.accounting_recast_agent.analyze(ticker=ticker, reported_ebit=reported_ebit)
-                        self.last_accounting_recast_result = ar_result
-                        confidence = ar_result.get("confidence", "low")
-                        n_adj = len(ar_result.get("income_statement_adjustments") or [])
-                        n_rcl = len(ar_result.get("balance_sheet_reclassifications") or [])
-                        self._done_ui("AccountingRecastAgent — recast proposals", f"{confidence} confidence | {n_adj} adj | {n_rcl} reclasses")
-                        accounting_recast_context = build_accounting_recast_context(ar_result)
-                    except Exception as e:
-                        ar_result = {}
-                        self._done_ui("AccountingRecastAgent — recast proposals", f"⚠ {e}")
-
-                    self._step_ui("ValuationAgent — DCF + comps")
-                    try:
-                        valuation = self.valuation_agent.analyze(ticker, filings)
-                        upside = (valuation.upside_pct_base or 0) * 100
-                        self._done_ui("ValuationAgent — DCF + comps", f"Base ${valuation.base:.0f} | {upside:+.1f}% upside")
-                    except Exception as e:
-                        p = mkt.get("current_price", 0) if mkt else 0
-                        valuation = ValuationRange(bear=p * 0.7, base=p, bull=p * 1.3, current_price=p)
-                        self._done_ui("ValuationAgent — DCF + comps", f"⚠ {e}")
-
-                    self._step_ui("SentimentAgent — news & analyst positioning")
-                    try:
-                        sentiment = self.sentiment_agent.analyze(ticker)
-                        self._done_ui("SentimentAgent — news & analyst positioning", f"{sentiment.direction} | score {sentiment.score:+.2f}")
-                    except Exception as e:
-                        sentiment = SentimentOutput(raw_summary=f"Error: {e}")
-                        self._done_ui("SentimentAgent — news & analyst positioning", f"⚠ {e}")
-
-                    self._step_ui("RiskAgent — position sizing")
-                    try:
-                        risk = self.risk_agent.analyze(ticker, valuation, sentiment)
-                        self._done_ui("RiskAgent — position sizing", f"{risk.conviction.upper()} | ${risk.position_size_usd:,.0f} ({risk.position_pct*100:.1f}%)")
-                    except Exception as e:
-                        risk = RiskOutput(
-                            conviction="low",
-                            position_size_usd=PORTFOLIO_SIZE_USD * CONVICTION_SIZING["low"],
-                            position_pct=CONVICTION_SIZING["low"],
-                            suggested_stop_loss_pct=0.20,
-                            rationale=f"Error: {e}",
-                        )
-                        self._done_ui("RiskAgent — position sizing", f"⚠ {e}")
-
-                    self._step_ui("ThesisAgent — IC memo synthesis")
-                    try:
-                        memo = self.thesis_agent.synthesize(
-                            ticker=ticker,
-                            company_name=company_name,
-                            sector=sector,
-                            filings=filings,
-                            earnings=earnings,
-                            valuation=valuation,
-                            sentiment=sentiment,
-                            risk=risk,
-                            qoe_context=qoe_context,
-                            industry_context=industry_context,
-                            accounting_recast_context=accounting_recast_context,
-                        )
-                        memo.accounting_recast = ar_result
-                        self._done_ui("ThesisAgent — IC memo synthesis", f"{memo.action} | {memo.conviction.upper()}")
-                    except Exception as e:
-                        memo = ICMemo(
-                            ticker=ticker, company_name=company_name, sector=sector,
-                            filings=filings, earnings=earnings, valuation=valuation,
-                            sentiment=sentiment, risk=risk,
-                            action="WATCH", conviction="low",
-                            one_liner=f"Analysis incomplete: {e}",
-                            variant_thesis_prompt="Review agent outputs manually.",
-                        )
-                        self._done_ui("ThesisAgent — IC memo synthesis", f"⚠ {e}")
-
-                    return memo
+                def _on_warn(self, message: str) -> None:
+                    status.write(f"⚠ {message}")
 
             orch = StreamingOrchestrator()
-            memo = orch.run(ticker_input)
+            memo = orch.run(
+                ticker_input,
+                use_cache=use_agent_cache,
+                force_refresh_agents=set(force_refresh_agents),
+            )
             st.session_state.memo = memo
-            # Collect and persist recommendations
+            st.session_state.run_trace = orch.last_run_trace
             try:
                 from src.stage_04_pipeline.recommendations import write_recommendations
                 recs = orch.collect_recommendations(ticker_input)
@@ -273,10 +179,8 @@ if run_btn and ticker_input:
         except Exception as e:
             status.update(label=f"Pipeline error: {e}", state="error")
 
-    st.session_state.running = False
+st.session_state.running = False
 
-
-# ── Display results ────────────────────────────────────────────────────────────
 memo = st.session_state.memo
 
 if memo is None:
@@ -285,20 +189,23 @@ if memo is None:
 
 1. Enter a **US-listed ticker** in the sidebar (e.g. `AAPL`, `MSFT`, `NVDA`)
 2. Click **Run Analysis**
-3. The pipeline runs 6 specialized Claude agents in sequence (~3-5 min)
+3. The pipeline runs the full multi-agent research workflow with deterministic valuation and cached re-runs where possible
 4. Review all intermediate outputs — **you are the human-in-the-loop**
 5. Use the Variant Thesis Prompt as your starting point for the investment decision
 
-### The 6-Agent Pipeline
+### The Research Workflow
 
-| Agent | Job |
+| Step | Job |
 |---|---|
+| **IndustryAgent** | Pulls sector benchmarks and current industry context |
 | **FilingsAgent** | Parses 10-K/10-Q, extracts revenue trends, margins, FCF, red flags |
 | **EarningsAgent** | Analyses earnings calls, guidance vs actuals, management tone |
-| **ValuationAgent** | Runs DCF + comps, produces bear/base/bull intrinsic value |
-| **SentimentAgent** | Scores news narrative, analyst positioning |
+| **QoEAgent** | Flags quality-of-earnings issues and possible EBIT normalisation |
+| **AccountingRecastAgent** | Proposes operating vs non-operating / bridge reclassifications |
+| **ValuationAgent** | Runs deterministic DCF + comps, produces bear/base/bull intrinsic value |
+| **SentimentAgent** | Scores news narrative and analyst positioning |
 | **RiskAgent** | Sizes position based on conviction + volatility |
-| **ThesisAgent** | Synthesizes IC memo — forces a decision |
+| **ThesisAgent** | Synthesizes the IC memo and forces the decision |
 
 > **Your job:** Write the variant thesis. The AI surfaces what's known; you identify why the market is wrong.
 """)
@@ -334,12 +241,29 @@ st.warning(
     "_This is the question the AI cannot answer for you. Answer this before sizing the position._"
 )
 
-# ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_thesis, tab_valuation, tab_filings, tab_earnings, tab_sentiment, tab_risk, tab_recs, tab_raw = st.tabs([
-    "📋 Thesis", "💰 Valuation", "📂 Filings", "📞 Earnings", "📰 Sentiment", "⚖️ Risk", "🔧 Recommendations", "🔍 Raw JSON"
-])
+# ── Sections ──────────────────────────────────────────────────────────────────
+SECTION_OPTIONS = [
+    "📋 Thesis",
+    "💰 Valuation",
+    "🧮 DCF Audit",
+    "📂 Filings",
+    "📞 Earnings",
+    "📰 Sentiment",
+    "⚖️ Risk",
+    "🔄 Pipeline",
+    "🔧 Recommendations",
+    "🧪 Assumption Lab",
+    "🔍 Raw JSON",
+]
+selected_section = st.radio(
+    "Section",
+    SECTION_OPTIONS,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="main_dashboard_section",
+)
 
-with tab_thesis:
+if selected_section == "📋 Thesis":
     col_a, col_b, col_c = st.columns(3)
     with col_a:
         st.subheader("🐂 Bull Case")
@@ -366,7 +290,7 @@ with tab_thesis:
     for q in memo.open_questions:
         st.markdown(f"- {q}")
 
-with tab_valuation:
+if selected_section == "💰 Valuation":
     st.subheader("DCF Bear / Base / Bull")
     val = memo.valuation
     price = val.current_price or 0
@@ -382,7 +306,56 @@ with tab_valuation:
     }
     st.table(data)
 
-with tab_filings:
+if selected_section == "🧮 DCF Audit":
+    st.subheader("DCF Audit")
+    st.caption("Browser-native review of the deterministic model. These tables come directly from the Python DCF engine, not from the Excel export.")
+
+    try:
+        from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
+
+        audit = build_dcf_audit_view(memo.ticker)
+    except Exception as e:
+        audit = None
+        st.error(f"DCF audit load error: {e}")
+
+    if not audit or not audit.get("available"):
+        st.info("DCF audit view unavailable for this ticker. Re-run after valuation inputs are available.")
+    else:
+        st.subheader("Scenario Summary")
+        st.dataframe(audit["scenario_summary"], use_container_width=True, hide_index=True)
+
+        left, right = st.columns(2)
+        with left:
+            st.subheader("Key Drivers")
+            st.dataframe(audit["driver_rows"], use_container_width=True, hide_index=True)
+        with right:
+            st.subheader("Health Flags")
+            flag_rows = [
+                {"flag": key, "active": bool(value)}
+                for key, value in (audit.get("health_flags") or {}).items()
+            ]
+            st.dataframe(flag_rows, use_container_width=True, hide_index=True)
+
+        st.subheader("Forecast Bridge (Base Scenario)")
+        st.dataframe(audit["forecast_bridge"], use_container_width=True, hide_index=True)
+
+        col_term, col_ev = st.columns(2)
+        with col_term:
+            st.subheader("Terminal Bridge")
+            st.dataframe([audit["terminal_bridge"]], use_container_width=True, hide_index=True)
+        with col_ev:
+            st.subheader("EV → Equity Bridge")
+            st.dataframe([audit["ev_bridge"]], use_container_width=True, hide_index=True)
+
+        sens_a, sens_b = st.columns(2)
+        with sens_a:
+            st.subheader("Sensitivity: WACC × Terminal Growth")
+            st.dataframe(audit["sensitivity"]["wacc_x_terminal_growth"], use_container_width=True, hide_index=True)
+        with sens_b:
+            st.subheader("Sensitivity: WACC × Exit Multiple")
+            st.dataframe(audit["sensitivity"]["wacc_x_exit_multiple"], use_container_width=True, hide_index=True)
+
+if selected_section == "📂 Filings":
     f = memo.filings
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Revenue Trend", f.revenue_trend.title())
@@ -401,7 +374,7 @@ with tab_filings:
     st.subheader("Full Analysis")
     st.write(f.raw_summary)
 
-with tab_earnings:
+if selected_section == "📞 Earnings":
     e = memo.earnings
     col1, col2, col3 = st.columns(3)
     col1.metric("Guidance Trend", e.guidance_trend.title())
@@ -416,7 +389,7 @@ with tab_earnings:
     st.subheader("Full Analysis")
     st.write(e.raw_summary)
 
-with tab_sentiment:
+if selected_section == "📰 Sentiment":
     s = memo.sentiment
     direction_emoji = {"bullish": "🟢", "bearish": "🔴", "neutral": "🟡"}.get(s.direction, "⚪")
     col1, col2 = st.columns(2)
@@ -441,7 +414,7 @@ with tab_sentiment:
     st.subheader("Full Analysis")
     st.write(s.raw_summary)
 
-with tab_risk:
+if selected_section == "⚖️ Risk":
     r = memo.risk
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Conviction", r.conviction.upper())
@@ -455,7 +428,31 @@ with tab_risk:
     st.subheader("Sizing Rationale")
     st.write(r.rationale)
 
-with tab_recs:
+if selected_section == "🔄 Pipeline":
+    st.subheader("Pipeline Trace")
+    st.caption("Latest run trace plus persisted agent-run history from SQLite.")
+
+    latest_trace = st.session_state.get("run_trace") or []
+    if latest_trace:
+        st.dataframe(latest_trace, use_container_width=True, hide_index=True)
+    else:
+        st.info("No in-session run trace available yet. Run the pipeline from this dashboard to populate it.")
+
+    try:
+        from src.stage_04_pipeline.agent_cache import load_agent_run_history
+
+        run_history = load_agent_run_history(memo.ticker, limit=50)
+    except Exception as e:
+        run_history = []
+        st.error(f"Agent run history error: {e}")
+
+    if run_history:
+        st.subheader("Recent Agent Run History")
+        st.dataframe(run_history, use_container_width=True, hide_index=True)
+    else:
+        st.info("No persisted agent-run history stored yet for this ticker.")
+
+if selected_section == "🔧 Recommendations":
     st.subheader("Agent Recommendations")
     recs = st.session_state.recommendations
 
@@ -480,7 +477,12 @@ with tab_recs:
         for r in recs.recommendations:
             by_agent[r.agent].append(r)
 
-        agent_labels = {"qoe": "🔍 Quality of Earnings", "accounting_recast": "📊 Accounting Recast", "industry": "🏭 Industry"}
+        agent_labels = {
+            "qoe": "🔍 Quality of Earnings",
+            "accounting_recast": "📊 Accounting Recast",
+            "industry": "🏭 Industry",
+            "filings": "📂 Filings Cross-Check",
+        }
         approved_selection: list[str] = []
 
         for agent_key, agent_recs in by_agent.items():
@@ -573,7 +575,179 @@ with tab_recs:
             except Exception as e:
                 st.error(f"Apply error: {e}")
 
-with tab_raw:
+if selected_section == "🧪 Assumption Lab":
+    st.subheader("Assumption Lab")
+    st.caption(
+        "Compare current active values, deterministic defaults, and agent suggestions. "
+        "Preview the valuation impact, then apply selections into `config/valuation_overrides.yaml`. "
+        "Every apply action is also written to SQLite audit history."
+    )
+    st.caption("Input units: percentages are entered as whole percents, debt/claims in USD millions, multiples in turns, NWC drivers in days.")
+
+    try:
+        from src.stage_04_pipeline.override_workbench import (
+            apply_override_selections,
+            build_override_workbench,
+            load_override_audit_history,
+            preview_override_selections,
+        )
+
+        workbench = build_override_workbench(memo.ticker)
+    except Exception as e:
+        workbench = None
+        st.error(f"Workbench load error: {e}")
+
+    if not workbench or not workbench.get("available"):
+        st.info("Assumption lab unavailable for this ticker. Run the analysis first and confirm valuation inputs can be assembled.")
+    else:
+        head_a, head_b, head_c = st.columns(3)
+        head_a.metric("Current Base IV", f"${workbench.get('current_iv_base', 0):,.2f}" if workbench.get("current_iv_base") else "—")
+        head_b.metric("Current Price", f"${(workbench.get('current_price') or 0):,.2f}")
+        head_c.metric("Tracked Fields", str(len(workbench.get("fields") or [])))
+
+        selections: dict[str, str] = {}
+        custom_values: dict[str, float] = {}
+
+        for row in workbench["fields"]:
+            field = row["field"]
+            options = ["default"]
+            if row.get("agent_value") is not None:
+                options.append("agent")
+            options.append("custom")
+
+            initial_mode = row.get("initial_mode", "default")
+            if initial_mode not in options:
+                initial_mode = "default"
+
+            st.markdown(f"**{row['label']}**  ")
+            st.caption(f"`{field}`")
+            col_a, col_b, col_c, col_d, col_e = st.columns([1.2, 1.2, 1.8, 1.0, 1.1])
+            with col_a:
+                st.markdown(f"Current: **{_format_value(row.get('effective_value'), row['unit'])}**")
+                st.caption(f"Source: {row.get('effective_source') or '—'}")
+            with col_b:
+                st.markdown(f"Default: **{_format_value(row.get('baseline_value'), row['unit'])}**")
+                st.caption(f"Source: {row.get('baseline_source') or '—'}")
+            with col_c:
+                if row.get("agent_value") is not None:
+                    st.markdown(f"Agent: **{_format_value(row.get('agent_value'), row['unit'])}**")
+                    st.caption(
+                        f"{row.get('agent_name') or 'agent'} | "
+                        f"{row.get('agent_confidence') or 'n/a'} | "
+                        f"{row.get('agent_status') or 'pending'}"
+                    )
+                else:
+                    st.markdown("Agent: **—**")
+                    st.caption("No agent suggestion")
+            with col_d:
+                mode = st.selectbox(
+                    f"{field}_mode",
+                    options=options,
+                    index=options.index(initial_mode),
+                    label_visibility="collapsed",
+                    key=f"assump_mode_{memo.ticker}_{field}",
+                )
+            with col_e:
+                default_custom = row.get("effective_value")
+                if default_custom is None:
+                    default_custom = row.get("baseline_value")
+                custom_display = st.number_input(
+                    f"{field}_custom",
+                    value=float(_to_display_value(default_custom, row["unit"])),
+                    step=_input_step(row["unit"]),
+                    label_visibility="collapsed",
+                    key=f"assump_custom_{memo.ticker}_{field}",
+                )
+            selections[field] = mode
+            custom_values[field] = _from_display_value(custom_display, row["unit"])
+            st.divider()
+
+        try:
+            preview = preview_override_selections(
+                memo.ticker,
+                selections=selections,
+                custom_values=custom_values,
+            )
+            st.session_state.workbench_preview = preview
+        except Exception as e:
+            preview = None
+            st.session_state.workbench_preview = None
+            st.error(f"Live preview error: {e}")
+
+        if st.button("Apply selections to valuation_overrides.yaml", type="primary", key=f"assump_apply_{memo.ticker}"):
+            try:
+                apply_result = apply_override_selections(
+                    memo.ticker,
+                    selections=selections,
+                    custom_values=custom_values,
+                    actor="dashboard",
+                )
+                st.session_state.workbench_preview = apply_result.get("preview")
+                st.success(
+                    f"Applied {apply_result.get('applied_count', 0)} field selection(s) to "
+                    "`config/valuation_overrides.yaml` and wrote audit rows to SQLite."
+                )
+            except Exception as e:
+                st.error(f"Apply error: {e}")
+
+        preview = st.session_state.workbench_preview
+        if preview:
+            st.subheader("Preview Delta")
+            prev_cols = st.columns(4)
+            for col, key in zip(prev_cols, ["bear", "base", "bull", "expected"]):
+                current_value = preview.get("current_iv", {}).get(key) if key != "expected" else preview.get("current_expected_iv")
+                proposed_value = preview.get("proposed_iv", {}).get(key) if key != "expected" else preview.get("proposed_expected_iv")
+                delta_pct = None
+                if key != "expected":
+                    delta_pct = preview.get("delta_pct", {}).get(key)
+                elif current_value and proposed_value:
+                    delta_pct = round((proposed_value / current_value - 1.0) * 100.0, 1)
+                col.metric(
+                    f"{key.capitalize()} IV",
+                    f"${proposed_value:,.2f}" if proposed_value is not None else "—",
+                    delta=f"{delta_pct:+.1f}%" if delta_pct is not None else None,
+                )
+
+            resolved_rows = []
+            for field, meta in (preview.get("resolved_values") or {}).items():
+                resolved_rows.append(
+                    {
+                        "field": field,
+                        "mode": meta.get("mode"),
+                        "effective_before": meta.get("effective_value"),
+                        "applied_value": meta.get("value"),
+                    }
+                )
+            if resolved_rows:
+                st.dataframe(resolved_rows, use_container_width=True, hide_index=True)
+
+        st.subheader("Audit History")
+        try:
+            history = load_override_audit_history(memo.ticker, limit=50)
+        except Exception as e:
+            history = []
+            st.error(f"Audit history error: {e}")
+
+        if history:
+            history_rows = [
+                {
+                    "timestamp": row["event_ts"],
+                    "field": row["field"],
+                    "mode": row["selection_mode"],
+                    "baseline_source": row["baseline_source"],
+                    "effective_source_before": row["effective_source_before"],
+                    "applied_value": row["applied_value"],
+                    "action": row["write_action"],
+                    "base_iv_before": row["current_iv_base"],
+                    "base_iv_after": row["proposed_iv_base"],
+                }
+                for row in history
+            ]
+            st.dataframe(history_rows, use_container_width=True, hide_index=True)
+        else:
+            st.info("No dashboard override audit events stored yet for this ticker.")
+
+if selected_section == "🔍 Raw JSON":
     st.subheader("Full IC Memo JSON")
     st.download_button(
         label="Download JSON",

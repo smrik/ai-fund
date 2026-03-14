@@ -460,3 +460,31 @@ def upsert_peer_similarity_cache(conn: sqlite3.Connection, row: dict[str, Any]):
         row,
     )
     conn.commit()
+
+
+def insert_valuation_override_audit(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
+    """Append valuation override audit events."""
+    if not rows:
+        return
+
+    conn.executemany(
+        """
+        INSERT INTO valuation_override_audit (
+            event_ts, ticker, actor, field, selection_mode,
+            baseline_value, baseline_source, effective_value_before, effective_source_before,
+            agent_value, agent_status, agent_confidence, custom_value, applied_value,
+            prior_ticker_override_value, resulting_ticker_override_value, write_action,
+            current_iv_json, proposed_iv_json, current_iv_base, proposed_iv_base,
+            current_expected_iv, proposed_expected_iv
+        ) VALUES (
+            :event_ts, :ticker, :actor, :field, :selection_mode,
+            :baseline_value, :baseline_source, :effective_value_before, :effective_source_before,
+            :agent_value, :agent_status, :agent_confidence, :custom_value, :applied_value,
+            :prior_ticker_override_value, :resulting_ticker_override_value, :write_action,
+            :current_iv_json, :proposed_iv_json, :current_iv_base, :proposed_iv_base,
+            :current_expected_iv, :proposed_expected_iv
+        )
+        """,
+        rows,
+    )
+    conn.commit()

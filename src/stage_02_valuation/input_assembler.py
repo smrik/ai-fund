@@ -197,7 +197,11 @@ def _derive_non_operating_assets(revenue_base: float, ciq: dict[str, Any] | None
     return excess_cash, source
 
 
-def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> ValuationInputsWithLineage | None:
+def build_valuation_inputs(
+    ticker: str,
+    as_of_date: str | None = None,
+    apply_overrides: bool = True,
+) -> ValuationInputsWithLineage | None:
     ticker = ticker.upper().strip()
     mkt = md_client.get_market_data(ticker)
     hist = md_client.get_historical_financials(ticker)
@@ -579,7 +583,8 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     if da_story_active:
         source_lineage["da_pct_target"] = story_profile_source
 
-    _apply_overrides(drivers, source_lineage, ticker=ticker, sector=sector)
+    if apply_overrides:
+        _apply_overrides(drivers, source_lineage, ticker=ticker, sector=sector)
 
     return ValuationInputsWithLineage(
         ticker=ticker,

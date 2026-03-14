@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
 from src.stage_03_judgment.base_agent import BaseAgent
 
 
@@ -32,3 +35,77 @@ def test_tool_parameters_structure():
     assert params["type"] == "object"
     assert "x" in params["properties"]
     assert "x" in params["required"]
+
+
+def test_run_preserves_gemini_thought_signature_in_tool_calls():
+    with patch("src.stage_03_judgment.base_agent.OpenAI"):
+        agent = BaseAgent()
+
+    agent.client = MagicMock()
+    agent.tools = [
+        BaseAgent._tool(
+            name="dummy_tool",
+            description="dummy",
+            properties={"ticker": {"type": "string"}},
+            required=["ticker"],
+        )
+    ]
+    agent.tool_handlers = {"dummy_tool": lambda inp: '{"ok": true}'}
+
+    tool_call = SimpleNamespace(
+        id="call_1",
+        type="function",
+        function=SimpleNamespace(name="dummy_tool", arguments='{"ticker":"IBM"}'),
+        model_dump=lambda exclude_none=True: {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+                "name": "dummy_tool",
+                "arguments": '{"ticker":"IBM"}',
+            },
+            "extra_content": {
+                "google": {
+                    "thought_signature": "sig_123",
+                }
+            },
+        },
+    )
+
+    assistant_message = SimpleNamespace(
+        content=None,
+        tool_calls=[tool_call],
+        model_dump=lambda exclude_none=True: {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "dummy_tool",
+                        "arguments": '{"ticker":"IBM"}',
+                    },
+                    "extra_content": {
+                        "google": {
+                            "thought_signature": "sig_123",
+                        }
+                    },
+                }
+            ],
+        },
+    )
+
+    response_1 = SimpleNamespace(
+        choices=[SimpleNamespace(finish_reason="tool_calls", message=assistant_message)]
+    )
+    response_2 = SimpleNamespace(
+        choices=[SimpleNamespace(finish_reason="stop", message=SimpleNamespace(content="final"))]
+    )
+
+    agent.client.chat.completions.create.side_effect = [response_1, response_2]
+
+    result = agent.run("test prompt", max_iterations=2)
+
+    assert result == "final"
+    second_call_kwargs = agent.client.chat.completions.create.call_args_list[1].kwargs
+    assistant_turn = second_call_kwargs["messages"][2]
+    assert assistant_turn["tool_calls"][0]["extra_content"]["google"]["thought_signature"] == "sig_123"

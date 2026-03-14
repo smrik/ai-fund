@@ -1,0 +1,225 @@
+from __future__ import annotations
+
+from dataclasses import asdict
+
+from src.stage_02_valuation.input_assembler import build_valuation_inputs
+from src.stage_02_valuation.professional_dcf import (
+    ForecastDrivers,
+    ScenarioSpec,
+    default_scenario_specs,
+    run_dcf_professional,
+    run_probabilistic_valuation,
+)
+
+
+def _pct(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(float(value) * 100.0, 2)
+
+
+def _usd_mm(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(float(value) / 1_000_000.0, 2)
+
+
+def _scenario_summary(prob_result, current_price: float | None) -> list[dict]:
+    rows: list[dict] = []
+    weights = {spec.name: spec.probability for spec in default_scenario_specs()}
+    for name in ("bear", "base", "bull"):
+        result = prob_result.scenario_results.get(name)
+        if result is None:
+            continue
+        iv = round(result.intrinsic_value_per_share, 2)
+        upside = None
+        if current_price and current_price > 0:
+            upside = round((iv / current_price - 1.0) * 100.0, 1)
+        rows.append(
+            {
+                "scenario": name,
+                "probability_pct": round(weights.get(name, 0.0) * 100.0, 1),
+                "intrinsic_value": iv,
+                "upside_pct": upside,
+            }
+        )
+    rows.append(
+        {
+            "scenario": "expected",
+            "probability_pct": 100.0,
+            "intrinsic_value": round(prob_result.expected_iv, 2),
+            "upside_pct": round((prob_result.expected_upside_pct or 0.0) * 100.0, 1)
+            if prob_result.expected_upside_pct is not None
+            else None,
+        }
+    )
+    return rows
+
+
+def _forecast_bridge(base_result) -> list[dict]:
+    rows: list[dict] = []
+    for year in base_result.projections:
+        rows.append(
+            {
+                "year": year.year,
+                "revenue_mm": _usd_mm(year.revenue),
+                "growth_pct": _pct(year.growth_rate),
+                "ebit_margin_pct": _pct(year.ebit_margin),
+                "ebit_mm": _usd_mm(year.ebit),
+                "nopat_mm": _usd_mm(year.nopat),
+                "capex_mm": _usd_mm(year.capex),
+                "da_mm": _usd_mm(year.da),
+                "delta_nwc_mm": _usd_mm(year.delta_nwc),
+                "fcff_mm": _usd_mm(year.fcff),
+                "roic_pct": _pct(year.roic),
+            }
+        )
+    return rows
+
+
+def _terminal_bridge(base_result) -> dict:
+    terminal = base_result.terminal_breakdown
+    return {
+        "method_used": terminal.method_used,
+        "gordon_formula_mode": terminal.gordon_formula_mode,
+        "terminal_growth_pct": _pct(terminal.terminal_growth),
+        "ronic_terminal_pct": _pct(terminal.ronic_terminal),
+        "fcff_11_bridge_mm": _usd_mm(terminal.fcff_11_bridge),
+        "fcff_11_value_driver_mm": _usd_mm(terminal.fcff_11_value_driver),
+        "tv_gordon_mm": _usd_mm(terminal.tv_gordon),
+        "tv_exit_mm": _usd_mm(terminal.tv_exit),
+        "tv_blended_mm": _usd_mm(terminal.tv_blended),
+        "pv_tv_gordon_mm": _usd_mm(terminal.pv_tv_gordon),
+        "pv_tv_exit_mm": _usd_mm(terminal.pv_tv_exit),
+        "pv_tv_blended_mm": _usd_mm(terminal.pv_tv_blended),
+        "tv_pct_of_ev": round((base_result.tv_pct_of_ev or 0.0) * 100.0, 1)
+        if base_result.tv_pct_of_ev is not None
+        else None,
+    }
+
+
+def _ev_bridge(base_result) -> dict:
+    return {
+        "enterprise_value_operations": _usd_mm(base_result.enterprise_value_operations),
+        "enterprise_value_operations_mm": _usd_mm(base_result.enterprise_value_operations),
+        "pv_fcff_sum_mm": _usd_mm(base_result.pv_fcff_sum),
+        "non_operating_assets": _usd_mm(base_result.non_operating_assets),
+        "non_operating_assets_mm": _usd_mm(base_result.non_operating_assets),
+        "enterprise_value_total": _usd_mm(base_result.enterprise_value_total),
+        "enterprise_value_total_mm": _usd_mm(base_result.enterprise_value_total),
+        "non_equity_claims": _usd_mm(base_result.non_equity_claims),
+        "non_equity_claims_mm": _usd_mm(base_result.non_equity_claims),
+        "equity_value": _usd_mm(base_result.equity_value),
+        "equity_value_mm": _usd_mm(base_result.equity_value),
+        "intrinsic_value_per_share": round(base_result.intrinsic_value_per_share, 2),
+        "ep_intrinsic_value_per_share": round(base_result.ep_intrinsic_value_per_share, 2)
+        if base_result.ep_intrinsic_value_per_share is not None
+        else None,
+        "fcfe_intrinsic_value_per_share": round(base_result.fcfe_intrinsic_value_per_share, 2)
+        if base_result.fcfe_intrinsic_value_per_share is not None
+        else None,
+    }
+
+
+def _driver_rows(drivers: ForecastDrivers, source_lineage: dict[str, str]) -> list[dict]:
+    fields = [
+        ("revenue_growth_near", "Revenue Growth Near", "pct"),
+        ("revenue_growth_mid", "Revenue Growth Mid", "pct"),
+        ("revenue_growth_terminal", "Terminal Growth", "pct"),
+        ("ebit_margin_start", "EBIT Margin Start", "pct"),
+        ("ebit_margin_target", "EBIT Margin Target", "pct"),
+        ("wacc", "WACC", "pct"),
+        ("exit_multiple", "Exit Multiple", "raw"),
+        ("net_debt", "Net Debt", "usd_mm"),
+    ]
+    rows: list[dict] = []
+    for field, label, unit in fields:
+        value = getattr(drivers, field)
+        if unit == "pct":
+            display = _pct(value)
+        elif unit == "usd_mm":
+            display = _usd_mm(value)
+        else:
+            display = round(float(value), 2)
+        rows.append(
+            {
+                "field": field,
+                "label": label,
+                "value": display,
+                "source": source_lineage.get(field, "unknown"),
+            }
+        )
+    return rows
+
+
+def _sensitivity_matrix(
+    drivers: ForecastDrivers,
+    *,
+    grid: str,
+) -> list[dict]:
+    rows: list[dict] = []
+    base = ScenarioSpec(name="base", probability=1.0)
+
+    if grid == "wacc_x_terminal_growth":
+        wacc_values = [max(0.03, min(0.20, drivers.wacc + delta)) for delta in (-0.01, 0.0, 0.01)]
+        growth_values = [
+            max(0.0, min(0.05, drivers.revenue_growth_terminal + delta))
+            for delta in (-0.005, 0.0, 0.005)
+        ]
+        for wacc in wacc_values:
+            row = {"wacc_pct": round(wacc * 100.0, 2)}
+            for growth in growth_values:
+                adjusted = ForecastDrivers(**{**asdict(drivers), "wacc": wacc, "revenue_growth_terminal": growth})
+                result = run_dcf_professional(adjusted, base)
+                row[f"g_{growth*100:.2f}%"] = round(result.intrinsic_value_per_share, 2)
+            rows.append(row)
+        return rows
+
+    exit_values = [max(2.0, min(40.0, drivers.exit_multiple * mult)) for mult in (0.9, 1.0, 1.1)]
+    wacc_values = [max(0.03, min(0.20, drivers.wacc + delta)) for delta in (-0.01, 0.0, 0.01)]
+    for wacc in wacc_values:
+        row = {"wacc_pct": round(wacc * 100.0, 2)}
+        for multiple in exit_values:
+            adjusted = ForecastDrivers(**{**asdict(drivers), "wacc": wacc, "exit_multiple": multiple})
+            result = run_dcf_professional(adjusted, base)
+            row[f"x_{multiple:.2f}"] = round(result.intrinsic_value_per_share, 2)
+        rows.append(row)
+    return rows
+
+
+def build_dcf_audit_view(
+    ticker: str,
+    *,
+    as_of_date: str | None = None,
+    apply_overrides: bool = True,
+) -> dict:
+    ticker = ticker.upper().strip()
+    inputs = build_valuation_inputs(ticker, as_of_date=as_of_date, apply_overrides=apply_overrides)
+    if inputs is None:
+        return {"ticker": ticker, "available": False}
+
+    prob_result = run_probabilistic_valuation(
+        inputs.drivers,
+        default_scenario_specs(),
+        current_price=inputs.current_price,
+    )
+    base_result = prob_result.scenario_results["base"]
+
+    return {
+        "ticker": ticker,
+        "available": True,
+        "company_name": inputs.company_name,
+        "sector": inputs.sector,
+        "industry": inputs.industry,
+        "current_price": inputs.current_price,
+        "scenario_summary": _scenario_summary(prob_result, inputs.current_price),
+        "forecast_bridge": _forecast_bridge(base_result),
+        "terminal_bridge": _terminal_bridge(base_result),
+        "ev_bridge": _ev_bridge(base_result),
+        "driver_rows": _driver_rows(inputs.drivers, inputs.source_lineage),
+        "health_flags": base_result.health_flags or {},
+        "sensitivity": {
+            "wacc_x_terminal_growth": _sensitivity_matrix(inputs.drivers, grid="wacc_x_terminal_growth"),
+            "wacc_x_exit_multiple": _sensitivity_matrix(inputs.drivers, grid="wacc_x_exit_multiple"),
+        },
+    }

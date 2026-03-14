@@ -269,6 +269,67 @@ def create_tables(conn: sqlite3.Connection | None = None):
         computed_at       TEXT NOT NULL,
         PRIMARY KEY (target_ticker, peer_ticker, text_hash_target, text_hash_peer, embedding_model)
     );
+
+    CREATE TABLE IF NOT EXISTS valuation_override_audit (
+        id                           INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_ts                     TEXT NOT NULL,
+        ticker                       TEXT NOT NULL,
+        actor                        TEXT NOT NULL,
+        field                        TEXT NOT NULL,
+        selection_mode               TEXT NOT NULL,
+        baseline_value               REAL,
+        baseline_source              TEXT,
+        effective_value_before       REAL,
+        effective_source_before      TEXT,
+        agent_value                  REAL,
+        agent_status                 TEXT,
+        agent_confidence             TEXT,
+        custom_value                 REAL,
+        applied_value                REAL,
+        prior_ticker_override_value  REAL,
+        resulting_ticker_override_value REAL,
+        write_action                 TEXT NOT NULL,
+        current_iv_json              TEXT,
+        proposed_iv_json             TEXT,
+        current_iv_base              REAL,
+        proposed_iv_base             REAL,
+        current_expected_iv          REAL,
+        proposed_expected_iv         REAL
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_run_cache (
+        ticker          TEXT NOT NULL,
+        agent_name      TEXT NOT NULL,
+        input_hash      TEXT NOT NULL,
+        model           TEXT NOT NULL,
+        prompt_hash     TEXT NOT NULL,
+        output_format   TEXT NOT NULL,
+        output_module   TEXT,
+        output_class    TEXT,
+        output_payload  TEXT NOT NULL,
+        output_hash     TEXT NOT NULL,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (ticker, agent_name, input_hash, model, prompt_hash)
+    );
+
+    CREATE TABLE IF NOT EXISTS agent_run_log (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        run_ts          TEXT NOT NULL,
+        ticker          TEXT NOT NULL,
+        agent_name      TEXT NOT NULL,
+        status          TEXT NOT NULL,
+        cache_hit       INTEGER NOT NULL DEFAULT 0,
+        forced_refresh  INTEGER NOT NULL DEFAULT 0,
+        input_hash      TEXT,
+        output_hash     TEXT,
+        model           TEXT,
+        prompt_version  TEXT,
+        prompt_hash     TEXT,
+        started_at      TEXT,
+        finished_at     TEXT,
+        duration_ms     INTEGER,
+        error           TEXT
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -367,12 +428,22 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_sec_filing_metrics_lookup ON sec_filing_metrics_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_company_text_lookup ON company_text_cache(ticker, text_type, updated_at);
     CREATE INDEX IF NOT EXISTS idx_peer_similarity_lookup ON peer_similarity_cache(target_ticker, peer_ticker, embedding_model);
+    CREATE INDEX IF NOT EXISTS idx_override_audit_ticker_ts ON valuation_override_audit(ticker, event_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_run_log_ticker_ts ON agent_run_log(ticker, run_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
 
     """)
+
+    agent_run_log_columns = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute("PRAGMA table_info(agent_run_log)").fetchall()
+    }
+    if "prompt_version" not in agent_run_log_columns:
+        conn.execute("ALTER TABLE agent_run_log ADD COLUMN prompt_version TEXT")
 
     conn.commit()
     if close_after:

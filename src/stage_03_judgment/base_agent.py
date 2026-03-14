@@ -41,6 +41,7 @@ class BaseAgent:
         self.client = OpenAI(**kwargs)
         self.model = model or LLM_MODEL
         self.name = "BaseAgent"
+        self.prompt_version = "v1"
         self.system_prompt = "You are a financial research assistant."
         self.tools: list[ToolDefinition] = []
         self.tool_handlers: dict[str, ToolHandler] = {}
@@ -78,6 +79,48 @@ class BaseAgent:
                     raise
         raise last_exc  # unreachable, satisfies type checkers
 
+    @staticmethod
+    def _serialize_tool_call(tool_call: Any) -> dict[str, Any]:
+        """
+        Serialize a tool call while preserving provider-specific metadata.
+
+        Gemini's OpenAI-compatible tool-calling path returns
+        `extra_content.google.thought_signature` on each tool call. That field
+        must be sent back unchanged on the assistant tool-call turn.
+        """
+        if hasattr(tool_call, "model_dump"):
+            dumped = tool_call.model_dump(exclude_none=True)
+            if isinstance(dumped, dict):
+                return dumped
+
+        return {
+            "id": tool_call.id,
+            "type": "function",
+            "function": {
+                "name": tool_call.function.name,
+                "arguments": tool_call.function.arguments,
+            },
+        }
+
+    @classmethod
+    def _serialize_assistant_message(cls, message: Any) -> dict[str, Any]:
+        """
+        Serialize an assistant message while preserving tool-call metadata.
+        """
+        if hasattr(message, "model_dump"):
+            dumped = message.model_dump(exclude_none=True)
+            if isinstance(dumped, dict):
+                return dumped
+
+        payload: dict[str, Any] = {
+            "role": "assistant",
+            "content": message.content,
+        }
+        tool_calls = getattr(message, "tool_calls", None)
+        if tool_calls:
+            payload["tool_calls"] = [cls._serialize_tool_call(tc) for tc in tool_calls]
+        return payload
+
     def run(self, user_message: str, max_iterations: int = 10) -> str:
         """
         Run the agent with tool-call loop.
@@ -103,22 +146,9 @@ class BaseAgent:
 
             # Model wants to use tools
             if choice.finish_reason == "tool_calls":
-                # Append assistant's message as a plain dict (SDK v2 needs this)
-                messages.append({
-                    "role": "assistant",
-                    "content": choice.message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                        for tc in choice.message.tool_calls
-                    ],
-                })
+                # Preserve provider-specific tool-call metadata such as Gemini
+                # thought signatures when passing the assistant turn back.
+                messages.append(self._serialize_assistant_message(choice.message))
 
                 # Execute each tool call and append results
                 for tc in choice.message.tool_calls:
