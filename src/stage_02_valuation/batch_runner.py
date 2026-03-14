@@ -17,9 +17,13 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from config import DB_PATH
+from config import DB_PATH, PEER_SIMILARITY_ENABLED, PEER_SIMILARITY_MODEL
 from src.stage_00_data import market_data as md_client
+from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
+from src.stage_00_data.peer_similarity import score_peer_similarity
+from src.stage_02_valuation.comps_model import run_comps_model
 from src.stage_02_valuation.input_assembler import build_valuation_inputs
+from src.stage_02_valuation.json_exporter import export_ticker_json
 from src.stage_02_valuation.professional_dcf import (
     ForecastDrivers,
     ScenarioSpec,
@@ -128,6 +132,78 @@ def _sensitivity_rows(ticker: str, drivers: ForecastDrivers) -> list[dict]:
             )
 
     return rows
+
+
+def _run_qoe_llm(ticker: str, valuation_result: dict) -> None:
+    """
+    Run QoEAgent (LLM layer) for a ticker and write pending override to
+    config/qoe_pending.yaml.  PM sets status → 'approved' to apply on next run.
+    """
+    from src.stage_03_judgment.qoe_agent import QoEAgent, write_qoe_pending_override
+
+    ticker = ticker.upper().strip()
+    revenue_mm = valuation_result.get("revenue_mm") or 0.0
+    ebit_margin = valuation_result.get("ebit_margin_used") or 0.0
+    reported_ebit = (ebit_margin / 100.0 if ebit_margin > 1 else ebit_margin) * revenue_mm * 1_000_000
+
+    print(f"\n{'='*60}")
+    print(f"QoE LLM analysis — {ticker}")
+    print(f"  Reported EBIT: ${reported_ebit/1e6:,.1f}mm  "
+          f"({ebit_margin:.1f}% margin on ${revenue_mm:,.0f}mm revenue)")
+    print(f"{'='*60}")
+
+    try:
+        agent = QoEAgent()
+        qoe = agent.analyze(ticker=ticker, reported_ebit=reported_ebit)
+
+        llm = qoe.get("llm", {})
+        haircut = llm.get("ebit_haircut_pct")
+        norm_ebit = llm.get("normalized_ebit")
+        pending = llm.get("dcf_ebit_override_pending", False)
+
+        print(f"\n  QoE score : {qoe.get('qoe_score')}/5  ({qoe.get('qoe_flag', '').upper()})")
+        print(f"  Confidence: {llm.get('llm_confidence', 'low')}")
+        if haircut is not None:
+            print(f"  EBIT haircut : {haircut:+.1f}%  "
+                  f"(${norm_ebit/1e6:,.1f}mm normalised)")
+        if qoe.get("pm_summary"):
+            print(f"\n  PM Summary: {qoe['pm_summary']}")
+
+        if llm.get("ebit_adjustments"):
+            print("\n  Adjustments:")
+            for adj in llm["ebit_adjustments"]:
+                print(f"    {adj['direction']} ${adj['amount']/1e6:.1f}mm  {adj['item']}")
+                print(f"      → {adj['rationale']}")
+
+        path = write_qoe_pending_override(ticker, qoe, revenue_mm)
+
+        if pending:
+            print(f"\n  ⚠  Override warranted (haircut >{abs(haircut):.0f}% > 10% threshold)")
+            print(f"  → Review config/qoe_pending.yaml")
+            print(f"  → Set status: approved  to apply on next --json run")
+        else:
+            print(f"\n  ✓  Haircut below 10% threshold — no override needed")
+            print(f"  → Logged to {path} (status: pending)")
+
+    except Exception as exc:
+        print(f"\n  ✗ QoE LLM failed: {exc}")
+
+
+def _compute_qoe_for_ticker(ticker: str) -> dict | None:
+    """Fetch all QoE inputs and return compute_qoe_signals() output, or None on failure."""
+    try:
+        from src.stage_00_data.ciq_adapter import get_ciq_snapshot, get_ciq_nwc_history
+        from src.stage_03_judgment.qoe_signals import compute_qoe_signals
+
+        mkt = md_client.get_market_data(ticker)
+        hist = md_client.get_historical_financials(ticker)
+        ciq_snap = get_ciq_snapshot(ticker)
+        ciq_nwc = get_ciq_nwc_history(ticker)
+        sector = mkt.get("sector") or "Unknown"
+        return compute_qoe_signals(ticker, sector, ciq_snap, ciq_nwc, hist, mkt)
+    except Exception as exc:
+        print(f"  ⚠ QoE failed for {ticker}: {exc}")
+        return None
 
 
 def value_single_ticker(ticker: str) -> dict | None:
@@ -240,11 +316,56 @@ def value_single_ticker(ticker: str) -> dict | None:
                 if ciq.get("comps_iv_base") is not None and price > 0
                 else None
             ),
+            # Comps model (IQR-cleaned, similarity-weighted) — populated below
+            "comps_model_bear": None,
+            "comps_model_base": None,
+            "comps_model_bull": None,
+            "comps_model_blended_base": None,
+            "comps_model_primary_metric": None,
+            "comps_model_peer_count_clean": None,
+            "comps_model_upside_pct": None,
+            "comps_similarity_method": None,
+            "comps_similarity_model": None,
+            "comps_similarity_weighted_flag": None,
             "analyst_target": mkt.get("analyst_target_mean"),
             "analyst_recommendation": mkt.get("analyst_recommendation"),
             "num_analysts": mkt.get("number_of_analysts"),
             "drivers_json": json.dumps(asdict(inputs.drivers), separators=(",", ":")),
         }
+
+        # ── Comps model (IQR-cleaned, similarity-weighted) ───────────────────
+        try:
+            comps_detail_raw = get_ciq_comps_detail(ticker)
+            if comps_detail_raw:
+                similarity_scores = None
+                if PEER_SIMILARITY_ENABLED:
+                    similarity_scores = score_peer_similarity(
+                        ticker,
+                        comps_detail_raw.get("peers") or [],
+                        PEER_SIMILARITY_MODEL,
+                    )
+                comps_model_result = run_comps_model(
+                    comps_detail_raw,
+                    net_debt_mm=inputs.drivers.net_debt / 1e6,
+                    shares_mm=inputs.drivers.shares_outstanding / 1e6,
+                    similarity_scores=similarity_scores,
+                )
+                if comps_model_result:
+                    row["comps_model_bear"] = comps_model_result.bear_iv
+                    row["comps_model_base"] = comps_model_result.base_iv
+                    row["comps_model_bull"] = comps_model_result.bull_iv
+                    row["comps_model_blended_base"] = comps_model_result.blended_base_iv
+                    row["comps_model_primary_metric"] = comps_model_result.primary_metric
+                    row["comps_model_peer_count_clean"] = comps_model_result.peer_count_clean
+                    row["comps_similarity_method"] = comps_model_result.similarity_method
+                    row["comps_similarity_model"] = comps_model_result.similarity_model
+                    row["comps_similarity_weighted_flag"] = comps_model_result.similarity_weighted
+                    if comps_model_result.base_iv is not None and price > 0:
+                        row["comps_model_upside_pct"] = round(
+                            (comps_model_result.base_iv / price - 1.0) * 100, 1
+                        )
+        except Exception:
+            pass  # comps model is supplementary; never block DCF
 
         if inputs.model_applicability_status != "dcf_applicable":
             row.update(
@@ -741,6 +862,131 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
         print("Excel: skipped (pass --xlsx to export workbook)")
     print(f"CSV (for Power Query): {latest_csv}")
 
+    return results
+
+
+def _print_ic_memo(memo) -> None:
+    """Print a Rich summary panel of the IC memo from the orchestrator."""
+    try:
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.table import Table
+
+        console = Console()
+
+        # Valuation row
+        v = memo.valuation
+        bear = getattr(v, "bear", None)
+        base = getattr(v, "base", None)
+        bull = getattr(v, "bull", None)
+        price = getattr(v, "current_price", None)
+        upside = ((base / price) - 1) * 100 if base and price else None
+
+        # Risk row
+        r = memo.risk
+        conviction = getattr(r, "conviction", "?").upper()
+        pos_size = getattr(r, "position_size_usd", None)
+        stop = getattr(r, "suggested_stop_loss_pct", None)
+
+        t = Table(show_header=False, box=None, padding=(0, 2))
+        t.add_column(style="bold cyan", no_wrap=True)
+        t.add_column()
+
+        t.add_row("Action", f"[bold]{getattr(memo, 'action', '?')}[/bold]  ({conviction} conviction)")
+        t.add_row("Thesis", getattr(memo, "one_liner", ""))
+        if bear is not None:
+            t.add_row(
+                "Valuation",
+                f"Bear ${bear:,.0f}  |  Base ${base:,.0f}  |  Bull ${bull:,.0f}"
+                + (f"  |  Upside {upside:+.1f}%" if upside is not None else ""),
+            )
+        if pos_size is not None:
+            t.add_row(
+                "Sizing",
+                f"${pos_size:,.0f}"
+                + (f"  |  Stop {stop*100:.0f}%" if stop else ""),
+            )
+        accounting_recast = getattr(memo, "accounting_recast", {}) or {}
+        if accounting_recast:
+            adjustments = len(accounting_recast.get("income_statement_adjustments") or [])
+            reclasses = len(accounting_recast.get("balance_sheet_reclassifications") or [])
+            confidence = accounting_recast.get("confidence", "low")
+            t.add_row(
+                "Accounting recast",
+                f"{confidence} confidence  |  {adjustments} adj  |  {reclasses} reclasses  |  approval required",
+            )
+        t.add_row("Filings", getattr(memo.filings, "revenue_trend", "") or "")
+        t.add_row("Earnings", getattr(memo.earnings, "guidance_trend", "") or "")
+        t.add_row("Sentiment", getattr(memo.sentiment, "direction", "") or "")
+        t.add_row("Variant thesis", getattr(memo, "variant_thesis_prompt", "") or "")
+
+        console.print()
+        console.print(Panel(
+            t,
+            title=f"[bold blue]IC MEMO — {memo.ticker}  {memo.company_name}[/bold blue]",
+            border_style="blue",
+        ))
+    except Exception as e:
+        print(f"\n[IC Memo] Could not render Rich panel: {e}")
+        print(f"  Action: {getattr(memo, 'action', '?')}")
+        print(f"  Thesis: {getattr(memo, 'one_liner', '?')}")
+
+
+def _print_recommendations(recs) -> None:
+    """Print a compact summary of agent recommendations to console."""
+    from src.stage_04_pipeline.recommendations import TickerRecommendations
+    if not recs or not recs.recommendations:
+        print(f"\n  No agent recommendations generated for {getattr(recs, 'ticker', '?')}.")
+        return
+
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        from rich.panel import Panel
+
+        console = Console()
+        table = Table(show_header=True, box=None, padding=(0, 2))
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Agent", style="bold cyan", width=18)
+        table.add_column("Field", width=22)
+        table.add_column("Current", justify="right", width=10)
+        table.add_column("Proposed", justify="right", width=10)
+        table.add_column("Conf", width=8)
+        table.add_column("Status", width=10)
+
+        for i, rec in enumerate(recs.recommendations):
+            cur_str = f"{rec.current_value:.4f}" if rec.current_value is not None else "—"
+            prop_str = (
+                f"{rec.proposed_value:.4f}"
+                if isinstance(rec.proposed_value, float)
+                else str(rec.proposed_value)
+            )
+            status_style = {
+                "approved": "[bold green]approved[/bold green]",
+                "rejected": "[red]rejected[/red]",
+                "pending": "[yellow]pending[/yellow]",
+            }.get(rec.status, rec.status)
+            table.add_row(
+                str(i), f"{rec.agent}", rec.field,
+                cur_str, prop_str, rec.confidence, status_style,
+            )
+
+        iv_str = f"  Current base IV: ${recs.current_iv_base:,.2f}" if recs.current_iv_base else ""
+        console.print()
+        console.print(Panel(
+            table,
+            title=f"[bold blue]Agent Recommendations — {recs.ticker}[/bold blue]{iv_str}",
+            border_style="blue",
+        ))
+        pending_count = sum(1 for r in recs.recommendations if r.status == "pending")
+        if pending_count:
+            console.print(f"  [yellow]{pending_count} pending item(s)[/yellow] — run [bold]--approve {recs.ticker}[/bold] to review")
+    except Exception as e:
+        print(f"\nAgent Recommendations — {getattr(recs, 'ticker', '?')}:")
+        for i, rec in enumerate(recs.recommendations):
+            prop = f"{rec.proposed_value:.4f}" if isinstance(rec.proposed_value, float) else str(rec.proposed_value)
+            print(f"  [{i}] {rec.agent}.{rec.field}: {rec.current_value} → {prop} [{rec.confidence}] {rec.status}")
+
 
 if __name__ == "__main__":
     import argparse
@@ -750,18 +996,230 @@ if __name__ == "__main__":
     parser.add_argument("--ticker", type=str, help="Run single ticker deep dive")
     parser.add_argument("--limit", type=int, help="Limit number of tickers to value")
     parser.add_argument("--xlsx", action="store_true", help="Export dated Excel workbook")
+    parser.add_argument("--json", action="store_true", help="Export per-ticker JSON files")
+    parser.add_argument("--qoe", action="store_true", help="Include QoE signals in JSON (requires --json)")
+    parser.add_argument("--qoe-llm", action="store_true",
+                        help="Run QoE LLM normalisation and write pending override to config/qoe_pending.yaml (requires --ticker)")
+    parser.add_argument("--full", action="store_true",
+                        help="Run full research pipeline (requires --ticker and LLM API credentials)")
+    parser.add_argument("--story-profile", action="store_true",
+                        help="Generate LLM story driver profile and write to config/story_drivers_pending.yaml (requires --ticker)")
+    parser.add_argument("--macro", action="store_true",
+                        help="Refresh data/macro_context.md from web search (needs ANTHROPIC_API_KEY + PERPLEXITY_API_KEY)")
+    parser.add_argument("--review", action="store_true",
+                        help="Display pending agent recommendations for --ticker")
+    parser.add_argument("--approve", action="store_true",
+                        help="Interactive approval of pending recommendations for --ticker; applies approved items to valuation_overrides.yaml and re-runs valuation")
     args = parser.parse_args()
 
+    # ── --macro: refresh macro context file ──────────────────────────────────
+    if args.macro:
+        from src.stage_03_judgment.macro_agent import MacroAgent, MACRO_OUTPUT_PATH
+        print("Refreshing macro context...")
+        macro = MacroAgent()
+        macro.refresh()
+        print(f"✓ Macro context written to {MACRO_OUTPUT_PATH}")
+        if not args.ticker and not args.full:
+            sys.exit(0)
+
     if args.ticker:
+        # ── --full: run 9-agent pipeline + collect recommendations ─────────────
+        if args.full:
+            from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
+            from src.stage_04_pipeline.recommendations import write_recommendations
+            orch = PipelineOrchestrator()
+            memo = orch.run(args.ticker)
+            _print_ic_memo(memo)
+            recs = orch.collect_recommendations(args.ticker)
+            rec_path = write_recommendations(recs)
+            _print_recommendations(recs)
+            print(f"\n  → Recommendations written to {rec_path}")
+            print(f"  → Run --review {args.ticker} to see pending items")
+            print(f"  → Run --approve {args.ticker} to approve interactively")
+            sys.exit(0)
+
+        # ── --review: display pending recommendations ─────────────────────────
+        if args.review:
+            from src.stage_04_pipeline.recommendations import load_recommendations
+            recs = load_recommendations(args.ticker)
+            if recs is None:
+                print(f"No recommendations found for {args.ticker.upper()}. Run --full first.")
+                sys.exit(1)
+            _print_recommendations(recs)
+            sys.exit(0)
+
+        # ── --approve: interactive approval ───────────────────────────────────
+        if args.approve:
+            from src.stage_04_pipeline.recommendations import (
+                load_recommendations,
+                write_recommendations,
+                apply_approved_to_overrides,
+            )
+            from src.stage_02_valuation.input_assembler import clear_valuation_overrides_cache
+
+            recs = load_recommendations(args.ticker)
+            if recs is None:
+                print(f"No recommendations found for {args.ticker.upper()}. Run --full first.")
+                sys.exit(1)
+
+            pending = [r for r in recs.recommendations if r.status == "pending"]
+            if not pending:
+                print(f"No pending recommendations for {args.ticker.upper()}.")
+                _print_recommendations(recs)
+                sys.exit(0)
+
+            print(f"\nPending recommendations for {args.ticker.upper()}:")
+            print("─" * 60)
+            for i, rec in enumerate(pending):
+                cur_str = f"{rec.current_value:.4f}" if rec.current_value is not None else "none"
+                prop_str = (
+                    f"{rec.proposed_value:.4f}"
+                    if isinstance(rec.proposed_value, float)
+                    else str(rec.proposed_value)
+                )
+                print(f"  [{i}] [{rec.confidence.upper()}] {rec.agent}.{rec.field}")
+                print(f"        {cur_str}  →  {prop_str}")
+                print(f"        {rec.rationale}")
+                if rec.citation:
+                    print(f"        Citation: {rec.citation[:120]}")
+                print()
+
+            print("Enter indices to approve (space-separated), or 'all', or blank to skip:")
+            raw_input = input("> ").strip().lower()
+
+            if raw_input == "all":
+                indices = list(range(len(pending)))
+            elif raw_input == "":
+                print("No items approved.")
+                sys.exit(0)
+            else:
+                indices = []
+                for tok in raw_input.split():
+                    try:
+                        idx = int(tok)
+                        if 0 <= idx < len(pending):
+                            indices.append(idx)
+                    except ValueError:
+                        pass
+
+            # Update statuses in the full recommendations list
+            approved_fields = []
+            pending_by_key = {f"{r.agent}:{r.field}": r for r in recs.recommendations if r.status == "pending"}
+            for i in indices:
+                rec = pending[i]
+                key = f"{rec.agent}:{rec.field}"
+                if key in pending_by_key:
+                    pending_by_key[key].status = "approved"
+                    approved_fields.append(rec.field)
+
+            write_recommendations(recs)
+
+            count = apply_approved_to_overrides(args.ticker)
+            clear_valuation_overrides_cache()
+            print(f"\n✓ {count} override(s) written to config/valuation_overrides.yaml")
+
+            if count > 0:
+                print(f"\nRe-running valuation for {args.ticker.upper()}...")
+                from src.stage_04_pipeline.recommendations import preview_with_approvals
+                preview = preview_with_approvals(args.ticker, approved_fields)
+                if preview:
+                    cur = preview.get("current_iv", {})
+                    prop = preview.get("proposed_iv", {})
+                    dlt = preview.get("delta_pct", {})
+                    print(f"\n  {'Scenario':<10}  {'Current IV':>12}  {'Proposed IV':>12}  {'Delta':>8}")
+                    print(f"  {'-'*10}  {'-'*12}  {'-'*12}  {'-'*8}")
+                    for scenario in ("bear", "base", "bull"):
+                        c = cur.get(scenario)
+                        p = prop.get(scenario)
+                        d = dlt.get(scenario)
+                        c_str = f"${c:,.2f}" if c is not None else "—"
+                        p_str = f"${p:,.2f}" if p is not None else "—"
+                        d_str = f"{d:+.1f}%" if d is not None else "—"
+                        print(f"  {scenario.capitalize():<10}  {c_str:>12}  {p_str:>12}  {d_str:>8}")
+            sys.exit(0)
+
+        # ── --story-profile: generate LLM story driver profile ────────────────
+        if getattr(args, "story_profile", False):
+            from src.stage_03_judgment.thesis_agent import ThesisAgent, write_story_driver_pending
+            from src.stage_00_data import edgar_client
+            from src.stage_02_valuation.templates.ic_memo import FilingsSummary, EarningsSummary
+            print(f"\n{'='*60}")
+            print(f"Story Profile Generation — {args.ticker.upper()}")
+            print(f"{'='*60}")
+            try:
+                agent = ThesisAgent()
+                # Use lightweight stubs so we don't need a full pipeline run
+                filings = FilingsSummary(raw_summary="No filings context — direct story profile run")
+                earnings = EarningsSummary(raw_summary="No earnings context — direct story profile run")
+                mkt = __import__("src.stage_00_data.market_data", fromlist=["get_market_data"]).get_market_data(args.ticker)
+                profile = agent.generate_story_profile(
+                    ticker=args.ticker,
+                    company_name=mkt.get("name") or args.ticker,
+                    sector=mkt.get("sector") or "Unknown",
+                    filings=filings,
+                    earnings=earnings,
+                )
+                if profile:
+                    path = write_story_driver_pending(args.ticker, profile)
+                    print(f"\n  Moat:          {profile.get('moat_strength')}/5")
+                    print(f"  Pricing power: {profile.get('pricing_power')}/5")
+                    print(f"  Cyclicality:   {profile.get('cyclicality')}")
+                    print(f"  Cap intensity: {profile.get('capital_intensity')}")
+                    print(f"  Gov risk:      {profile.get('governance_risk')}")
+                    print(f"  Moat years:    {profile.get('competitive_advantage_years')}")
+                    if profile.get("rationale"):
+                        print(f"\n  Rationale: {profile['rationale']}")
+                    print(f"\n  → Written to {path}")
+                    print(f"  → Set status: approved to apply on next valuation run")
+                else:
+                    print("  ✗ Story profile generation failed")
+            except Exception as exc:
+                print(f"  ✗ Story profile error: {exc}")
+            if not args.json and not args.qoe_llm:
+                sys.exit(0)
+
+        # ── deterministic valuation (default) ────────────────────────────────
         result = value_single_ticker(args.ticker)
         if result:
             print(json.dumps(result, indent=2))
+
+            # ── --qoe-llm: LLM normalisation + write pending override ─────────
+            if getattr(args, "qoe_llm", False):
+                _run_qoe_llm(args.ticker, result)
+
+            if args.json:
+                today = datetime.now().strftime("%Y-%m-%d")
+                json_dir = OUTPUT_DIR / "json"
+                qoe_data = _compute_qoe_for_ticker(args.ticker) if args.qoe else None
+                comps_data = get_ciq_comps_detail(args.ticker)
+                out_path = export_ticker_json(
+                    result, qoe=qoe_data, comps_detail=comps_data,
+                    output_dir=json_dir, date_str=today,
+                )
+                print(f"\n✓ JSON: {out_path}")
+                print(f"✓ JSON (latest): {json_dir / (args.ticker.upper() + '_latest.json')}")
         else:
             print(f"Could not value {args.ticker}")
     else:
+        if args.full:
+            print("--full requires --ticker")
+            sys.exit(1)
         tickers = None
         if args.limit:
             with open(UNIVERSE_CSV, encoding="utf-8") as f:
                 reader = csv.DictReader(f)
                 tickers = [row["ticker"] for row in reader][: args.limit]
-        run_batch(tickers=tickers, top_n=args.top, export_xlsx=args.xlsx)
+        results = run_batch(tickers=tickers, top_n=args.top, export_xlsx=args.xlsx)
+        if args.json and results:
+            today = datetime.now().strftime("%Y-%m-%d")
+            json_dir = OUTPUT_DIR / "json"
+            json_dir.mkdir(parents=True, exist_ok=True)
+            for result in results:
+                t = result.get("ticker", "UNKNOWN")
+                qoe_data = _compute_qoe_for_ticker(t) if args.qoe else None
+                comps_data = get_ciq_comps_detail(t)
+                export_ticker_json(
+                    result, qoe=qoe_data, comps_detail=comps_data,
+                    output_dir=json_dir, date_str=today,
+                )
+            print(f"\n✓ JSON exports: {json_dir}")

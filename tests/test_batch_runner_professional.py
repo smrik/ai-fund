@@ -544,3 +544,106 @@ def test_alt_model_required_emits_empty_professional_fields(monkeypatch):
     assert out["ev_total_mm"] is None
     assert out["health_tv_extreme_flag"] is None
     assert out["terminal_growth_pct"] is None
+
+
+def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
+    monkeypatch.setattr(batch_runner, "build_valuation_inputs", lambda ticker: _Inputs(
+        drivers=ForecastDrivers(
+            revenue_base=800.0,
+            revenue_growth_near=0.12,
+            revenue_growth_mid=0.08,
+            revenue_growth_terminal=0.03,
+            ebit_margin_start=0.2,
+            ebit_margin_target=0.22,
+            tax_rate_start=0.21,
+            tax_rate_target=0.23,
+            capex_pct_start=0.05,
+            capex_pct_target=0.04,
+            da_pct_start=0.03,
+            da_pct_target=0.025,
+            dso_start=45.0,
+            dso_target=44.0,
+            dio_start=40.0,
+            dio_target=38.0,
+            dpo_start=35.0,
+            dpo_target=36.0,
+            wacc=0.09,
+            exit_multiple=14.0,
+            exit_metric="ev_ebitda",
+            net_debt=100.0,
+            shares_outstanding=50.0,
+        ),
+        source_lineage={"revenue_base": "ciq", "exit_multiple": "ciq_comps", "revenue_growth_near": "ciq", "ebit_margin_start": "ciq", "capex_pct_start": "ciq", "da_pct_start": "ciq", "tax_rate_start": "ciq", "net_debt": "ciq", "shares_outstanding": "ciq"},
+        ciq_lineage={"snapshot_used": True, "snapshot_run_id": 7, "snapshot_source_file": "ciq.xlsx", "snapshot_as_of_date": "2025-12-31", "comps_used": True, "comps_run_id": 8, "comps_source_file": "ciq.xlsx", "comps_as_of_date": "2025-12-31", "peer_count": 8, "peer_median_tev_ebitda_ltm": 14.0, "peer_median_pe_ltm": 20.0, "comps_iv_ev_ebitda": 130.0, "comps_iv_pe": 120.0, "comps_iv_base": 125.0},
+        wacc_inputs={"wacc": 0.09, "cost_of_equity": 0.11, "beta_relevered": 1.0, "beta_unlevered_median": 0.8, "size_premium": 0.01, "equity_weight": 0.8, "peers_used": ["A", "B"]},
+    ))
+    monkeypatch.setattr(batch_runner, "default_scenario_specs", lambda: [
+        ScenarioSpec(name="bear", probability=0.2),
+        ScenarioSpec(name="base", probability=0.6),
+        ScenarioSpec(name="bull", probability=0.2),
+    ])
+    monkeypatch.setattr(
+        batch_runner,
+        "run_probabilistic_valuation",
+        lambda drivers, scenario_specs, current_price: _Prob(
+            {
+                "bear": _sample_result(80.0),
+                "base": _sample_result(100.0),
+                "bull": _sample_result(120.0),
+            },
+            expected_iv=100.0,
+            expected_upside=0.0,
+        ),
+    )
+    monkeypatch.setattr(batch_runner, "reverse_dcf_professional", lambda drivers, target_price, scenario="base": 0.1)
+    monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {
+        "name": "Test Co",
+        "analyst_target_mean": 110.0,
+        "analyst_recommendation": "buy",
+        "number_of_analysts": 9,
+        "market_cap": 1000.0,
+        "enterprise_value": 1200.0,
+        "pe_trailing": 15.0,
+        "pe_forward": 12.0,
+        "ev_ebitda": 9.0,
+        "profit_margin": 0.1,
+        "free_cashflow": 10.0,
+        "beta": 1.0,
+    })
+    monkeypatch.setattr(batch_runner, "get_ciq_comps_detail", lambda ticker: {"target": {"ticker": "TEST"}, "peers": [{"ticker": "ACN"}], "medians": {}})
+
+    scored = {"called": False}
+
+    def _fake_score_peer_similarity(ticker, peers, embedding_model):
+        scored["called"] = True
+        assert embedding_model == batch_runner.PEER_SIMILARITY_MODEL
+        return {"ACN": 0.91}
+
+    monkeypatch.setattr(batch_runner, "score_peer_similarity", _fake_score_peer_similarity)
+    monkeypatch.setattr(
+        batch_runner,
+        "run_comps_model",
+        lambda comps_detail, net_debt_mm=None, shares_mm=None, similarity_scores=None: type(
+            "CompsStub",
+            (),
+            {
+                "bear_iv": 95.0,
+                "base_iv": 105.0,
+                "bull_iv": 115.0,
+                "blended_base_iv": 103.0,
+                "primary_metric": "tev_ebitda_ltm",
+                "peer_count_clean": 4,
+                "similarity_method": "embedding_cosine",
+                "similarity_model": "all-MiniLM-L6-v2",
+                "similarity_weighted": True,
+            },
+        )(),
+    )
+
+    out = batch_runner.value_single_ticker("TEST")
+
+    assert out is not None
+    assert scored["called"] is True
+    assert out["comps_similarity_method"] == "embedding_cosine"
+    assert out["comps_similarity_model"] == "all-MiniLM-L6-v2"
+    assert out["comps_similarity_weighted_flag"] is True

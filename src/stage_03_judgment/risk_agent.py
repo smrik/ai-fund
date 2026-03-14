@@ -59,20 +59,26 @@ class RiskAgent(BaseAgent):
 
     def _handle_volatility(self, inp: dict) -> str:
         ticker = inp["ticker"]
-        vol = md_client.get_volatility(ticker)
-        mkt = md_client.get_market_data(ticker)
-        return json.dumps({
-            "annualized_volatility": vol,
-            "beta": mkt.get("beta"),
-            "short_ratio": mkt.get("short_ratio"),
-        })
+        try:
+            vol = md_client.get_volatility(ticker)
+            mkt = md_client.get_market_data(ticker)
+            return json.dumps({
+                "annualized_volatility": vol,
+                "beta": mkt.get("beta"),
+                "short_ratio": mkt.get("short_ratio"),
+            })
+        except Exception as e:
+            return json.dumps({"error": str(e), "ticker": ticker, "annualized_volatility": None, "beta": None})
 
     def _handle_portfolio_config(self, inp: dict) -> str:
-        return json.dumps({
-            "portfolio_size_usd": PORTFOLIO_SIZE_USD,
-            "conviction_sizing": CONVICTION_SIZING,
-            "max_position_pct": max(CONVICTION_SIZING.values()),
-        })
+        try:
+            return json.dumps({
+                "portfolio_size_usd": PORTFOLIO_SIZE_USD,
+                "conviction_sizing": CONVICTION_SIZING,
+                "max_position_pct": max(CONVICTION_SIZING.values()),
+            })
+        except Exception as e:
+            return json.dumps({"error": str(e), "portfolio_size_usd": 100000, "conviction_sizing": {"high": 0.08, "medium": 0.04, "low": 0.02}})
 
     def analyze(
         self,
@@ -109,12 +115,19 @@ Return your analysis as JSON:
   "rationale": "<2-3 sentences explaining the sizing decision>"
 }}"""
 
-        raw = self.run(prompt)
+        try:
+            raw = self.run(prompt)
+        except Exception as e:
+            return RiskOutput(
+                conviction="low",
+                position_size_usd=PORTFOLIO_SIZE_USD * CONVICTION_SIZING["low"],
+                position_pct=CONVICTION_SIZING["low"],
+                suggested_stop_loss_pct=0.20,
+                rationale=f"RiskAgent LLM error: {e}",
+            )
 
         try:
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            data = json.loads(raw[start:end])
+            data = self.extract_json(raw)
             return RiskOutput(**data)
         except Exception:
             return RiskOutput(

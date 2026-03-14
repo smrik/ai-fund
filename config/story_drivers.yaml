@@ -6,6 +6,103 @@ global:
   governance_risk: medium
   competitive_advantage_years: 7
 
-sectors: {}
+# Sector-level overrides.
+# Keys must exactly match values returned by yfinance (same as SECTOR_DEFAULTS in input_assembler.py).
+# Logic: global defaults are merged with sector overrides; ticker overrides win over both.
+# Effects per field:
+#   moat_strength (1–5):        +1 → +0.5% growth, +0.5% margin; delta from 3 applied
+#   pricing_power (1–5):        +1 → +0.3% growth, +0.7% margin; delta from 3 applied
+#   cyclicality (low/med/high): growth ×1.05/1.00/0.90; WACC −0.3%/0%/+1.0%
+#   capital_intensity:          capex ±0.5–1.0%; DA ±0.2–0.5%
+#   governance_risk:            WACC −0.2%/0%/+1.0%
+#   competitive_advantage_years: Gordon weight = 0.60 + (years−7)×0.02, clamped [0.45, 0.75]
 
+sectors:
+  Technology:
+    # Durable software/IP moats; mission-critical pricing; subscription revenues insulate growth;
+    # mostly intangible assets — capex light; long competitive advantage windows.
+    moat_strength: 4
+    pricing_power: 4
+    cyclicality: low
+    capital_intensity: low
+    governance_risk: low
+    competitive_advantage_years: 10
+
+  Communication Services:
+    # Network-effect and scale moats (platforms, telco); dual revenue streams (ads + subscriptions)
+    # offer low cyclicality; high capex for infrastructure offset by software businesses in sector.
+    moat_strength: 4
+    pricing_power: 4
+    cyclicality: low
+    capital_intensity: medium
+    governance_risk: medium
+    competitive_advantage_years: 9
+
+  Healthcare:
+    # IP and regulatory barriers create strong moats; opaque pricing supports high pricing power;
+    # moderate cyclicality (pharma/devices can have patent-cliff risk); R&D capex is significant.
+    moat_strength: 4
+    pricing_power: 4
+    cyclicality: medium
+    capital_intensity: medium
+    governance_risk: medium
+    competitive_advantage_years: 10
+
+  Consumer Cyclical:
+    # Discretionary spending — vulnerable to consumer confidence and credit cycles;
+    # limited pricing power vs private label; brand moats exist but fade faster than staples.
+    moat_strength: 3
+    pricing_power: 3
+    cyclicality: high
+    capital_intensity: medium
+    governance_risk: medium
+    competitive_advantage_years: 5
+
+  Consumer Defensive:
+    # Inelastic demand and strong brand loyalty support pricing power and stable margins;
+    # very low cyclicality; distribution moats in staples are durable; predictable FCF.
+    moat_strength: 4
+    pricing_power: 4
+    cyclicality: low
+    capital_intensity: medium
+    governance_risk: low
+    competitive_advantage_years: 8
+
+  Industrials:
+    # Economically sensitive; moderate moats from switching costs or scale;
+    # capital-intensive manufacturing/equipment; margins compress sharply in downturns.
+    moat_strength: 3
+    pricing_power: 3
+    cyclicality: high
+    capital_intensity: high
+    governance_risk: medium
+    competitive_advantage_years: 6
+
+  Energy:
+    # Commodity sector — price takers, minimal pricing power; highly cyclical with oil/gas prices;
+    # very high capex for E&P and midstream; short competitive advantage windows (reserves deplete).
+    moat_strength: 2
+    pricing_power: 2
+    cyclicality: high
+    capital_intensity: high
+    governance_risk: medium
+    competitive_advantage_years: 4
+
+  Basic Materials:
+    # Commodity pricing dynamics similar to Energy; cyclical demand from construction/manufacturing;
+    # heavy capex for mining/chemicals; limited differentiation narrows moats.
+    moat_strength: 2
+    pricing_power: 2
+    cyclicality: high
+    capital_intensity: high
+    governance_risk: medium
+    competitive_advantage_years: 4
+
+# Ticker-level overrides — PM sets these manually after deep dive.
+# Example:
+# tickers:
+#   MSFT:
+#     moat_strength: 5
+#     pricing_power: 5
+#     competitive_advantage_years: 12
 tickers: {}

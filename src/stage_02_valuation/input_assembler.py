@@ -1,6 +1,7 @@
 """Deterministic valuation input assembly with source lineage and manual overrides."""
 from __future__ import annotations
 
+import functools
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -16,19 +17,20 @@ from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
 
 
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"
+QOE_PENDING_PATH = ROOT_DIR / "config" / "qoe_pending.yaml"
 
 
 SECTOR_DEFAULTS = {
-    "Technology": {"growth_near": 0.12, "margin": 0.20, "capex_pct": 0.06, "da_pct": 0.04, "dso": 45.0, "dio": 35.0, "dpo": 38.0, "exit_multiple": 16.0, "ic_turnover": 1.60, "ronic_terminal": 0.15},
-    "Communication Services": {"growth_near": 0.10, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 30.0, "dpo": 42.0, "exit_multiple": 14.0, "ic_turnover": 1.50, "ronic_terminal": 0.14},
-    "Healthcare": {"growth_near": 0.09, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 52.0, "dio": 45.0, "dpo": 40.0, "exit_multiple": 14.0, "ic_turnover": 1.30, "ronic_terminal": 0.13},
-    "Consumer Cyclical": {"growth_near": 0.08, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 42.0, "dio": 55.0, "dpo": 48.0, "exit_multiple": 12.0, "ic_turnover": 1.80, "ronic_terminal": 0.12},
-    "Consumer Defensive": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.04, "da_pct": 0.03, "dso": 40.0, "dio": 58.0, "dpo": 50.0, "exit_multiple": 12.0, "ic_turnover": 2.00, "ronic_terminal": 0.11},
-    "Industrials": {"growth_near": 0.06, "margin": 0.13, "capex_pct": 0.06, "da_pct": 0.04, "dso": 55.0, "dio": 60.0, "dpo": 50.0, "exit_multiple": 11.0, "ic_turnover": 1.70, "ronic_terminal": 0.11},
-    "Energy": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.08, "da_pct": 0.06, "dso": 38.0, "dio": 45.0, "dpo": 46.0, "exit_multiple": 9.0, "ic_turnover": 1.40, "ronic_terminal": 0.10},
-    "Basic Materials": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.07, "da_pct": 0.05, "dso": 48.0, "dio": 65.0, "dpo": 52.0, "exit_multiple": 9.0, "ic_turnover": 1.30, "ronic_terminal": 0.10},
-    "Utilities": {"growth_near": 0.04, "margin": 0.15, "capex_pct": 0.09, "da_pct": 0.07, "dso": 42.0, "dio": 20.0, "dpo": 45.0, "exit_multiple": 10.0, "ic_turnover": 1.10, "ronic_terminal": 0.09},
-    "_default": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 50.0, "dpo": 45.0, "exit_multiple": 12.0, "ic_turnover": 1.50, "ronic_terminal": 0.11},
+    "Technology": {"growth_near": 0.12, "margin": 0.20, "capex_pct": 0.06, "da_pct": 0.04, "dso": 45.0, "dio": 35.0, "dpo": 38.0, "exit_multiple": 16.0, "ic_turnover": 1.60, "ronic_terminal": 0.15, "growth_fade_ratio": 0.70, "terminal_growth": 0.035},
+    "Communication Services": {"growth_near": 0.10, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 30.0, "dpo": 42.0, "exit_multiple": 14.0, "ic_turnover": 1.50, "ronic_terminal": 0.14, "growth_fade_ratio": 0.65, "terminal_growth": 0.030},
+    "Healthcare": {"growth_near": 0.09, "margin": 0.18, "capex_pct": 0.05, "da_pct": 0.04, "dso": 52.0, "dio": 45.0, "dpo": 40.0, "exit_multiple": 14.0, "ic_turnover": 1.30, "ronic_terminal": 0.13, "growth_fade_ratio": 0.65, "terminal_growth": 0.030},
+    "Consumer Cyclical": {"growth_near": 0.08, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 42.0, "dio": 55.0, "dpo": 48.0, "exit_multiple": 12.0, "ic_turnover": 1.80, "ronic_terminal": 0.12, "growth_fade_ratio": 0.60, "terminal_growth": 0.025},
+    "Consumer Defensive": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.04, "da_pct": 0.03, "dso": 40.0, "dio": 58.0, "dpo": 50.0, "exit_multiple": 12.0, "ic_turnover": 2.00, "ronic_terminal": 0.11, "growth_fade_ratio": 0.55, "terminal_growth": 0.025},
+    "Industrials": {"growth_near": 0.06, "margin": 0.13, "capex_pct": 0.06, "da_pct": 0.04, "dso": 55.0, "dio": 60.0, "dpo": 50.0, "exit_multiple": 11.0, "ic_turnover": 1.70, "ronic_terminal": 0.11, "growth_fade_ratio": 0.55, "terminal_growth": 0.025},
+    "Energy": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.08, "da_pct": 0.06, "dso": 38.0, "dio": 45.0, "dpo": 46.0, "exit_multiple": 9.0, "ic_turnover": 1.40, "ronic_terminal": 0.10, "growth_fade_ratio": 0.50, "terminal_growth": 0.020},
+    "Basic Materials": {"growth_near": 0.05, "margin": 0.12, "capex_pct": 0.07, "da_pct": 0.05, "dso": 48.0, "dio": 65.0, "dpo": 52.0, "exit_multiple": 9.0, "ic_turnover": 1.30, "ronic_terminal": 0.10, "growth_fade_ratio": 0.50, "terminal_growth": 0.020},
+    "Utilities": {"growth_near": 0.04, "margin": 0.15, "capex_pct": 0.09, "da_pct": 0.07, "dso": 42.0, "dio": 20.0, "dpo": 45.0, "exit_multiple": 10.0, "ic_turnover": 1.10, "ronic_terminal": 0.09, "growth_fade_ratio": 0.55, "terminal_growth": 0.025},
+    "_default": {"growth_near": 0.06, "margin": 0.14, "capex_pct": 0.05, "da_pct": 0.04, "dso": 50.0, "dio": 50.0, "dpo": 45.0, "exit_multiple": 12.0, "ic_turnover": 1.50, "ronic_terminal": 0.11, "growth_fade_ratio": 0.65, "terminal_growth": 0.030},
 }
 
 
@@ -87,6 +89,8 @@ def _canonical_source(source_detail: str) -> str:
 
 
 def _growth_period_type(source_detail: str) -> str:
+    if source_detail == "ciq_consensus":
+        return "consensus_fy1"
     if source_detail in {"ciq_cagr_3yr", "yfinance_cagr_3yr"}:
         return "cagr_3yr"
     if source_detail == "yfinance_ttm_yoy":
@@ -108,6 +112,12 @@ def determine_model_applicability(sector: str, industry: str) -> str:
     return "dcf_applicable"
 
 
+def clear_valuation_overrides_cache() -> None:
+    """Invalidate the lru_cache on load_valuation_overrides so a re-run picks up new writes."""
+    load_valuation_overrides.cache_clear()
+
+
+@functools.lru_cache(maxsize=1)
 def load_valuation_overrides() -> dict[str, Any]:
     if not OVERRIDES_PATH.exists():
         return {"global": {}, "sectors": {}, "tickers": {}}
@@ -136,6 +146,16 @@ def _apply_overrides(
     _apply(overrides.get("global", {}), "override_global")
     _apply(overrides.get("sectors", {}).get(sector, {}), "override_sector")
     _apply(overrides.get("tickers", {}).get(ticker.upper(), {}), "override_ticker")
+
+    # ── QoE LLM approved overrides ───────────────────────────────────────────
+    # PM sets status → 'approved' in config/qoe_pending.yaml to activate.
+    # override_ticker entries still take final precedence if also set.
+    if QOE_PENDING_PATH.exists():
+        with QOE_PENDING_PATH.open("r", encoding="utf-8") as f:
+            qoe_pending = yaml.safe_load(f) or {}
+        entry = qoe_pending.get(ticker.upper(), {})
+        if entry.get("status") == "approved":
+            _apply(entry.get("suggested_override") or {}, "qoe_llm_approved")
 
 
 def _derive_invested_capital_start(
@@ -203,8 +223,15 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     if not revenue_base or revenue_base <= 0:
         return None
 
+    ciq_rev_fy1 = (ciq or {}).get("revenue_fy1")
+    ciq_rev_ltm = (ciq or {}).get("revenue_ttm")
+    consensus_growth = None
+    if ciq_rev_fy1 and ciq_rev_ltm and float(ciq_rev_ltm) > 0:
+        consensus_growth = (float(ciq_rev_fy1) / float(ciq_rev_ltm)) - 1
+
     growth_near_raw, growth_source_detail = _pick(
         [
+            (consensus_growth, "ciq_consensus"),
             ((ciq or {}).get("revenue_cagr_3yr"), "ciq_cagr_3yr"),
             (hist.get("revenue_cagr_3yr"), "yfinance_cagr_3yr"),
             (mkt.get("revenue_growth"), "yfinance_ttm_yoy"),
@@ -216,7 +243,9 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     growth_period_type = _growth_period_type(growth_source_detail)
     revenue_period_type = "ttm" if revenue_source in {"ciq", "yfinance"} else "unknown"
 
-    if revenue_period_type == "ttm" and growth_period_type == "ttm_yoy":
+    if revenue_period_type == "ttm" and growth_period_type == "consensus_fy1":
+        revenue_alignment_flag = "aligned_consensus"
+    elif revenue_period_type == "ttm" and growth_period_type == "ttm_yoy":
         revenue_alignment_flag = "aligned_ttm"
     elif revenue_period_type == "ttm" and growth_period_type == "cagr_3yr":
         revenue_alignment_flag = "mixed_ttm_vs_cagr"
@@ -227,15 +256,16 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
 
     if revenue_source == "default" or growth_source == "default":
         revenue_data_quality_flag = "low_quality"
+    elif revenue_alignment_flag in {"aligned_consensus", "aligned_ttm"}:
+        revenue_data_quality_flag = "ok"
     elif revenue_alignment_flag == "mixed_ttm_vs_cagr":
         revenue_data_quality_flag = "needs_review"
-    elif revenue_alignment_flag == "aligned_ttm":
-        revenue_data_quality_flag = "ok"
     else:
         revenue_data_quality_flag = "needs_review"
 
     growth_near = _bounded(growth_near_raw, -0.10, 0.35, defaults["growth_near"])
-    growth_mid = _bounded(growth_near * 0.65, -0.08, 0.25, defaults["growth_near"] * 0.65)
+    fade = defaults.get("growth_fade_ratio", 0.65)
+    growth_mid = _bounded(growth_near * fade, -0.08, 0.25, defaults["growth_near"] * fade)
 
     margin_start_raw, margin_source = _pick(
         [
@@ -258,7 +288,7 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
     tax_start = _bounded(tax_start_raw, 0.05, 0.40, 0.21)
-    tax_target = 0.23
+    tax_target = _bounded(tax_start, 0.15, 0.30, 0.23)
 
     capex_raw, capex_source = _pick(
         [
@@ -293,7 +323,9 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     if exit_metric == "ev_ebit":
         exit_multiple_raw, exit_source = _pick(
             [
+                ((ciq_comps or {}).get("peer_median_tev_ebit_fwd"), "ciq_comps_tev_ebit_fwd"),
                 ((ciq_comps or {}).get("peer_median_tev_ebit_ltm"), "ciq_comps_tev_ebit_ltm"),
+                ((ciq_comps or {}).get("peer_median_tev_ebitda_fwd"), "ciq_comps_tev_ebitda_fwd_fallback"),
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_ltm"), "ciq_comps_tev_ebitda_fallback"),
             ],
             defaults["exit_multiple"],
@@ -302,7 +334,9 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
     else:
         exit_multiple_raw, exit_source = _pick(
             [
+                ((ciq_comps or {}).get("peer_median_tev_ebitda_fwd"), "ciq_comps_tev_ebitda_fwd"),
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_ltm"), "ciq_comps_tev_ebitda_ltm"),
+                ((ciq_comps or {}).get("peer_median_tev_ebit_fwd"), "ciq_comps_tev_ebit_fwd_fallback"),
                 ((ciq_comps or {}).get("peer_median_tev_ebit_ltm"), "ciq_comps_tev_ebit_fallback"),
             ],
             defaults["exit_multiple"],
@@ -336,7 +370,12 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
     dso_start = _bounded(dso_raw, 5.0, 180.0, defaults["dso"])
-    dso_target = _bounded(defaults["dso"], 5.0, 180.0, defaults["dso"])
+    if dso_source != "default":
+        dso_target = _bounded(defaults["dso"] * 0.7 + dso_start * 0.3, 5.0, 180.0, defaults["dso"])
+        dso_target_source = f"{dso_source}_blend"
+    else:
+        dso_target = _bounded(defaults["dso"], 5.0, 180.0, defaults["dso"])
+        dso_target_source = "default"
 
     dio_raw, dio_source = _pick(
         [
@@ -347,7 +386,12 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
     dio_start = _bounded(dio_raw, 5.0, 220.0, defaults["dio"])
-    dio_target = _bounded(defaults["dio"], 5.0, 220.0, defaults["dio"])
+    if dio_source != "default":
+        dio_target = _bounded(defaults["dio"] * 0.7 + dio_start * 0.3, 5.0, 220.0, defaults["dio"])
+        dio_target_source = f"{dio_source}_blend"
+    else:
+        dio_target = _bounded(defaults["dio"], 5.0, 220.0, defaults["dio"])
+        dio_target_source = "default"
 
     dpo_raw, dpo_source = _pick(
         [
@@ -358,7 +402,12 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
     dpo_start = _bounded(dpo_raw, 5.0, 180.0, defaults["dpo"])
-    dpo_target = _bounded(defaults["dpo"], 5.0, 180.0, defaults["dpo"])
+    if dpo_source != "default":
+        dpo_target = _bounded(defaults["dpo"] * 0.7 + dpo_start * 0.3, 5.0, 180.0, defaults["dpo"])
+        dpo_target_source = f"{dpo_source}_blend"
+    else:
+        dpo_target = _bounded(defaults["dpo"], 5.0, 180.0, defaults["dpo"])
+        dpo_target_source = "default"
 
     invested_capital_start, invested_capital_source = _derive_invested_capital_start(
         revenue_base=float(revenue_base),
@@ -421,11 +470,13 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "default",
     )
 
+    terminal_growth = float(defaults.get("terminal_growth", 0.030))
+
     drivers = ForecastDrivers(
         revenue_base=float(revenue_base),
         revenue_growth_near=float(growth_near),
         revenue_growth_mid=float(growth_mid),
-        revenue_growth_terminal=0.03,
+        revenue_growth_terminal=terminal_growth,
         ebit_margin_start=float(margin_start),
         ebit_margin_target=float(margin_target),
         tax_rate_start=float(tax_start),
@@ -464,6 +515,7 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "revenue_base": revenue_source,
         "revenue_growth_near": growth_source,
         "revenue_growth_mid": growth_source,
+        "revenue_growth_terminal": "default",
         "growth_source_detail": growth_source_detail,
         "revenue_period_type": revenue_period_type,
         "growth_period_type": growth_period_type,
@@ -472,17 +524,17 @@ def build_valuation_inputs(ticker: str, as_of_date: str | None = None) -> Valuat
         "ebit_margin_start": margin_source,
         "ebit_margin_target": "default",
         "tax_rate_start": tax_source,
-        "tax_rate_target": "default",
+        "tax_rate_target": tax_source,
         "capex_pct_start": capex_source,
         "capex_pct_target": capex_source,
         "da_pct_start": da_source,
         "da_pct_target": da_source,
         "dso_start": dso_source,
-        "dso_target": "default",
+        "dso_target": dso_target_source,
         "dio_start": dio_source,
-        "dio_target": "default",
+        "dio_target": dio_target_source,
         "dpo_start": dpo_source,
-        "dpo_target": "default",
+        "dpo_target": dpo_target_source,
         "wacc": "yfinance_capm",
         "cost_of_equity": "yfinance_capm",
         "debt_weight": "yfinance_capm",

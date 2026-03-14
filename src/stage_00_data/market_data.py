@@ -162,6 +162,8 @@ def get_historical_financials(ticker: str) -> dict:
     _none_result = {
         "revenue": [],
         "operating_income": [],
+        "net_income": [],
+        "cffo": [],
         "capex": [],
         "da": [],
         "nwc_change": [],
@@ -190,6 +192,8 @@ def get_historical_financials(ticker: str) -> dict:
         revenue = _row(financials, "Total Revenue")
         cost_of_revenue = _row(financials, "Cost Of Revenue", "Cost of Revenue", "Cost of Goods Sold", "Cost Of Goods Sold")
         operating_income = _row(financials, "Operating Income", "EBIT")
+        net_income = _row(financials, "Net Income", "Net Income Common Stockholders")
+        cffo = _row(cashflow, "Operating Cash Flow", "Cash Flow From Continuing Operating Activities", "Cash Flows From Used In Operating Activities")
         capex_raw = _row(cashflow, "Capital Expenditure")
         capex = [abs(v) for v in capex_raw]
         da = _row(cashflow, "Depreciation And Amortization", "Depreciation")
@@ -342,6 +346,8 @@ def get_historical_financials(ticker: str) -> dict:
         return {
             "revenue": revenue,
             "operating_income": operating_income,
+            "net_income": net_income,
+            "cffo": cffo,
             "capex": capex,
             "da": da,
             "nwc_change": nwc_change,

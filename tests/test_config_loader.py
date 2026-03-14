@@ -27,8 +27,21 @@ def test_config_uses_single_yaml_source(monkeypatch):
     assert config_module.CONFIG_PATH == EXPECTED_CONFIG_PATH
     assert config_module.SCREENING_RULES_PATH == EXPECTED_CONFIG_PATH
     assert settings_module.SCREENING_RULES_PATH == EXPECTED_CONFIG_PATH
+    assert config_module.LLM_MODEL == "gemini-3-flash-preview"
     assert config_module.SCREENING_RULES["long_screen"]["filters"]["min_market_cap_mm"] == 2000
     assert config_module.APP_CONFIG["screening"]["short_screen"]["filters"]["revenue_decelerating"] is True
+
+
+def test_default_fast_and_synthesis_models_match_repo_default(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODEL_FAST", raising=False)
+    monkeypatch.delenv("LLM_SYNTHESIS_MODEL", raising=False)
+
+    config_module, _ = _reload_config_modules()
+
+    assert config_module.LLM_MODEL == "gemini-3-flash-preview"
+    assert config_module.LLM_MODEL_FAST == "gemini-3-flash-preview"
+    assert config_module.LLM_SYNTHESIS_MODEL == "gemini-3-flash-preview"
 
 
 def test_env_overrides_runtime_values(monkeypatch):

@@ -33,11 +33,11 @@ class EarningsAgent(BaseAgent):
 
         self.tools = [
             self._tool(
-                name="get_earnings_8k_filings",
-                description="Fetch recent 8-K filings (earnings releases) for a ticker from SEC EDGAR.",
+                name="get_earnings_8k_text",
+                description="Fetch the full text of recent 8-K earnings press releases for a ticker from SEC EDGAR.",
                 properties={
                     "ticker": {"type": "string"},
-                    "limit": {"type": "integer", "description": "Number of 8-Ks to fetch, default 4"},
+                    "limit": {"type": "integer", "description": "Number of 8-Ks to fetch, default 3"},
                 },
                 required=["ticker"],
             ),
@@ -50,27 +50,34 @@ class EarningsAgent(BaseAgent):
         ]
 
         self.tool_handlers = {
-            "get_earnings_8k_filings": self._handle_8k,
+            "get_earnings_8k_text": self._handle_8k_text,
             "get_eps_history": self._handle_eps,
         }
 
-    def _handle_8k(self, inp: dict) -> str:
+    def _handle_8k_text(self, inp: dict) -> str:
         ticker = inp["ticker"]
-        limit = inp.get("limit", 4)
-        cik = edgar_client.get_cik(ticker)
-        filings = edgar_client.get_recent_filings(cik, "8-K", limit)
-        return json.dumps(filings)
+        limit = inp.get("limit", 3)
+        try:
+            filings = edgar_client.get_8k_texts(ticker, limit=limit)
+            if not filings:
+                return json.dumps({"error": "No 8-K filings found", "ticker": ticker, "filings": []})
+            return json.dumps(filings)
+        except Exception as e:
+            return json.dumps({"error": str(e), "ticker": ticker, "filings": []})
 
     def _handle_eps(self, inp: dict) -> str:
         ticker = inp["ticker"]
-        md = market_data.get_market_data(ticker)
-        return json.dumps({
-            "earnings_growth": md.get("earnings_growth"),
-            "pe_trailing": md.get("pe_trailing"),
-            "pe_forward": md.get("pe_forward"),
-            "analyst_recommendation": md.get("analyst_recommendation"),
-            "num_analysts": md.get("number_of_analysts"),
-        })
+        try:
+            md = market_data.get_market_data(ticker)
+            return json.dumps({
+                "earnings_growth": md.get("earnings_growth"),
+                "pe_trailing": md.get("pe_trailing"),
+                "pe_forward": md.get("pe_forward"),
+                "analyst_recommendation": md.get("analyst_recommendation"),
+                "num_analysts": md.get("number_of_analysts"),
+            })
+        except Exception as e:
+            return json.dumps({"error": str(e), "ticker": ticker})
 
     def analyze(self, ticker: str, filings_context: str = "") -> EarningsSummary:
         """Run earnings analysis for ticker. Returns EarningsSummary."""
@@ -79,7 +86,7 @@ class EarningsAgent(BaseAgent):
         prompt = f"""Analyze the earnings quality and management communication for {ticker.upper()}.{context_block}
 
 Steps:
-1. Call get_earnings_8k_filings to see recent earnings releases
+1. Call get_earnings_8k_text to retrieve the full text of recent earnings press releases
 2. Call get_eps_history to get EPS growth and analyst positioning
 3. Estimate the beat/miss rate from available data
 4. Assess whether guidance has been raised, maintained, or lowered
@@ -96,12 +103,13 @@ Return your analysis as JSON:
   "raw_summary": "<2-3 paragraph qualitative analysis>"
 }}"""
 
-        raw = self.run(prompt)
+        try:
+            raw = self.run(prompt)
+        except Exception as e:
+            return EarningsSummary(raw_summary=f"EarningsAgent LLM error: {e}")
 
         try:
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            data = json.loads(raw[start:end])
+            data = BaseAgent.extract_json(raw)
             return EarningsSummary(**data)
         except Exception:
-            return EarningsSummary(raw_summary=raw)
+            return EarningsSummary(raw_summary=raw[:2000] if raw else "")

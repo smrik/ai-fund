@@ -333,3 +333,130 @@ def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any
         rows,
     )
     conn.commit()
+
+
+def upsert_edgar_filing_cache(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert cached EDGAR filing metadata."""
+    conn.execute(
+        """
+        INSERT INTO edgar_filing_cache (
+            ticker, cik, form_type, accession_no, filing_date, doc_name,
+            source_url, raw_path, clean_path, raw_text_hash, clean_text_hash,
+            parser_version, fetched_at, cleaned_at
+        ) VALUES (
+            :ticker, :cik, :form_type, :accession_no, :filing_date, :doc_name,
+            :source_url, :raw_path, :clean_path, :raw_text_hash, :clean_text_hash,
+            :parser_version, :fetched_at, :cleaned_at
+        )
+        ON CONFLICT(ticker, accession_no, doc_name) DO UPDATE SET
+            cik = excluded.cik,
+            form_type = excluded.form_type,
+            filing_date = excluded.filing_date,
+            source_url = excluded.source_url,
+            raw_path = excluded.raw_path,
+            clean_path = excluded.clean_path,
+            raw_text_hash = excluded.raw_text_hash,
+            clean_text_hash = excluded.clean_text_hash,
+            parser_version = excluded.parser_version,
+            fetched_at = excluded.fetched_at,
+            cleaned_at = excluded.cleaned_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_sec_filing_metrics_snapshot(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert deterministic SEC/XBRL metrics snapshot."""
+    conn.execute(
+        """
+        INSERT INTO sec_filing_metrics_snapshot (
+            ticker, cik, as_of_date, source_filing_date, source_form,
+            revenue_cagr_3y, ebit_margin_avg_3y, gross_margin_avg_3y,
+            net_debt_to_ebitda, fcf_yield, revenue_series_json, ebit_series_json,
+            metric_source, pulled_at
+        ) VALUES (
+            :ticker, :cik, :as_of_date, :source_filing_date, :source_form,
+            :revenue_cagr_3y, :ebit_margin_avg_3y, :gross_margin_avg_3y,
+            :net_debt_to_ebitda, :fcf_yield, :revenue_series_json, :ebit_series_json,
+            :metric_source, :pulled_at
+        )
+        ON CONFLICT(ticker, as_of_date) DO UPDATE SET
+            cik = excluded.cik,
+            source_filing_date = excluded.source_filing_date,
+            source_form = excluded.source_form,
+            revenue_cagr_3y = excluded.revenue_cagr_3y,
+            ebit_margin_avg_3y = excluded.ebit_margin_avg_3y,
+            gross_margin_avg_3y = excluded.gross_margin_avg_3y,
+            net_debt_to_ebitda = excluded.net_debt_to_ebitda,
+            fcf_yield = excluded.fcf_yield,
+            revenue_series_json = excluded.revenue_series_json,
+            ebit_series_json = excluded.ebit_series_json,
+            metric_source = excluded.metric_source,
+            pulled_at = excluded.pulled_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_company_text_cache(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert reusable company text content."""
+    conn.execute(
+        """
+        INSERT INTO company_text_cache (
+            ticker, text_type, source, source_as_of_date, text_hash,
+            text_content, fetched_at, updated_at
+        ) VALUES (
+            :ticker, :text_type, :source, :source_as_of_date, :text_hash,
+            :text_content, :fetched_at, :updated_at
+        )
+        ON CONFLICT(ticker, text_type, text_hash) DO UPDATE SET
+            source = excluded.source,
+            source_as_of_date = excluded.source_as_of_date,
+            text_content = excluded.text_content,
+            updated_at = excluded.updated_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_company_embedding(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert cached local embedding vector."""
+    conn.execute(
+        """
+        INSERT INTO company_embeddings (
+            ticker, text_type, text_hash, embedding_model, embedding_dim, embedding_blob, created_at
+        ) VALUES (
+            :ticker, :text_type, :text_hash, :embedding_model, :embedding_dim, :embedding_blob, :created_at
+        )
+        ON CONFLICT(ticker, text_type, text_hash, embedding_model) DO UPDATE SET
+            embedding_dim = excluded.embedding_dim,
+            embedding_blob = excluded.embedding_blob,
+            created_at = excluded.created_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_peer_similarity_cache(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert cached target/peer similarity score."""
+    conn.execute(
+        """
+        INSERT INTO peer_similarity_cache (
+            target_ticker, peer_ticker, text_hash_target, text_hash_peer,
+            embedding_model, similarity_score, computed_at
+        ) VALUES (
+            :target_ticker, :peer_ticker, :text_hash_target, :text_hash_peer,
+            :embedding_model, :similarity_score, :computed_at
+        )
+        ON CONFLICT(target_ticker, peer_ticker, text_hash_target, text_hash_peer, embedding_model)
+        DO UPDATE SET
+            similarity_score = excluded.similarity_score,
+            computed_at = excluded.computed_at
+        """,
+        row,
+    )
+    conn.commit()

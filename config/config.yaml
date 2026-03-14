@@ -1,3 +1,7 @@
+wacc_params:
+  risk_free_rate: 0.045       # 10Y US Treasury (Damodaran)
+  equity_risk_premium: 0.050  # Long-run ERP (Damodaran)
+
 paths:
   data_dir: data
   db_path: data/alpha_pod.db
@@ -10,8 +14,10 @@ paths:
   universe_path: config/universe.csv
 
 llm:
-  model: claude-haiku-4-5-20251001
-  fast_model: claude-haiku-4-5-20251001
+  model: gemini-3-flash-preview
+  fast_model: gemini-3-flash-preview
+  synthesis_model: gemini-3-flash-preview
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
 
 portfolio:
   size_usd: 100000
@@ -26,6 +32,11 @@ edgar:
   user_agent: AI-Fund research@example.com
   rate_limit_delay: 0.15
 
+filings_cache:
+  raw_dir: data/cache/edgar/raw
+  clean_dir: data/cache/edgar/clean
+  parser_version: v1
+
 ibkr:
   host: 127.0.0.1
   port: 7497
@@ -39,6 +50,16 @@ ciq:
   workbook_glob: "*.xlsx"
   parser_version: ibm_standard_v1
   enforce_template_lock: true
+
+peer_similarity:
+  enabled: true
+  embedding_model: all-MiniLM-L6-v2
+  description_source_precedence:
+    - yfinance_longBusinessSummary
+    - edgar_item1_business
+  similarity_blend:
+    description_weight: 0.60
+    market_cap_weight: 0.40
 
 risk_limits:
   max_single_position_pct: 8.0

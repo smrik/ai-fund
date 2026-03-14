@@ -59,11 +59,17 @@ class SentimentAgent(BaseAgent):
     def _handle_news(self, inp: dict) -> str:
         ticker = inp["ticker"]
         limit = inp.get("limit", 15)
-        news = md_client.get_news(ticker, limit)
-        return json.dumps(news)
+        try:
+            news = md_client.get_news(ticker, limit)
+            return json.dumps(news)
+        except Exception as e:
+            return json.dumps({"error": str(e), "ticker": ticker, "headlines": []})
 
     def _handle_ratings(self, inp: dict) -> str:
-        return json.dumps(md_client.get_analyst_ratings(inp["ticker"]))
+        try:
+            return json.dumps(md_client.get_analyst_ratings(inp["ticker"]))
+        except Exception as e:
+            return json.dumps({"error": str(e), "ticker": inp.get("ticker", ""), "ratings": []})
 
     def analyze(self, ticker: str) -> SentimentOutput:
         """Run sentiment analysis for ticker. Returns SentimentOutput."""
@@ -85,12 +91,13 @@ Return your analysis as JSON:
   "raw_summary": "<2-3 paragraph analysis of the news narrative>"
 }}"""
 
-        raw = self.run(prompt)
+        try:
+            raw = self.run(prompt)
+        except Exception as e:
+            return SentimentOutput(raw_summary=f"SentimentAgent LLM error: {e}")
 
         try:
-            start = raw.find("{")
-            end = raw.rfind("}") + 1
-            data = json.loads(raw[start:end])
+            data = self.extract_json(raw)
             return SentimentOutput(**data)
         except Exception:
             return SentimentOutput(raw_summary=raw)

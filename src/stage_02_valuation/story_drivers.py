@@ -1,6 +1,7 @@
 """Deterministic story-to-numbers mapping for valuation drivers."""
 from __future__ import annotations
 
+import functools
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from config import ROOT_DIR
 
 
 STORY_DRIVERS_PATH = ROOT_DIR / "config" / "story_drivers.yaml"
+STORY_DRIVERS_PENDING_PATH = ROOT_DIR / "config" / "story_drivers_pending.yaml"
 
 
 def _clamp(value: float, low: float, high: float) -> float:
@@ -54,6 +56,7 @@ def _normalize_profile(payload: dict[str, Any] | None) -> StoryDriverProfile:
     )
 
 
+@functools.lru_cache(maxsize=1)
 def load_story_driver_overrides() -> dict[str, Any]:
     if not STORY_DRIVERS_PATH.exists():
         return {"global": {}, "sectors": {}, "tickers": {}}
@@ -67,6 +70,26 @@ def load_story_driver_overrides() -> dict[str, Any]:
     return data
 
 
+def _load_approved_pending(ticker: str) -> dict[str, Any] | None:
+    """
+    Check story_drivers_pending.yaml for an approved entry for this ticker.
+    Returns the profile dict if status == 'approved', else None.
+    Not cached — must read fresh each call so PM approvals take effect immediately.
+    """
+    if not STORY_DRIVERS_PENDING_PATH.exists():
+        return None
+    try:
+        data = yaml.safe_load(STORY_DRIVERS_PENDING_PATH.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return None
+    entry = data.get(ticker.upper())
+    if not isinstance(entry, dict):
+        return None
+    if str(entry.get("status", "")).lower() != "approved":
+        return None
+    return entry.get("profile")
+
+
 def resolve_story_driver_profile(ticker: str, sector: str) -> tuple[StoryDriverProfile, str]:
     data = load_story_driver_overrides()
 
@@ -78,6 +101,13 @@ def resolve_story_driver_profile(ticker: str, sector: str) -> tuple[StoryDriverP
         merged = {**asdict(base), **sector_blob}
         base = _normalize_profile(merged)
         source = "story_sector"
+
+    # Check pending YAML first — approved pending entries win over static YAML tickers
+    pending_profile = _load_approved_pending(ticker)
+    if pending_profile is not None:
+        merged = {**asdict(base), **pending_profile}
+        base = _normalize_profile(merged)
+        return base, "story_ticker_pending_approved"
 
     ticker_blob = data.get("tickers", {}).get(ticker.upper())
     if isinstance(ticker_blob, dict):

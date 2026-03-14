@@ -199,6 +199,76 @@ def create_tables(conn: sqlite3.Connection | None = None):
         updated_at              TEXT NOT NULL,
         PRIMARY KEY (sector, industry, week_key)
     );
+
+    CREATE TABLE IF NOT EXISTS edgar_filing_cache (
+        ticker          TEXT NOT NULL,
+        cik             TEXT NOT NULL,
+        form_type       TEXT NOT NULL,
+        accession_no    TEXT NOT NULL,
+        filing_date     TEXT,
+        doc_name        TEXT NOT NULL,
+        source_url      TEXT,
+        raw_path        TEXT,
+        clean_path      TEXT,
+        raw_text_hash   TEXT,
+        clean_text_hash TEXT,
+        parser_version  TEXT NOT NULL,
+        fetched_at      TEXT NOT NULL,
+        cleaned_at      TEXT NOT NULL,
+        PRIMARY KEY (ticker, accession_no, doc_name)
+    );
+
+    CREATE TABLE IF NOT EXISTS sec_filing_metrics_snapshot (
+        ticker               TEXT NOT NULL,
+        cik                  TEXT NOT NULL,
+        as_of_date           TEXT NOT NULL,
+        source_filing_date   TEXT,
+        source_form          TEXT NOT NULL,
+        revenue_cagr_3y      REAL,
+        ebit_margin_avg_3y   REAL,
+        gross_margin_avg_3y  REAL,
+        net_debt_to_ebitda   REAL,
+        fcf_yield            REAL,
+        revenue_series_json  TEXT,
+        ebit_series_json     TEXT,
+        metric_source        TEXT,
+        pulled_at            TEXT NOT NULL,
+        PRIMARY KEY (ticker, as_of_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS company_text_cache (
+        ticker            TEXT NOT NULL,
+        text_type         TEXT NOT NULL,
+        source            TEXT NOT NULL,
+        source_as_of_date TEXT,
+        text_hash         TEXT NOT NULL,
+        text_content      TEXT NOT NULL,
+        fetched_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        PRIMARY KEY (ticker, text_type, text_hash)
+    );
+
+    CREATE TABLE IF NOT EXISTS company_embeddings (
+        ticker          TEXT NOT NULL,
+        text_type       TEXT NOT NULL,
+        text_hash       TEXT NOT NULL,
+        embedding_model TEXT NOT NULL,
+        embedding_dim   INTEGER NOT NULL,
+        embedding_blob  TEXT NOT NULL,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (ticker, text_type, text_hash, embedding_model)
+    );
+
+    CREATE TABLE IF NOT EXISTS peer_similarity_cache (
+        target_ticker     TEXT NOT NULL,
+        peer_ticker       TEXT NOT NULL,
+        text_hash_target  TEXT NOT NULL,
+        text_hash_peer    TEXT NOT NULL,
+        embedding_model   TEXT NOT NULL,
+        similarity_score  REAL NOT NULL,
+        computed_at       TEXT NOT NULL,
+        PRIMARY KEY (target_ticker, peer_ticker, text_hash_target, text_hash_peer, embedding_model)
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -293,6 +363,10 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_screen_results_date ON screen_results(screen_date);
     CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trades(ticker);
     CREATE INDEX IF NOT EXISTS idx_industry_benchmarks_key ON industry_benchmarks(sector, industry, week_key);
+    CREATE INDEX IF NOT EXISTS idx_edgar_filing_cache_lookup ON edgar_filing_cache(ticker, form_type, filing_date);
+    CREATE INDEX IF NOT EXISTS idx_sec_filing_metrics_lookup ON sec_filing_metrics_snapshot(ticker, as_of_date);
+    CREATE INDEX IF NOT EXISTS idx_company_text_lookup ON company_text_cache(ticker, text_type, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_peer_similarity_lookup ON peer_similarity_cache(target_ticker, peer_ticker, embedding_model);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
@@ -303,8 +377,7 @@ def create_tables(conn: sqlite3.Connection | None = None):
     conn.commit()
     if close_after:
         conn.close()
-
-    print(f"✓ Database initialized at {DB_PATH}")
+        print(f"✓ Database initialized at {DB_PATH}")
 
 
 if __name__ == "__main__":

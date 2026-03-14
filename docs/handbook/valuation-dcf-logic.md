@@ -1,183 +1,278 @@
-# Valuation And DCF Logic
+# Valuation and DCF Logic
 
 This document is the source-of-truth explanation for how intrinsic value is computed in code.
 
-Referenced modules:
-- `src/stage_02_valuation/templates/dcf_model.py`
-- `src/stage_02_valuation/wacc.py`
-- `src/stage_02_valuation/batch_runner.py`
+Key modules:
+- `src/stage_02_valuation/input_assembler.py` — assembles all DCF assumptions
+- `src/stage_02_valuation/professional_dcf.py` — runs the DCF and scenarios
+- `src/stage_02_valuation/wacc.py` — computes cost of capital
+- `src/stage_02_valuation/batch_runner.py` — runs the full universe
+- `src/stage_02_valuation/story_drivers.py` — loads narrative override overrides
 
-## 1. DCF Model Structure (10-Year Explicit Forecast)
+---
 
-The model in `run_dcf()` forecasts revenue for 10 years:
+## 1. Assumption Assembly (`input_assembler.py`)
 
-- Years 1-5 use `revenue_growth_near`
-- Years 6-10 use `revenue_growth_mid`
+Before any numbers are crunched, `assemble_inputs(ticker)` resolves every DCF driver from the best available source. The result is a `ForecastDrivers` dataclass plus a `source_lineage` dict that records where each number came from.
 
-Revenue recursion:
+### 1.1 Revenue Growth
 
-`Revenue_t = Revenue_(t-1) * (1 + g_t)`
+Near-term growth priority chain (first non-null wins):
 
-where `g_t` is near or mid growth based on year.
+1. **CIQ consensus** — `(revenue_fy1 / revenue_ttm) - 1`. Uses sell-side FY1 estimates stored in the CIQ snapshot. Source: `"ciq_consensus"`.
+2. **CIQ 3yr CAGR** — computed from `ciq_long_form` historical revenues. Source: `"ciq_3yr_cagr"`.
+3. **yfinance 3yr CAGR** — computed from `get_historical_financials()`. Source: `"yfinance_3yr_cagr"`.
+4. **yfinance TTM YoY** — single year growth from TTM snapshot. Source: `"yfinance_ttm_yoy"`.
+5. **Sector default** — from `SECTOR_DEFAULTS[sector]["revenue_growth_near"]`. Source: `"default"`.
 
-## 2. Operating Forecast And Free Cash Flow
+Mid-term growth = near-term × `growth_fade_ratio` (sector-specific; see §1.6).
 
-For each forecast year:
+Terminal growth is set per sector from `SECTOR_DEFAULTS[sector]["terminal_growth"]` (e.g., Technology 3.5%, Utilities 2.5%).
 
-- `EBIT_t = Revenue_t * EBIT_Margin`
-- `NOPAT_t = EBIT_t * (1 - Tax_Rate)`
-- `D&A_t = Revenue_t * DA_pct`
-- `Capex_t = Revenue_t * Capex_pct`
-- `DeltaNWC_t = Revenue_t * NWC_pct`
+### 1.2 EBIT Margin
 
-Free cash flow:
+Priority chain:
+1. CIQ TTM operating income / CIQ TTM revenue
+2. yfinance TTM operating income / yfinance TTM revenue
+3. Sector default
 
-`FCF_t = NOPAT_t + D&A_t - Capex_t - DeltaNWC_t`
+Margin converges from `ebit_margin_start` to `ebit_margin_target` over years 1–10 using a linear path that allows both expansion and compression.
 
-## 3. Discounting
+### 1.3 Exit Multiple
 
-Present value of explicit forecast:
+The DCF terminal value uses an exit multiple on terminal-year EBIT or EBITDA. Priority:
 
-`PV_FCF = sum(FCF_t / (1 + WACC)^t) for t = 1..10`
+**For EV/EBITDA exit:**
+1. CIQ comps forward median (`peer_median_tev_ebitda_fwd` — based on `tev_ebitda_cy_1`)
+2. CIQ comps LTM median (`peer_median_tev_ebitda_ltm`)
+3. Sector default
 
-Terminal value is exit-multiple based:
+**For EV/EBIT exit:**
+1. CIQ comps forward EBIT median (`peer_median_tev_ebit_fwd`)
+2. CIQ comps LTM EBIT median (`peer_median_tev_ebit_ltm`)
+3. Sector default
 
-- `Terminal_EBIT = Revenue_10 * EBIT_Margin`
-- `Terminal_Value_10 = Terminal_EBIT * Exit_Multiple`
-- `PV_Terminal = Terminal_Value_10 / (1 + WACC)^10`
+Forward multiples are preferred because the terminal year is itself forward-looking.
 
-Enterprise and equity value:
+### 1.4 Working Capital Drivers (DSO, DIO, DPO)
 
-- `EV = PV_FCF + PV_Terminal`
-- `Equity_Value = EV - Net_Debt`
-- `Intrinsic_Value_Per_Share = Equity_Value / Shares_Outstanding`
+NWC is modelled as `delta_NWC / Revenue` using DSO, DIO, DPO day-counts to derive the percentage.
 
-## 4. Scenario Engine (Bear/Base/Bull)
+**Start values** (current period):
+1. CIQ snapshot → yfinance → sector default
 
-`run_scenario_dcf()` generates scenarios by perturbing base assumptions.
+**Target values** (year 10 convergence):
+- When company data is available: `0.70 × sector_default + 0.30 × company_start`
+  - Source: `"ciq_blend"` or `"yfinance_blend"`
+- When only sector default is known: pure sector default
+  - Source: `"default"`
 
-Bear transforms:
-- near growth x 0.6
-- mid growth x 0.6
-- terminal growth x 0.7
-- EBIT margin x 0.75
-- capex pct x 1.2
-- WACC + 2%
-- exit multiple x 0.7
+This blend reflects partial mean reversion — a company with structurally elevated DSO will not fully converge to sector average within 10 years.
 
-Bull transforms:
-- near growth x 1.4
-- mid growth x 1.3
-- terminal growth x 1.1
-- EBIT margin x 1.15
-- capex pct x 0.9
-- WACC - 1%
-- exit multiple x 1.3
+### 1.5 Tax Rate
 
-## 5. WACC Construction
+`tax_target = bounded(company_ETR, min=15%, max=30%, fallback=23%)`
 
-WACC uses CAPM with beta unlevering/relevering in `src/stage_02_valuation/wacc.py`.
+The company's own effective tax rate becomes the convergence target (bounded to a plausible range), rather than a universal 23%.
 
-### 5.1 Unlevering peer beta
+### 1.6 Sector-Specific Parameters
 
-Hamada unlever formula:
+All per-sector defaults live in `SECTOR_DEFAULTS` in `input_assembler.py`:
 
-`beta_unlevered = beta_levered / (1 + (1 - tax_rate) * D/E)`
+| Sector | Growth fade ratio | Terminal growth | Notes |
+|---|---|---|---|
+| Technology | 0.70 | 3.5% | High fade retention; reinvestment-heavy |
+| Communication Services | 0.65 | 3.0% | |
+| Healthcare | 0.65 | 3.0% | |
+| Consumer Cyclical | 0.60 | 2.5% | |
+| Consumer Defensive | 0.55 | 2.5% | Mature, slow fade |
+| Industrials | 0.55 | 2.5% | |
+| Energy | 0.50 | 2.0% | Commodity-linked; aggressive fade |
+| Basic Materials | 0.50 | 2.0% | |
+| Utilities | 0.50 | 2.5% | Regulated; growth bounded |
+| _default | 0.65 | 3.0% | |
 
-Peer unlevered betas are filtered to sanity range and median is used.
+*Growth fade ratio:* `growth_mid = growth_near × fade_ratio`. A ratio of 0.70 means mid-term growth fades to 70% of near-term growth.
 
-### 5.2 Relevering to target structure
+### 1.7 Source Lineage Audit
 
-`beta_relevered = beta_unlevered_median * (1 + (1 - tax_rate) * D/E_target)`
+Every assembled set of inputs includes a `source_lineage` dict, e.g.:
+```json
+{
+  "revenue_growth_near": "ciq_consensus",
+  "ebit_margin": "ciq_ttm",
+  "exit_multiple": "ciq_comps_tev_ebitda_fwd",
+  "dso_start": "ciq",
+  "dso_target": "ciq_blend",
+  "tax_rate_target": "company_etr",
+  "revenue_growth_terminal": "default"
+}
+```
+Review this before taking any valuation at face value. `"default"` entries mean no company-specific data was found.
 
-### 5.3 Cost of equity
+---
 
-`Ke = Rf + beta_relevered * ERP + size_premium`
+## 2. DCF Model (`professional_dcf.py`)
 
-Defaults in code:
-- `Rf = 4.5%`
-- `ERP = 5.0%`
-- size premium from market cap buckets
+### 2.1 Explicit Forecast (Years 1–10)
 
-### 5.4 Cost of debt and capital weights
+Revenue:
+```
+Revenue_t = Revenue_(t-1) × (1 + g_t)
+```
+where g_t is near growth for years 1–5, mid growth for years 6–10.
 
-- `Kd_after_tax = cost_of_debt * (1 - tax_rate)`
-- `E_weight = Equity / (Equity + Debt)`
-- `D_weight = 1 - E_weight`
-
-Final WACC:
-
-`WACC = Ke * E_weight + Kd_after_tax * D_weight`
-
-## 6. Reverse DCF (Implied Growth)
-
-`reverse_dcf()` in `batch_runner.py` solves for near-term growth by binary search such that:
-
-`Intrinsic_Value_Per_Share(g*) ~= Current_Price`
-
-Search bounds:
-- lower bound: -5%
-- upper bound: +50%
-
-Output:
-- `implied_growth_pct`
-
-Interpretation:
-- High implied growth means market embeds aggressive expectations.
-- Low implied growth means expectations are muted.
-
-## 7. Assumption Sourcing Logic In Batch Runner
-
-Assumptions are not one-size-fits-all. The code resolves with explicit priorities:
-
-```mermaid
-flowchart TD
-    A["Ticker"] --> B["Historical 3Y Financials"]
-    A --> C["TTM Snapshot"]
-    A --> D["Sector Defaults"]
-
-    B --> E["Growth / Margin / Capex / D&A / Tax"]
-    C --> E
-    D --> E
-
-    E --> F["DCFAssumptions"]
-    F --> G["run_scenario_dcf"]
-    F --> H["reverse_dcf"]
-    G --> I["iv_bear / iv_base / iv_bull"]
-    H --> J["implied_growth_pct"]
+Operating items per year:
+```
+EBIT_t       = Revenue_t × EBIT_Margin_t
+NOPAT_t      = EBIT_t × (1 − Tax_t)
+D&A_t        = Revenue_t × DA_pct
+Capex_t      = Revenue_t × Capex_pct
+ΔNW_t        = Revenue_t × NWC_pct_t
 ```
 
-Key guardrails in code:
-- Growth is bounded before use.
-- Tax rate and capex/DA use plausible range checks.
-- Missing history falls back to sector defaults rather than failing the full batch.
+FCFF:
+```
+FCFF_t = NOPAT_t + D&A_t − Capex_t − ΔNWC_t
+```
 
-## 8. Quality Flags That Matter
+FCFE branch (when enabled):
+```
+FCFE_t = FCFF_t − Interest_t × (1 − Tax_t) + Net_Borrowing_t
+```
 
-The batch output includes practical diagnostics:
-- `tv_pct_of_ev`: terminal value contribution to base EV
-- `tv_high_flag`: true when terminal share > 75%
-- source columns (`growth_source`, `ebit_margin_source`, etc.)
+### 2.2 Terminal Value
 
-These fields should be reviewed before taking valuation ranks at face value.
+Exit multiple on terminal-year EBIT or EBITDA:
+```
+TV_10   = EBIT_10 × Exit_Multiple  (or EBITDA_10 × Exit_Multiple)
+PV_TV   = TV_10 / (1 + WACC)^10
+```
 
-## 9. DCF Review Checklist (Per Name)
+### 2.3 Discounting
 
-1. Does base-case upside survive a bear-case stress?
-2. Is WACC coherent with risk and size?
-3. Is terminal value share acceptable?
-4. Are growth and margins rooted in company history?
-5. Is implied growth reasonable versus business reality?
+```
+PV_FCF   = Σ FCFF_t / (1 + WACC)^t  for t = 1..10
+EV       = PV_FCF + PV_TV
+```
 
-## 10. Known Modeling Limits
+EV-to-equity bridge:
+```
+Equity_Value = EV − Net_Debt − Minority_Interest + Cash_and_Equivalents
+IV_per_Share = Equity_Value / Shares_Outstanding
+```
 
-Current deterministic implementation deliberately keeps complexity manageable.
+### 2.4 Economic Profit Cross-Check
 
-Not yet modeled in deterministic core:
-- Explicit multi-stage margin convergence curves
+The model cross-checks DCF equity value against an Economic Profit (residual income) model:
+```
+EP_t  = NOPAT_t − WACC × Invested_Capital_t
+EP_PV = Σ EP_t / (1 + WACC)^t
+```
+Large divergence between DCF and EP values flags aggressive margin or reinvestment assumptions.
+
+### 2.5 Terminal Value Diagnostic
+
+`tv_pct_of_ev` = terminal value as % of total EV. Values above 75% (`tv_high_flag = True`) warrant scrutiny — the valuation is heavily dependent on exit multiple and terminal assumptions.
+
+---
+
+## 3. Scenario Engine (`bear / base / bull`)
+
+`run_scenario_dcf()` generates three scenarios by perturbing base assumptions:
+
+| Parameter | Bear | Base | Bull |
+|---|---|---|---|
+| Near growth | × 0.6 | × 1.0 | × 1.4 |
+| Mid growth | × 0.6 | × 1.0 | × 1.3 |
+| EBIT margin | × 0.75 | × 1.0 | × 1.15 |
+| Capex pct | × 1.2 | × 1.0 | × 0.9 |
+| WACC delta | +2% | 0 | −1% |
+| Exit multiple | × 0.7 | × 1.0 | × 1.3 |
+
+Outputs: `iv_bear`, `iv_base`, `iv_bull` per share.
+
+---
+
+## 4. WACC Construction (`wacc.py`)
+
+### 4.1 Input Parameters
+
+Rf and ERP are loaded from `config/config.yaml`:
+```yaml
+wacc_params:
+  risk_free_rate: 0.045      # 10Y US Treasury — update annually
+  equity_risk_premium: 0.050 # Damodaran — update annually
+```
+
+### 4.2 Beta Unlevering (Hamada)
+
+```
+β_unlevered = β_levered / (1 + (1 − tax) × D/E)
+```
+Peer unlevered betas are filtered to a sanity range and the median is used.
+
+### 4.3 Beta Relevering to Target Structure
+
+```
+β_relevered = β_unlevered_median × (1 + (1 − tax) × D/E_target)
+```
+
+### 4.4 Cost of Equity
+
+```
+Ke = Rf + β_relevered × ERP + size_premium
+```
+
+Size premia (Duff & Phelps buckets):
+- Micro-cap (<$500M): +2.5%
+- Small-cap ($500M–$2B): +1.5%
+- Mid-cap ($2B–$10B): +0.5%
+- Large-cap (>$10B): 0%
+
+### 4.5 Final WACC
+
+```
+Kd_after_tax = cost_of_debt × (1 − tax)
+WACC = Ke × E/(D+E) + Kd_after_tax × D/(D+E)
+```
+
+---
+
+## 5. Reverse DCF (Implied Growth)
+
+`reverse_dcf_professional()` in `professional_dcf.py` solves for the near-term growth rate such that the base-case DCF equals the current market price. Uses binary search over [−5%, +50%].
+
+Interpretation:
+- High implied growth → market embeds aggressive expectations; need strong conviction to be long
+- Low implied growth → muted expectations; easier to be right
+
+---
+
+## 6. Valuation Override Gate
+
+The PM can override any assembled assumption via `config/valuation_overrides.yaml`. This is the only way LLM analysis (from the QoE agent) flows into the DCF — via explicit PM approval of a `normalized_ebit` override.
+
+See `docs/handbook/qoe-agent.md` for the full override workflow.
+
+---
+
+## 7. DCF Review Checklist (Per Name)
+
+1. Check `source_lineage` — are growth and margin from actual data or sector defaults?
+2. Does base-case upside survive the bear-case stress?
+3. Is WACC coherent with the company's risk profile and size?
+4. Is `tv_pct_of_ev` below 75%?
+5. Is implied growth (reverse DCF) realistic versus business reality?
+6. Is there a QoE override pending? If so, review `dcf_ebit_override_pending` in the QoE output.
+
+---
+
+## 8. Known Modeling Limits
+
+Deliberately excluded from the deterministic core to maintain auditability:
 - Multi-factor macro regime discounting
-- Dynamic buyback/share count paths
-- Detailed working-capital driver decomposition by account
-
-These can be added incrementally, but existing logic remains auditable and fast.
-
+- Dynamic buyback / share count paths
+- COGS-based DIO/DPO calculation (requires COGS series; current approach uses revenue-based ratios internally consistently)
+- FCFF/FCFE interest contamination detection
+- Peer beta levering (currently uses self-beta; peer betas deferred until CIQ comps provide tickers)

@@ -1,3 +1,4 @@
+import pytest
 from types import SimpleNamespace
 
 from src.stage_02_valuation.input_assembler import (
@@ -96,6 +97,8 @@ def test_build_valuation_inputs_applies_ciq_precedence(monkeypatch):
         ),
     )
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("TEST")
 
@@ -200,6 +203,8 @@ def test_margin_target_reverts_to_sector_default(monkeypatch):
         ),
     )
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("HMRG")
 
@@ -253,7 +258,7 @@ def test_net_debt_lineage_defaults_when_debt_and_cash_missing(monkeypatch):
     assert out.source_lineage["net_debt"] == "default"
 
 
-def test_nwc_drivers_use_ciq_then_revert_to_sector_targets(monkeypatch):
+def test_nwc_drivers_use_ciq_and_blend_with_sector_targets(monkeypatch):
     from src.stage_02_valuation import input_assembler as ia
 
     monkeypatch.setattr(
@@ -309,16 +314,21 @@ def test_nwc_drivers_use_ciq_then_revert_to_sector_targets(monkeypatch):
 
     out = build_valuation_inputs("NWCX")
 
+    # Tech sector defaults: dso=45, dio=35, dpo=38; CIQ starts: dso=55, dio=50, dpo=45
+    # Blend: 70% sector + 30% company-specific
     assert out is not None
     assert out.drivers.dso_start == 55.0
     assert out.drivers.dio_start == 50.0
     assert out.drivers.dpo_start == 45.0
-    assert out.drivers.dso_target == 45.0
-    assert out.drivers.dio_target == 35.0
-    assert out.drivers.dpo_target == 38.0
+    assert out.drivers.dso_target == pytest.approx(45.0 * 0.7 + 55.0 * 0.3, abs=0.01)  # 48.0
+    assert out.drivers.dio_target == pytest.approx(35.0 * 0.7 + 50.0 * 0.3, abs=0.01)  # 39.5
+    assert out.drivers.dpo_target == pytest.approx(38.0 * 0.7 + 45.0 * 0.3, abs=0.01)  # 40.1
     assert out.source_lineage["dso_start"] == "ciq"
     assert out.source_lineage["dio_start"] == "ciq"
     assert out.source_lineage["dpo_start"] == "ciq"
+    assert out.source_lineage["dso_target"] == "ciq_blend"
+    assert out.source_lineage["dio_target"] == "ciq_blend"
+    assert out.source_lineage["dpo_target"] == "ciq_blend"
 
 
 def test_nwc_drivers_fallback_to_yfinance_and_respect_bounds(monkeypatch):
@@ -479,3 +489,256 @@ def test_revenue_alignment_flags_when_growth_comes_from_ttm_yoy(monkeypatch):
     assert out.source_lineage["growth_period_type"] == "ttm_yoy"
     assert out.source_lineage["revenue_alignment_flag"] == "aligned_ttm"
     assert out.source_lineage["revenue_data_quality_flag"] == "ok"
+
+
+# ── New tests for Phase 1/2 hardening ───────────────────────────────────────
+
+
+def _make_wacc_stub():
+    return SimpleNamespace(
+        wacc=0.09,
+        cost_of_equity=0.11,
+        beta_relevered=1.0,
+        beta_unlevered_median=0.9,
+        size_premium=0.01,
+        equity_weight=0.8,
+        peers_used=["TEST"],
+    )
+
+
+def _make_mkt(sector="Technology", price=100.0, revenue=1_000_000_000.0):
+    return {
+        "ticker": "TEST",
+        "name": "Test Co",
+        "sector": sector,
+        "industry": "Software",
+        "current_price": price,
+        "revenue_ttm": revenue,
+        "operating_margin": 0.15,
+        "revenue_growth": 0.08,
+        "total_debt": 200_000_000.0,
+        "cash": 50_000_000.0,
+        "shares_outstanding": 100_000_000.0,
+        "market_cap": 10_000_000_000.0,
+        "enterprise_value": 10_150_000_000.0,
+    }
+
+
+def test_consensus_growth_takes_priority_over_ciq_cagr(monkeypatch):
+    """1.1 — CIQ FY1 consensus implied growth beats backward-looking CAGR."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {
+        "revenue_cagr_3yr": 0.06,
+    })
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: {
+        "revenue_ttm": 1_000_000_000.0,
+        "revenue_cagr_3yr": 0.10,
+        "revenue_fy1": 1_200_000_000.0,  # 20% implied growth
+    })
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.source_lineage["growth_source_detail"] == "ciq_consensus"
+    assert out.source_lineage["growth_period_type"] == "consensus_fy1"
+    assert out.source_lineage["revenue_alignment_flag"] == "aligned_consensus"
+    assert out.source_lineage["revenue_data_quality_flag"] == "ok"
+    assert out.drivers.revenue_growth_near == pytest.approx(0.20, abs=0.001)
+
+
+def test_consensus_growth_falls_back_to_ciq_cagr_when_fy1_missing(monkeypatch):
+    """1.1 — No FY1 → falls through to CIQ CAGR."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: {
+        "revenue_ttm": 1_000_000_000.0,
+        "revenue_cagr_3yr": 0.11,
+        # no revenue_fy1
+    })
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.source_lineage["growth_source_detail"] == "ciq_cagr_3yr"
+
+
+def test_forward_comps_take_priority_over_ltm_for_ev_ebitda(monkeypatch):
+    """1.2 — Forward comps beat LTM when both present (ev_ebitda sector)."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebitda_ltm": 18.0,
+        "peer_median_tev_ebitda_fwd": 14.0,  # forward should win
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == 14.0
+    assert out.source_lineage["exit_multiple"] == "ciq_comps_tev_ebitda_fwd"
+
+
+def test_forward_comps_take_priority_over_ltm_for_ev_ebit(monkeypatch):
+    """1.2 — Forward comps beat LTM for ev_ebit sectors (e.g. Energy)."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Energy", revenue=10_000_000_000.0))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebit_ltm": 11.0,
+        "peer_median_tev_ebit_fwd": 8.5,  # forward should win
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == 8.5
+    assert out.source_lineage["exit_multiple"] == "ciq_comps_tev_ebit_fwd"
+
+
+def test_forward_comps_fall_back_to_ltm_when_fwd_missing(monkeypatch):
+    """1.2 — No forward comps → falls through to LTM as before."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebitda_ltm": 16.0,
+        # no fwd
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == 16.0
+    assert out.source_lineage["exit_multiple"] == "ciq_comps_tev_ebitda_ltm"
+
+
+def test_nwc_target_is_pure_sector_default_when_no_company_data(monkeypatch):
+    """1.4 — No company-specific NWC → target stays pure sector default."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    # Tech sector defaults
+    assert out.drivers.dso_target == 45.0
+    assert out.drivers.dio_target == 35.0
+    assert out.drivers.dpo_target == 38.0
+    assert out.source_lineage["dso_target"] == "default"
+    assert out.source_lineage["dio_target"] == "default"
+    assert out.source_lineage["dpo_target"] == "default"
+
+
+def test_tax_target_uses_company_etr(monkeypatch):
+    """2.3 — tax_target converges to company's own ETR (bounded)."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {
+        "effective_tax_rate_avg": 0.17,
+    })
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.tax_rate_start == pytest.approx(0.17, abs=0.001)
+    assert out.drivers.tax_rate_target == pytest.approx(0.17, abs=0.001)
+    assert out.source_lineage["tax_rate_target"] == "yfinance"
+
+
+def test_tax_target_bounded_when_etr_very_low(monkeypatch):
+    """2.3 — Very low ETR (e.g. 8%) → tax_target floors at 0.15."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {
+        "effective_tax_rate_avg": 0.08,
+    })
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    # tax_start is bounded to (0.05, 0.40) → 0.08 passes through
+    # tax_target is bounded (0.15, 0.30) → floors at 0.15
+    assert out.drivers.tax_rate_target == pytest.approx(0.15, abs=0.001)
+
+
+def test_revenue_growth_terminal_in_lineage(monkeypatch):
+    """2.1 — revenue_growth_terminal appears in source_lineage."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert "revenue_growth_terminal" in out.source_lineage
+    assert out.source_lineage["revenue_growth_terminal"] == "default"
+
+
+def test_growth_fade_ratio_differs_by_sector(monkeypatch):
+    """2.2 — sector-specific fade ratio (Tech 0.70 vs Energy 0.50) produces different growth_mid."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    def _build(sector, revenue):
+        from src.stage_02_valuation.story_drivers import StoryDriverProfile
+        monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector=sector, revenue=revenue))
+        monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {"revenue_cagr_3yr": 0.10})
+        monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+        monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+        monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+        monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+        monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+        return build_valuation_inputs("TEST")
+
+    tech_out = _build("Technology", 1_000_000_000.0)
+    energy_out = _build("Energy", 10_000_000_000.0)
+
+    # Both have growth_near = 10%; Tech fades to 7.0%, Energy fades to 5.0%
+    assert tech_out is not None and energy_out is not None
+    assert tech_out.drivers.revenue_growth_mid == pytest.approx(0.10 * 0.70, abs=0.001)
+    assert energy_out.drivers.revenue_growth_mid == pytest.approx(0.10 * 0.50, abs=0.001)

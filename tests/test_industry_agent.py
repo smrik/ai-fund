@@ -34,7 +34,7 @@ def fixed_week(monkeypatch):
 
 @pytest.fixture
 def mock_anthropic(monkeypatch):
-    monkeypatch.setattr(base_agent_module, "Anthropic", lambda *args, **kwargs: object())
+    monkeypatch.setattr(base_agent_module, "OpenAI", lambda *args, **kwargs: object())
 
 
 def _insert_cached_row(db_path):

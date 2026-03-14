@@ -77,6 +77,7 @@ class ICMemo(BaseModel):
     valuation: ValuationRange = Field(default_factory=lambda: ValuationRange(bear=0, base=0, bull=0))
     sentiment: SentimentOutput = Field(default_factory=SentimentOutput)
     risk: RiskOutput = Field(default_factory=RiskOutput)
+    accounting_recast: dict = Field(default_factory=dict)
 
     # The thesis (what Claude synthesizes; you refine)
     bull_case: str = ""

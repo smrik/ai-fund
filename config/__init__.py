@@ -40,8 +40,10 @@ _paths = _RAW_CONFIG["paths"]
 _llm = _RAW_CONFIG["llm"]
 _portfolio = _RAW_CONFIG["portfolio"]
 _edgar = _RAW_CONFIG["edgar"]
+_filings_cache = _RAW_CONFIG.get("filings_cache", {})
 _ibkr = _RAW_CONFIG["ibkr"]
 _ciq = _RAW_CONFIG["ciq"]
+_peer_similarity = _RAW_CONFIG.get("peer_similarity", {})
 _risk_limits = _RAW_CONFIG["risk_limits"]
 _screening_defaults = _RAW_CONFIG["screening_defaults"]
 _schedule = _RAW_CONFIG["schedule"]
@@ -60,6 +62,8 @@ SCREENING_RULES = copy.deepcopy(_RAW_CONFIG["screening"])
 
 LLM_MODEL = _env_str("LLM_MODEL", _llm["model"])
 LLM_MODEL_FAST = _env_str("LLM_MODEL_FAST", _llm["fast_model"])
+LLM_SYNTHESIS_MODEL = _env_str("LLM_SYNTHESIS_MODEL", _llm.get("synthesis_model", _llm["model"]))
+LLM_BASE_URL = _env_str("LLM_BASE_URL", _llm.get("base_url", ""))
 
 PORTFOLIO_SIZE_USD = _env_float("PORTFOLIO_SIZE_USD", _portfolio["size_usd"])
 MAX_POSITION_PCT = _env_float("MAX_POSITION_PCT", _portfolio["max_position_pct"])
@@ -67,6 +71,9 @@ MAX_POSITION_PCT = _env_float("MAX_POSITION_PCT", _portfolio["max_position_pct"]
 EDGAR_BASE_URL = _env_str("EDGAR_BASE_URL", _edgar["base_url"])
 EDGAR_HEADERS = {"User-Agent": _env_str("EDGAR_USER_AGENT", _edgar["user_agent"])}
 EDGAR_RATE_LIMIT_DELAY = _env_float("EDGAR_RATE_LIMIT_DELAY", _edgar["rate_limit_delay"])
+EDGAR_CACHE_RAW_DIR = _resolve_path(_filings_cache.get("raw_dir", "data/cache/edgar/raw"))
+EDGAR_CACHE_CLEAN_DIR = _resolve_path(_filings_cache.get("clean_dir", "data/cache/edgar/clean"))
+EDGAR_PARSER_VERSION = str(_filings_cache.get("parser_version", "v1"))
 
 CONVICTION_SIZING = {
     tier: MAX_POSITION_PCT * float(multiplier)
@@ -84,6 +91,17 @@ CIQ_DROP_FOLDER = _resolve_path(_ciq.get("drop_folder", _paths["ciq_templates_di
 CIQ_WORKBOOK_GLOB = str(_ciq.get("workbook_glob", "*.xlsx"))
 CIQ_PARSER_VERSION = str(_ciq.get("parser_version", "ibm_standard_v1"))
 CIQ_ENFORCE_TEMPLATE_LOCK = bool(_ciq.get("enforce_template_lock", True))
+PEER_SIMILARITY_ENABLED = bool(_peer_similarity.get("enabled", True))
+PEER_SIMILARITY_MODEL = str(_peer_similarity.get("embedding_model", "all-MiniLM-L6-v2"))
+PEER_SIMILARITY_DESCRIPTION_SOURCES = list(
+    _peer_similarity.get(
+        "description_source_precedence",
+        ["yfinance_longBusinessSummary", "edgar_item1_business"],
+    )
+)
+_peer_blend = _peer_similarity.get("similarity_blend", {})
+PEER_SIMILARITY_DESCRIPTION_WEIGHT = float(_peer_blend.get("description_weight", 0.60))
+PEER_SIMILARITY_MARKET_CAP_WEIGHT = float(_peer_blend.get("market_cap_weight", 0.40))
 
 MAX_SINGLE_POSITION_PCT = float(_risk_limits["max_single_position_pct"])
 MAX_SHORT_POSITION_PCT = float(_risk_limits["max_short_position_pct"])
@@ -127,7 +145,10 @@ __all__ = [
     "DATA_DIR",
     "DB_PATH",
     "EDGAR_BASE_URL",
+    "EDGAR_CACHE_CLEAN_DIR",
+    "EDGAR_CACHE_RAW_DIR",
     "EDGAR_HEADERS",
+    "EDGAR_PARSER_VERSION",
     "EDGAR_RATE_LIMIT_DELAY",
     "IBKR_CLIENT_ID",
     "IBKR_HOST",
@@ -146,6 +167,11 @@ __all__ = [
     "MIN_MARKET_CAP_MM",
     "MIN_NET_EXPOSURE_PCT",
     "OUTPUT_DIR",
+    "PEER_SIMILARITY_DESCRIPTION_SOURCES",
+    "PEER_SIMILARITY_DESCRIPTION_WEIGHT",
+    "PEER_SIMILARITY_ENABLED",
+    "PEER_SIMILARITY_MARKET_CAP_WEIGHT",
+    "PEER_SIMILARITY_MODEL",
     "PORTFOLIO_SIZE_USD",
     "REPORTS_DIR",
     "ROOT_DIR",

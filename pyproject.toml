@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+markers = [
+    "live: marks tests that require network access (yfinance, SEC EDGAR, etc.) — deselect with -m 'not live'",
+]

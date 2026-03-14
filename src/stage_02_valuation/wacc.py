@@ -14,13 +14,29 @@ All deterministic — no LLM needed.
 
 import numpy as np
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Optional
 
+import yaml
+
+
+def _load_wacc_params() -> dict:
+    """Load Rf/ERP from config/config.yaml with hardcoded fallbacks."""
+    config_path = Path(__file__).resolve().parent.parent.parent / "config" / "config.yaml"
+    try:
+        with config_path.open("r", encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        return cfg.get("wacc_params", {})
+    except Exception:
+        return {}
+
+
+_wacc_cfg = _load_wacc_params()
 
 # ── Market Parameters ───────────────────────────────────
-# Updated periodically — these are reasonable defaults
-RISK_FREE_RATE = 0.045       # 10Y US Treasury
-EQUITY_RISK_PREMIUM = 0.05   # Damodaran long-run ERP
+# Loaded from config/config.yaml wacc_params; hardcoded values are fallbacks
+RISK_FREE_RATE = float(_wacc_cfg.get("risk_free_rate", 0.045))       # 10Y US Treasury
+EQUITY_RISK_PREMIUM = float(_wacc_cfg.get("equity_risk_premium", 0.05))  # Damodaran long-run ERP
 DEFAULT_TAX_RATE = 0.21      # US corporate
 DEFAULT_COST_OF_DEBT = 0.06  # BBB-ish spread
 
