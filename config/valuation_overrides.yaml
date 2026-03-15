@@ -2,4 +2,4 @@ global: {}
 sectors: {}
 tickers:
   IBM:
-    revenue_growth_mid: 0.1
+    revenue_growth_mid: 0.12

@@ -1,0 +1,46 @@
+ticker: META
+generated_at: '2026-03-14T11:28:24+00:00'
+current_iv_base: 663.7
+recommendations:
+- agent: accounting_recast
+  field: ebit_margin_start
+  current_value: 0.3942
+  proposed_value: 0.520864
+  confidence: high
+  rationale: 'Accounting recast EBIT: Reality Labs (RL) Investments / Operating Expenses
+    (+21400000000.0M); Restructuring and Severance Costs (+0.0M)'
+  citation: null
+  status: pending
+- agent: industry
+  field: revenue_growth_near
+  current_value: 0.23992500000000003
+  proposed_value: 0.112
+  confidence: medium
+  rationale: 'Industry consensus near-term growth: 11.2% vs current 24.0%'
+  citation: null
+  status: pending
+- agent: industry
+  field: revenue_growth_mid
+  current_value: 0.15637125000000002
+  proposed_value: 0.095
+  confidence: medium
+  rationale: 'Industry consensus mid-term growth: 9.5% vs current 15.6%'
+  citation: null
+  status: pending
+- agent: industry
+  field: ebit_margin_target
+  current_value: 0.192
+  proposed_value: 0.305
+  confidence: medium
+  rationale: 'Industry margin benchmark: 30.5% vs current target 19.2%'
+  citation: null
+  status: pending
+- agent: filings
+  field: revenue_growth_near
+  current_value: 0.23992500000000003
+  proposed_value: 0.21281062709465037
+  confidence: high
+  rationale: Deterministic SEC/XBRL 3-year revenue CAGR differs materially from the
+    current model near-term growth assumption.
+  citation: SEC XBRL 10-K 2017-12-31
+  status: pending

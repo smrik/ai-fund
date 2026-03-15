@@ -14,6 +14,7 @@ Human is the PM — makes all final investment decisions.
 ## Architecture (read this first)
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) — three-layer system:
+
 1. **Data Layer** — yfinance / CIQ / EDGAR. Deterministic. No LLM.
 2. **Computation Layer** — DCF, WACC, screening. Deterministic. No LLM.
 3. **Judgment Layer** — 8 LLM agents, used selectively.
@@ -89,16 +90,16 @@ pytest tests/ -v -m "not live"
 
 ## Agent Triggers (when each LLM agent runs)
 
-| Agent | File | Trigger | Input | Key Output |
-|---|---|---|---|---|
-| **QoE Agent** | `qoe_agent.py` | Per ticker before DCF finalised | TTM financials + CIQ NWC + 10-K text | `qoe_score` 1–5, `normalized_ebit`, `dcf_ebit_override_pending` |
-| Earnings Agent | `earnings_agent.py` | Post earnings | Transcript text | Key themes, beat/miss assessment |
-| Filings Agent | `filings_agent.py` | Per 10-K/10-Q filing | Filing text | MD&A summary, risk change flags |
-| Risk Agent | `risk_agent.py` | Per 10-K | Risk factors section | Scored risk factors |
-| Sentiment Agent | `sentiment_agent.py` | On demand | Recent headlines | Sentiment score and themes |
-| Thesis Agent | `thesis_agent.py` | Per deep-dive | Research inputs | Bull/bear thesis narrative |
-| Industry Agent | `industry_agent.py` | Weekly per sector | Sector name + news | Growth rates, margin benchmarks |
-| Valuation Agent | `valuation_agent.py` | Per DCF run | DCF output + comps | Assumption sanity check |
+| Agent           | File                 | Trigger                         | Input                                | Key Output                                                      |
+| --------------- | -------------------- | ------------------------------- | ------------------------------------ | --------------------------------------------------------------- |
+| **QoE Agent**   | `qoe_agent.py`       | Per ticker before DCF finalised | TTM financials + CIQ NWC + 10-K text | `qoe_score` 1–5, `normalized_ebit`, `dcf_ebit_override_pending` |
+| Earnings Agent  | `earnings_agent.py`  | Post earnings                   | Transcript text                      | Key themes, beat/miss assessment                                |
+| Filings Agent   | `filings_agent.py`   | Per 10-K/10-Q filing            | Filing text                          | MD&A summary, risk change flags                                 |
+| Risk Agent      | `risk_agent.py`      | Per 10-K                        | Risk factors section                 | Scored risk factors                                             |
+| Sentiment Agent | `sentiment_agent.py` | On demand                       | Recent headlines                     | Sentiment score and themes                                      |
+| Thesis Agent    | `thesis_agent.py`    | Per deep-dive                   | Research inputs                      | Bull/bear thesis narrative                                      |
+| Industry Agent  | `industry_agent.py`  | Weekly per sector               | Sector name + news                   | Growth rates, margin benchmarks                                 |
+| Valuation Agent | `valuation_agent.py` | Per DCF run                     | DCF output + comps                   | Assumption sanity check                                         |
 
 **QoE Agent and DCF override gate:** When the QoE agent's normalized EBIT diverges from reported EBIT by more than 10%, `dcf_ebit_override_pending` is set to `true`. The PM must explicitly approve the adjusted EBIT in `config/valuation_overrides.yaml` before it flows into the DCF. The DCF never auto-updates from LLM output.
 
@@ -116,3 +117,7 @@ pytest tests/ -v -m "not live"
 Anything not in this repository does not exist from the agent's perspective.
 Design decisions made in chat, Slack, or verbally must be encoded here.
 See `docs/design-docs/core-beliefs.md` for the current list.
+
+# ExecPlans
+
+When writing complex features or significant refactors, use an ExecPlan (as described in .agent/PLANS.md) from design to implementation.

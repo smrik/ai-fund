@@ -1,0 +1,38 @@
+ticker: LYFT
+generated_at: '2026-03-14T17:55:18+00:00'
+current_iv_base: 45.43
+recommendations:
+- agent: industry
+  field: revenue_growth_mid
+  current_value: 0.11922460963535234
+  proposed_value: 0.142
+  confidence: medium
+  rationale: 'Industry consensus mid-term growth: 14.2% vs current 11.9%'
+  citation: null
+  status: pending
+- agent: industry
+  field: ebit_margin_target
+  current_value: 0.21200000000000002
+  proposed_value: 0.245
+  confidence: medium
+  rationale: 'Industry margin benchmark: 24.5% vs current target 21.2%'
+  citation: null
+  status: pending
+- agent: filings
+  field: revenue_growth_near
+  current_value: 0.17032087090764622
+  proposed_value: 0.04481697199255508
+  confidence: high
+  rationale: Deterministic SEC/XBRL 3-year revenue CAGR differs materially from the
+    current model near-term growth assumption.
+  citation: SEC XBRL 10-K 2025-12-31
+  status: pending
+- agent: filings
+  field: ebit_margin_start
+  current_value: 0.02
+  proposed_value: -0.02518763818897307
+  confidence: high
+  rationale: Deterministic SEC/XBRL 3-year average EBIT margin differs materially
+    from the current model starting EBIT margin.
+  citation: SEC XBRL 10-K 2025-12-31
+  status: pending

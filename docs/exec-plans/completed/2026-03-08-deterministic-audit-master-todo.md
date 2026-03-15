@@ -263,3 +263,86 @@ Open carry-forward items:
 - `F03/F04` CIQ ingestion+adapter depth hardening on the new clean workbook template.
 - `F14` QoE deterministic boundary wiring (agent output used as review context, not compute mutation).
 - `F16` screening/valuation coupling diagnostics and architecture boundary stress tests.
+
+## Dashboard / CIQ / Report Backlog (2026-03-14)
+
+Context:
+
+- User reverted `ciq/templates/ciq_cleandata.xlsx` back to IBM for easier production-mode testing.
+- UI-heavy work should be left to Claude.
+- Backend / parser / data-flow work can be handled by Codex.
+- Relevant storage surfaces already in repo:
+  - dashboard UI: `dashboard/app.py`
+  - DCF audit payloads: `src/stage_04_pipeline/dcf_audit.py`
+  - pipeline history / artifacts: `src/stage_04_pipeline/agent_cache.py`
+  - shared filing retrieval: `src/stage_00_data/filing_retrieval.py`
+  - CIQ ingest/parser: `ciq/ingest.py`, `ciq/workbook_parser.py`
+
+### Claude-Owned UI / UX Backlog
+
+- Improve DCF Audit graphs using Playwright review:
+  - fix clipping / scroll issues
+  - review viewport width and responsive layout
+  - make the sensitivity analysis readable
+  - improve tab switching
+  - surface current valuation in a persistent sidebar while Assumption Lab inputs change
+  - consider auto-collapsing the left sidebar after ticker selection
+  - improve the force-refresh agent selector UX
+- Fix Assumption Lab interaction issues:
+  - buttons do not switch inputs reliably
+  - current selection state is too easy to lose
+- Improve the Filings tab:
+  - full analysis content should be fully visible and scrollable
+  - fix formatting issues like `andOperatingLoss` running together
+- Fix Recommendations tab formatting:
+  - percentages like `10.0%` should not render as `0.1000`
+- Add clearer WACC audit UI:
+  - show the WACC build in a dedicated table
+  - allow comparison of bottom-up vs industry vs Hamada beta approaches
+  - allow weights across those beta approaches in the UI
+- Add competitor / market context tab:
+  - clearer peer comparison view
+  - analyst recommendations with dates if available
+  - recent-quarter news tab with materiality ranking and sentiment
+- Add filing-reader tab:
+  - raw filing view in browser (HTML/PDF if practical)
+  - stretch goal: user-highlighted passages for agent emphasis
+- Add report export UI:
+  - download full report as HTML and/or generated PDF
+- General UI cleanup:
+  - styling is still weak
+  - layout/navigation needs a cleaner top-level information architecture
+
+### Codex-Owned Backend / Data Backlog
+
+- Add a way to see past reports more easily:
+  - likely a dashboard-backed query surface over persisted `pipeline_runs`, `agent_run_log`, `agent_run_artifacts`, and memo outputs
+  - should support ticker-level history and reopening prior runs without rerunning agents
+- Retest a better CIQ fetching strategy:
+  - validate whether refresh + ingest flow should use a different workbook contract or refresh order
+  - compare reliability of current Excel/CIQ refresh path versus saved-workbook ingest-only path
+- CIQ parser rule:
+  - exclude fiscal-year columns if the detected period year is `1900`
+  - implemented on 2026-03-14 in `ciq/workbook_parser.py`
+  - covered by `tests/test_ciq_parser.py::test_parse_ciq_workbook_excludes_1900_placeholder_period_columns`
+
+### Suggested Handoff To Claude
+
+If resuming the older Claude session, use this context:
+
+- Active UI files:
+  - `dashboard/app.py`
+  - `src/stage_04_pipeline/dcf_audit.py`
+  - `src/stage_04_pipeline/override_workbench.py`
+  - `src/stage_04_pipeline/agent_cache.py`
+- The dashboard already has:
+  - DCF Audit
+  - Pipeline
+  - Assumption Lab
+  - Agent Audit Trail
+- Playwright should be used against the live Streamlit app to validate:
+  - chart readability
+  - clipping/scroll behavior
+  - tab navigation
+  - assumption control interactions
+  - filings/recommendations formatting
