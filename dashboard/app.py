@@ -8,19 +8,339 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import json
+import re
 import streamlit as st
 from config import LLM_MODEL
+from src.stage_04_pipeline.ciq_admin import get_ciq_runtime_status, run_ciq_operation
+from src.stage_02_valuation.templates.ic_memo import ICMemo
+from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
+from src.stage_04_pipeline.filings_browser import build_filings_browser_view
+from src.stage_04_pipeline.news_materiality import build_news_materiality_view
+from src.stage_04_pipeline.presentation_formatting import (
+    format_metric_value,
+    style_dataframe_rows,
+)
+from src.stage_04_pipeline.report_archive import (
+    list_report_snapshots,
+    load_report_snapshot,
+    save_report_snapshot,
+)
+from src.stage_04_pipeline.wacc_workbench import (
+    apply_wacc_methodology_selection,
+    build_wacc_workbench,
+    load_wacc_methodology_audit_history,
+    preview_wacc_methodology_selection,
+)
 
 st.set_page_config(
     page_title="AI Research Pod",
     page_icon="📊",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# ── Global CSS ────────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+/* ── Base typography ── */
+html, body { -webkit-font-smoothing: antialiased !important; -moz-osx-font-smoothing: grayscale !important; }
+/* Text-bearing elements only — NOT span/div (those carry icon glyphs) */
+p, li, label, h1, h2, h3, h4, h5, h6, th, td, caption,
+button, input, select, textarea,
+.stMarkdown p, .stMarkdown li, .stCaption, .stText,
+[data-testid="stMetricLabel"], [data-testid="stMetricDelta"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+/* Monospace for numbers */
+code, pre, [data-testid="stCode"] *, .stDataFrame td, .stDataFrame th,
+[data-testid="stMetricValue"] {
+    font-family: 'IBM Plex Mono', 'Consolas', monospace !important;
+}
+/* Preserve icon fonts */
+[data-testid="stExpander"] details summary [data-baseweb],
+[data-testid="stExpander"] details summary svg,
+button svg, [role="button"] svg { font-family: unset !important; }
+
+/* ── Base colors ── */
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #0a0e1a;
+    color: #dce3ed;
+}
+[data-testid="stSidebar"] {
+    background-color: #0f1623;
+    border-right: 1px solid #1e2738;
+    min-width: 360px !important;
+    max-width: 360px !important;
+}
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stCaption {
+    color: #6b7a99 !important;
+}
+
+/* ── Metric cards ── */
+[data-testid="stMetric"] {
+    background: #111827;
+    border: 1px solid #1e2738;
+    border-radius: 6px;
+    padding: 14px 18px;
+}
+[data-testid="stMetricLabel"] {
+    color: #6b7a99 !important;
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+[data-testid="stMetricValue"] {
+    color: #eaf0fa !important;
+    font-size: 1.45rem !important;
+    font-weight: 700 !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+}
+[data-testid="stMetricDelta"] { font-family: 'IBM Plex Mono', monospace !important; }
+[data-testid="stMetricDelta"] svg { display: none; }
+[data-testid="stMetricDeltaIcon-Up"] { color: #22c55e !important; }
+[data-testid="stMetricDeltaIcon-Down"] { color: #ef4444 !important; }
+
+/* ── Tables / Dataframes ── */
+[data-testid="stDataFrame"] {
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #1e2738;
+}
+
+/* ── Buttons ── */
+.stButton > button {
+    background: #1a4ed8;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    transition: background 0.15s;
+    font-family: 'Inter', sans-serif !important;
+}
+.stButton > button:hover { background: #2563eb; }
+.stButton > button[kind="secondary"] {
+    background: #1e2738;
+    color: #a0aec0;
+    border: 1px solid #2d3a52;
+    text-transform: none;
+}
+.stButton > button[kind="secondary"]:hover { background: #2d3a52; }
+
+/* ── Banners ── */
+[data-testid="stInfo"] {
+    background: #0d1e38;
+    border-left: 3px solid #2563eb;
+    border-radius: 4px;
+    color: #93c5fd !important;
+}
+[data-testid="stWarning"] {
+    background: #1c1500;
+    border-left: 3px solid #ca8a04;
+    border-radius: 4px;
+    color: #fde68a !important;
+}
+[data-testid="stError"] {
+    background: #1e0808;
+    border-left: 3px solid #dc2626;
+    border-radius: 4px;
+}
+[data-testid="stSuccess"] {
+    background: #061a0c;
+    border-left: 3px solid #16a34a;
+    border-radius: 4px;
+    color: #86efac !important;
+}
+
+/* ── Hide Streamlit chrome ── */
+header[data-testid="stHeader"] { display: none !important; }
+[data-testid="stToolbar"] { display: none !important; }
+#MainMenu { display: none !important; }
+footer { display: none !important; }
+
+/* ── Kill all default Streamlit padding/margin ── */
+.block-container {
+    padding-top: 1.25rem !important;
+    padding-bottom: 1rem !important;
+    padding-left: 1.75rem !important;
+    padding-right: 1.75rem !important;
+    max-width: 100% !important;
+}
+[data-testid="stSidebar"] > div:first-child { padding-top: 1.25rem !important; }
+
+/* ── Expander — force dark everywhere ── */
+[data-testid="stExpander"] {
+    border: 1px solid #1e2738 !important;
+    border-radius: 6px !important;
+    background: #111827 !important;
+}
+[data-testid="stExpander"] details,
+[data-testid="stExpander"] details > div,
+details, details > div {
+    background: #111827 !important;
+}
+[data-testid="stExpander"] details summary,
+details summary {
+    background: #111827 !important;
+    color: #a0aec0 !important;
+    border-radius: 6px !important;
+    font-weight: 500 !important;
+    font-size: 0.875rem !important;
+}
+[data-testid="stExpander"] details summary:hover { background: #1e2738 !important; }
+[data-testid="stExpanderDetails"],
+.streamlit-expanderContent {
+    background: #0a0e1a !important;
+    border-top: 1px solid #1e2738 !important;
+}
+details summary > div { color: #a0aec0 !important; }
+
+/* ── Divider ── */
+hr { border-color: #1e2738 !important; margin: 1.25rem 0 !important; }
+
+/* ── Tabs (inside charts) ── */
+[data-testid="stTabs"] [role="tablist"] { border-bottom: 1px solid #1e2738; }
+[data-testid="stTabs"] [role="tab"] {
+    color: #6b7a99;
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 6px 14px;
+}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {
+    color: #3b82f6;
+    border-bottom: 2px solid #3b82f6;
+}
+
+/* ── Sidebar navigation — styled radio as nav list ── */
+[data-testid="stSidebar"] .stRadio { margin: 0 !important; }
+[data-testid="stSidebar"] .stRadio > div { gap: 1px !important; }
+[data-testid="stSidebar"] .stRadio > label { display: none !important; }
+/* Each radio item label */
+[data-testid="stSidebar"] .stRadio label {
+    display: flex !important;
+    align-items: center !important;
+    padding: 7px 12px 7px 14px !important;
+    margin: 0 !important;
+    border-radius: 4px !important;
+    font-size: 0.78rem !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.01em !important;
+    color: #64748b !important;
+    cursor: pointer !important;
+    transition: background 0.12s, color 0.12s, border-color 0.12s !important;
+    border-left: 2px solid transparent !important;
+    line-height: 1.3 !important;
+    width: 100% !important;
+    text-transform: none !important;
+}
+[data-testid="stSidebar"] .stRadio label:hover {
+    background: #131d30 !important;
+    color: #94a3b8 !important;
+}
+[data-testid="stSidebar"] .stRadio label[data-selected="true"],
+[data-testid="stSidebar"] .stRadio label:has(input:checked) {
+    background: #0d1f38 !important;
+    color: #93c5fd !important;
+    border-left: 2px solid #3b82f6 !important;
+    font-weight: 600 !important;
+}
+/* Hide the radio circle dot */
+[data-testid="stSidebar"] .stRadio [data-baseweb="radio"] > div:first-child {
+    display: none !important;
+}
+
+/* Sidebar scrollable when content overflows */
+[data-testid="stSidebar"] > div:first-child {
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: #2d3a52 transparent;
+}
+[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar { width: 4px; }
+[data-testid="stSidebar"] > div:first-child::-webkit-scrollbar-thumb { background: #2d3a52; border-radius: 2px; }
+/* Sidebar title styling */
+[data-testid="stSidebar"] h2 {
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    color: #c4d0e8 !important;
+    letter-spacing: -0.01em !important;
+    margin-bottom: 0 !important;
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+}
+[data-testid="stSidebar"] .stCaption p {
+    font-size: 0.7rem !important;
+    color: #2d3a52 !important;
+}
+/* Hide any orphaned icon-font glyph text in expander headers */
+[data-testid="stExpander"] summary > div > p:empty,
+[data-testid="stExpander"] summary span[aria-hidden="true"] {
+    display: none !important;
+}
+
+/* ── Input fields ── */
+.stTextInput input, .stNumberInput input {
+    background: #1e2738 !important;
+    border: 1px solid #2d3a52 !important;
+    color: #dce3ed !important;
+    border-radius: 4px !important;
+    font-family: 'Inter', sans-serif !important;
+}
+.stSelectbox > div > div {
+    background: #1e2738 !important;
+    border: 1px solid #2d3a52 !important;
+    color: #dce3ed !important;
+    border-radius: 4px !important;
+}
+
+/* ── Section headings ── */
+h1, h2, h3 {
+    color: #eaf0fa !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.01em !important;
+}
+h2 { font-size: 1.15rem !important; border-bottom: 1px solid #1e2738; padding-bottom: 0.4rem; margin-bottom: 1rem !important; }
+h3 { font-size: 1rem !important; }
+
+/* ── Scrollable analysis text ── */
+.analysis-scroll {
+    max-height: 500px;
+    overflow-y: auto;
+    background: #111827;
+    border: 1px solid #1e2738;
+    border-radius: 6px;
+    padding: 18px 22px;
+    line-height: 1.75;
+    font-size: 0.875rem;
+    color: #a0aec0;
+    scrollbar-width: thin;
+    scrollbar-color: #2d3a52 transparent;
+}
+.analysis-scroll::-webkit-scrollbar { width: 5px; }
+.analysis-scroll::-webkit-scrollbar-thumb { background: #2d3a52; border-radius: 3px; }
+
+/* ── Status widget ── */
+[data-testid="stStatusWidget"] {
+    background: #111827 !important;
+    border: 1px solid #1e2738 !important;
+    border-radius: 6px !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.title("📊 AI Research Pod")
-    st.caption("Tiger-style fundamental analysis pipeline")
+    st.markdown("## AI Research Pod")
+    st.caption("Fundamental analysis pipeline")
     st.divider()
 
     AGENT_OPTIONS = [
@@ -42,38 +362,138 @@ with st.sidebar:
         help="US-listed tickers only (SEC EDGAR required)",
     ).upper().strip()
 
-    run_btn = st.button("Run Analysis", type="primary", use_container_width=True)
+    run_btn = st.button("Run Analysis", type="primary", width="stretch")
     use_agent_cache = st.checkbox(
         "Use agent cache",
         value=True,
         help="Reuse cached agent outputs when inputs, prompt, and model hashes have not changed.",
     )
-    force_refresh_agents = st.multiselect(
-        "Force refresh agents",
-        options=AGENT_OPTIONS,
-        default=[],
-        help="Bypass cache for only these steps. Downstream agents still reuse cache if their hashed inputs are unchanged.",
-    )
+    with st.popover("Force refresh agents", width="stretch"):
+        st.caption("Bypass cache only for the selected steps.")
+        force_refresh_agents = st.multiselect(
+            "Force refresh agents",
+            options=AGENT_OPTIONS,
+            default=[],
+            label_visibility="collapsed",
+            help="Downstream agents still reuse cache if their hashed inputs are unchanged.",
+        )
 
     st.divider()
-    st.caption("**Pipeline:** Industry → Filings → Earnings → QoE → Accounting Recast → Valuation → Sentiment → Risk → Risk Impact → Thesis")
-    st.caption("**Data:** SEC EDGAR (free) + yfinance")
-    st.caption(f"**Primary LLM:** {LLM_MODEL}")
+    st.caption(f"**LLM:** {LLM_MODEL}")
+    st.caption("**Data:** SEC EDGAR · yfinance · CIQ")
+
+    with st.expander("CIQ Tools", expanded=False):
+        ciq_folder = st.text_input(
+            "CIQ workbook folder",
+            value=str(get_ciq_runtime_status().get("folder", "")),
+            help="Folder containing populated CIQ workbooks.",
+        )
+        ciq_status = get_ciq_runtime_status(ciq_folder)
+
+        st.caption(
+            f"Env: `{ciq_status['recommended_env']}` | "
+            f"Active: `{ciq_status['active_env'] or 'unknown'}`"
+        )
+
+        module_rows = [
+            {"module": name, "available": "yes" if ok else "no"}
+            for name, ok in ciq_status["module_status"].items()
+        ]
+        st.dataframe(module_rows, width="stretch", hide_index=True)
+
+        if ciq_status.get("db_error"):
+            st.warning(f"CIQ DB unavailable: {ciq_status['db_error']}")
+        else:
+            db_counts = ciq_status.get("db_counts", {})
+            st.caption(
+                f"DB: runs={db_counts.get('ciq_ingest_runs', 0)}, "
+                f"snaps={db_counts.get('ciq_valuation_snapshot', 0)}, "
+                f"comps={db_counts.get('ciq_comps_snapshot', 0)}"
+            )
+
+        candidates = ciq_status.get("candidate_workbooks", [])
+        if candidates:
+            st.caption("Workbooks: " + ", ".join(candidates))
+        else:
+            st.caption("No candidate workbooks found.")
+
+        ciq_col1, ciq_col2, ciq_col3 = st.columns(3)
+        if ciq_col1.button("Ingest saved", width="stretch"):
+            try:
+                st.session_state.ciq_last_result = run_ciq_operation("ingest_saved", folder_path=ciq_folder)
+            except Exception as exc:
+                st.session_state.ciq_last_result = {"error": str(exc)}
+        if ciq_col2.button("Refresh + ingest", width="stretch"):
+            try:
+                st.session_state.ciq_last_result = run_ciq_operation("refresh_and_ingest", folder_path=ciq_folder)
+            except Exception as exc:
+                st.session_state.ciq_last_result = {"error": str(exc)}
+        if ciq_col3.button("Dry-run parse", width="stretch"):
+            try:
+                st.session_state.ciq_last_result = run_ciq_operation("dry_run_parse", folder_path=ciq_folder)
+            except Exception as exc:
+                st.session_state.ciq_last_result = {"error": str(exc)}
+
+        ciq_last_result = st.session_state.get("ciq_last_result")
+        if ciq_last_result:
+            if ciq_last_result.get("error"):
+                st.error(f"CIQ failed: {ciq_last_result['error']}")
+            else:
+                report = ciq_last_result.get("report", {})
+                st.success(
+                    f"{ciq_last_result.get('action')}: "
+                    f"ok={report.get('processed', 0)}, "
+                    f"skip={report.get('skipped', 0)}, "
+                    f"fail={report.get('failed', 0)}"
+                )
+                parse_rows = ciq_last_result.get("parse_results") or report.get("results") or []
+                if parse_rows:
+                    st.dataframe(parse_rows, width="stretch", hide_index=True)
+
+    memo_preview = st.session_state.get("memo")
+    if memo_preview is not None:
+        st.divider()
+        st.caption("Current Report")
+        st.metric("Ticker", memo_preview.ticker)
+        st.metric("Current Price", f"${memo_preview.valuation.current_price or 0:,.2f}")
+        st.metric(
+            "Base IV",
+            f"${memo_preview.valuation.base:,.2f}",
+            delta=f"{(memo_preview.valuation.upside_pct_base or 0) * 100:+.1f}%",
+        )
+        preview = st.session_state.get("workbench_preview") or st.session_state.get("wacc_preview")
+        if preview:
+            proposed = preview.get("proposed_iv") or preview.get("proposed", {}).get("valuation") or {}
+            base_value = proposed.get("base")
+            expected_value = proposed.get("expected")
+            if base_value is not None:
+                st.metric("Preview Base IV", f"${base_value:,.2f}")
+            if expected_value is not None:
+                st.metric("Preview Expected IV", f"${expected_value:,.2f}")
+        st.caption(f"Source: {st.session_state.get('report_source', 'live')}")
 
 
 # ── Session state ─────────────────────────────────────────────────────────────
-if "memo" not in st.session_state:
-    st.session_state.memo = None
-if "running" not in st.session_state:
-    st.session_state.running = False
-if "recommendations" not in st.session_state:
-    st.session_state.recommendations = None
-if "workbench_preview" not in st.session_state:
-    st.session_state.workbench_preview = None
-if "run_trace" not in st.session_state:
-    st.session_state.run_trace = []
+for _k, _v in [
+    ("memo", None),
+    ("running", False),
+    ("recommendations", None),
+    ("workbench_preview", None),
+    ("run_trace", []),
+    ("ciq_last_result", None),
+    ("dcf_audit_view", None),
+    ("filings_browser_view", None),
+    ("comps_view", None),
+    ("market_intel_view", None),
+    ("report_snapshot_id", None),
+    ("report_source", "live"),
+    ("wacc_preview", None),
+]:
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
 
 
+# ── Helper functions ──────────────────────────────────────────────────────────
 def _to_display_value(value: float | None, unit: str) -> float:
     if value is None:
         return 0.0
@@ -92,18 +512,22 @@ def _from_display_value(value: float, unit: str) -> float:
     return float(value)
 
 
-def _format_value(value: float | None, unit: str) -> str:
-    if value is None:
-        return "—"
+def _format_unit_value(value: float | None, unit: str) -> str:
     if unit == "pct":
-        return f"{float(value) * 100:.1f}%"
+        return format_metric_value(value, kind="percent")
     if unit == "usd":
-        return f"${float(value) / 1_000_000:,.0f}mm"
+        if value is None:
+            return "—"
+        return f"${float(value) / 1_000_000:,.1f}M"
     if unit == "days":
-        return f"{float(value):,.1f}d"
+        return format_metric_value(value, kind="days")
     if unit == "x":
-        return f"{float(value):,.1f}x"
-    return f"{float(value):,.4f}"
+        return format_metric_value(value, kind="multiple")
+    return format_metric_value(value, kind="raw", decimals=4)
+
+
+def _styled_rows(rows: list[dict], schema: dict[str, str]) -> list[dict]:
+    return style_dataframe_rows(rows, schema)
 
 
 def _input_step(unit: str) -> float:
@@ -118,12 +542,83 @@ def _input_step(unit: str) -> float:
     return 0.01
 
 
+def _rec_unit(field: str) -> str:
+    """Infer display unit from ForecastDrivers field name."""
+    pct_keywords = ("margin", "growth", "yield", "rate", "pct", "tax", "wacc", "leverage")
+    usd_keywords = ("debt", "assets", "liabilities", "equity", "interest", "pension",
+                    "minority", "preferred", "net_debt", "capex", "revenue_base")
+    multi_keywords = ("multiple", "ratio", "ebitda_x", "ebit_x")
+    f = field.lower()
+    if any(k in f for k in pct_keywords):
+        return "pct"
+    if any(k in f for k in usd_keywords):
+        return "usd"
+    if any(k in f for k in multi_keywords):
+        return "x"
+    return "raw"
+
+
+def _fix_text(text: str) -> str:
+    """Insert spaces before unexpected CamelCase runs in financial text.
+    E.g. 'andOperatingLoss' -> 'and Operating Loss'
+    Also normalises common EDGAR camelCase field names."""
+    if not text:
+        return text
+    # Insert space before capital letter that follows a lowercase letter
+    text = re.sub(r'([a-z])([A-Z])', r'\1 \2', text)
+    # Clean up multiple spaces
+    text = re.sub(r' {2,}', ' ', text)
+    return text
+
+
+def _fmt_sens_table(rows: list[dict]) -> list[dict]:
+    """Format sensitivity table rows so IV values show as $XX.XX strings."""
+    formatted = []
+    for row in rows:
+        new_row = {}
+        for k, v in row.items():
+            if k == "wacc_pct":
+                new_row[k] = f"{v:.2f}%"
+            elif isinstance(v, (int, float)):
+                new_row[k] = f"${v:,.2f}"
+            else:
+                new_row[k] = v
+        formatted.append(new_row)
+    return formatted
+
+
+# ── DCF Charts ────────────────────────────────────────────────────────────────
 def _render_dcf_charts(audit: dict) -> None:
     try:
         import plotly.graph_objects as go
     except ImportError:
-        st.info("Plotly is not installed. Add `plotly` to requirements to enable browser-native DCF charts.")
+        st.info("Install `plotly` to enable DCF charts.")
         return
+
+    # Dark template for all charts
+    _DARK = dict(
+        plot_bgcolor="#161b22",
+        paper_bgcolor="#161b22",
+        font=dict(color="#8b949e", size=12),
+        xaxis=dict(gridcolor="#21262d", zerolinecolor="#30363d"),
+        yaxis=dict(gridcolor="#21262d", zerolinecolor="#30363d"),
+        margin=dict(l=20, r=20, t=40, b=20),
+        legend=dict(
+            orientation="h", y=-0.15,
+            bgcolor="rgba(0,0,0,0)", font=dict(color="#c9d1d9"),
+        ),
+    )
+
+    def _layout(**overrides):
+        merged = dict(_DARK)
+        merged.update(overrides)
+        return merged
+
+    BLUE = "#388bfd"
+    GREEN = "#3fb950"
+    ORANGE = "#d29922"
+    RED = "#f85149"
+    TEAL = "#58a6ff"
 
     chart_series = audit.get("chart_series") or {}
     forecast_tab, valuation_tab, sensitivity_tab, risk_tab = st.tabs(
@@ -134,11 +629,12 @@ def _render_dcf_charts(audit: dict) -> None:
         projection = chart_series.get("projection_curve") or []
         if projection:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(
+            fig.add_trace(go.Bar(
                 x=[row["year"] for row in projection],
                 y=[row["revenue_mm"] for row in projection],
                 name="Revenue ($mm)",
-                mode="lines+markers",
+                marker_color=BLUE,
+                opacity=0.8,
                 yaxis="y1",
             ))
             fig.add_trace(go.Scatter(
@@ -146,16 +642,27 @@ def _render_dcf_charts(audit: dict) -> None:
                 y=[row["ebit_margin_pct"] for row in projection],
                 name="EBIT Margin (%)",
                 mode="lines+markers",
+                line=dict(color=GREEN, width=2),
+                marker=dict(size=6),
                 yaxis="y2",
             ))
             fig.update_layout(
-                height=420,
-                margin=dict(l=20, r=20, t=40, b=20),
-                yaxis=dict(title="Revenue ($mm)"),
-                yaxis2=dict(title="EBIT Margin (%)", overlaying="y", side="right"),
-                legend=dict(orientation="h"),
+                **_layout(
+                    height=360,
+                    title=dict(text="Revenue & EBIT Margin Projection", x=0.02, font=dict(color="#c9d1d9", size=14)),
+                    yaxis=dict(
+                        title=dict(text="Revenue ($mm)", font=dict(color=BLUE)),
+                        tickfont=dict(color=BLUE),
+                    ),
+                    yaxis2=dict(
+                        title=dict(text="EBIT Margin (%)", font=dict(color=GREEN)),
+                        tickfont=dict(color=GREEN),
+                        overlaying="y",
+                        side="right",
+                    ),
+                ),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width="stretch")
 
         fcff = chart_series.get("fcff_curve") or []
         if fcff:
@@ -164,69 +671,128 @@ def _render_dcf_charts(audit: dict) -> None:
                 x=[row["year"] for row in fcff],
                 y=[row["fcff_mm"] for row in fcff],
                 name="FCFF ($mm)",
+                marker_color=TEAL,
+                opacity=0.8,
             ))
             fig.add_trace(go.Scatter(
                 x=[row["year"] for row in fcff],
                 y=[row["nopat_mm"] for row in fcff],
                 name="NOPAT ($mm)",
                 mode="lines+markers",
+                line=dict(color=ORANGE, width=2),
+                marker=dict(size=6),
             ))
-            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20), legend=dict(orientation="h"))
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                **_layout(
+                    height=360,
+                    title=dict(text="FCFF & NOPAT ($mm)", x=0.02, font=dict(color="#c9d1d9", size=14)),
+                ),
+            )
+            st.plotly_chart(fig, width="stretch")
 
     with valuation_tab:
         scenario_iv = chart_series.get("scenario_iv") or []
         if scenario_iv:
+            colors = [RED, BLUE, GREEN, ORANGE]
             fig = go.Figure()
             fig.add_trace(go.Bar(
                 x=[row["scenario"].title() for row in scenario_iv],
                 y=[row["intrinsic_value"] for row in scenario_iv],
-                name="Intrinsic Value",
+                marker_color=colors[:len(scenario_iv)],
+                text=[f"${row['intrinsic_value']:,.2f}" for row in scenario_iv],
+                textposition="outside",
+                textfont=dict(color="#c9d1d9"),
             ))
             current_price = audit.get("current_price")
             if current_price is not None:
-                fig.add_hline(y=current_price, line_dash="dash", annotation_text=f"Current Price ${current_price:,.2f}")
-            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig, use_container_width=True)
+                fig.add_hline(
+                    y=current_price,
+                    line_dash="dash",
+                    line_color="#d29922",
+                    annotation_text=f"  Price ${current_price:,.2f}",
+                    annotation_font_color="#d29922",
+                )
+            fig.update_layout(
+                **_layout(
+                    height=360,
+                    title=dict(text="Intrinsic Value by Scenario", x=0.02, font=dict(color="#c9d1d9", size=14)),
+                    showlegend=False,
+                ),
+            )
+            st.plotly_chart(fig, width="stretch")
 
         ev_bridge = chart_series.get("ev_bridge_waterfall") or []
         if ev_bridge:
+            measure = []
+            for i, row in enumerate(ev_bridge):
+                if i == len(ev_bridge) - 1:
+                    measure.append("total")
+                elif row["value_mm"] < 0:
+                    measure.append("relative")
+                else:
+                    measure.append("relative")
             fig = go.Figure(go.Waterfall(
                 x=[row["component"] for row in ev_bridge],
                 y=[row["value_mm"] for row in ev_bridge],
-                measure=["relative", "relative", "relative", "relative", "total"],
+                measure=measure,
+                connector=dict(line=dict(color="#30363d")),
+                increasing=dict(marker=dict(color=GREEN)),
+                decreasing=dict(marker=dict(color=RED)),
+                totals=dict(marker=dict(color=BLUE)),
+                textfont=dict(color="#c9d1d9"),
             ))
-            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig, use_container_width=True)
+            fig.update_layout(
+                **_layout(
+                    height=360,
+                    title=dict(text="EV → Equity Bridge ($mm)", x=0.02, font=dict(color="#c9d1d9", size=14)),
+                ),
+            )
+            st.plotly_chart(fig, width="stretch")
 
     with sensitivity_tab:
         heat_cols = st.columns(2)
         sens_growth = audit.get("sensitivity", {}).get("wacc_x_terminal_growth") or []
         sens_exit = audit.get("sensitivity", {}).get("wacc_x_exit_multiple") or []
-        if sens_growth:
-            x_labels = [key for key in sens_growth[0].keys() if key != "wacc_pct"]
-            y_vals = [row["wacc_pct"] for row in sens_growth]
-            z_vals = [[row[key] for key in x_labels] for row in sens_growth]
-            fig = go.Figure(data=go.Heatmap(x=x_labels, y=y_vals, z=z_vals, colorbar_title="IV"))
-            fig.update_layout(height=400, margin=dict(l=20, r=20, t=40, b=20), title="WACC × Terminal Growth")
-            heat_cols[0].plotly_chart(fig, use_container_width=True)
-        if sens_exit:
-            x_labels = [key for key in sens_exit[0].keys() if key != "wacc_pct"]
-            y_vals = [row["wacc_pct"] for row in sens_exit]
-            z_vals = [[row[key] for key in x_labels] for row in sens_exit]
-            fig = go.Figure(data=go.Heatmap(x=x_labels, y=y_vals, z=z_vals, colorbar_title="IV"))
-            fig.update_layout(height=400, margin=dict(l=20, r=20, t=40, b=20), title="WACC × Exit Multiple")
-            heat_cols[1].plotly_chart(fig, use_container_width=True)
+
+        def _heatmap(data, title, col):
+            if not data:
+                return
+            x_labels = [k for k in data[0].keys() if k != "wacc_pct"]
+            y_vals = [row["wacc_pct"] for row in data]
+            z_vals = [[row[k] for k in x_labels] for row in data]
+            y_labels = [f"{v:.1f}%" for v in y_vals]
+            fig = go.Figure(data=go.Heatmap(
+                x=x_labels,
+                y=y_labels,
+                z=z_vals,
+                colorscale=[[0, "#f85149"], [0.5, "#d29922"], [1, "#3fb950"]],
+                text=[[f"${v:,.2f}" for v in row] for row in z_vals],
+                texttemplate="%{text}",
+                textfont=dict(size=11, color="#ffffff"),
+                colorbar=dict(tickfont=dict(color="#8b949e"), title=dict(text="IV", font=dict(color="#8b949e"))),
+            ))
+            fig.update_layout(
+                **_layout(
+                    height=300,
+                    title=dict(text=title, x=0.02, font=dict(color="#c9d1d9", size=13)),
+                    xaxis=dict(tickfont=dict(color="#c9d1d9")),
+                    yaxis=dict(tickfont=dict(color="#c9d1d9")),
+                ),
+            )
+            col.plotly_chart(fig, width="stretch")
+
+        _heatmap(sens_growth, "WACC × Terminal Growth", heat_cols[0])
+        _heatmap(sens_exit, "WACC × Exit Multiple", heat_cols[1])
 
     with risk_tab:
         risk_view = audit.get("risk_impact")
         overlays = chart_series.get("risk_overlay") or []
         if not risk_view or not risk_view.get("available") or not overlays:
-            st.info("No quantified risk overlays are available for this run.")
+            st.info("No quantified risk overlays available for this run.")
         else:
             top = st.columns(3)
             top[0].metric("Base IV", f"${risk_view.get('base_iv', 0):,.2f}")
-            top[1].metric("Risk-Adjusted Expected IV", f"${risk_view.get('risk_adjusted_expected_iv', 0):,.2f}")
+            top[1].metric("Risk-Adjusted IV", f"${risk_view.get('risk_adjusted_expected_iv', 0):,.2f}")
             delta = risk_view.get("risk_adjusted_delta_pct")
             top[2].metric("Risk Adjustment", f"{delta*100:+.1f}%" if delta is not None else "—")
 
@@ -236,14 +802,20 @@ def _render_dcf_charts(audit: dict) -> None:
                 y=[row["stressed_iv"] for row in overlays],
                 text=[f"p={row['probability']:.0%}" for row in overlays],
                 textposition="outside",
+                textfont=dict(color="#c9d1d9"),
+                marker_color=RED,
                 name="Stressed IV",
             ))
-            fig.add_hline(y=risk_view.get("base_iv", 0), line_dash="dash", annotation_text="Base IV")
-            fig.add_hline(y=risk_view.get("risk_adjusted_expected_iv", 0), line_dash="dot", annotation_text="Risk-Adj. EV")
-            fig.update_layout(height=420, margin=dict(l=20, r=20, t=40, b=20))
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.dataframe(risk_view.get("overlay_results") or [], use_container_width=True, hide_index=True)
+            fig.add_hline(y=risk_view.get("base_iv", 0), line_dash="dash", line_color=BLUE, annotation_text="  Base IV", annotation_font_color=BLUE)
+            fig.add_hline(y=risk_view.get("risk_adjusted_expected_iv", 0), line_dash="dot", line_color=ORANGE, annotation_text="  Risk-Adj. EV", annotation_font_color=ORANGE)
+            fig.update_layout(
+                **_layout(
+                    height=360,
+                    title=dict(text="Risk Stress Tests", x=0.02, font=dict(color="#c9d1d9", size=14)),
+                ),
+            )
+            st.plotly_chart(fig, width="stretch")
+            st.dataframe(risk_view.get("overlay_results") or [], width="stretch", hide_index=True)
 
 
 # ── Run pipeline ──────────────────────────────────────────────────────────────
@@ -252,6 +824,11 @@ if run_btn and ticker_input:
     st.session_state.memo = None
     st.session_state.recommendations = None
     st.session_state.run_trace = []
+    st.session_state.dcf_audit_view = None
+    st.session_state.filings_browser_view = None
+    st.session_state.comps_view = None
+    st.session_state.market_intel_view = None
+    st.session_state.wacc_preview = None
 
     with st.status(f"Running 10-agent analysis for **{ticker_input}**...", expanded=True) as status:
         steps = [
@@ -277,17 +854,17 @@ if run_btn and ticker_input:
             class StreamingOrchestrator(PipelineOrchestrator):
                 def _on_step(self, step_name: str) -> None:
                     if step_name in placeholders:
-                        placeholders[step_name].markdown(f"🔄 **{step_name}**")
+                        placeholders[step_name].markdown(f"Running: **{step_name}**")
 
                 def _on_done(self, step_name: str, detail: str = "") -> None:
                     if step_name in placeholders:
-                        msg = f"✅ {step_name}"
+                        msg = f"Done: {step_name}"
                         if detail:
                             msg += f" — {detail}"
                         placeholders[step_name].markdown(msg)
 
                 def _on_warn(self, message: str) -> None:
-                    status.write(f"⚠ {message}")
+                    status.write(f"Warning: {message}")
 
             orch = StreamingOrchestrator()
             memo = orch.run(
@@ -297,6 +874,7 @@ if run_btn and ticker_input:
             )
             st.session_state.memo = memo
             st.session_state.run_trace = orch.last_run_trace
+            st.session_state.report_source = "live"
             try:
                 from src.stage_04_pipeline.recommendations import write_recommendations
                 recs = orch.collect_recommendations(ticker_input)
@@ -304,192 +882,711 @@ if run_btn and ticker_input:
                 st.session_state.recommendations = recs
             except Exception:
                 st.session_state.recommendations = None
+            try:
+                from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
+
+                dcf_audit_view = build_dcf_audit_view(memo.ticker, risk_output=memo.risk_impact)
+                filings_browser_view = build_filings_browser_view(memo.ticker)
+                comps_view = build_comps_dashboard_view(memo.ticker)
+                market_intel_view = build_news_materiality_view(memo.ticker)
+
+                st.session_state.dcf_audit_view = dcf_audit_view
+                st.session_state.filings_browser_view = filings_browser_view
+                st.session_state.comps_view = comps_view
+                st.session_state.market_intel_view = market_intel_view
+                st.session_state.report_snapshot_id = save_report_snapshot(
+                    memo.ticker,
+                    memo,
+                    dcf_audit=dcf_audit_view,
+                    comps_view=comps_view,
+                    market_intel_view=market_intel_view,
+                    filings_browser_view=filings_browser_view,
+                    run_trace=orch.last_run_trace,
+                )
+            except Exception as snapshot_exc:
+                status.write(f"Archive/view build warning: {snapshot_exc}")
             status.update(label=f"Analysis complete — **{ticker_input}**", state="complete")
 
         except Exception as e:
             status.update(label=f"Pipeline error: {e}", state="error")
 
 st.session_state.running = False
-
 memo = st.session_state.memo
 
 if memo is None:
     st.markdown("""
-## How to use
+## AI Research Pod
 
-1. Enter a **US-listed ticker** in the sidebar (e.g. `AAPL`, `MSFT`, `NVDA`)
-2. Click **Run Analysis**
-3. The pipeline runs the full multi-agent research workflow with deterministic valuation and cached re-runs where possible
-4. Review all intermediate outputs — **you are the human-in-the-loop**
-5. Use the Variant Thesis Prompt as your starting point for the investment decision
+Enter a **US-listed ticker** in the sidebar to run the full 10-agent analysis.
 
-### The Research Workflow
-
-| Step | Job |
+| Agent | Role |
 |---|---|
-| **IndustryAgent** | Pulls sector benchmarks and current industry context |
-| **FilingsAgent** | Parses 10-K/10-Q, extracts revenue trends, margins, FCF, red flags |
-| **EarningsAgent** | Analyses earnings calls, guidance vs actuals, management tone |
-| **QoEAgent** | Flags quality-of-earnings issues and possible EBIT normalisation |
-| **AccountingRecastAgent** | Proposes operating vs non-operating / bridge reclassifications |
-| **ValuationAgent** | Runs deterministic DCF + comps, produces bear/base/bull intrinsic value |
-| **SentimentAgent** | Scores news narrative and analyst positioning |
-| **RiskAgent** | Sizes position based on conviction + volatility |
-| **RiskImpactAgent** | Converts top risks into downside valuation overlays and risk-adjusted IV |
-| **ThesisAgent** | Synthesizes the IC memo and forces the decision |
+| **IndustryAgent** | Sector benchmarks and current industry context |
+| **FilingsAgent** | 10-K/10-Q: revenue trends, margins, FCF, red flags |
+| **EarningsAgent** | Earnings calls, guidance vs actuals, management tone |
+| **QoEAgent** | Quality-of-earnings issues and EBIT normalisation |
+| **AccountingRecastAgent** | Operating vs non-operating / bridge reclassifications |
+| **ValuationAgent** | Deterministic DCF + comps — bear / base / bull IV |
+| **SentimentAgent** | News narrative and analyst positioning score |
+| **RiskAgent** | Position sizing based on conviction + volatility |
+| **RiskImpactAgent** | Downside valuation overlays and risk-adjusted IV |
+| **ThesisAgent** | IC memo and variant thesis prompt |
 
 > **Your job:** Write the variant thesis. The AI surfaces what's known; you identify why the market is wrong.
 """)
     st.stop()
 
-# ── IC Memo Header ─────────────────────────────────────────────────────────────
-action_color = {
-    "BUY": "🟢",
-    "SELL SHORT": "🔴",
-    "WATCH": "🟡",
-    "PASS": "⚪",
-}.get(memo.action, "⚪")
 
-st.title(f"{action_color} {memo.ticker} — {memo.company_name}")
-st.caption(f"{memo.sector} | {memo.date} | Analyst: {memo.analyst}")
+# ── IC Memo Header ─────────────────────────────────────────────────────────────
+action_color = {"BUY": "BUY", "SELL SHORT": "SHORT", "WATCH": "WATCH", "PASS": "PASS"}.get(memo.action, "")
+
+st.markdown(f"## {memo.ticker} — {memo.company_name}")
+st.caption(f"{memo.sector}  ·  {memo.date}  ·  Analyst: {memo.analyst}")
 
 col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Action", memo.action)
 col2.metric("Conviction", memo.conviction.upper())
 col3.metric("Current Price", f"${memo.valuation.current_price or 0:,.2f}")
-col4.metric("Base Case", f"${memo.valuation.base:,.2f}")
+col4.metric("Base Case IV", f"${memo.valuation.base:,.2f}")
 col5.metric(
     "Upside (base)",
     f"{(memo.valuation.upside_pct_base or 0)*100:+.1f}%",
 )
 
 st.info(f"**One-liner:** {memo.one_liner}")
-
-# ── Variant Thesis Prompt (most important) ─────────────────────────────────────
-st.subheader("🎯 Variant Thesis Prompt")
 st.warning(
-    f"**Your judgment required:** {memo.variant_thesis_prompt}\n\n"
+    f"**Variant Thesis:** {memo.variant_thesis_prompt}\n\n"
     "_This is the question the AI cannot answer for you. Answer this before sizing the position._"
 )
 
-# ── Sections ──────────────────────────────────────────────────────────────────
-SECTION_OPTIONS = [
-    "📋 Thesis",
-    "💰 Valuation",
-    "🧮 DCF Audit",
-    "📂 Filings",
-    "📞 Earnings",
-    "📰 Sentiment",
-    "⚖️ Risk",
-    "🔄 Pipeline",
-    "🔧 Recommendations",
-    "🧪 Assumption Lab",
-    "🔍 Raw JSON",
-]
-selected_section = st.radio(
+st.divider()
+
+SECTION_GROUPS = {
+    "Research": ["Thesis", "Recommendations", "Risk", "Past Reports"],
+    "Valuation": ["Valuation", "DCF Audit", "Assumption Lab", "WACC Lab", "Comps"],
+    "Filings": ["Filings", "Earnings", "Filings Browser"],
+    "Market Intel": ["Sentiment", "News & Materiality"],
+    "Ops": ["Pipeline", "Export", "Raw JSON"],
+}
+
+selected_group = st.segmented_control(
+    "Workspace",
+    options=list(SECTION_GROUPS.keys()),
+    default="Research",
+    key="main_dashboard_group",
+)
+selected_section = st.segmented_control(
     "Section",
-    SECTION_OPTIONS,
-    horizontal=True,
-    label_visibility="collapsed",
-    key="main_dashboard_section",
+    options=SECTION_GROUPS[selected_group],
+    default=SECTION_GROUPS[selected_group][0],
+    key=f"dashboard_section_{selected_group}",
 )
 
-if selected_section == "📋 Thesis":
+
+def _get_cached_view(key: str, builder, *args, **kwargs):
+    current = st.session_state.get(key)
+    if current is None:
+        try:
+            current = builder(*args, **kwargs)
+        except Exception as exc:
+            return {"available": False, "error": str(exc)}
+        st.session_state[key] = current
+    return current
+
+
+# ── Section: Thesis ───────────────────────────────────────────────────────────
+if selected_section == "Thesis":
     col_a, col_b, col_c = st.columns(3)
     with col_a:
-        st.subheader("🐂 Bull Case")
+        st.subheader("Bull Case")
         st.write(memo.bull_case)
     with col_b:
-        st.subheader("📊 Base Case")
+        st.subheader("Base Case")
         st.write(memo.base_case)
     with col_c:
-        st.subheader("🐻 Bear Case")
+        st.subheader("Bear Case")
         st.write(memo.bear_case)
 
     st.divider()
     col_l, col_r = st.columns(2)
     with col_l:
-        st.subheader("⚡ Key Catalysts")
+        st.subheader("Key Catalysts")
         for cat in memo.key_catalysts:
             st.markdown(f"- {cat}")
     with col_r:
-        st.subheader("⚠️ Key Risks")
+        st.subheader("Key Risks")
         for risk in memo.key_risks:
             st.markdown(f"- {risk}")
 
-    st.subheader("❓ Open Questions (further diligence)")
+    st.subheader("Open Questions")
     for q in memo.open_questions:
         st.markdown(f"- {q}")
 
-if selected_section == "💰 Valuation":
-    st.subheader("DCF Bear / Base / Bull")
+
+# ── Section: Valuation ────────────────────────────────────────────────────────
+if selected_section == "Valuation":
     val = memo.valuation
     price = val.current_price or 0
-    data = {
-        "Scenario": ["Bear", "Base", "Bull", "Current Price"],
-        "Intrinsic Value": [f"${val.bear:.2f}", f"${val.base:.2f}", f"${val.bull:.2f}", f"${price:.2f}"],
-        "Upside": [
-            f"{((val.bear - price)/price*100):+.1f}%" if price else "—",
-            f"{((val.base - price)/price*100):+.1f}%" if price else "—",
-            f"{((val.bull - price)/price*100):+.1f}%" if price else "—",
-            "—",
-        ],
-    }
-    st.table(data)
 
-if selected_section == "🧮 DCF Audit":
+    # Scenario table
+    st.subheader("DCF Scenarios")
+    scenario_rows = [
+        {"Scenario": "Bear",          "Intrinsic Value": f"${val.bear:.2f}",  "Upside / (Downside)": f"{((val.bear-price)/price*100):+.1f}%" if price else "—"},
+        {"Scenario": "Base",          "Intrinsic Value": f"${val.base:.2f}",  "Upside / (Downside)": f"{((val.base-price)/price*100):+.1f}%" if price else "—"},
+        {"Scenario": "Bull",          "Intrinsic Value": f"${val.bull:.2f}",  "Upside / (Downside)": f"{((val.bull-price)/price*100):+.1f}%" if price else "—"},
+        {"Scenario": "Current Price", "Intrinsic Value": f"${price:.2f}",     "Upside / (Downside)": "—"},
+    ]
+    st.dataframe(scenario_rows, width="stretch", hide_index=True)
+
+    # WACC breakdown from DCF audit
+    try:
+        from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
+        _wacc_audit = build_dcf_audit_view(memo.ticker)
+    except Exception:
+        _wacc_audit = None
+
+    if _wacc_audit and _wacc_audit.get("available"):
+        st.subheader("WACC & Key Drivers")
+        driver_rows = _wacc_audit.get("driver_rows") or []
+        st.dataframe(driver_rows, width="stretch", hide_index=True)
+
+        # Sensitivity quick view
+        st.subheader("Sensitivity (WACC × Terminal Growth)")
+        sens_rows = _fmt_sens_table(
+            _wacc_audit.get("sensitivity", {}).get("wacc_x_terminal_growth") or []
+        )
+        if sens_rows:
+            st.dataframe(sens_rows, width="stretch", hide_index=True)
+
+
+# ── Section: DCF Audit ────────────────────────────────────────────────────────
+if selected_section == "DCF Audit":
     st.subheader("DCF Audit")
-    st.caption("Browser-native review of the deterministic model. These tables come directly from the Python DCF engine, not from the Excel export.")
+    st.caption("Browser-native review of the deterministic model — sourced directly from the Python DCF engine.")
 
     try:
         from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
-
-        audit = build_dcf_audit_view(memo.ticker, risk_output=memo.risk_impact)
+        audit = _get_cached_view("dcf_audit_view", build_dcf_audit_view, memo.ticker, risk_output=memo.risk_impact)
     except Exception as e:
-        audit = None
+        audit = {"available": False}
         st.error(f"DCF audit load error: {e}")
 
     if not audit or not audit.get("available"):
-        st.info("DCF audit view unavailable for this ticker. Re-run after valuation inputs are available.")
+        st.info("DCF audit unavailable. Re-run after valuation inputs are available.")
     else:
         st.subheader("Scenario Summary")
-        st.dataframe(audit["scenario_summary"], use_container_width=True, hide_index=True)
+        st.dataframe(audit["scenario_summary"], width="stretch", hide_index=True)
 
         left, right = st.columns(2)
         with left:
             st.subheader("Key Drivers")
-            st.dataframe(audit["driver_rows"], use_container_width=True, hide_index=True)
+            st.dataframe(audit["driver_rows"], width="stretch", hide_index=True)
         with right:
             st.subheader("Health Flags")
             flag_rows = [
                 {"flag": key, "active": bool(value)}
                 for key, value in (audit.get("health_flags") or {}).items()
             ]
-            st.dataframe(flag_rows, use_container_width=True, hide_index=True)
+            st.dataframe(flag_rows, width="stretch", hide_index=True)
 
         st.subheader("Forecast Bridge (Base Scenario)")
-        st.dataframe(audit["forecast_bridge"], use_container_width=True, hide_index=True)
+        st.dataframe(audit["forecast_bridge"], width="stretch", hide_index=True)
 
         col_term, col_ev = st.columns(2)
         with col_term:
             st.subheader("Terminal Bridge")
-            st.dataframe([audit["terminal_bridge"]], use_container_width=True, hide_index=True)
+            st.dataframe([audit["terminal_bridge"]], width="stretch", hide_index=True)
         with col_ev:
             st.subheader("EV → Equity Bridge")
-            st.dataframe([audit["ev_bridge"]], use_container_width=True, hide_index=True)
+            st.dataframe([audit["ev_bridge"]], width="stretch", hide_index=True)
 
         st.subheader("Charts")
         _render_dcf_charts(audit)
 
-        sens_a, sens_b = st.columns(2)
-        with sens_a:
-            st.subheader("Sensitivity: WACC × Terminal Growth")
-            st.dataframe(audit["sensitivity"]["wacc_x_terminal_growth"], use_container_width=True, hide_index=True)
-        with sens_b:
-            st.subheader("Sensitivity: WACC × Exit Multiple")
-            st.dataframe(audit["sensitivity"]["wacc_x_exit_multiple"], use_container_width=True, hide_index=True)
+        st.subheader("Sensitivity Tables")
+        s_col1, s_col2 = st.columns(2)
+        with s_col1:
+            st.caption("WACC × Terminal Growth")
+            rows = _fmt_sens_table(audit["sensitivity"]["wacc_x_terminal_growth"])
+            st.dataframe(rows, width="stretch", hide_index=True)
+        with s_col2:
+            st.caption("WACC × Exit Multiple")
+            rows = _fmt_sens_table(audit["sensitivity"]["wacc_x_exit_multiple"])
+            st.dataframe(rows, width="stretch", hide_index=True)
 
-if selected_section == "📂 Filings":
+
+# ── Section: WACC Lab ────────────────────────────────────────────────────────
+if selected_section == "WACC Lab":
+    st.subheader("WACC Lab")
+    st.caption("Compare peer bottom-up, industry proxy, and self-Hamada methodologies, then preview or persist the selection.")
+
+    try:
+        workbench = build_wacc_workbench(memo.ticker, apply_overrides=True)
+    except Exception as e:
+        workbench = {"available": False}
+        st.error(f"WACC workbench error: {e}")
+
+    if not workbench.get("available"):
+        st.info("WACC workbench unavailable for this ticker.")
+    else:
+        methods = workbench.get("methods") or []
+        method_rows = []
+        for payload in methods:
+            method_rows.append(
+                {
+                    "method": payload["method"],
+                    "wacc": f"{payload['wacc']*100:.2f}%",
+                    "cost_of_equity": f"{payload['cost_of_equity']*100:.2f}%",
+                    "cost_of_debt_after_tax": f"{payload['cost_of_debt_after_tax']*100:.2f}%",
+                    "beta": payload.get("beta_value"),
+                    "beta_source": payload.get("beta_source"),
+                    "equity_weight": f"{(payload.get('assumptions', {}).get('equity_weight') or 0)*100:.1f}%",
+                    "debt_weight": f"{(payload.get('assumptions', {}).get('debt_weight') or 0)*100:.1f}%",
+                }
+            )
+        st.dataframe(method_rows, width="stretch", hide_index=True)
+
+        active_selection = workbench.get("current_selection") or {"mode": "single_method", "selected_method": "peer_bottom_up", "weights": {}}
+        mode = st.radio(
+            "Methodology mode",
+            options=["single_method", "blended"],
+            horizontal=True,
+            index=0 if active_selection.get("mode") == "single_method" else 1,
+            key=f"wacc_mode_{memo.ticker}",
+        )
+        selected_method = None
+        weights: dict[str, float] | None = None
+        method_names = [payload["method"] for payload in methods]
+        if mode == "single_method":
+            selected_method = st.selectbox(
+                "Method",
+                options=method_names,
+                index=method_names.index(active_selection.get("selected_method") or "peer_bottom_up"),
+                key=f"wacc_method_{memo.ticker}",
+            )
+        else:
+            weight_cols = st.columns(3)
+            weights = {}
+            for col, method in zip(weight_cols, method_names):
+                default_weight = float((active_selection.get("weights") or {}).get(method, 0.0))
+                weights[method] = col.number_input(
+                    f"{method} weight",
+                    min_value=0.0,
+                    max_value=1.0,
+                    step=0.05,
+                    value=default_weight,
+                    key=f"wacc_weight_{memo.ticker}_{method}",
+                )
+            total_weight = sum(weights.values())
+            st.caption(f"Entered weight sum: {total_weight:.2f}")
+
+        preview_clicked = st.button("Preview WACC selection", key=f"wacc_preview_btn_{memo.ticker}")
+        if preview_clicked:
+            try:
+                st.session_state.wacc_preview = preview_wacc_methodology_selection(
+                    memo.ticker,
+                    mode=mode,
+                    selected_method=selected_method,
+                    weights=weights,
+                )
+            except Exception as e:
+                st.error(f"WACC preview error: {e}")
+
+        if st.button("Apply WACC selection", type="primary", key=f"wacc_apply_btn_{memo.ticker}"):
+            try:
+                result = apply_wacc_methodology_selection(
+                    memo.ticker,
+                    mode=mode,
+                    selected_method=selected_method,
+                    weights=weights,
+                    actor="dashboard",
+                )
+                st.success(
+                    f"Saved WACC methodology. Effective WACC {result['effective_wacc']*100:.2f}% "
+                    f"| base IV ${result['proposed_iv'].get('base', 0):,.2f}"
+                )
+                st.session_state.wacc_preview = preview_wacc_methodology_selection(
+                    memo.ticker,
+                    mode=mode,
+                    selected_method=selected_method,
+                    weights=weights,
+                )
+            except Exception as e:
+                st.error(f"WACC apply error: {e}")
+
+        wacc_preview = st.session_state.get("wacc_preview")
+        if wacc_preview:
+            prev_cols = st.columns(4)
+            prev_cols[0].metric("Current WACC", f"{wacc_preview['current_wacc']*100:.2f}%")
+            prev_cols[1].metric("Proposed WACC", f"{wacc_preview['effective_wacc']*100:.2f}%")
+            prev_cols[2].metric("Current Base IV", f"${wacc_preview['current_iv'].get('base', 0):,.2f}")
+            prev_cols[3].metric("Proposed Base IV", f"${wacc_preview['proposed_iv'].get('base', 0):,.2f}")
+
+        history = load_wacc_methodology_audit_history(memo.ticker, limit=25)
+        if history:
+            st.subheader("WACC Methodology Audit")
+            st.dataframe(history, width="stretch", hide_index=True)
+
+
+# ── Section: Comps ────────────────────────────────────────────────────────────
+if selected_section == "Comps":
+    st.subheader("Comps Dashboard")
+    comps_view = _get_cached_view("comps_view", build_comps_dashboard_view, memo.ticker)
+    if not comps_view.get("available"):
+        st.info("No comps view available for this ticker.")
+    else:
+        metric_options = comps_view.get("metric_options") or []
+        option_lookup = {option["label"]: option["key"] for option in metric_options if option.get("key")}
+        default_metric = comps_view.get("selected_metric_default")
+        default_label = next(
+            (option["label"] for option in metric_options if option.get("key") == default_metric),
+            metric_options[0]["label"] if metric_options else "Primary",
+        )
+        selected_metric_label = st.selectbox(
+            "Valuation Metric",
+            list(option_lookup) or [default_label],
+            index=(list(option_lookup).index(default_label) if option_lookup and default_label in option_lookup else 0),
+            key=f"comps_metric_{memo.ticker}",
+        )
+        selected_metric_key = option_lookup.get(selected_metric_label, default_metric)
+        selected_metric = (comps_view.get("valuation_range_by_metric") or {}).get(selected_metric_key) or {}
+
+        top = st.columns(5)
+        valuation_range = comps_view.get("valuation_range") or {}
+        top[0].metric("Primary Metric", selected_metric_label or "—")
+        top[1].metric("Bear IV", format_metric_value(selected_metric.get("bear"), kind="price"))
+        top[2].metric("Base IV", format_metric_value(selected_metric.get("base"), kind="price"))
+        top[3].metric("Bull IV", format_metric_value(selected_metric.get("bull"), kind="price"))
+        top[4].metric("Blended Base", format_metric_value(valuation_range.get("blended_base"), kind="price"))
+
+        peer_counts = comps_view.get("peer_counts") or {}
+        counts_cols = st.columns(4)
+        counts_cols[0].metric("Peers Raw", format_metric_value(peer_counts.get("raw"), kind="count"))
+        counts_cols[1].metric("Peers Clean", format_metric_value(peer_counts.get("clean"), kind="count"))
+        counts_cols[2].metric("Current Price", format_metric_value((comps_view.get("target") or {}).get("current_price"), kind="price"))
+        counts_cols[3].metric("Analyst Target", format_metric_value(next((marker.get("value") for marker in (comps_view.get("football_field") or {}).get("markers", []) if marker.get("label") == "Analyst Target Mean"), None), kind="price"))
+
+        compare_payload = comps_view.get("target_vs_peers") or {}
+        compare_rows = []
+        compare_schema = {
+            "target": "raw",
+            "peer_median": "raw",
+            "delta": "raw",
+        }
+        metric_kinds = {
+            "tev_ebitda_ltm": "x",
+            "tev_ebitda_fwd": "x",
+            "tev_ebit_ltm": "x",
+            "tev_ebit_fwd": "x",
+            "pe_ltm": "x",
+            "revenue_growth": "pct",
+            "ebit_margin": "pct",
+            "net_debt_to_ebitda": "x",
+        }
+        for key, target_value in (compare_payload.get("target") or {}).items():
+            peer_value = (compare_payload.get("peer_medians") or {}).get(key)
+            delta_value = (compare_payload.get("deltas") or {}).get(key)
+            compare_rows.append(
+                {
+                    "metric": key,
+                    "target": format_metric_value(target_value, kind=metric_kinds.get(key, "raw")),
+                    "peer_median": format_metric_value(peer_value, kind=metric_kinds.get(key, "raw")),
+                    "delta": format_metric_value(delta_value, kind=metric_kinds.get(key, "raw")),
+                }
+            )
+        if compare_rows:
+            st.subheader("Target vs Peer Medians")
+            st.dataframe(compare_rows, width="stretch", hide_index=True)
+
+        football_field = comps_view.get("football_field") or {}
+        markers = football_field.get("markers") or []
+        if markers:
+            st.subheader("Football Field")
+            try:
+                import plotly.graph_objects as go
+            except ImportError:
+                st.dataframe(
+                    _styled_rows(markers, {"value": "price"}),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                color_map = {
+                    "spot": "#38bdf8",
+                    "range_point": "#f59e0b",
+                }
+                fig = go.Figure()
+                plotted_rows = list(reversed(markers))
+                for row in plotted_rows:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[row.get("value")],
+                            y=[row.get("label")],
+                            mode="markers",
+                            marker=dict(
+                                size=12 if row.get("type") == "spot" else 10,
+                                color=color_map.get(row.get("type"), "#94a3b8"),
+                            ),
+                            showlegend=False,
+                            hovertemplate="%{y}: $%{x:.2f}<extra></extra>",
+                        )
+                    )
+                fig.update_layout(
+                    height=max(320, 40 * len(plotted_rows)),
+                    margin=dict(l=20, r=20, t=20, b=20),
+                    xaxis_title="Implied Value Per Share",
+                    yaxis_title="",
+                )
+                st.plotly_chart(fig, width="stretch")
+
+        st.subheader("Peer Table")
+        peer_rows = comps_view.get("peers") or []
+        peer_schema = {
+            "similarity_score": "raw",
+            "model_weight": "pct",
+            "tev_ebitda_ltm": "x",
+            "tev_ebit_fwd": "x",
+            "tev_ebit_ltm": "x",
+            "pe_ltm": "x",
+            "revenue_growth": "pct",
+            "ebit_margin": "pct",
+            "net_debt_to_ebitda": "x",
+        }
+        st.dataframe(_styled_rows(peer_rows, peer_schema), width="stretch", hide_index=True)
+
+        historical_multiples_summary = comps_view.get("historical_multiples_summary") or {}
+        st.subheader("Historical Multiples")
+        if historical_multiples_summary.get("available"):
+            historical_metrics = historical_multiples_summary.get("metrics") or {}
+            historical_metric = st.selectbox(
+                "Historical Multiple Series",
+                list(historical_metrics),
+                key=f"historical_multiple_{memo.ticker}",
+            )
+            historical_payload = historical_metrics.get(historical_metric) or {}
+            historical_summary = historical_payload.get("summary") or {}
+            hist_cols = st.columns(5)
+            hist_cols[0].metric("Current", format_metric_value(historical_summary.get("current"), kind="multiple"))
+            hist_cols[1].metric("Median", format_metric_value(historical_summary.get("median"), kind="multiple"))
+            hist_cols[2].metric("Min", format_metric_value(historical_summary.get("min"), kind="multiple"))
+            hist_cols[3].metric("Max", format_metric_value(historical_summary.get("max"), kind="multiple"))
+            hist_cols[4].metric("Current Percentile", format_metric_value(historical_summary.get("current_percentile"), kind="pct"))
+            series = historical_payload.get("series") or []
+            if series:
+                try:
+                    import plotly.graph_objects as go
+                except ImportError:
+                    st.dataframe(_styled_rows(series, {"multiple": "x", "price": "price"}), width="stretch", hide_index=True)
+                else:
+                    fig = go.Figure()
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[row.get("date") for row in series],
+                            y=[row.get("multiple") for row in series],
+                            mode="lines",
+                            name=historical_metric,
+                            line=dict(color="#38bdf8", width=2),
+                        )
+                    )
+                    peer_current = historical_summary.get("peer_current")
+                    if peer_current is not None:
+                        fig.add_hline(
+                            y=float(peer_current),
+                            line_dash="dash",
+                            line_color="#f59e0b",
+                            annotation_text="Peer Current",
+                            annotation_position="top left",
+                        )
+                    fig.update_layout(
+                        height=320,
+                        margin=dict(l=20, r=20, t=20, b=20),
+                        xaxis_title="Date",
+                        yaxis_title="Multiple",
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig, width="stretch")
+        else:
+            st.info("Historical multiples are unavailable for this ticker.")
+            for flag in historical_multiples_summary.get("audit_flags") or []:
+                st.caption(flag)
+
+        st.subheader("Audit Flags")
+        audit_flags = comps_view.get("audit_flags") or []
+        if audit_flags:
+            for flag in audit_flags:
+                st.warning(flag)
+        else:
+            st.info("No comps audit flags for this run.")
+
+
+# ── Section: News & Materiality ──────────────────────────────────────────────
+if selected_section == "News & Materiality":
+    st.subheader("News & Materiality")
+    intel_view = _get_cached_view("market_intel_view", build_news_materiality_view, memo.ticker)
+    analyst = intel_view.get("analyst_snapshot") or {}
+    top = st.columns(4)
+    top[0].metric("Recommendation", str(analyst.get("recommendation") or "—").upper())
+    top[1].metric("Target Mean", format_metric_value(analyst.get("target_mean"), kind="price"))
+    top[2].metric("Analysts", format_metric_value(analyst.get("num_analysts"), kind="count"))
+    top[3].metric("Current Price", format_metric_value(analyst.get("current_price"), kind="price"))
+    sentiment_summary = intel_view.get("sentiment_summary") or {}
+    if sentiment_summary:
+        st.caption(
+            f"Latest sentiment: {str(sentiment_summary.get('direction') or 'n/a').title()} "
+            f"| score {sentiment_summary.get('score', 0):+.2f}"
+        )
+    historical_brief = intel_view.get("historical_brief") or {}
+    st.subheader("Historical Brief")
+    if historical_brief.get("summary"):
+        st.markdown(_fix_text(historical_brief.get("summary") or ""))
+        st.caption(
+            f"Window: {historical_brief.get('period_start') or 'unknown'} → {historical_brief.get('period_end') or 'unknown'}"
+        )
+        event_timeline = historical_brief.get("event_timeline") or []
+        if event_timeline:
+            st.dataframe(event_timeline, width="stretch", hide_index=True)
+    else:
+        st.info("No historical brief available.")
+
+    st.subheader("Quarterly Materiality")
+    quarterly_headlines = intel_view.get("quarterly_headlines") or []
+    if quarterly_headlines:
+        st.dataframe(
+            _styled_rows(quarterly_headlines, {"materiality_score": "raw"}),
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.info("No recent quarterly headlines returned for this ticker.")
+
+    with st.expander("All Ranked Headlines", expanded=False):
+        if intel_view.get("headlines"):
+            st.dataframe(
+                _styled_rows(intel_view["headlines"], {"materiality_score": "raw"}),
+                width="stretch",
+                hide_index=True,
+            )
+        else:
+            st.info("No recent headlines returned for this ticker.")
+
+    for flag in intel_view.get("audit_flags") or []:
+        st.caption(flag)
+
+
+# ── Section: Filings Browser ─────────────────────────────────────────────────
+if selected_section == "Filings Browser":
+    st.subheader("Filings Browser")
+    st.caption("Read-only browser for cached SEC filings and the exact chunks the agents used.")
+    filings_view = _get_cached_view("filings_browser_view", build_filings_browser_view, memo.ticker)
+    if not filings_view.get("available"):
+        st.info("No filing cache available for this ticker.")
+    else:
+        filings = filings_view.get("filings") or []
+        labels = [
+            f"{row['form_type']} | {row.get('filing_date') or 'unknown-date'} | {row['accession_no']}"
+            for row in filings
+        ]
+        selected_label = st.selectbox("Filing", labels, key=f"filing_browser_sel_{memo.ticker}")
+        filing_row = filings[labels.index(selected_label)]
+        filing_key = filing_row.get("filing_key") or filing_row["accession_no"]
+        accession_no = filing_row["accession_no"]
+        meta_cols = st.columns(5)
+        meta_cols[0].metric("Form", filing_row["form_type"])
+        meta_cols[1].metric("Filing Date", filing_row.get("filing_date") or "—")
+        meta_cols[2].metric("Accession", accession_no)
+        meta_cols[3].metric("Raw Cache", "yes" if filing_row.get("raw_available") else "no")
+        meta_cols[4].metric("Clean Cache", "yes" if filing_row.get("clean_available") else "no")
+        if filing_row.get("source_url"):
+            st.link_button("Open on SEC", filing_row["source_url"])
+
+        statement_presence = (filings_view.get("statement_presence_by_filing") or {}).get(filing_key, {})
+        coverage_summary = filings_view.get("coverage_summary") or {}
+        coverage_counts = coverage_summary.get("by_section_key") or {}
+        coverage_cols = st.columns(5)
+        coverage_cols[0].metric("Financial Statements", "yes" if statement_presence.get("financial_statements") else "no")
+        coverage_cols[1].metric("Notes", "yes" if statement_presence.get("notes_to_financials") else "no")
+        coverage_cols[2].metric("MD&A", "yes" if statement_presence.get("mda") else "no")
+        coverage_cols[3].metric("Risk Factors", "yes" if statement_presence.get("risk_factors") else "no")
+        coverage_cols[4].metric("Quarterly Notes", "yes" if statement_presence.get("quarterly_notes") else "no")
+
+        filing_search = st.text_input("Filter filing content", key=f"filing_filter_{memo.ticker}_{accession_no}")
+        used_chunks = []
+        for agent_name, chunks in (filings_view.get("agent_usage") or {}).items():
+            for chunk in chunks:
+                if chunk.get("accession_no") == accession_no:
+                    used_chunks.append({"agent": agent_name, **chunk})
+        if filing_search:
+            used_chunks = [row for row in used_chunks if filing_search.lower() in json.dumps(row).lower()]
+
+        diagnostics_tab, used_tab, sections_tab, chunks_tab, clean_tab, raw_tab = st.tabs(["Diagnostics", "Agent-Used Chunks", "Sections", "Chunks", "Clean Text", "Raw HTML"])
+        with diagnostics_tab:
+            st.markdown("**Coverage Summary**")
+            coverage_rows = [{"section_key": key, "count": value} for key, value in coverage_counts.items()]
+            if coverage_rows:
+                st.dataframe(_styled_rows(coverage_rows, {"count": "count"}), width="stretch", hide_index=True)
+            else:
+                st.info("No extracted section coverage is available for this filing.")
+
+            st.markdown("**Retrieval Profiles**")
+            retrieval_rows = []
+            for profile_name, payload in (filings_view.get("retrieval_profiles") or {}).items():
+                retrieval_rows.append(
+                    {
+                        "profile": profile_name,
+                        "fallback_mode": payload.get("fallback_mode"),
+                        "selected_chunk_count": payload.get("selected_chunk_count"),
+                        "candidate_chunk_count": payload.get("candidate_chunk_count"),
+                        "corpus_chunk_count": payload.get("corpus_chunk_count"),
+                        "eligible_section_keys": ", ".join(payload.get("eligible_section_keys") or []),
+                        "excluded_section_keys": ", ".join(payload.get("excluded_section_keys") or []),
+                        "skipped_sections": ", ".join(payload.get("skipped_sections") or []),
+                    }
+                )
+            if retrieval_rows:
+                st.dataframe(
+                    _styled_rows(
+                        retrieval_rows,
+                        {
+                            "fallback_mode": "raw",
+                            "selected_chunk_count": "count",
+                            "candidate_chunk_count": "count",
+                            "corpus_chunk_count": "count",
+                        },
+                    ),
+                    width="stretch",
+                    hide_index=True,
+                )
+            else:
+                st.info("No retrieval diagnostics are available.")
+        with used_tab:
+            if used_chunks:
+                st.dataframe(used_chunks, width="stretch", hide_index=True)
+            else:
+                st.info("No selected chunks for this filing in the cached agent contexts.")
+        with sections_tab:
+            section_rows = filings_view.get("sections_by_filing", {}).get(filing_key) or filings_view.get("sections_by_filing", {}).get(accession_no, [])
+            if filing_search:
+                section_rows = [row for row in section_rows if filing_search.lower() in json.dumps(row).lower()]
+            st.dataframe(section_rows, width="stretch", hide_index=True)
+        with chunks_tab:
+            chunk_rows = filings_view.get("chunks_by_filing", {}).get(filing_key) or filings_view.get("chunks_by_filing", {}).get(accession_no, [])
+            if filing_search:
+                chunk_rows = [row for row in chunk_rows if filing_search.lower() in json.dumps(row).lower()]
+            st.dataframe(chunk_rows, width="stretch", hide_index=True)
+        with clean_tab:
+            clean_text = filing_row.get("clean_text") or ""
+            if filing_search:
+                clean_text = "\n".join(line for line in clean_text.splitlines() if filing_search.lower() in line.lower())
+            st.text_area("Clean text", clean_text, height=420, key=f"clean_text_{filing_key}")
+        with raw_tab:
+            raw_html = filing_row.get("raw_html") or ""
+            if filing_search:
+                raw_html = "\n".join(line for line in raw_html.splitlines() if filing_search.lower() in line.lower())
+            st.code(raw_html or "No raw HTML cached for this filing.", language="html")
+
+
+# ── Section: Filings ──────────────────────────────────────────────────────────
+if selected_section == "Filings":
     f = memo.filings
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Revenue Trend", f.revenue_trend.title())
@@ -498,17 +1595,32 @@ if selected_section == "📂 Filings":
     col4.metric("Net Debt/EBITDA", f"{f.net_debt_to_ebitda:.1f}x" if f.net_debt_to_ebitda else "—")
 
     if f.red_flags:
-        st.subheader("🚩 Red Flags")
+        st.subheader("Red Flags")
         for flag in f.red_flags:
             st.warning(flag)
 
+    if f.notes_watch_items:
+        with st.expander("Notes Watch Items", expanded=False):
+            for item in f.notes_watch_items:
+                st.markdown(f"- {_fix_text(item)}")
+
+    if f.recent_quarter_updates:
+        with st.expander("Recent Quarter Updates", expanded=False):
+            for item in f.recent_quarter_updates:
+                st.markdown(f"- {_fix_text(item)}")
+
     st.subheader("Management Guidance")
-    st.write(f.management_guidance)
+    st.write(_fix_text(f.management_guidance))
 
     st.subheader("Full Analysis")
-    st.write(f.raw_summary)
+    st.markdown(
+        f'<div class="analysis-scroll">{_fix_text(f.raw_summary).replace(chr(10), "<br>")}</div>',
+        unsafe_allow_html=True,
+    )
 
-if selected_section == "📞 Earnings":
+
+# ── Section: Earnings ─────────────────────────────────────────────────────────
+if selected_section == "Earnings":
     e = memo.earnings
     col1, col2, col3 = st.columns(3)
     col1.metric("Guidance Trend", e.guidance_trend.title())
@@ -518,14 +1630,19 @@ if selected_section == "📞 Earnings":
     if e.key_themes:
         st.subheader("Key Themes")
         for theme in e.key_themes:
-            st.markdown(f"- {theme}")
+            st.markdown(f"- {_fix_text(theme)}")
 
     st.subheader("Full Analysis")
-    st.write(e.raw_summary)
+    st.markdown(
+        f'<div class="analysis-scroll">{_fix_text(e.raw_summary).replace(chr(10), "<br>")}</div>',
+        unsafe_allow_html=True,
+    )
 
-if selected_section == "📰 Sentiment":
+
+# ── Section: Sentiment ────────────────────────────────────────────────────────
+if selected_section == "Sentiment":
     s = memo.sentiment
-    direction_emoji = {"bullish": "🟢", "bearish": "🔴", "neutral": "🟡"}.get(s.direction, "⚪")
+    direction_emoji = {"bullish": "[BULL]", "bearish": "[BEAR]", "neutral": "[NEUTRAL]"}.get(s.direction, "")
     col1, col2 = st.columns(2)
     col1.metric("Direction", f"{direction_emoji} {s.direction.title()}")
     col2.metric("Score", f"{s.score:+.2f} / 1.0")
@@ -534,21 +1651,26 @@ if selected_section == "📰 Sentiment":
     with col_a:
         st.subheader("Bullish Themes")
         for t in s.key_bullish_themes:
-            st.markdown(f"- {t}")
+            st.markdown(f"- {_fix_text(t)}")
     with col_b:
         st.subheader("Bearish Themes")
         for t in s.key_bearish_themes:
-            st.markdown(f"- {t}")
+            st.markdown(f"- {_fix_text(t)}")
 
     if s.risk_narratives:
         st.subheader("Risk Narratives")
         for n in s.risk_narratives:
-            st.markdown(f"- {n}")
+            st.markdown(f"- {_fix_text(n)}")
 
     st.subheader("Full Analysis")
-    st.write(s.raw_summary)
+    st.markdown(
+        f'<div class="analysis-scroll">{_fix_text(s.raw_summary).replace(chr(10), "<br>")}</div>',
+        unsafe_allow_html=True,
+    )
 
-if selected_section == "⚖️ Risk":
+
+# ── Section: Risk ─────────────────────────────────────────────────────────────
+if selected_section == "Risk":
     r = memo.risk
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Conviction", r.conviction.upper())
@@ -560,30 +1682,31 @@ if selected_section == "⚖️ Risk":
         st.metric("Annualized Volatility", f"{r.annualized_volatility*100:.1f}%")
 
     st.subheader("Sizing Rationale")
-    st.write(r.rationale)
+    st.write(_fix_text(r.rationale))
 
     if memo.risk_impact and memo.risk_impact.overlays:
         st.subheader("Risk-to-Valuation Overlays")
-        st.caption("Advisory-only downside scenarios inferred from qualitative risks. These do not change the base DCF.")
+        st.caption("Advisory-only downside scenarios — do not change the base DCF.")
         st.dataframe(
             [overlay.model_dump(mode="python") for overlay in memo.risk_impact.overlays],
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
 
-if selected_section == "🔄 Pipeline":
+
+# ── Section: Pipeline ─────────────────────────────────────────────────────────
+if selected_section == "Pipeline":
     st.subheader("Pipeline Trace")
     st.caption("Latest run trace plus persisted agent-run history from SQLite.")
 
     latest_trace = st.session_state.get("run_trace") or []
     if latest_trace:
-        st.dataframe(latest_trace, use_container_width=True, hide_index=True)
+        st.dataframe(latest_trace, width="stretch", hide_index=True)
     else:
-        st.info("No in-session run trace available yet. Run the pipeline from this dashboard to populate it.")
+        st.info("No in-session run trace yet. Run the pipeline from this dashboard to populate it.")
 
     try:
         from src.stage_04_pipeline.agent_cache import load_agent_run_history
-
         run_history = load_agent_run_history(memo.ticker, limit=50)
     except Exception as e:
         run_history = []
@@ -591,16 +1714,17 @@ if selected_section == "🔄 Pipeline":
 
     if run_history:
         st.subheader("Recent Agent Run History")
-        st.dataframe(run_history, use_container_width=True, hide_index=True)
+        st.dataframe(run_history, width="stretch", hide_index=True)
     else:
         st.info("No persisted agent-run history stored yet for this ticker.")
 
-if selected_section == "🔧 Recommendations":
+
+# ── Section: Recommendations ──────────────────────────────────────────────────
+if selected_section == "Recommendations":
     st.subheader("Agent Recommendations")
     recs = st.session_state.recommendations
 
     if recs is None:
-        # Try loading from disk
         try:
             from src.stage_04_pipeline.recommendations import load_recommendations
             recs = load_recommendations(memo.ticker)
@@ -609,48 +1733,51 @@ if selected_section == "🔧 Recommendations":
             recs = None
 
     if recs is None or not recs.recommendations:
-        st.info("No recommendations available. Run a full analysis first (or re-run to refresh).")
+        st.info("No recommendations available. Run a full analysis first.")
     else:
         if recs.current_iv_base:
-            st.caption(f"Current base IV: **${recs.current_iv_base:,.2f}**  |  Generated: {recs.generated_at}")
+            st.caption(f"Current base IV: **${recs.current_iv_base:,.2f}**  ·  Generated: {recs.generated_at}")
 
-        # Group by agent
         from collections import defaultdict
         by_agent: dict = defaultdict(list)
         for r in recs.recommendations:
             by_agent[r.agent].append(r)
 
         agent_labels = {
-            "qoe": "🔍 Quality of Earnings",
-            "accounting_recast": "📊 Accounting Recast",
-            "industry": "🏭 Industry",
-            "filings": "📂 Filings Cross-Check",
+            "qoe": "Quality of Earnings",
+            "accounting_recast": "Accounting Recast",
+            "industry": "Industry",
+            "filings": "Filings Cross-Check",
         }
-        approved_selection: list[str] = []
 
         for agent_key, agent_recs in by_agent.items():
-            with st.expander(f"{agent_labels.get(agent_key, agent_key)} ({len(agent_recs)} item(s))", expanded=True):
+            with st.expander(f"{agent_labels.get(agent_key, agent_key)} — {len(agent_recs)} item(s)", expanded=True):
                 for rec in agent_recs:
+                    unit = _rec_unit(rec.field)
                     col_a, col_b, col_c, col_d = st.columns([3, 2, 2, 2])
                     with col_a:
                         st.markdown(f"**{rec.field}**")
-                        st.caption(rec.rationale)
+                        st.caption(_fix_text(rec.rationale))
                         if rec.citation:
-                            st.caption(f"_Citation: {rec.citation[:120]}_")
+                            st.caption(f"_{rec.citation[:120]}_")
                     with col_b:
-                        cur_str = f"{rec.current_value:.4f}" if rec.current_value is not None else "—"
-                        prop_str = f"{rec.proposed_value:.4f}" if isinstance(rec.proposed_value, float) else str(rec.proposed_value)
-                        st.metric("Current → Proposed", f"{prop_str}", delta=f"from {cur_str}", delta_color="off")
+                        cur_str = _format_unit_value(rec.current_value, unit)
+                        prop_str = (
+                            _format_unit_value(rec.proposed_value, unit)
+                            if isinstance(rec.proposed_value, float)
+                            else str(rec.proposed_value)
+                        )
+                        st.metric("Current → Proposed", prop_str, delta=f"from {cur_str}", delta_color="off")
                     with col_c:
-                        badge = {"high": "🟢 high", "medium": "🟡 medium", "low": "🔴 low"}.get(rec.confidence, rec.confidence)
-                        st.markdown(f"Confidence: **{badge}**")
-                        st.markdown(f"Agent: `{rec.agent}`")
+                        badge_map = {"high": "HIGH", "medium": "MEDIUM", "low": "LOW"}
+                        st.markdown(f"Confidence: **{badge_map.get(rec.confidence, rec.confidence)}**")
+                        st.markdown(f"Source: `{rec.agent}`")
                     with col_d:
-                        status_color = {"approved": "🟢", "rejected": "🔴", "pending": "🟡"}.get(rec.status, "⚪")
-                        st.markdown(f"Status: {status_color} **{rec.status}**")
+                        s_color = {"approved": "#22c55e", "rejected": "#ef4444", "pending": "#ca8a04"}
+                        clr = s_color.get(rec.status, "#6b7a99")
+                        st.markdown(f'Status: <span style="color:{clr};font-weight:600">{rec.status.upper()}</span>', unsafe_allow_html=True)
                     st.divider()
 
-        # What-if preview section
         st.subheader("What-If Preview")
         all_pending_fields = [r.field for r in recs.recommendations if r.status == "pending"]
         selected_fields = st.multiselect(
@@ -663,15 +1790,12 @@ if selected_section == "🔧 Recommendations":
         if selected_fields and st.button("Preview IV with selected approvals", key="preview_btn"):
             with st.spinner("Running preview DCF..."):
                 try:
-                    from src.stage_04_pipeline.recommendations import preview_with_approvals
-                    # Temporarily mark selected as approved for preview
+                    from src.stage_04_pipeline.recommendations import preview_with_approvals, write_recommendations as _wr
                     import copy as _copy
                     preview_recs = _copy.deepcopy(recs)
                     for r in preview_recs.recommendations:
                         if r.field in selected_fields:
                             r.status = "approved"
-                    # Write temp recs and run preview
-                    from src.stage_04_pipeline.recommendations import write_recommendations as _wr
                     _wr(preview_recs)
                     preview = preview_with_approvals(memo.ticker, selected_fields)
                     if preview:
@@ -680,52 +1804,45 @@ if selected_section == "🔧 Recommendations":
                         dlt = preview.get("delta_pct", {})
                         p_col1, p_col2, p_col3 = st.columns(3)
                         for col, scenario in zip([p_col1, p_col2, p_col3], ["bear", "base", "bull"]):
-                            with col:
-                                c_val = cur.get(scenario)
-                                p_val = prop.get(scenario)
-                                d_val = dlt.get(scenario)
-                                col.metric(
-                                    f"{scenario.capitalize()} IV",
-                                    f"${p_val:,.2f}" if p_val else "—",
-                                    delta=f"{d_val:+.1f}%" if d_val is not None else None,
-                                )
-                        # Restore original recs
+                            col.metric(
+                                f"{scenario.capitalize()} IV",
+                                f"${prop.get(scenario):,.2f}" if prop.get(scenario) else "—",
+                                delta=f"{dlt.get(scenario):+.1f}%" if dlt.get(scenario) is not None else None,
+                            )
                         _wr(recs)
                     else:
-                        st.warning("Preview unavailable — valuation inputs could not be assembled.")
+                        st.warning("Preview unavailable.")
                 except Exception as e:
                     st.error(f"Preview error: {e}")
 
-        # Apply approved button
         st.subheader("Apply Approved Items")
         approved_count = sum(1 for r in recs.recommendations if r.status == "approved")
         st.caption(f"{approved_count} item(s) currently marked approved.")
         st.info(
-            "To approve items, edit the YAML directly:\n"
-            f"`config/agent_recommendations_{memo.ticker.upper()}.yaml`\n"
-            "Set `status: approved` then click Apply."
+            f"Edit `config/agent_recommendations_{memo.ticker.upper()}.yaml` — set `status: approved` — then click Apply."
         )
-        if st.button("Apply Approved to valuation_overrides.yaml", type="primary", key="apply_btn"):
+        if st.button("Apply Approved → valuation_overrides.yaml", type="primary", key="apply_btn"):
             try:
                 from src.stage_04_pipeline.recommendations import apply_approved_to_overrides
                 from src.stage_02_valuation.input_assembler import clear_valuation_overrides_cache
                 count = apply_approved_to_overrides(memo.ticker)
                 clear_valuation_overrides_cache()
                 if count:
-                    st.success(f"✓ {count} override(s) written to config/valuation_overrides.yaml. Re-run valuation to see updated IV.")
+                    st.success(f"{count} override(s) written to config/valuation_overrides.yaml. Re-run valuation to see updated IV.")
                 else:
                     st.warning("No approved items found — nothing written.")
             except Exception as e:
                 st.error(f"Apply error: {e}")
 
-if selected_section == "🧪 Assumption Lab":
+
+# ── Section: Assumption Lab ───────────────────────────────────────────────────
+if selected_section == "Assumption Lab":
     st.subheader("Assumption Lab")
     st.caption(
         "Compare current active values, deterministic defaults, and agent suggestions. "
-        "Preview the valuation impact, then apply selections into `config/valuation_overrides.yaml`. "
-        "Every apply action is also written to SQLite audit history."
+        "Preview the valuation impact live in the sidebar, then apply selections into `config/valuation_overrides.yaml`."
     )
-    st.caption("Input units: percentages are entered as whole percents, debt/claims in USD millions, multiples in turns, NWC drivers in days.")
+    st.caption("Units: percentages as whole %, debt/claims in USD millions, multiples in turns, NWC drivers in days.")
 
     try:
         from src.stage_04_pipeline.override_workbench import (
@@ -734,20 +1851,20 @@ if selected_section == "🧪 Assumption Lab":
             load_override_audit_history,
             preview_override_selections,
         )
-
         workbench = build_override_workbench(memo.ticker)
     except Exception as e:
         workbench = None
         st.error(f"Workbench load error: {e}")
 
     if not workbench or not workbench.get("available"):
-        st.info("Assumption lab unavailable for this ticker. Run the analysis first and confirm valuation inputs can be assembled.")
+        st.info("Assumption lab unavailable. Run the analysis first.")
     else:
         head_a, head_b, head_c = st.columns(3)
         head_a.metric("Current Base IV", f"${workbench.get('current_iv_base', 0):,.2f}" if workbench.get("current_iv_base") else "—")
         head_b.metric("Current Price", f"${(workbench.get('current_price') or 0):,.2f}")
         head_c.metric("Tracked Fields", str(len(workbench.get("fields") or [])))
 
+        st.divider()
         selections: dict[str, str] = {}
         custom_values: dict[str, float] = {}
 
@@ -762,49 +1879,48 @@ if selected_section == "🧪 Assumption Lab":
             if initial_mode not in options:
                 initial_mode = "default"
 
-            st.markdown(f"**{row['label']}**  ")
-            st.caption(f"`{field}`")
-            col_a, col_b, col_c, col_d, col_e = st.columns([1.2, 1.2, 1.8, 1.0, 1.1])
-            with col_a:
-                st.markdown(f"Current: **{_format_value(row.get('effective_value'), row['unit'])}**")
-                st.caption(f"Source: {row.get('effective_source') or '—'}")
-            with col_b:
-                st.markdown(f"Default: **{_format_value(row.get('baseline_value'), row['unit'])}**")
-                st.caption(f"Source: {row.get('baseline_source') or '—'}")
-            with col_c:
-                if row.get("agent_value") is not None:
-                    st.markdown(f"Agent: **{_format_value(row.get('agent_value'), row['unit'])}**")
-                    st.caption(
-                        f"{row.get('agent_name') or 'agent'} | "
-                        f"{row.get('agent_confidence') or 'n/a'} | "
-                        f"{row.get('agent_status') or 'pending'}"
-                    )
-                else:
-                    st.markdown("Agent: **—**")
-                    st.caption("No agent suggestion")
-            with col_d:
+            # Field header
+            col_label, col_mode = st.columns([4, 1])
+            with col_label:
+                st.markdown(f"**{row['label']}** `{field}`")
+            with col_mode:
                 mode = st.selectbox(
-                    f"{field}_mode",
+                    "Mode",
                     options=options,
                     index=options.index(initial_mode),
                     label_visibility="collapsed",
                     key=f"assump_mode_{memo.ticker}_{field}",
                 )
-            with col_e:
-                default_custom = row.get("effective_value")
-                if default_custom is None:
-                    default_custom = row.get("baseline_value")
+            selections[field] = mode
+
+            val_col_a, val_col_b, val_col_c, val_col_d = st.columns(4)
+            with val_col_a:
+                st.caption(f"**Effective:** {_format_unit_value(row.get('effective_value'), row['unit'])}")
+                st.caption(f"Source: {row.get('effective_source') or '—'}")
+            with val_col_b:
+                st.caption(f"**Default:** {_format_unit_value(row.get('baseline_value'), row['unit'])}")
+                st.caption(f"Source: {row.get('baseline_source') or '—'}")
+            with val_col_c:
+                if row.get("agent_value") is not None:
+                    agent_lbl = "agent" if mode != "agent" else "**→ agent**"
+                    st.caption(f"{agent_lbl}: {_format_unit_value(row.get('agent_value'), row['unit'])}")
+                    st.caption(f"{row.get('agent_name') or '?'} · {row.get('agent_confidence') or 'n/a'} · {row.get('agent_status') or 'pending'}")
+                else:
+                    st.caption("Agent: —")
+            with val_col_d:
+                default_custom = row.get("effective_value") or row.get("baseline_value")
                 custom_display = st.number_input(
-                    f"{field}_custom",
+                    "Custom value",
                     value=float(_to_display_value(default_custom, row["unit"])),
                     step=_input_step(row["unit"]),
                     label_visibility="collapsed",
                     key=f"assump_custom_{memo.ticker}_{field}",
+                    disabled=(mode != "custom"),
                 )
-            selections[field] = mode
             custom_values[field] = _from_display_value(custom_display, row["unit"])
             st.divider()
 
+        # Live preview (feeds sidebar widget too)
         try:
             preview = preview_override_selections(
                 memo.ticker,
@@ -817,7 +1933,7 @@ if selected_section == "🧪 Assumption Lab":
             st.session_state.workbench_preview = None
             st.error(f"Live preview error: {e}")
 
-        if st.button("Apply selections to valuation_overrides.yaml", type="primary", key=f"assump_apply_{memo.ticker}"):
+        if st.button("Apply selections → valuation_overrides.yaml", type="primary", key=f"assump_apply_{memo.ticker}"):
             try:
                 apply_result = apply_override_selections(
                     memo.ticker,
@@ -851,18 +1967,17 @@ if selected_section == "🧪 Assumption Lab":
                     delta=f"{delta_pct:+.1f}%" if delta_pct is not None else None,
                 )
 
-            resolved_rows = []
-            for field, meta in (preview.get("resolved_values") or {}).items():
-                resolved_rows.append(
-                    {
-                        "field": field,
-                        "mode": meta.get("mode"),
-                        "effective_before": meta.get("effective_value"),
-                        "applied_value": meta.get("value"),
-                    }
-                )
+            resolved_rows = [
+                {
+                    "field": field,
+                    "mode": meta.get("mode"),
+                    "effective_before": meta.get("effective_value"),
+                    "applied_value": meta.get("value"),
+                }
+                for field, meta in (preview.get("resolved_values") or {}).items()
+            ]
             if resolved_rows:
-                st.dataframe(resolved_rows, use_container_width=True, hide_index=True)
+                st.dataframe(resolved_rows, width="stretch", hide_index=True)
 
         st.subheader("Audit History")
         try:
@@ -878,7 +1993,6 @@ if selected_section == "🧪 Assumption Lab":
                     "field": row["field"],
                     "mode": row["selection_mode"],
                     "baseline_source": row["baseline_source"],
-                    "effective_source_before": row["effective_source_before"],
                     "applied_value": row["applied_value"],
                     "action": row["write_action"],
                     "base_iv_before": row["current_iv_base"],
@@ -886,11 +2000,175 @@ if selected_section == "🧪 Assumption Lab":
                 }
                 for row in history
             ]
-            st.dataframe(history_rows, use_container_width=True, hide_index=True)
+            st.dataframe(history_rows, width="stretch", hide_index=True)
         else:
             st.info("No dashboard override audit events stored yet for this ticker.")
 
-if selected_section == "🔍 Raw JSON":
+
+# ── Section: Past Reports ─────────────────────────────────────────────────────
+if selected_section == "Past Reports":
+    st.subheader("Past Reports")
+    st.caption("Archived full reports plus secondary agent-run history.")
+
+    snapshot_rows = list_report_snapshots(memo.ticker, limit=50)
+    if snapshot_rows:
+        labels = [
+            f"{row['created_at']} | {row.get('action') or '—'} | base ${row.get('base_iv') or 0:,.2f} | #{row['id']}"
+            for row in snapshot_rows
+        ]
+        selected_snapshot_label = st.selectbox("Archived report", labels, key=f"archive_pick_{memo.ticker}")
+        selected_snapshot = snapshot_rows[labels.index(selected_snapshot_label)]
+        load_col, preview_col = st.columns([1, 3])
+        with load_col:
+            if st.button("Load Snapshot", key=f"load_snapshot_{selected_snapshot['id']}", width="stretch"):
+                loaded = load_report_snapshot(int(selected_snapshot["id"]))
+                if loaded:
+                    st.session_state.memo = ICMemo(**loaded["memo"])
+                    st.session_state.dcf_audit_view = (loaded.get("dashboard_snapshot") or {}).get("dcf_audit")
+                    st.session_state.comps_view = (loaded.get("dashboard_snapshot") or {}).get("comps_view")
+                    st.session_state.market_intel_view = (loaded.get("dashboard_snapshot") or {}).get("market_intel_view")
+                    st.session_state.filings_browser_view = (loaded.get("dashboard_snapshot") or {}).get("filings_browser_view")
+                    st.session_state.run_trace = loaded.get("run_trace") or []
+                    st.session_state.report_snapshot_id = loaded["id"]
+                    st.session_state.report_source = f"archive:{loaded['id']}"
+                    st.rerun()
+        with preview_col:
+            st.dataframe(snapshot_rows, width="stretch", hide_index=True)
+    else:
+        st.info("No archived full reports yet for this ticker.")
+
+    with st.expander("Agent Run History", expanded=False):
+        try:
+            from src.stage_04_pipeline.agent_cache import load_agent_run_history
+            history_rows = load_agent_run_history(memo.ticker, limit=100)
+        except Exception as e:
+            history_rows = []
+            st.error(f"History load error: {e}")
+        if history_rows:
+            st.dataframe(history_rows, width="stretch", hide_index=True)
+        else:
+            st.info("No agent run history found for this ticker.")
+
+
+# ── Section: Export ───────────────────────────────────────────────────────────
+if selected_section == "Export":
+    st.subheader("Export Report")
+
+    # JSON export
+    st.markdown("#### IC Memo JSON")
+    st.download_button(
+        label="Download IC Memo JSON",
+        data=memo.model_dump_json(indent=2),
+        file_name=f"{memo.ticker}_ic_memo_{memo.date}.json",
+        mime="application/json",
+    )
+
+    # HTML report
+    st.markdown("#### HTML Report")
+    st.caption("Self-contained HTML file — open in any browser, print to PDF via Ctrl+P.")
+
+    def _build_html_report(m) -> str:
+        val = m.valuation
+        price = val.current_price or 0
+        upside = (val.upside_pct_base or 0) * 100
+        action_col = {"BUY": "#3fb950", "SELL SHORT": "#f85149", "WATCH": "#d29922", "PASS": "#8b949e"}.get(m.action, "#8b949e")
+
+        def _row(label, value):
+            return f"<tr><td style='color:#8b949e;padding:4px 8px'>{label}</td><td style='padding:4px 8px;font-weight:600'>{value}</td></tr>"
+
+        flags_html = "".join(f"<li style='color:#f85149'>{_fix_text(x)}</li>" for x in (m.filings.red_flags or []))
+        catalysts_html = "".join(f"<li>{x}</li>" for x in m.key_catalysts)
+        risks_html = "".join(f"<li>{x}</li>" for x in m.key_risks)
+        questions_html = "".join(f"<li>{x}</li>" for x in m.open_questions)
+        filings_notes_html = "".join(f"<li>{_fix_text(x)}</li>" for x in (m.filings.notes_watch_items or []))
+        risk_overlay_html = "".join(
+            f"<li>{overlay.risk_name} — p={overlay.probability:.0%}, "
+            f"Δgrowth {overlay.revenue_growth_near_bps}bps, Δmargin {overlay.ebit_margin_bps}bps, "
+            f"ΔWACC {overlay.wacc_bps}bps</li>"
+            for overlay in (m.risk_impact.overlays or [])
+        )
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{m.ticker} — IC Memo {m.date}</title>
+<style>
+body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background:#0d1117; color:#e2e8f0; max-width:960px; margin:40px auto; padding:0 24px; }}
+h1 {{ color:#f0f6fc; }} h2 {{ color:#388bfd; border-bottom:1px solid #21262d; padding-bottom:8px; margin-top:32px; }}
+h3 {{ color:#c9d1d9; }}
+.badge {{ display:inline-block; padding:4px 12px; border-radius:4px; font-weight:700; font-size:1.1em; color:#fff; background:{action_col}; }}
+.metric-grid {{ display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin:20px 0; }}
+.metric {{ background:#161b22; border:1px solid #21262d; border-radius:8px; padding:16px; }}
+.metric-label {{ color:#8b949e; font-size:0.75rem; text-transform:uppercase; letter-spacing:0.04em; }}
+.metric-value {{ color:#f0f6fc; font-size:1.4rem; font-weight:700; margin-top:4px; }}
+.cases {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }}
+.case {{ background:#161b22; border:1px solid #21262d; border-radius:8px; padding:16px; }}
+.one-liner {{ background:#162032; border-left:3px solid #388bfd; padding:12px 16px; border-radius:6px; margin:16px 0; }}
+.variant {{ background:#1f1a00; border-left:3px solid #d29922; padding:12px 16px; border-radius:6px; margin:16px 0; }}
+table {{ width:100%; border-collapse:collapse; }} td,th {{ border:1px solid #21262d; padding:6px 10px; }}
+th {{ background:#161b22; color:#8b949e; font-weight:600; font-size:0.85rem; }}
+ul {{ padding-left:24px; }} li {{ margin-bottom:4px; line-height:1.6; }}
+@media print {{
+  body {{ background: #ffffff; color: #111827; }}
+  .metric, .case, .one-liner, .variant {{ break-inside: avoid; border-color: #d1d5db; background: #ffffff; color: #111827; }}
+  h1, h2, h3, p, li, td, th {{ color: #111827 !important; }}
+}}
+</style>
+</head>
+<body>
+<h1><span class="badge">{m.action}</span> {m.ticker} — {m.company_name}</h1>
+<p style="color:#8b949e">{m.sector} · {m.date} · Analyst: {m.analyst}</p>
+<div class="metric-grid">
+  <div class="metric"><div class="metric-label">Action</div><div class="metric-value">{m.action}</div></div>
+  <div class="metric"><div class="metric-label">Conviction</div><div class="metric-value">{m.conviction.upper()}</div></div>
+  <div class="metric"><div class="metric-label">Current Price</div><div class="metric-value">${price:,.2f}</div></div>
+  <div class="metric"><div class="metric-label">Base Case IV</div><div class="metric-value">${val.base:,.2f}</div></div>
+  <div class="metric"><div class="metric-label">Upside (Base)</div><div class="metric-value">{upside:+.1f}%</div></div>
+</div>
+<div class="one-liner"><strong>One-liner:</strong> {m.one_liner}</div>
+<div class="variant"><strong>Variant Thesis:</strong> {m.variant_thesis_prompt}</div>
+<h2>DCF Scenarios</h2>
+<table>
+<tr><th>Scenario</th><th>Intrinsic Value</th><th>Upside / (Downside)</th></tr>
+<tr><td>Bear</td><td>${val.bear:.2f}</td><td>{((val.bear-price)/price*100):+.1f}%</td></tr>
+<tr><td>Base</td><td>${val.base:.2f}</td><td>{((val.base-price)/price*100):+.1f}%</td></tr>
+<tr><td>Bull</td><td>${val.bull:.2f}</td><td>{((val.bull-price)/price*100):+.1f}%</td></tr>
+</table>
+<h2>Investment Thesis</h2>
+<div class="cases">
+  <div class="case"><h3>Bull Case</h3><p>{m.bull_case}</p></div>
+  <div class="case"><h3>Base Case</h3><p>{m.base_case}</p></div>
+  <div class="case"><h3>Bear Case</h3><p>{m.bear_case}</p></div>
+</div>
+<h2>Key Catalysts</h2><ul>{catalysts_html}</ul>
+<h2>Key Risks</h2><ul>{risks_html}</ul>
+{"<h2>Risk Impact</h2><ul>" + risk_overlay_html + "</ul>" if risk_overlay_html else ""}
+{"<h2>Red Flags (Filings)</h2><ul>" + flags_html + "</ul>" if flags_html else ""}
+{"<h2>Filing Note Watch Items</h2><ul>" + filings_notes_html + "</ul>" if filings_notes_html else ""}
+<h2>Open Questions</h2><ul>{questions_html}</ul>
+<h2>Filings Analysis</h2><p>{_fix_text(m.filings.raw_summary or "")}</p>
+<h2>Earnings Analysis</h2><p>{_fix_text(m.earnings.raw_summary or "")}</p>
+<h2>Sentiment</h2><p>{_fix_text(m.sentiment.raw_summary or "")}</p>
+<hr style="border-color:#21262d;margin-top:48px">
+<p style="color:#8b949e;font-size:0.8rem">Generated by AI Research Pod · {m.date}</p>
+</body>
+</html>"""
+
+    html_report = _build_html_report(memo)
+    st.download_button(
+        label="Download HTML Report",
+        data=html_report,
+        file_name=f"{memo.ticker}_ic_memo_{memo.date}.html",
+        mime="text/html",
+    )
+
+    with st.expander("Preview HTML", expanded=False):
+        st.components.v1.html(html_report, height=600, scrolling=True)
+
+
+# ── Section: Raw JSON ─────────────────────────────────────────────────────────
+if selected_section == "Raw JSON":
     st.subheader("Full IC Memo JSON")
     st.download_button(
         label="Download JSON",
@@ -900,6 +2178,8 @@ if selected_section == "🔍 Raw JSON":
     )
     st.json(json.loads(memo.model_dump_json()))
 
+
+# ── Agent Audit Trail ─────────────────────────────────────────────────────────
 st.divider()
 with st.expander("Agent Audit Trail", expanded=False):
     st.caption("Exact agent prompts, tool traces, raw outputs, and parsed artifacts for recent runs.")
@@ -909,7 +2189,6 @@ with st.expander("Agent Audit Trail", expanded=False):
             load_agent_run_artifact,
             load_latest_agent_artifacts_by_ticker,
         )
-
         audit_rows = load_latest_agent_artifacts_by_ticker(memo.ticker, limit=100)
     except Exception as e:
         audit_rows = []
@@ -940,18 +2219,17 @@ with st.expander("Agent Audit Trail", expanded=False):
 
         if artifact_needs_refresh:
             st.warning(
-                "This looks like a legacy cached run without full prompt/output artifacts. "
-                "Refresh the selected agent to store a complete audit payload under the current schema."
+                "Legacy cached run — missing full prompt/output artifacts. "
+                "Refresh the selected agent to store a complete audit payload."
             )
             if st.button(
                 "Refresh artifact by rerunning this agent",
                 key=f"refresh_artifact_{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}",
-                use_container_width=True,
+                width="stretch",
             ):
                 with st.spinner(f"Refreshing {selected_agent} for {memo.ticker}..."):
                     from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
                     from src.stage_04_pipeline.recommendations import write_recommendations
-
                     orch = PipelineOrchestrator()
                     refreshed_memo = orch.run(
                         memo.ticker,
@@ -981,7 +2259,7 @@ with st.expander("Agent Audit Trail", expanded=False):
                 st.info("No LLM call: deterministic valuation adapter.")
 
             prompt_tab, user_tab, schema_tab, trace_tab, raw_tab, parsed_tab = st.tabs(
-                ["System Prompt", "User Prompt", "Tool Schema", "Tool Trace", "Raw Final Output", "Parsed Output"]
+                ["System Prompt", "User Prompt", "Tool Schema", "Tool Trace", "Raw Output", "Parsed Output"]
             )
             with prompt_tab:
                 st.code(artifact.get("system_prompt") or "—", language="text")
@@ -1011,17 +2289,21 @@ with st.expander("Agent Audit Trail", expanded=False):
                 else:
                     st.write("No parsed output stored for this run.")
 
-            st.download_button(
-                "Download Artifact JSON",
+            dl_col1, dl_col2 = st.columns(2)
+            dl_col1.download_button(
+                "Artifact JSON",
                 data=json.dumps(artifact, indent=2, default=str),
                 file_name=f"{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}_artifact.json",
                 mime="application/json",
                 key=f"artifact_dl_{selected_row['run_log_id']}",
             )
-            st.download_button(
-                "Download Raw Output",
+            dl_col2.download_button(
+                "Raw Output",
                 data=artifact.get("raw_final_output") or "",
                 file_name=f"{memo.ticker}_{selected_agent}_{selected_row['run_log_id']}_raw.txt",
                 mime="text/plain",
                 key=f"raw_dl_{selected_row['run_log_id']}",
             )
+
+
+

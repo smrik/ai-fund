@@ -4,8 +4,8 @@
 
 - [2026-03-06 DCF Pipeline](./2026-03-06-dcf-pipeline.md)
 - [2026-03-06 Config Consolidation](./2026-03-06-config-consolidation.md)
+- [2026-03-15 Dashboard Research Surface Remediation and Auditability](./2026-03-15-dashboard-research-program.md)
 
 ## Notes
 
 Use this folder for scoped, date-stamped implementation plans.
-

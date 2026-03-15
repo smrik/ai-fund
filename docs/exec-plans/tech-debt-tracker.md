@@ -16,6 +16,10 @@ When fixed, move to the relevant sprint's completed log.
 | TD-05 | `src/stage_03_judgment/base_agent.py:8` | Uses OpenAI SDK (`from openai import OpenAI`) — agents should use Anthropic SDK | High | 2026-03-06 |
 | TD-06 | `config/settings.py:41` | `MIN_MARKET_CAP_MM = 2000` conflicts with Stage 1 filter's `500` floor — two sources of truth | Medium | 2026-03-06 |
 | TD-07 | `src/stage_02_valuation/templates/dcf_model.py:103-115` | Bear/bull scenario multipliers are generic (0.6x/0.75x) — should be company-specific (Sprint 6) | Low | 2026-03-06 |
+| TD-08 | `dashboard/app.py`, `src/stage_04_pipeline/comps_dashboard.py` | Comps workbench is now usable but still lacks explicit quartile statistics, competitor taxonomy, and source-cited peer rationale expected by the repo's competitive/comps skills | Medium | 2026-03-15 |
+| TD-09 | `dashboard/app.py`, `src/stage_04_pipeline/dcf_audit.py` | Dashboard lacks a model-integrity panel for balance-sheet ties, cash-flow ties, terminal-value concentration, and logic warnings despite existing DCF/WACC surfaces | High | 2026-03-15 |
+| TD-10 | `dashboard/app.py`, `src/stage_04_pipeline/news_materiality.py`, `src/stage_04_pipeline/agent_cache.py` | No structured thesis-tracker or earnings-update surface for beat/miss, old-vs-new estimates, catalyst calendar, and thesis-pillar drift over time | High | 2026-03-15 |
+| TD-11 | `dashboard/app.py`, `src/stage_04_pipeline/filings_browser.py`, `src/stage_00_data/edgar_client.py` | Filings Browser is audit-friendly but still text-first; it does not yet expose structured XBRL/statement-table browsing or exhibit-level navigation | Medium | 2026-03-15 |
 
 ---
 
@@ -23,5 +27,6 @@ When fixed, move to the relevant sprint's completed log.
 
 | ID | Resolution | Sprint | Date |
 |---|---|---|---|
-| — | — | — | — |
+| TD-12 | Replaced Streamlit `use_container_width` calls with 1.55 `width=` usage and introduced shared presentation formatting helpers used by the dashboard | Dashboard research remediation | 2026-03-15 |
+| TD-13 | Added filings statement-coverage diagnostics, retrieval observability, Market Intel historical brief, comps metric switching, football field, and target historical multiples | Dashboard research remediation | 2026-03-15 |
 
