@@ -350,6 +350,42 @@ def get_10k_text(ticker: str, max_chars: int = 50_000) -> str | None:
         return None
 
 
+def get_recent_10q_texts(ticker: str, limit: int = 2, max_chars_each: int = 50_000) -> list[dict]:
+    """
+    Return the cleaned text of the most recent 10-Q filings for a ticker.
+    Each item: {filing_date, accession_no, text}
+    Returns an empty list on failure.
+    """
+    try:
+        cik = get_cik(ticker)
+        filings = get_recent_filings(cik, "10-Q", limit=limit)
+        results = []
+        for f in filings:
+            accession_no = f.get("accession_no")
+            primary_doc = f.get("primary_doc")
+            if not accession_no or not primary_doc:
+                continue
+            text = _get_cached_or_fetch_filing_text(
+                ticker=ticker,
+                cik=cik,
+                form_type="10-Q",
+                filing_date=f.get("filing_date"),
+                accession_no=accession_no,
+                doc_name=primary_doc,
+                max_chars=max_chars_each,
+            )
+            results.append(
+                {
+                    "filing_date": f.get("filing_date"),
+                    "accession_no": accession_no,
+                    "text": text if text else "(no text retrieved)",
+                }
+            )
+        return results
+    except Exception:
+        return []
+
+
 def get_8k_texts(ticker: str, limit: int = 3, max_chars_each: int = 15_000) -> list[dict]:
     """
     Return the text of the most recent 8-K filings for a ticker.

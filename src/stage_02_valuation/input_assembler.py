@@ -10,10 +10,10 @@ import yaml
 
 from config import ROOT_DIR
 from src.stage_00_data import market_data as md_client
-from src.stage_00_data.ciq_adapter import get_ciq_comps_valuation, get_ciq_snapshot
+from src.stage_00_data.ciq_adapter import get_ciq_comps_detail, get_ciq_comps_valuation, get_ciq_snapshot
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
 from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
-from src.stage_02_valuation.wacc import compute_wacc_from_yfinance
+from src.stage_02_valuation.wacc import blend_wacc_results, compute_wacc_from_yfinance, compute_wacc_methodology_set_for_ticker
 
 
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"
@@ -158,6 +158,24 @@ def _apply_overrides(
             _apply(entry.get("suggested_override") or {}, "qoe_llm_approved")
 
 
+def _load_wacc_methodology_override(ticker: str) -> dict[str, Any] | None:
+    overrides = load_valuation_overrides()
+    ticker_blob = overrides.get("tickers", {}).get(ticker.upper(), {})
+    method_blob = ticker_blob.get("wacc_methodology")
+    if not isinstance(method_blob, dict):
+        return None
+    mode = str(method_blob.get("mode") or "").strip()
+    if mode not in {"single_method", "blended"}:
+        return None
+    selected_method = method_blob.get("selected_method")
+    weights = method_blob.get("weights") if isinstance(method_blob.get("weights"), dict) else None
+    return {
+        "mode": mode,
+        "selected_method": selected_method,
+        "weights": weights or {},
+    }
+
+
 def _derive_invested_capital_start(
     revenue_base: float,
     tax_start: float,
@@ -207,6 +225,7 @@ def build_valuation_inputs(
     hist = md_client.get_historical_financials(ticker)
     ciq = get_ciq_snapshot(ticker, as_of_date=as_of_date)
     ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
+    ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)
 
     price = float(mkt.get("current_price") or 0)
     sector = mkt.get("sector", "") or ""
@@ -316,7 +335,18 @@ def build_valuation_inputs(
     da_start = _bounded(da_raw, 0.005, 0.20, defaults["da_pct"])
     da_target = _bounded(max(0.003, da_start * 0.95), 0.003, 0.20, da_start)
 
-    wacc_result = compute_wacc_from_yfinance(ticker, hist=hist)
+    peer_tickers = [
+        str(peer.get("ticker") or "").upper()
+        for peer in (ciq_comps_detail or {}).get("peers", [])
+        if peer.get("ticker")
+    ]
+    wacc_method_results = compute_wacc_methodology_set_for_ticker(
+        ticker,
+        peer_tickers=peer_tickers,
+        hist=hist,
+        market_data=mkt,
+    )
+    wacc_result = wacc_method_results["peer_bottom_up"]
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
     cost_of_equity = _bounded(getattr(wacc_result, "cost_of_equity", None), 0.04, 0.30, max(0.06, wacc + 0.015))
     equity_weight = getattr(wacc_result, "equity_weight", None)
@@ -585,6 +615,46 @@ def build_valuation_inputs(
 
     if apply_overrides:
         _apply_overrides(drivers, source_lineage, ticker=ticker, sector=sector)
+        method_override = _load_wacc_methodology_override(ticker)
+        if method_override:
+            mode = method_override["mode"]
+            selected_method = method_override.get("selected_method")
+            weights = method_override.get("weights") or {}
+            try:
+                if mode == "single_method" and selected_method in wacc_method_results:
+                    selected_wacc_result = wacc_method_results[selected_method]
+                    selected_label = selected_method
+                elif mode == "blended":
+                    selected_wacc_result = blend_wacc_results(wacc_method_results, weights)
+                    selected_label = "blended"
+                else:
+                    selected_wacc_result = None
+                    selected_label = None
+                if selected_wacc_result is not None:
+                    drivers.wacc = float(
+                        _bounded(getattr(selected_wacc_result, "wacc", 0.09), 0.04, 0.20, float(drivers.wacc))
+                    )
+                    drivers.cost_of_equity = float(
+                        _bounded(
+                            getattr(selected_wacc_result, "cost_of_equity", None),
+                            0.04,
+                            0.30,
+                            float(getattr(drivers, "cost_of_equity", drivers.wacc + 0.015)),
+                        )
+                    )
+                    selected_equity_weight = getattr(selected_wacc_result, "equity_weight", None)
+                    selected_debt_weight = getattr(selected_wacc_result, "debt_weight", None)
+                    if selected_debt_weight is None and selected_equity_weight is not None:
+                        selected_debt_weight = 1.0 - selected_equity_weight
+                    drivers.debt_weight = float(
+                        _bounded(selected_debt_weight, 0.00, 0.80, float(getattr(drivers, "debt_weight", 0.20)))
+                    )
+                    source_lineage["wacc"] = f"wacc_methodology:{selected_label}"
+                    source_lineage["cost_of_equity"] = f"wacc_methodology:{selected_label}"
+                    source_lineage["debt_weight"] = f"wacc_methodology:{selected_label}"
+                    wacc_result = selected_wacc_result
+            except Exception:
+                pass
 
     return ValuationInputsWithLineage(
         ticker=ticker,
@@ -623,6 +693,18 @@ def build_valuation_inputs(
             "equity_weight": getattr(wacc_result, "equity_weight", None),
             "debt_weight": getattr(wacc_result, "debt_weight", None),
             "peers_used": getattr(wacc_result, "peers_used", None),
+            "method_results": {
+                method: {
+                    "wacc": result.wacc,
+                    "cost_of_equity": result.cost_of_equity,
+                    "beta_relevered": result.beta_relevered,
+                    "equity_weight": result.equity_weight,
+                    "debt_weight": result.debt_weight,
+                    "peers_used": result.peers_used,
+                }
+                for method, result in wacc_method_results.items()
+            },
+            "selected_methodology": _load_wacc_methodology_override(ticker) if apply_overrides else None,
         },
         story_profile=asdict(story_profile),
         story_adjustments=story_adjustments,

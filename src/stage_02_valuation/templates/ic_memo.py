@@ -25,6 +25,8 @@ class FilingsSummary(BaseModel):
     revenue_trend: str = ""        # narrative: "accelerating", "decelerating", "stable"
     margin_trend: str = ""
     red_flags: list[str] = Field(default_factory=list)
+    notes_watch_items: list[str] = Field(default_factory=list)
+    recent_quarter_updates: list[str] = Field(default_factory=list)
     management_guidance: str = ""
     raw_summary: str = ""          # full Claude narrative
 
@@ -34,6 +36,8 @@ class EarningsSummary(BaseModel):
     guidance_trend: str = ""                 # "raised", "maintained", "lowered"
     management_tone: str = ""               # "confident", "cautious", "defensive"
     key_themes: list[str] = Field(default_factory=list)
+    notes_watch_items: list[str] = Field(default_factory=list)
+    quarterly_disclosure_changes: list[str] = Field(default_factory=list)
     tone_shift: str = ""                    # vs prior quarter
     raw_summary: str = ""
 

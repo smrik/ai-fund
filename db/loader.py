@@ -366,6 +366,103 @@ def upsert_edgar_filing_cache(conn: sqlite3.Connection, row: dict[str, Any]):
     conn.commit()
 
 
+def upsert_edgar_section_cache(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
+    """Upsert extracted filing sections keyed by filing accession and parser version."""
+    if not rows:
+        return
+    conn.executemany(
+        """
+        INSERT INTO edgar_section_cache (
+            ticker, cik, form_type, accession_no, doc_name, filing_date,
+            section_key, section_label, section_text, section_hash,
+            parser_version, extracted_at
+        ) VALUES (
+            :ticker, :cik, :form_type, :accession_no, :doc_name, :filing_date,
+            :section_key, :section_label, :section_text, :section_hash,
+            :parser_version, :extracted_at
+        )
+        ON CONFLICT(ticker, accession_no, doc_name, section_key, parser_version) DO UPDATE SET
+            cik = excluded.cik,
+            form_type = excluded.form_type,
+            filing_date = excluded.filing_date,
+            section_label = excluded.section_label,
+            section_text = excluded.section_text,
+            section_hash = excluded.section_hash,
+            extracted_at = excluded.extracted_at
+        """,
+        rows,
+    )
+    conn.commit()
+
+
+def upsert_edgar_chunk_cache(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
+    """Upsert filing chunks keyed by section/chunk version."""
+    if not rows:
+        return
+    conn.executemany(
+        """
+        INSERT INTO edgar_chunk_cache (
+            ticker, form_type, accession_no, doc_name, section_key,
+            chunk_index, chunk_text, chunk_hash, start_char, end_char,
+            chunk_version, created_at
+        ) VALUES (
+            :ticker, :form_type, :accession_no, :doc_name, :section_key,
+            :chunk_index, :chunk_text, :chunk_hash, :start_char, :end_char,
+            :chunk_version, :created_at
+        )
+        ON CONFLICT(ticker, accession_no, doc_name, section_key, chunk_index, chunk_version)
+        DO UPDATE SET
+            chunk_text = excluded.chunk_text,
+            chunk_hash = excluded.chunk_hash,
+            start_char = excluded.start_char,
+            end_char = excluded.end_char,
+            created_at = excluded.created_at
+        """,
+        rows,
+    )
+    conn.commit()
+
+
+def upsert_edgar_chunk_embedding(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert cached local embedding for a filing chunk."""
+    conn.execute(
+        """
+        INSERT INTO edgar_chunk_embeddings (
+            chunk_hash, embedding_model, embedding_dim, embedding_blob, created_at
+        ) VALUES (
+            :chunk_hash, :embedding_model, :embedding_dim, :embedding_blob, :created_at
+        )
+        ON CONFLICT(chunk_hash, embedding_model) DO UPDATE SET
+            embedding_dim = excluded.embedding_dim,
+            embedding_blob = excluded.embedding_blob,
+            created_at = excluded.created_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_filing_context_cache(conn: sqlite3.Connection, row: dict[str, Any]):
+    """Upsert rendered filing context bundle cache."""
+    conn.execute(
+        """
+        INSERT INTO filing_context_cache (
+            ticker, profile_name, corpus_hash, query_version,
+            embedding_model, context_json, created_at
+        ) VALUES (
+            :ticker, :profile_name, :corpus_hash, :query_version,
+            :embedding_model, :context_json, :created_at
+        )
+        ON CONFLICT(ticker, profile_name, corpus_hash, query_version, embedding_model)
+        DO UPDATE SET
+            context_json = excluded.context_json,
+            created_at = excluded.created_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
 def upsert_sec_filing_metrics_snapshot(conn: sqlite3.Connection, row: dict[str, Any]):
     """Upsert deterministic SEC/XBRL metrics snapshot."""
     conn.execute(
@@ -488,3 +585,41 @@ def insert_valuation_override_audit(conn: sqlite3.Connection, rows: list[dict[st
         rows,
     )
     conn.commit()
+
+
+def insert_pipeline_report_archive(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a dashboard report snapshot and return its row id."""
+    cursor = conn.execute(
+        """
+        INSERT INTO pipeline_report_archive (
+            ticker,
+            created_at,
+            run_group_ts,
+            company_name,
+            sector,
+            action,
+            conviction,
+            current_price,
+            base_iv,
+            memo_json,
+            dashboard_snapshot_json,
+            run_trace_json
+        ) VALUES (
+            :ticker,
+            :created_at,
+            :run_group_ts,
+            :company_name,
+            :sector,
+            :action,
+            :conviction,
+            :current_price,
+            :base_iv,
+            :memo_json,
+            :dashboard_snapshot_json,
+            :run_trace_json
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)

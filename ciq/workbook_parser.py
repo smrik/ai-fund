@@ -120,11 +120,20 @@ def _default_unit_scale(sheet: str, section: str) -> tuple[str | None, float]:
 
 def _to_iso_date(value: Any) -> str | None:
     if isinstance(value, datetime):
+        if value.year <= 1900:
+            return None
         return value.date().isoformat()
     if isinstance(value, date):
+        if value.year <= 1900:
+            return None
         return value.isoformat()
     text = _safe_str(value)
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        try:
+            if int(text[:4]) <= 1900:
+                return None
+        except ValueError:
+            return None
         return text
     return None
 

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import src.stage_04_pipeline.orchestrator as orch_mod
 from db.schema import create_tables
+from src.stage_00_data.filing_retrieval import FilingContextBundle, FilingChunk
 from src.stage_02_valuation.templates.ic_memo import (
     EarningsSummary,
     FilingsSummary,
@@ -46,9 +47,15 @@ class _StubFilingsAgent:
     system_prompt = "filings"
     prompt_version = "v-test"
 
-    def analyze(self, ticker):
+    def analyze(self, ticker, filing_context=None):
         _bump("FilingsAgent")
-        return FilingsSummary(revenue_trend="stable", margin_trend="stable", raw_summary="filings context")
+        return FilingsSummary(
+            revenue_trend="stable",
+            margin_trend="stable",
+            raw_summary="filings context",
+            notes_watch_items=["Lease note"],
+            recent_quarter_updates=["Q2 update"],
+        )
 
 
 class _StubEarningsAgent:
@@ -57,9 +64,15 @@ class _StubEarningsAgent:
     system_prompt = "earnings"
     prompt_version = "v-test"
 
-    def analyze(self, ticker, filings_context=""):
+    def analyze(self, ticker, filings_context="", filing_context=None, earnings_8k_context=None):
         _bump("EarningsAgent")
-        return EarningsSummary(guidance_trend="maintained", management_tone="confident", raw_summary=f"earnings {filings_context}")
+        return EarningsSummary(
+            guidance_trend="maintained",
+            management_tone="confident",
+            raw_summary=f"earnings {filings_context}",
+            notes_watch_items=["Restructuring note"],
+            quarterly_disclosure_changes=["Added litigation disclosure"],
+        )
 
 
 class _StubQoEAgent:
@@ -157,6 +170,7 @@ class _StubThesisAgent:
         qoe_context="",
         industry_context="",
         accounting_recast_context="",
+        filing_update_context="",
     ):
         _bump("ThesisAgent")
         return ICMemo(
@@ -285,6 +299,31 @@ def _setup_orchestrator(monkeypatch, tmp_path: Path):
                 }
             ],
         },
+    )
+    monkeypatch.setattr(
+        orch_mod.filing_retrieval,
+        "get_agent_filing_context",
+        lambda ticker, profile_name, include_10k=True, ten_q_limit=2, use_cache=True: FilingContextBundle(
+            ticker=ticker,
+            profile_name=profile_name,
+            corpus_hash=f"{profile_name}-hash",
+            sources=[],
+            selected_chunks=[
+                FilingChunk("10-K", "a1", "2025-12-31", "notes_to_financials", 0, f"{profile_name} context", f"{profile_name}-chunk")
+            ],
+            rendered_text=f"[10-K | 2025-12-31 | notes_to_financials | chunk 0]\n{profile_name} context",
+            retrieval_summary={"used_embeddings": False},
+        ),
+    )
+    monkeypatch.setattr(
+        orch_mod.filing_retrieval,
+        "render_filing_context",
+        lambda bundle, max_chars: bundle.rendered_text,
+    )
+    monkeypatch.setattr(
+        orch_mod.edgar_client,
+        "get_8k_texts",
+        lambda ticker, limit=3: [{"filing_date": "2026-01-31", "text": "Earnings release"}],
     )
 
     import src.stage_04_pipeline.agent_cache as cache_mod

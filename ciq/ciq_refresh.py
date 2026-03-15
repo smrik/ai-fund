@@ -10,8 +10,6 @@ import argparse
 import time
 from pathlib import Path
 
-import xlwings as xw
-
 from config.settings import CIQ_DROP_FOLDER, CIQ_REFRESH_TIMEOUT, CIQ_WORKBOOK_GLOB
 from ciq.ingest import ingest_ciq_folder
 
@@ -19,6 +17,14 @@ from ciq.ingest import ingest_ciq_folder
 
 def refresh_workbook(path: Path, timeout_sec: int = CIQ_REFRESH_TIMEOUT) -> bool:
     """Open workbook in Excel, trigger recalc, and save."""
+    try:
+        import xlwings as xw
+    except ImportError as exc:
+        raise RuntimeError(
+            "xlwings is not installed. Install the dashboard/CIQ environment dependencies "
+            "or use --no-refresh to ingest already-saved workbooks."
+        ) from exc
+
     app = xw.App(visible=True)
     wb = None
     try:

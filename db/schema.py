@@ -218,6 +218,58 @@ def create_tables(conn: sqlite3.Connection | None = None):
         PRIMARY KEY (ticker, accession_no, doc_name)
     );
 
+    CREATE TABLE IF NOT EXISTS edgar_section_cache (
+        ticker          TEXT NOT NULL,
+        cik             TEXT NOT NULL,
+        form_type       TEXT NOT NULL,
+        accession_no    TEXT NOT NULL,
+        doc_name        TEXT NOT NULL,
+        filing_date     TEXT,
+        section_key     TEXT NOT NULL,
+        section_label   TEXT NOT NULL,
+        section_text    TEXT NOT NULL,
+        section_hash    TEXT NOT NULL,
+        parser_version  TEXT NOT NULL,
+        extracted_at    TEXT NOT NULL,
+        PRIMARY KEY (ticker, accession_no, doc_name, section_key, parser_version)
+    );
+
+    CREATE TABLE IF NOT EXISTS edgar_chunk_cache (
+        ticker          TEXT NOT NULL,
+        form_type       TEXT NOT NULL,
+        accession_no    TEXT NOT NULL,
+        doc_name        TEXT NOT NULL,
+        section_key     TEXT NOT NULL,
+        chunk_index     INTEGER NOT NULL,
+        chunk_text      TEXT NOT NULL,
+        chunk_hash      TEXT NOT NULL,
+        start_char      INTEGER NOT NULL,
+        end_char        INTEGER NOT NULL,
+        chunk_version   TEXT NOT NULL,
+        created_at      TEXT NOT NULL,
+        PRIMARY KEY (ticker, accession_no, doc_name, section_key, chunk_index, chunk_version)
+    );
+
+    CREATE TABLE IF NOT EXISTS edgar_chunk_embeddings (
+        chunk_hash       TEXT NOT NULL,
+        embedding_model  TEXT NOT NULL,
+        embedding_dim    INTEGER NOT NULL,
+        embedding_blob   TEXT NOT NULL,
+        created_at       TEXT NOT NULL,
+        PRIMARY KEY (chunk_hash, embedding_model)
+    );
+
+    CREATE TABLE IF NOT EXISTS filing_context_cache (
+        ticker           TEXT NOT NULL,
+        profile_name     TEXT NOT NULL,
+        corpus_hash      TEXT NOT NULL,
+        query_version    TEXT NOT NULL,
+        embedding_model  TEXT NOT NULL,
+        context_json     TEXT NOT NULL,
+        created_at       TEXT NOT NULL,
+        PRIMARY KEY (ticker, profile_name, corpus_hash, query_version, embedding_model)
+    );
+
     CREATE TABLE IF NOT EXISTS sec_filing_metrics_snapshot (
         ticker               TEXT NOT NULL,
         cik                  TEXT NOT NULL,
@@ -349,6 +401,36 @@ def create_tables(conn: sqlite3.Connection | None = None):
         created_at          TEXT NOT NULL,
         FOREIGN KEY (run_log_id) REFERENCES agent_run_log(id)
     );
+
+    CREATE TABLE IF NOT EXISTS pipeline_report_archive (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker                TEXT NOT NULL,
+        created_at            TEXT NOT NULL,
+        run_group_ts          TEXT,
+        company_name          TEXT,
+        sector                TEXT,
+        action                TEXT,
+        conviction            TEXT,
+        current_price         REAL,
+        base_iv               REAL,
+        memo_json             TEXT NOT NULL,
+        dashboard_snapshot_json TEXT,
+        run_trace_json        TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS wacc_methodology_audit (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_ts              TEXT NOT NULL,
+        ticker                TEXT NOT NULL,
+        actor                 TEXT NOT NULL,
+        mode                  TEXT NOT NULL,
+        selected_method       TEXT,
+        weights_json          TEXT,
+        effective_wacc        REAL,
+        prior_config_json     TEXT,
+        resulting_config_json TEXT NOT NULL,
+        preview_json          TEXT
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -444,6 +526,10 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trades(ticker);
     CREATE INDEX IF NOT EXISTS idx_industry_benchmarks_key ON industry_benchmarks(sector, industry, week_key);
     CREATE INDEX IF NOT EXISTS idx_edgar_filing_cache_lookup ON edgar_filing_cache(ticker, form_type, filing_date);
+    CREATE INDEX IF NOT EXISTS idx_edgar_section_cache_lookup ON edgar_section_cache(ticker, form_type, filing_date, section_key);
+    CREATE INDEX IF NOT EXISTS idx_edgar_chunk_cache_lookup ON edgar_chunk_cache(ticker, form_type, accession_no, section_key);
+    CREATE INDEX IF NOT EXISTS idx_edgar_chunk_embeddings_lookup ON edgar_chunk_embeddings(chunk_hash, embedding_model);
+    CREATE INDEX IF NOT EXISTS idx_filing_context_cache_lookup ON filing_context_cache(ticker, profile_name, corpus_hash, query_version);
     CREATE INDEX IF NOT EXISTS idx_sec_filing_metrics_lookup ON sec_filing_metrics_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_company_text_lookup ON company_text_cache(ticker, text_type, updated_at);
     CREATE INDEX IF NOT EXISTS idx_peer_similarity_lookup ON peer_similarity_cache(target_ticker, peer_ticker, embedding_model);
@@ -452,6 +538,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_run_log_id ON agent_run_artifacts(run_log_id);
+    CREATE INDEX IF NOT EXISTS idx_pipeline_report_archive_ticker_ts ON pipeline_report_archive(ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wacc_methodology_audit_ticker_ts ON wacc_methodology_audit(ticker, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);

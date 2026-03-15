@@ -98,6 +98,36 @@ def test_get_8k_texts_cleans_each_markup_document(monkeypatch):
     assert filings[1]["text"] == "earnings2.htm says guidance was raised & cash flow improved."
 
 
+def test_get_recent_10q_texts_returns_cleaned_quarterly_text(monkeypatch):
+    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
+    monkeypatch.setattr(
+        edgar_client,
+        "get_recent_filings",
+        lambda cik, form_type, limit=2: [
+            {
+                "accession_no": "0000123456-26-000002",
+                "filing_date": "2026-06-30",
+                "primary_doc": "q2.htm",
+            },
+            {
+                "accession_no": "0000123456-26-000003",
+                "filing_date": "2026-03-31",
+                "primary_doc": "q1.htm",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        edgar_client,
+        "_get_cached_or_fetch_filing_text",
+        lambda **kwargs: f"{kwargs['doc_name']} discusses deferred revenue and restructuring.",
+    )
+
+    results = edgar_client.get_recent_10q_texts("IBM", limit=2, max_chars_each=200)
+
+    assert [item["accession_no"] for item in results] == ["0000123456-26-000002", "0000123456-26-000003"]
+    assert "deferred revenue and restructuring" in results[0]["text"]
+
+
 def test_get_10k_text_uses_cached_clean_text_before_refetch(monkeypatch, tmp_path):
     db_path = tmp_path / "alpha_pod.db"
     conn = sqlite3.connect(db_path)

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from rich.console import Console
 from rich.panel import Panel
 
+from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.sec_filing_metrics import get_sec_filing_metrics
 from src.stage_02_valuation.templates.ic_memo import (
@@ -70,6 +71,7 @@ class PipelineOrchestrator:
         self.last_accounting_recast_result: dict = {}
         self.last_industry_result: dict = {}
         self.last_filings_metrics = None
+        self.last_filing_contexts: dict[str, filing_retrieval.FilingContextBundle] = {}
         self.last_risk_impact_result = RiskImpactOutput()
         self.last_risk_impact_view: dict = {}
         self.last_run_trace: list[dict] = []
@@ -177,7 +179,7 @@ class PipelineOrchestrator:
         self.last_run_trace = []
 
         console.print(Panel(
-            f"[bold]AI Research Pod[/bold] — {ticker}\nRunning 9-agent fundamental analysis pipeline",
+            f"[bold]AI Research Pod[/bold] — {ticker}\nRunning 10-agent fundamental analysis pipeline",
             style="blue",
         ))
 
@@ -203,6 +205,9 @@ class PipelineOrchestrator:
         industry_context = ""
         industry_result = {}
         industry_events = {}
+        filing_contexts: dict[str, filing_retrieval.FilingContextBundle] = {}
+        filing_context_texts: dict[str, str] = {}
+        earnings_8k_context = ""
         if sector:
             try:
                 bundle = self._run_cached_step(
@@ -261,14 +266,62 @@ class PipelineOrchestrator:
                 detail="Sector unknown",
             )
 
+        self._on_step("0b/9  FilingContextBuilder — 10-K + latest 2 10-Qs, section/chunk retrieval")
+        try:
+            for profile_name in ("filings", "earnings", "qoe", "accounting_recast"):
+                bundle = filing_retrieval.get_agent_filing_context(
+                    ticker,
+                    profile_name=profile_name,
+                    include_10k=True,
+                    ten_q_limit=2,
+                    use_cache=True,
+                )
+                filing_contexts[profile_name] = bundle
+                max_chars = 24_000 if profile_name == "earnings" else 40_000 if profile_name in {"qoe", "accounting_recast"} else 30_000
+                filing_context_texts[profile_name] = filing_retrieval.render_filing_context(bundle, max_chars=max_chars)
+            earnings_8k = edgar_client.get_8k_texts(ticker, limit=3)
+            earnings_8k_context = "\n\n".join(
+                f"[8-K | {item.get('filing_date') or 'unknown-date'} | earnings_release]\n{(item.get('text') or '').strip()}"
+                for item in earnings_8k
+                if item.get("text")
+            )
+            self.last_filing_contexts = filing_contexts
+            retrieval_modes = []
+            for profile_name, bundle in filing_contexts.items():
+                mode = "embed" if bundle.retrieval_summary.get("used_embeddings") else "priority"
+                retrieval_modes.append(f"{profile_name}:{mode}")
+            self._on_done("0b/9  FilingContextBuilder — 10-K + latest 2 10-Qs, section/chunk retrieval", "  ".join(retrieval_modes))
+            self._record_trace(
+                agent="FilingContextBuilder",
+                display_label="0b/9  FilingContextBuilder — 10-K + latest 2 10-Qs, section/chunk retrieval",
+                status="executed",
+                cache_hit=False,
+                forced_refresh=False,
+                detail=f"{len(filing_contexts)} profile(s)",
+            )
+        except Exception as exc:
+            self.last_filing_contexts = {}
+            filing_contexts = {}
+            filing_context_texts = {}
+            self._on_warn(f"FilingContextBuilder error: {exc}")
+            self._record_trace(
+                agent="FilingContextBuilder",
+                display_label="0b/9  FilingContextBuilder — 10-K + latest 2 10-Qs, section/chunk retrieval",
+                status="error",
+                cache_hit=False,
+                forced_refresh=False,
+                detail=str(exc),
+                error=str(exc),
+            )
+
         try:
             filings = self._run_cached_step(
                 ticker=ticker,
                 display_label="1/9  FilingsAgent — parsing SEC 10-K / 10-Q",
                 agent_name="FilingsAgent",
                 agent=self.filings_agent,
-                input_payload={"ticker": ticker},
-                runner=lambda: self.filings_agent.analyze(ticker),
+                input_payload={"ticker": ticker, "filing_context": filing_context_texts.get("filings", "")},
+                runner=lambda: self.filings_agent.analyze(ticker, filing_context=filing_context_texts.get("filings")),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: f"Revenue trend: {result.revenue_trend}  |  Margins: {result.margin_trend}",
@@ -287,8 +340,18 @@ class PipelineOrchestrator:
                 display_label="2/9  EarningsAgent — analysing earnings calls",
                 agent_name="EarningsAgent",
                 agent=self.earnings_agent,
-                input_payload={"ticker": ticker, "filings_context": filings.raw_summary},
-                runner=lambda: self.earnings_agent.analyze(ticker, filings.raw_summary),
+                input_payload={
+                    "ticker": ticker,
+                    "filings_context": filings.raw_summary,
+                    "filing_context": filing_context_texts.get("earnings", ""),
+                    "earnings_8k_context": earnings_8k_context,
+                },
+                runner=lambda: self.earnings_agent.analyze(
+                    ticker,
+                    filings.raw_summary,
+                    filing_context=filing_context_texts.get("earnings"),
+                    earnings_8k_context=earnings_8k_context,
+                ),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: (
@@ -311,8 +374,16 @@ class PipelineOrchestrator:
                 display_label="2a/9  QoEAgent — quality-of-earnings signals + EBIT normalisation",
                 agent_name="QoEAgent",
                 agent=self.qoe_agent,
-                input_payload={"ticker": ticker, "reported_ebit": reported_ebit},
-                runner=lambda: self.qoe_agent.analyze(ticker=ticker, reported_ebit=reported_ebit),
+                input_payload={
+                    "ticker": ticker,
+                    "reported_ebit": reported_ebit,
+                    "filing_text": filing_context_texts.get("qoe", ""),
+                },
+                runner=lambda: self.qoe_agent.analyze(
+                    ticker=ticker,
+                    reported_ebit=reported_ebit,
+                    filing_text=filing_context_texts.get("qoe"),
+                ),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: (
@@ -356,8 +427,16 @@ class PipelineOrchestrator:
                 display_label="2b/9  AccountingRecastAgent — proposing EBIT and EV-bridge reclassifications",
                 agent_name="AccountingRecastAgent",
                 agent=self.accounting_recast_agent,
-                input_payload={"ticker": ticker, "reported_ebit": reported_ebit},
-                runner=lambda: self.accounting_recast_agent.analyze(ticker=ticker, reported_ebit=reported_ebit),
+                input_payload={
+                    "ticker": ticker,
+                    "reported_ebit": reported_ebit,
+                    "filing_text": filing_context_texts.get("accounting_recast", ""),
+                },
+                runner=lambda: self.accounting_recast_agent.analyze(
+                    ticker=ticker,
+                    reported_ebit=reported_ebit,
+                    filing_text=filing_context_texts.get("accounting_recast"),
+                ),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: (
@@ -443,6 +522,7 @@ class PipelineOrchestrator:
         risk_impact = RiskImpactOutput()
         risk_impact_context = ""
         risk_impact_view: dict = {}
+        filing_update_context = filing_retrieval.build_filing_update_context(filings, earnings)
         try:
             risk_impact = self._run_cached_step(
                 ticker=ticker,
@@ -516,6 +596,7 @@ class PipelineOrchestrator:
                     "industry_context": industry_context,
                     "accounting_recast_context": accounting_recast_context,
                     "risk_impact_context": risk_impact_context,
+                    "filing_update_context": filing_update_context,
                 },
                 runner=lambda: self.thesis_agent.synthesize(
                     ticker=ticker,
@@ -530,6 +611,7 @@ class PipelineOrchestrator:
                     qoe_context=qoe_context,
                     industry_context=industry_context,
                     accounting_recast_context=accounting_recast_context,
+                    filing_update_context=filing_update_context,
                 ),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,

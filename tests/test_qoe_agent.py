@@ -58,6 +58,16 @@ def _stub_deterministic(monkeypatch, agent_module):
                         })
     monkeypatch.setattr(qa, "get_ciq_snapshot", lambda ticker: None)
     monkeypatch.setattr(qa, "get_ciq_nwc_history", lambda ticker: [])
+    monkeypatch.setattr(
+        qa.filing_retrieval,
+        "get_agent_filing_context",
+        lambda ticker, profile_name, include_10k=True, ten_q_limit=2: SimpleNamespace(rendered_text="Retrieved filing context"),
+    )
+    monkeypatch.setattr(
+        qa.filing_retrieval,
+        "render_filing_context",
+        lambda bundle, max_chars: bundle.rendered_text,
+    )
 
 
 def _fake_agent_init(self):
@@ -235,6 +245,10 @@ def test_qoe_agent_llm_unavailable_when_no_filing_text(monkeypatch):
 
     agent = QoEAgent()
     monkeypatch.setattr(agent, "run", lambda prompt: "bad json")
+    monkeypatch.setattr(
+        "src.stage_03_judgment.qoe_agent.filing_retrieval.get_agent_filing_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no filing context")),
+    )
     monkeypatch.setattr("src.stage_03_judgment.qoe_agent.edgar_client.get_10k_text",
                         lambda ticker: None)
 

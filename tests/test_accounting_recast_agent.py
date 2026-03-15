@@ -32,6 +32,10 @@ def _assert_schema(out: dict) -> None:
 def test_accounting_recast_agent_returns_structured_output(monkeypatch):
     monkeypatch.setattr("src.stage_03_judgment.accounting_recast_agent.BaseAgent.__init__", _fake_agent_init)
     monkeypatch.setattr(
+        "src.stage_03_judgment.accounting_recast_agent.filing_retrieval.get_agent_filing_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no shared context in unit test")),
+    )
+    monkeypatch.setattr(
         "src.stage_03_judgment.accounting_recast_agent.edgar_client.get_10k_text",
         lambda ticker, max_chars=40_000: "Annual report notes discuss restructuring charges and lease liabilities.",
     )
@@ -82,6 +86,10 @@ def test_accounting_recast_agent_returns_structured_output(monkeypatch):
 def test_accounting_recast_agent_falls_back_when_text_missing(monkeypatch):
     monkeypatch.setattr("src.stage_03_judgment.accounting_recast_agent.BaseAgent.__init__", _fake_agent_init)
     monkeypatch.setattr(
+        "src.stage_03_judgment.accounting_recast_agent.filing_retrieval.get_agent_filing_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no shared context in unit test")),
+    )
+    monkeypatch.setattr(
         "src.stage_03_judgment.accounting_recast_agent.edgar_client.get_10k_text",
         lambda ticker, max_chars=40_000: None,
     )
@@ -99,6 +107,10 @@ def test_accounting_recast_agent_falls_back_when_text_missing(monkeypatch):
 
 def test_accounting_recast_agent_falls_back_on_invalid_json(monkeypatch):
     monkeypatch.setattr("src.stage_03_judgment.accounting_recast_agent.BaseAgent.__init__", _fake_agent_init)
+    monkeypatch.setattr(
+        "src.stage_03_judgment.accounting_recast_agent.filing_retrieval.get_agent_filing_context",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("no shared context in unit test")),
+    )
     monkeypatch.setattr(
         "src.stage_03_judgment.accounting_recast_agent.edgar_client.get_10k_text",
         lambda ticker, max_chars=40_000: "10-K text exists",

@@ -69,12 +69,14 @@ class ThesisAgent(BaseAgent):
         qoe_context: str = "",
         industry_context: str = "",
         accounting_recast_context: str = "",
+        filing_update_context: str = "",
     ) -> ICMemo:
         """Synthesize all agent outputs into a final IC memo."""
 
         qoe_block = f"\n=== QUALITY OF EARNINGS ===\n{qoe_context}" if qoe_context else ""
         industry_block = f"\n=== INDUSTRY / RECENT EVENTS ===\n{industry_context}" if industry_context else ""
         risk_impact_block = f"\n=== RISK IMPACT OVERLAYS ===\n{risk_impact_context}" if risk_impact_context else ""
+        filing_update_block = f"\n=== FILING UPDATE CONTEXT ===\n{filing_update_context}" if filing_update_context else ""
         accounting_recast_block = (
             f"\n=== ACCOUNTING RECAST ===\n{accounting_recast_context}"
             if accounting_recast_context
@@ -91,7 +93,7 @@ SECTOR: {sector}
 
 === EARNINGS ANALYSIS ===
 {earnings.model_dump_json(indent=2)}
-{qoe_block}{accounting_recast_block}{industry_block}{risk_impact_block}
+{qoe_block}{accounting_recast_block}{industry_block}{risk_impact_block}{filing_update_block}
 === VALUATION ===
 {valuation.model_dump_json(indent=2)}
 

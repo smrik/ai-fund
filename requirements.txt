@@ -7,6 +7,9 @@ pandas>=2.0.0
 numpy>=1.24.0
 yfinance>=0.2.60       # Stage 1 screening — free market data
 requests>=2.30.0       # HTTP client for listing APIs
+openpyxl>=3.1.0        # CIQ workbook parsing
+streamlit==1.55.0      # Dashboard
+python-dotenv>=1.0.0   # .env loading
 
 # Config
 pyyaml>=6.0
@@ -22,6 +25,7 @@ python-dateutil>=2.8.0
 
 # LLM
 anthropic>=0.40.0
+openai>=1.0.0
 sentence-transformers>=3.0.0
 plotly>=5.0.0
 

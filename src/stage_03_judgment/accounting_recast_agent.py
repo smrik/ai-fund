@@ -10,13 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.stage_00_data import edgar_client
+from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_03_judgment.base_agent import BaseAgent
 
 
 SYSTEM_PROMPT = """You are a buy-side accounting analyst preparing a company for intrinsic valuation.
 
-Your job is to read 10-K narrative / notes and propose:
+Your job is to read filing narrative / notes and propose:
 1. one-time or non-core income statement adjustments that affect normalized EBIT
 2. balance-sheet / EV bridge classifications:
    - operating assets
@@ -207,8 +207,18 @@ class AccountingRecastAgent(BaseAgent):
         ticker = ticker.upper().strip()
         source = "provided_filing_text"
         if filing_text is None:
-            filing_text = edgar_client.get_10k_text(ticker, max_chars=40_000)
-            source = "sec_edgar_10k"
+            try:
+                bundle = filing_retrieval.get_agent_filing_context(
+                    ticker,
+                    profile_name="accounting_recast",
+                    include_10k=True,
+                    ten_q_limit=2,
+                )
+                filing_text = filing_retrieval.render_filing_context(bundle, max_chars=40_000)
+                source = "sec_edgar_filing_context"
+            except Exception:
+                filing_text = edgar_client.get_10k_text(ticker, max_chars=40_000)
+                source = "sec_edgar_10k"
 
         if not filing_text:
             return self._fallback(ticker, source="fallback")
@@ -217,8 +227,10 @@ class AccountingRecastAgent(BaseAgent):
             f"Ticker: {ticker}\n"
             f"Reported EBIT: {reported_ebit if reported_ebit is not None else 'unknown'}\n\n"
             "Review the filing excerpt below and propose accounting recast items relevant to intrinsic valuation.\n"
+            "Prioritize notes to financial statements first, then MD&A.\n"
+            "Use citations that refer to the retrieved section label and filing date when possible.\n"
             "Only identify items with a specific valuation rationale. Do not invent amounts.\n\n"
-            f"10-K excerpt:\n{filing_text[:40_000]}\n"
+            f"Filing excerpt:\n{filing_text[:40_000]}\n"
         )
         try:
             raw = self.run(prompt)

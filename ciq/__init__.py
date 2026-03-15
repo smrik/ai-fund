@@ -1,7 +1,8 @@
 """Capital IQ ingestion package."""
 
-from ciq.ingest import IngestReport, ingest_ciq_folder
-from ciq.workbook_parser import CIQWorkbookPayload, CIQTemplateContractError, parse_ciq_workbook
+from __future__ import annotations
+
+from importlib import import_module
 
 __all__ = [
     "CIQWorkbookPayload",
@@ -10,3 +11,13 @@ __all__ = [
     "ingest_ciq_folder",
     "parse_ciq_workbook",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"IngestReport", "ingest_ciq_folder"}:
+        module = import_module("ciq.ingest")
+        return getattr(module, name)
+    if name in {"CIQWorkbookPayload", "CIQTemplateContractError", "parse_ciq_workbook"}:
+        module = import_module("ciq.workbook_parser")
+        return getattr(module, name)
+    raise AttributeError(name)

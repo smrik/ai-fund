@@ -1,10 +1,12 @@
 import sys
 from pathlib import Path
+from datetime import date
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pytest
+from openpyxl import load_workbook
 
 from ciq.workbook_parser import CIQTemplateContractError, parse_ciq_workbook
 from ciq_test_utils import create_ibm_style_workbook
@@ -85,3 +87,29 @@ def test_parse_cleandata_disambiguates_duplicate_comps_metric_keys():
 
     assert "ebitda_ltm" in keys
     assert any(k and k.startswith("ebitda_ltm__") for k in keys)
+
+
+def test_parse_ciq_workbook_excludes_1900_placeholder_period_columns(tmp_path):
+    workbook = create_ibm_style_workbook(tmp_path / "PLACEHOLDER_1900.xlsx")
+    wb = load_workbook(workbook)
+    fs = wb["Financial Statements"]
+    cs = wb["Common Size"]
+    fs["D10"] = date(1900, 1, 1)
+    cs["D10"] = date(1900, 1, 1)
+    wb.save(workbook)
+
+    payload = parse_ciq_workbook(workbook)
+
+    fs_dates = {
+        row["period_date"]
+        for row in payload.long_form_records
+        if row["sheet_name"] == "Financial Statements"
+    }
+    cs_dates = {
+        row["period_date"]
+        for row in payload.long_form_records
+        if row["sheet_name"] == "Common Size"
+    }
+
+    assert "1900-01-01" not in fs_dates
+    assert "1900-01-01" not in cs_dates

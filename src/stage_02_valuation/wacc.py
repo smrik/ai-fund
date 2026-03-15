@@ -12,11 +12,11 @@ Process:
 All deterministic — no LLM needed.
 """
 
-import numpy as np
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 import yaml
 
 
@@ -47,6 +47,18 @@ SIZE_PREMIA = {
     "mid":   0.010,   # $2B - $10B
     "small": 0.015,   # $500M - $2B
     "micro": 0.025,   # < $500M
+}
+
+SECTOR_BETA_PROXIES = {
+    "Technology": 1.05,
+    "Communication Services": 1.00,
+    "Healthcare": 0.95,
+    "Consumer Cyclical": 1.10,
+    "Consumer Defensive": 0.85,
+    "Industrials": 1.00,
+    "Energy": 1.15,
+    "Basic Materials": 1.10,
+    "Utilities": 0.70,
 }
 
 
@@ -98,6 +110,20 @@ class WACCResult:
             f"  β relevered (target D/E {self.target_de_ratio:.2f}): {self.beta_relevered:.2f}",
         ]
         return "\n".join(lines)
+
+
+def _net_debt(data: PeerData) -> float:
+    return (data.total_debt or 0.0) - (data.cash or 0.0)
+
+
+def _de_ratio(data: PeerData) -> float:
+    market_cap = data.market_cap or 0.0
+    if market_cap <= 0:
+        return 0.0
+    return max(_net_debt(data), 0.0) / market_cap
+
+
+WACC_METHODS = ("peer_bottom_up", "industry_proxy", "self_hamada")
 
 
 def _get_size_premium(market_cap: float) -> float:
@@ -230,6 +256,8 @@ def compute_wacc(
     )
 
 
+
+
 def compute_wacc_from_yfinance(
     ticker: str,
     peer_tickers: list[str] = None,
@@ -280,3 +308,149 @@ def compute_wacc_from_yfinance(
                 continue
 
     return compute_wacc(target, peers)
+
+
+def _target_from_market_data(
+    ticker: str,
+    *,
+    market_data: dict | None = None,
+    hist: dict | None = None,
+) -> PeerData:
+    from src.stage_00_data import market_data as md_client
+
+    mkt = market_data or md_client.get_market_data(ticker)
+    if hist is None:
+        hist = md_client.get_historical_financials(ticker)
+
+    cost_of_debt = (hist or {}).get("cost_of_debt_derived") or DEFAULT_COST_OF_DEBT
+    return PeerData(
+        ticker=ticker.upper(),
+        beta=mkt.get("beta"),
+        market_cap=mkt.get("market_cap"),
+        total_debt=mkt.get("total_debt"),
+        cash=mkt.get("cash"),
+        cost_of_debt=cost_of_debt,
+    )
+
+
+def _load_peer_data(peer_tickers: list[str]) -> list[PeerData]:
+    from src.stage_00_data import market_data as md_client
+
+    peers: list[PeerData] = []
+    for peer_ticker in peer_tickers:
+        try:
+            pmkt = md_client.get_market_data(peer_ticker)
+        except Exception:
+            continue
+        peers.append(
+            PeerData(
+                ticker=peer_ticker,
+                beta=pmkt.get("beta"),
+                market_cap=pmkt.get("market_cap"),
+                total_debt=pmkt.get("total_debt"),
+                cash=pmkt.get("cash"),
+            )
+        )
+    return peers
+
+
+def _net_debt(peer: PeerData) -> float:
+    return float((peer.total_debt or 0.0) - (peer.cash or 0.0))
+
+
+def _de_ratio(peer: PeerData) -> float | None:
+    if peer.market_cap is None or peer.market_cap <= 0:
+        return None
+    return max(_net_debt(peer), 0.0) / float(peer.market_cap)
+
+
+def _median_or_default(values: list[float], default: float) -> float:
+    cleaned = [float(value) for value in values if value is not None]
+    if not cleaned:
+        return default
+    return float(np.median(cleaned))
+
+
+def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData]) -> WACCResult:
+    peer_betas = [float(peer.beta) for peer in peers if peer.beta is not None and peer.beta > 0]
+    peer_de_ratios = [ratio for peer in peers if (ratio := _de_ratio(peer)) is not None]
+
+    proxy_beta = _median_or_default(peer_betas, target.beta or 1.0)
+    proxy_de_ratio = _median_or_default(peer_de_ratios, _de_ratio(target) or 0.20)
+    target_market_cap = float(target.market_cap or 1.0)
+    target_cash = float(target.cash or 0.0)
+    proxy_net_debt = max(proxy_de_ratio, 0.0) * target_market_cap
+
+    proxy_target = PeerData(
+        ticker=target.ticker,
+        beta=proxy_beta,
+        market_cap=target_market_cap,
+        total_debt=proxy_net_debt + target_cash,
+        cash=target_cash,
+        tax_rate=target.tax_rate,
+        cost_of_debt=target.cost_of_debt,
+    )
+    result = compute_wacc(proxy_target, [])
+    result.peers_used = [peer.ticker for peer in peers] or ["industry_proxy"]
+    return result
+
+
+def _compute_self_hamada_wacc(target: PeerData) -> WACCResult:
+    return compute_wacc(target, [])
+
+
+def compute_wacc_methodology_set_for_ticker(
+    ticker: str,
+    *,
+    peer_tickers: list[str] | None = None,
+    hist: dict | None = None,
+    market_data: dict | None = None,
+) -> dict[str, WACCResult]:
+    target = _target_from_market_data(ticker, market_data=market_data, hist=hist)
+    peers = _load_peer_data(peer_tickers or [])
+
+    return {
+        "peer_bottom_up": compute_wacc(target, peers),
+        "industry_proxy": _compute_industry_proxy_wacc(target, peers),
+        "self_hamada": _compute_self_hamada_wacc(target),
+    }
+
+
+def blend_wacc_results(results: dict[str, WACCResult], weights: dict[str, float]) -> WACCResult:
+    clean_weights = {
+        method: float(weight)
+        for method, weight in (weights or {}).items()
+        if method in results and weight is not None and float(weight) > 0
+    }
+    total_weight = sum(clean_weights.values())
+    if total_weight <= 0:
+        raise ValueError("weights must contain at least one positive method weight")
+
+    normalized = {method: weight / total_weight for method, weight in clean_weights.items()}
+
+    def _weighted(attr: str) -> float:
+        return float(sum(getattr(results[method], attr) * weight for method, weight in normalized.items()))
+
+    peers_used: list[str] = []
+    peer_betas_unlevered: list[float] = []
+    for method in normalized:
+        peers_used.extend(results[method].peers_used)
+        peer_betas_unlevered.extend(results[method].peer_betas_unlevered)
+
+    return WACCResult(
+        wacc=round(_weighted("wacc"), 5),
+        cost_of_equity=round(_weighted("cost_of_equity"), 5),
+        cost_of_debt_after_tax=round(_weighted("cost_of_debt_after_tax"), 5),
+        equity_weight=round(_weighted("equity_weight"), 4),
+        debt_weight=round(_weighted("debt_weight"), 4),
+        risk_free_rate=round(_weighted("risk_free_rate"), 5),
+        equity_risk_premium=round(_weighted("equity_risk_premium"), 5),
+        beta_relevered=round(_weighted("beta_relevered"), 4),
+        size_premium=round(_weighted("size_premium"), 5),
+        beta_unlevered_median=round(_weighted("beta_unlevered_median"), 4),
+        peers_used=sorted(set(peers_used)),
+        peer_betas_unlevered=[round(value, 4) for value in peer_betas_unlevered],
+        target_de_ratio=round(_weighted("target_de_ratio"), 4),
+        target_market_cap=float(_weighted("target_market_cap")),
+        target_net_debt=float(_weighted("target_net_debt")),
+    )

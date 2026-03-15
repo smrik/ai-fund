@@ -22,7 +22,7 @@ import yaml
 
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_03_judgment.qoe_signals import compute_qoe_signals
-from src.stage_00_data import edgar_client
+from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_snapshot, get_ciq_nwc_history
 
@@ -320,8 +320,18 @@ class QoEAgent(BaseAgent):
         llm_available = True
         source = "provided_10k_text"
         if filing_text is None:
-            source = "sec_edgar_10k"
-            filing_text = edgar_client.get_10k_text(ticker)
+            source = "sec_edgar_filing_context"
+            try:
+                bundle = filing_retrieval.get_agent_filing_context(
+                    ticker,
+                    profile_name="qoe",
+                    include_10k=True,
+                    ten_q_limit=2,
+                )
+                filing_text = filing_retrieval.render_filing_context(bundle, max_chars=40_000)
+            except Exception:
+                filing_text = edgar_client.get_10k_text(ticker)
+                source = "sec_edgar_10k"
             llm_available = bool(filing_text)
 
         llm_result = self._run_llm(

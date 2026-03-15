@@ -18,6 +18,11 @@ from db.schema import create_tables, get_connection
 from ciq.workbook_parser import CIQTemplateContractError, parse_ciq_workbook
 
 
+IGNORED_WORKBOOK_NAMES = {
+    "IBM_Standard.xlsx",
+}
+
+
 @dataclass(slots=True)
 class IngestFileResult:
     file: str
@@ -44,14 +49,24 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _list_candidate_workbooks(folder: Path) -> list[Path]:
+    files = sorted(folder.glob(CIQ_WORKBOOK_GLOB)) if folder.exists() else []
+    candidates: list[Path] = []
+    for path in files:
+        if path.name.startswith("~$"):
+            continue
+        if path.name in IGNORED_WORKBOOK_NAMES:
+            continue
+        candidates.append(path)
+    return candidates
+
+
 def ingest_ciq_folder(folder_path: str | Path | None = None, as_of_date: str | None = None) -> IngestReport:
     """Ingest all CIQ workbook files in a drop folder."""
     folder = Path(folder_path or CIQ_DROP_FOLDER)
     run_as_of_date = as_of_date or datetime.now(timezone.utc).date().isoformat()
 
-    files = sorted(folder.glob(CIQ_WORKBOOK_GLOB)) if folder.exists() else []
-    # Ignore temporary Excel lock files (e.g., ~$Workbook.xlsx).
-    files = [p for p in files if not p.name.startswith("~$")]
+    files = _list_candidate_workbooks(folder)
     results: list[IngestFileResult] = []
 
     conn = get_connection()

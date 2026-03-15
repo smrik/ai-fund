@@ -16,6 +16,7 @@ from src.stage_02_valuation.templates.ic_memo import (
     ValuationRange,
 )
 import src.stage_04_pipeline.orchestrator as orch_mod
+from src.stage_00_data.filing_retrieval import FilingContextBundle, FilingChunk
 
 
 class _StubIndustryAgent:
@@ -27,13 +28,13 @@ class _StubIndustryAgent:
 
 
 class _StubFilingsAgent:
-    def analyze(self, ticker):
-        return FilingsSummary(revenue_trend="stable", margin_trend="stable", raw_summary="clean")
+    def analyze(self, ticker, filing_context=None):
+        return FilingsSummary(revenue_trend="stable", margin_trend="stable", raw_summary="clean", notes_watch_items=["Lease watch"], recent_quarter_updates=["Q2 update"])
 
 
 class _StubEarningsAgent:
-    def analyze(self, ticker, filings_context=""):
-        return EarningsSummary(guidance_trend="maintained", management_tone="confident", raw_summary="earnings ok")
+    def analyze(self, ticker, filings_context="", filing_context=None, earnings_8k_context=None):
+        return EarningsSummary(guidance_trend="maintained", management_tone="confident", raw_summary="earnings ok", notes_watch_items=["Restructuring note"], quarterly_disclosure_changes=["Added litigation disclosure"])
 
 
 class _StubQoEAgent:
@@ -121,6 +122,7 @@ class _StubThesisAgent:
         qoe_context="",
         industry_context="",
         accounting_recast_context="",
+        filing_update_context="",
     ):
         return ICMemo(
             ticker=ticker,
@@ -219,6 +221,31 @@ def test_orchestrator_includes_accounting_recast_without_mutating_valuation(monk
                 }
             ],
         },
+    )
+    monkeypatch.setattr(
+        orch_mod.filing_retrieval,
+        "get_agent_filing_context",
+        lambda ticker, profile_name, include_10k=True, ten_q_limit=2, use_cache=True: FilingContextBundle(
+            ticker=ticker,
+            profile_name=profile_name,
+            corpus_hash=f"{profile_name}-hash",
+            sources=[],
+            selected_chunks=[
+                FilingChunk("10-K", "a1", "2025-12-31", "notes_to_financials", 0, f"{profile_name} context", f"{profile_name}-chunk")
+            ],
+            rendered_text=f"[10-K | 2025-12-31 | notes_to_financials | chunk 0]\n{profile_name} context",
+            retrieval_summary={"used_embeddings": False},
+        ),
+    )
+    monkeypatch.setattr(
+        orch_mod.filing_retrieval,
+        "render_filing_context",
+        lambda bundle, max_chars: bundle.rendered_text,
+    )
+    monkeypatch.setattr(
+        orch_mod.edgar_client,
+        "get_8k_texts",
+        lambda ticker, limit=3: [{"filing_date": "2026-01-31", "text": "Earnings release"}],
     )
 
     memo = orch_mod.PipelineOrchestrator().run("IBM")
