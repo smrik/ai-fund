@@ -88,5 +88,5 @@ The current tranche is sufficient to mark the original dashboard-research plan c
 
 ## Verification
 - Manual review of the listed skills completed on 2026-03-15.
-- Residual backlog captured here and mirrored into `docs/exec-plans/tech-debt-tracker.md`.
+- Residual backlog captured here and mirrored into `docs/plans/future/tech-debt-tracker.md`.
 - Canonical ExecPlan updated to reflect the review outcome.

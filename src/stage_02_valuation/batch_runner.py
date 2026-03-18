@@ -1075,7 +1075,7 @@ if __name__ == "__main__":
     parser.add_argument("--story-profile", action="store_true",
                         help="Generate LLM story driver profile and write to config/story_drivers_pending.yaml (requires --ticker)")
     parser.add_argument("--macro", action="store_true",
-                        help="Refresh data/macro_context.md from web search (needs ANTHROPIC_API_KEY + PERPLEXITY_API_KEY)")
+                        help="Refresh data/macro_context.md from web search (needs an LLM provider key plus PERPLEXITY_API_KEY)")
     parser.add_argument("--review", action="store_true",
                         help="Display pending agent recommendations for --ticker")
     parser.add_argument("--approve", action="store_true",

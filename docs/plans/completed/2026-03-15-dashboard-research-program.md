@@ -2,7 +2,7 @@
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-The repository's checked-in PLANS file is `docs/PLANS.md`. That file is an index rather than a full authoring manual, so this document embeds the operational detail needed to carry the work from start to finish. This document must be maintained in accordance with `docs/PLANS.md` and the repository's ExecPlan requirements.
+The repository's checked-in PLANS file is `docs/PLANS.md`. At the time this ExecPlan was written, that file was an index rather than a full guidance document. Repository guidance has since been consolidated, but this file remains the canonical historical record of the work that shipped.
 
 ## Purpose / Big Picture
 
@@ -13,12 +13,12 @@ A human can see this working by starting the dashboard from the repository root 
 ## Progress
 
 - [x] (2026-03-15 12:21Z) Read the current master todo, exec-plan indexes, active dashboard modules, and relevant repo-local skills for planning, comps analysis, competitive analysis, equity research, and EDGAR-oriented filing work.
-- [x] (2026-03-15 12:21Z) Created supporting workstream briefs under `docs/exec-plans/active/` for Streamlit/presentation, comps/multiples, filings diagnostics, market-intel history, formatting, and the final skill-gap review.
+- [x] (2026-03-15 12:21Z) Created supporting workstream briefs under `docs/exec-plans/` for Streamlit/presentation, comps/multiples, filings diagnostics, market-intel history, formatting, and the final skill-gap review.
 - [x] (2026-03-15 12:21Z) Added an active tracker entry and linked the current master todo to the new planning surface.
 - [x] (2026-03-15 13:05Z) Milestone 1 implemented: added `src/stage_04_pipeline/presentation_formatting.py`, removed `use_container_width` call sites from `dashboard/app.py`, routed core visible formatting through shared helpers, and verified the formatting/render contract tests.
 - [x] (2026-03-15 13:32Z) Milestone 2 implemented: extended `src/stage_00_data/filing_retrieval.py`, `src/stage_04_pipeline/filings_browser.py`, and `src/stage_04_pipeline/news_materiality.py` with filing coverage diagnostics, retrieval observability, and the hybrid-local historical brief; verified the focused filings and market-intel tests.
 - [x] (2026-03-15 14:06Z) Milestone 3 implemented: extended comps with metric switching, target-vs-peer deltas, football-field payloads, and target historical multiples in `src/stage_04_pipeline/comps_dashboard.py`, `src/stage_04_pipeline/multiples_dashboard.py`, and `dashboard/app.py`; verified the comps tests plus the live IBM dashboard path.
-- [x] (2026-03-15 14:32Z) Milestone 4 implemented: reviewed the repo-local research skills, updated the residual gap log in `docs/exec-plans/active/2026-03-15-sp06-skill-gap-review-and-research-surface-audit.md`, and added explicit follow-on backlog items to `docs/exec-plans/tech-debt-tracker.md`.
+- [x] (2026-03-15 14:32Z) Milestone 4 implemented: reviewed the repo-local research skills, updated the residual gap log in `docs/exec-plans/completed/2026-03-15-sp06-skill-gap-review-and-research-surface-audit.md`, and added explicit follow-on backlog items to `docs/plans/future/tech-debt-tracker.md`.
 - [x] (2026-03-15 14:35Z) Full ExecPlan verification completed: `28 passed` on the plan test bundle, `py_compile` clean on all touched modules, Streamlit launched on port 8503, and Playwright confirmed the IBM Filings Browser diagnostics, Market Intel historical brief, and Comps workbench.
 
 ## Surprises & Discoveries
@@ -68,7 +68,7 @@ A human can see this working by starting the dashboard from the repository root 
 
 ## Decision Log
 
-- Decision: The canonical source of truth for this work is this single file, `docs/plans/2026-03-15-dashboard-research-program.md`, while `docs/exec-plans/active/2026-03-15-master-dashboard-and-research-program.md` is only the status pointer.
+- Decision: The canonical source of truth for this work is this single file, `docs/plans/completed/2026-03-15-dashboard-research-program.md`, while `docs/exec-plans/completed/2026-03-15-master-dashboard-and-research-program.md` is the historical status pointer.
   Rationale: This matches the repository's established pattern in which the active exec-plan points to a full implementation plan in `docs/plans/`, and it satisfies the requirement that one self-contained ExecPlan must be able to restart the work without external memory.
   Date/Author: 2026-03-15 / Codex
 
@@ -96,7 +96,7 @@ A human can see this working by starting the dashboard from the repository root 
   Rationale: This satisfies the user-visible need to compare the stock against its own prior multiple range without inventing unsupported peer history or introducing a new data dependency. The approximation is documented so it can be refined later.
   Date/Author: 2026-03-15 / Codex
 
-- Decision: The residual backlog is being recorded in two places: the canonical SP06 skill-gap review and `docs/exec-plans/tech-debt-tracker.md`.
+- Decision: The residual backlog is being recorded in two places: the canonical SP06 skill-gap review and `docs/plans/future/tech-debt-tracker.md`.
   Rationale: The SP06 document captures reasoning by skill, while the tech-debt tracker keeps the follow-on engineering backlog visible in the same place as existing deterministic system debt.
   Date/Author: 2026-03-15 / Codex
 

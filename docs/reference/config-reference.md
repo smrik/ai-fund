@@ -27,7 +27,7 @@ flowchart TD
 ## File Roles
 
 - `config/config.yaml`: single source of truth for committed project configuration.
-- `.env`: secrets like `ANTHROPIC_API_KEY`, plus optional local overrides for runtime values.
+- `.env`: secrets such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, and `FRED_API_KEY`, plus optional local overrides for runtime values.
 - `config/__init__.py`: loader/facade. This is code, not an independent config source.
 - `config/settings.py`: compatibility shim for older imports. New code should prefer `config` or `APP_CONFIG` directly.
 
@@ -55,7 +55,7 @@ Model defaults used by the judgment layer.
 
 | Key | Meaning |
 |---|---|
-| `model` | Primary Anthropic model for standard agent runs |
+| `model` | Primary model for standard agent runs |
 | `fast_model` | Lower-cost / faster fallback model |
 
 Supported local overrides in `.env`:

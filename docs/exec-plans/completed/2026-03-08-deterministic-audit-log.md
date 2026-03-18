@@ -407,7 +407,7 @@ And execute this same loop:
   - `tests/test_batch_runner_professional.py`: professional bridge/health fields emitted for DCF-applicable tickers and explicitly null for `alt_model_required`.
 - Updated design docs to match implemented formulas/contracts:
   - `docs/design-docs/deterministic-valuation-flow-spec.md`
-  - `docs/design-docs/valuation-glossary.md`
+  - `docs/reference/valuation-glossary.md`
 
 Verification:
 - `python -m pytest -q tests/test_professional_dcf.py tests/test_batch_runner_professional.py` -> `18 passed`

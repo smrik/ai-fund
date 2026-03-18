@@ -1,47 +1,46 @@
-# Alpha Pod - AI-augmented fundamental research
+# Alpha Pod
 
-Alpha Pod separates deterministic research mechanics from selective LLM judgment.
+Alpha Pod is an AI-augmented fundamental research system built around a strict separation between deterministic finance code and selective LLM judgment.
 
-## Core architecture
+## Core Architecture
 
-- `src/stage_00_data/`: deterministic data ingestion from yfinance, EDGAR, and CIQ
-- `src/stage_01_screening/` and `src/stage_02_valuation/`: deterministic DCF, reverse DCF, WACC, and ranking logic
-- `src/stage_03_judgment/`: judgment-only LLM agents that never feed numbers back into intrinsic value computation
-
-
-## Workflow-First Source Layout
-
-- `src/stage_00_data/`: deterministic data connectors/adapters
-- `src/stage_01_screening/`: deterministic universe + filter stages
-- `src/stage_02_valuation/`: deterministic valuation models and runners
-- `src/stage_03_judgment/`: LLM context agents (never in compute path)
-- `src/stage_04_pipeline/`: orchestration and scheduled runs
+- `src/stage_00_data/`: deterministic ingestion from yfinance, EDGAR, CIQ, FRED, and related sources
+- `src/stage_01_screening/` and `src/stage_02_valuation/`: deterministic screening, DCF, WACC, factor, and portfolio-risk logic
+- `src/stage_03_judgment/`: judgment-only agents that must not feed numbers directly into deterministic intrinsic value logic
+- `src/stage_04_pipeline/`: orchestration, dashboard support, refresh flows, and export helpers
 
 ## Documentation
 
-- [Docs index](docs/index.md)
-- [Handbook](docs/handbook/index.md)
-- [Architecture](ARCHITECTURE.md)
-- [Deterministic valuation workflow](docs/design-docs/deterministic-valuation-workflow.md)
-- [Config reference](docs/reference/config-reference.md)
-- [Local wiki setup](docs/reference/local-wiki.md)
+- [Agent Map](AGENTS.md)
+- [Docs Home](docs/index.md)
+- [Repository Guidance](docs/PLANS.md)
+- [Architecture Overview](docs/design-docs/architecture-overview.md)
+- [Workflow End To End](docs/handbook/workflow-end-to-end.md)
+- [Plan Registry](docs/plans/index.md)
 
-### Run docs locally
+## Setup
+
+1. Copy `.env.example` to `.env`.
+2. Fill in only the secrets you actually need on this machine.
+3. Review `config/config.yaml` for committed project defaults.
+4. Run `python setup.py` to initialize the local database.
+5. Run `python -m pytest -q` to verify the environment.
+
+### Optional Conda Setup
+
+If you use Conda, create the environment with:
+
+`conda env create -f environment.yml`
+
+## Local Docs Preview
 
 ```bash
 python -m pip install mkdocs mkdocs-material
 python -m mkdocs serve
 ```
 
-## Setup
-
-1. Create `.env` from `.env.example` and add `ANTHROPIC_API_KEY`.
-2. Review `config/config.yaml` for committed project defaults.
-3. Run `python setup.py` to initialize the local database.
-4. Run `python -m pytest -q` to verify the environment.
-
 ## Notes
 
-- `config/config.yaml` is the single committed configuration source.
-- `.env` is only for secrets and machine-local runtime overrides.
-- Use `python -m pytest` instead of plain `pytest` if your shell does not include the repo root on `PYTHONPATH`.
+- `config/config.yaml` is the committed configuration source of truth.
+- `.env` is only for local secrets and machine-specific overrides.
+- `.env.example` is the safe template for onboarding.

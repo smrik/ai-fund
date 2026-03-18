@@ -53,7 +53,7 @@ it's noise. The system should make it visible when it's guessing.
 Design decisions, architectural patterns, and constraints that live only in chat or in someone's head
 are invisible to Codex and future Claude sessions. They will be violated.
 
-**In practice:** Every significant design decision gets a doc. Architecture is in `ARCHITECTURE.md`.
+**In practice:** Every significant design decision gets a doc. Architecture is in `docs/design-docs/architecture-overview.md`.
 Principles are here. Plans are in `docs/exec-plans/`. When a decision is made in conversation,
 it gets committed to the repo before the next agent task runs.
 
@@ -93,7 +93,7 @@ without failing a test, it will be violated eventually. Encode the rules in the 
 Pattern drift in an agent-generated codebase compounds faster than in a human-written one
 because the agent replicates whatever patterns already exist.
 
-**In practice:** Weekly doc-gardening task. `QUALITY_SCORE.md` is updated per sprint.
+**In practice:** Weekly doc-gardening task. `docs/strategy/quality-score.md` is updated per sprint.
 When a bad pattern is spotted, it gets fixed that day — not queued for a cleanup sprint.
 
 **Why:** One bad pattern becomes 50 bad patterns inside a week if the agent sees it as "the way

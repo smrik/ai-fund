@@ -11,7 +11,11 @@ python -m pip install -r requirements.txt
 
 2. Configure secrets:
 - Copy `.env.example` to `.env`
-- Set `ANTHROPIC_API_KEY` when using agent features
+- Set the provider keys you actually use:
+  - `GEMINI_API_KEY` or `GOOGLE_API_KEY`
+  - `OPENAI_API_KEY` if using another OpenAI-compatible endpoint
+  - `PERPLEXITY_API_KEY` for search-backed research flows
+  - `FRED_API_KEY` for macro data
 
 3. Initialize database:
 ```bash

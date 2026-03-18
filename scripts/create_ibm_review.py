@@ -311,7 +311,7 @@ sheet_title(ws3, "IBM  —  Quality of Earnings Signals  |  2026-03-08", 6)
 r = 3
 ws3.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
 c = ws3.cell(row=r, column=1,
-             value="QoE Composite Score:  3 / 5  —  AMBER  |  LLM Layer: NOT RUN (set ANTHROPIC_API_KEY to enable)")
+             value="QoE Composite Score:  3 / 5  —  AMBER  |  LLM Layer: NOT RUN (set GEMINI_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY to enable)")
 c.font = Font(name="Calibri", size=12, bold=True, color="7F4B00")
 c.fill = fill(AMBER); c.border = HB
 c.alignment = Alignment(horizontal="left", vertical="center", indent=2)
@@ -364,10 +364,10 @@ pm_notes = [
     ("Capex/D&A flag",
      "IBM's capex ($1.1B) falls far below D&A because post-acquisition intangible amortisation inflates D&A — "
      "structurally common for software acquirers. HashiCorp ($6.4B, 2024) and Apptio are the primary drivers. "
-     "Run QoEAgent with ANTHROPIC_API_KEY to verify management 10-K explanation before treating this as a quality concern."),
+     "Run QoEAgent with a configured LLM provider key to verify management 10-K explanation before treating this as a quality concern."),
     ("EBIT normalization",
      "LLM layer NOT run. No EBIT adjustments applied. Reported EBIT used as-is in the DCF. "
-     "To enable: set ANTHROPIC_API_KEY env var, then run QoEAgent.analyze('IBM', reported_ebit=<value>)."),
+     "To enable: set GEMINI_API_KEY, GOOGLE_API_KEY, or OPENAI_API_KEY, then run QoEAgent.analyze('IBM', reported_ebit=<value>)."),
     ("Next steps",
      "If Capex/D&A is confirmed as intangible amortisation artefact: score moves to 4/5 GREEN. "
      "Recommend running full LLM layer and reviewing EBIT margin target (20%) before finalising DCF."),

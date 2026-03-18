@@ -1,27 +1,87 @@
-# Plans Index
+# Repository Guidance And Planning System
 
-## Active
+This file is the top-level documentation guide for Alpha Pod. Keep it current at all times.
 
-| Sprint           | Plan                                                                                                                                   | Status      | Goal                                                       |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------- | ---------------------------------------------------------- |
-| Sprint 1         | [`exec-plans/active/sprint-1-deterministic-hardening.md`](./exec-plans/active/sprint-1-deterministic-hardening.md)                     | IN PROGRESS | 3yr historical data in batch runner                        |
-| Sprint 1A        | [`exec-plans/active/2026-03-08-deterministic-audit-master-todo.md`](./exec-plans/active/2026-03-08-deterministic-audit-master-todo.md) | IN PROGRESS | End-to-end deterministic valuation audit using 7-step loop |
-| Sprint XBRL/Chat | [`plans/2026-03-15-xbrl-and-rag-chatbot.md`](./plans/2026-03-15-xbrl-and-rag-chatbot.md)                                               | DRAFTING    | Add Streamlit RAG Chatbot & structured XBRL context        |
+The repository follows a harness-style structure:
 
-## Queued (dependency order)
+- `AGENTS.md` is the short operating map for coding agents.
+- `docs/` is the system of record for humans and agents.
+- each important concept should have one canonical home
+- finished work should move out of `active` areas quickly
+- stale docs should be archived, not left next to current guidance
 
-| Sprint                            | Blocked by               | Goal                                         |
-| --------------------------------- | ------------------------ | -------------------------------------------- |
-| Sprint 2: CIQ Data Layer          | Needs Excel + CIQ plugin | CIQ → CSV → SQLite pipeline                  |
-| Sprint 3: QoE Agent               | Unblocked                | Normalize EBIT from 10-K footnotes           |
-| Sprint 4: Comps Matching Agent    | Sprint 2                 | Score CIQ peer list, calibrate exit multiple |
-| Sprint 5: Industry Research Agent | Unblocked                | Weekly sector growth/margin benchmarks       |
-| Sprint 6: Scenario/Catalyst Agent | Unblocked                | Named scenarios from 10-K risk factors       |
+If code changes and the docs no longer describe reality, the docs are wrong and must be updated in the same change.
 
-## Completed
+## What Lives Where
 
-None yet.
+Use these buckets consistently:
 
-## Full Implementation Detail
+- `docs/design-docs/`
+  - architecture, system behavior, agent contracts, and stable design specs
+- `docs/handbook/`
+  - operator and engineer how-to guides
+- `docs/reference/`
+  - stable references such as config rules, glossaries, and workflow references
+- `docs/strategy/`
+  - product direction and quality-scoring documents
+- `docs/plans/`
+  - the canonical planning system
+  - `active/` for plans currently being executed
+  - `future/` for queued work and backlog docs
+  - `completed/` for shipped plans that still matter as historical implementation records
+  - `archive/` for superseded or legacy plans that are no longer canonical
+- `docs/exec-plans/`
+  - archived execution artifacts and older status trackers
+  - this is not the primary planning system anymore
+- `docs/archive/`
+  - scratch notes, deprecated top-level docs, and historical material kept only for posterity
 
-[`plans/2026-03-06-dcf-pipeline.md`](./plans/2026-03-06-dcf-pipeline.md) — complete task-by-task plan with code, tests, and Codex exec commands for all sprints.
+## Canonical Entry Points
+
+Read these first:
+
+1. [Docs Home](./index.md)
+2. [Architecture Overview](./design-docs/architecture-overview.md)
+3. [Core Beliefs](./design-docs/core-beliefs.md)
+4. [Workflow End To End](./handbook/workflow-end-to-end.md)
+5. [Plan Registry](./plans/index.md)
+
+## Planning Rules
+
+Alpha Pod has one canonical planning registry: [docs/plans/index.md](./plans/index.md).
+
+When creating or maintaining plans:
+
+- create new canonical plans under `docs/plans/`
+- put current work in `docs/plans/active/`
+- move shipped plans to `docs/plans/completed/`
+- move superseded planning material to `docs/plans/archive/`
+- keep future ideas and backlog docs in `docs/plans/future/`
+- do not create a second live planning index elsewhere
+
+Historical execution notes may remain under `docs/exec-plans/`, but they are supporting artifacts rather than the main source of truth.
+
+## Maintenance Standard
+
+These rules are mandatory:
+
+- `AGENTS.md` must stay concise and point to canonical docs instead of duplicating them
+- `docs/index.md` must reflect the actual structure on disk
+- `mkdocs.yml` must match the current published documentation structure
+- stale active plans must be moved to `completed/` or `archive/`
+- duplicate root-level docs should be removed once a canonical docs copy exists
+- setup docs must match the actual environment files and ignore rules
+
+## Current Structure
+
+- [Design Docs Index](./design-docs/index.md)
+- [Handbook Index](./handbook/index.md)
+- [Reference Index](./reference/config-reference.md)
+- [Strategy Docs](./strategy/index.md)
+- [Plan Registry](./plans/index.md)
+- [Execution Artifact Archive](./exec-plans/index.md)
+- [General Archive](./archive/index.md)
+
+## Why This Exists
+
+The repo accumulated multiple overlapping plan indexes, duplicated root docs, and scratch material published next to canonical references. This file exists to prevent that drift from returning.

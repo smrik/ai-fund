@@ -10,7 +10,7 @@
 
 ## Canonical ExecPlan
 - [Dashboard Research Surface Remediation and Auditability](./2026-03-15-master-dashboard-and-research-program.md)
-- Full implementation plan: [docs/plans/2026-03-15-dashboard-research-program.md](../../plans/2026-03-15-dashboard-research-program.md)
+- Full implementation plan: [docs/plans/completed/2026-03-15-dashboard-research-program.md](../../plans/completed/2026-03-15-dashboard-research-program.md)
 
 ## Supporting Workstream Briefs
 - [SP01 Streamlit 1.55 and Presentation System](./2026-03-15-sp01-streamlit-1-55-and-presentation-system.md)

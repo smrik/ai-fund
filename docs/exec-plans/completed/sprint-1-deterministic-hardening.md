@@ -1,13 +1,15 @@
 # Sprint 1: Deterministic Engine Hardening
 
-**Status:** ACTIVE
+**Status:** ARCHIVED
 **Started:** 2026-03-06
 **Goal:** Batch runner produces defensible, human-reviewable valuations using 3yr historical data, real capex/D&A, derived cost of debt, reverse DCF, and TV% warning. No LLM, no CIQ.
-**Done when:** 95%+ ticker coverage, all audit columns present, <15 min runtime on Stage 1 universe.
+**Done when:** Historical reference only. This tracker is kept for provenance and the detailed task list it captured at the time.
+
+> This file is archived. It is no longer a live execution tracker.
 
 ## Full Implementation Plan
 
-See [`docs/plans/2026-03-06-dcf-pipeline.md`](../../plans/2026-03-06-dcf-pipeline.md) — Sprint 1 tasks.
+See [`docs/plans/archive/2026-03-06-dcf-pipeline.md`](../../plans/archive/2026-03-06-dcf-pipeline.md) — Sprint 1 tasks.
 
 ## Tasks
 

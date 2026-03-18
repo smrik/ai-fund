@@ -1,48 +1,34 @@
-# Docs Index
+# Docs Home
 
-This directory is the start of the project wiki.
+This is the documentation home for Alpha Pod.
 
-## Handbook (Start Here)
+`AGENTS.md` is the short repo map. This `docs/` tree is the full system of record.
 
-- [Handbook Index](./handbook/index.md)
-- [End-to-End Workflow](./handbook/workflow-end-to-end.md)
-- [Finance Deep Dive](./handbook/finance-deep-dive.md)
-- [Engineering Deep Dive](./handbook/engineering-deep-dive.md)
-- [Valuation And DCF Logic](./handbook/valuation-dcf-logic.md)
-- [Valuation Task Breakdown](./handbook/valuation-task-breakdown.md)
-- [Operations Runbook](./handbook/operations-runbook.md)
-- [Quality And Verification](./handbook/quality-and-verification.md)
+Start here when you need to understand how the repository is organized, where current truth lives, or where a new document should go.
 
-## Core
+## Start Here
+
+- [Repository Guidance And Planning System](./PLANS.md)
+- [Architecture Overview](./design-docs/architecture-overview.md)
+- [Core Beliefs](./design-docs/core-beliefs.md)
+- [Workflow End To End](./handbook/workflow-end-to-end.md)
+
+## Current System
 
 - [Design Docs](./design-docs/index.md)
-- [Deterministic Valuation Workflow](./design-docs/deterministic-valuation-workflow.md)
-- [Config Reference](./reference/config-reference.md)
-- [GitHub Workflow](./reference/github-workflow.md)
-- [Local Wiki Setup](./reference/local-wiki.md)
-- [Plan Index](./plans/index.md)
-- [Execution Plans](./exec-plans/index.md)
+- [Handbook](./handbook/index.md)
+- [Reference](./reference/config-reference.md)
+- [Strategy](./strategy/index.md)
 
-## Research And Product
+## Planning
 
-- [Product Sense](./PRODUCT_SENSE.md)
-- [Quality Score](./QUALITY_SCORE.md)
-- [Plan Overview](./PLAN.md)
-- [Legacy Plans](./PLANS.md)
-- [Patrik's Notes](./Patrik'sNotes.md)
+- [Canonical Plan Registry](./plans/index.md)
+- [Execution Artifact Archive](./exec-plans/index.md)
 
-## Documentation Direction
+## Archive
 
-Use this structure going forward:
-- `docs/handbook/` for operator and engineer how-to docs
-- `docs/design-docs/` for architecture and system behavior
-- `docs/reference/` for stable operator references and configuration docs
-- `docs/plans/` for scoped implementation plans
-- `docs/exec-plans/` for active/completed execution tracking
+- [Archive Index](./archive/index.md)
 
-If a document explains how the system works today, it belongs in `handbook`, `design-docs`, or `reference`. If it explains what to build next, it belongs in `plans`.
+## Local Docs Preview
 
-## Local docs preview
-
-Run `python -m mkdocs serve` from the repository root to view this folder as a local wiki.
-
+Run `python -m mkdocs serve` from the repository root.

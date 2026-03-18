@@ -7,11 +7,21 @@ __pycache__/
 .agent/
 .claude/
 
+# Local secrets
+.env
+.env.*
+!.env.example
+
 # Runtime data artifacts (generated)
 data/cache/
 data/valuations/
+data/exports/
 data/alpha_pod.db
 data/stage1_survivors.csv
+data/regime_model.pkl
+
+# Excel temp files
+~$*.xlsx
 
 # Editor/OS noise
 .DS_Store

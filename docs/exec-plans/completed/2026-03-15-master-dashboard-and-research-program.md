@@ -7,7 +7,7 @@
 
 ## Full Implementation Plan
 
-See [docs/plans/2026-03-15-dashboard-research-program.md](../../plans/2026-03-15-dashboard-research-program.md).
+See [docs/plans/completed/2026-03-15-dashboard-research-program.md](../../plans/completed/2026-03-15-dashboard-research-program.md).
 
 ## Tasks
 
@@ -20,6 +20,6 @@ See [docs/plans/2026-03-15-dashboard-research-program.md](../../plans/2026-03-15
 
 ## Decision Log
 
-- 2026-03-15: The canonical source of truth for this program is the ExecPlan in `docs/plans/2026-03-15-dashboard-research-program.md`; this active file is the status pointer.
+- 2026-03-15: The canonical source of truth for this program is the ExecPlan in `docs/plans/completed/2026-03-15-dashboard-research-program.md`; this file is the historical status pointer.
 - 2026-03-15: IBM remains the live acceptance ticker for this program.
 - 2026-03-15: Verification closed with `28 passed` on the ExecPlan test bundle plus live Streamlit and Playwright validation on IBM.
