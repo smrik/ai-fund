@@ -174,6 +174,11 @@ def apply_story_driver_adjustments(drivers, story: StoryDriverProfile) -> dict[s
     drivers.terminal_blend_gordon_weight = gordon_weight
     drivers.terminal_blend_exit_weight = 1.0 - gordon_weight
 
+    # Gap 2: Exit multiple compression for cyclicality and governance risk.
+    cyc_exit_mult = {"low": 1.05, "medium": 1.00, "high": 0.90}[story.cyclicality]
+    gov_exit_mult = {"low": 1.02, "medium": 1.00, "high": 0.90}[story.governance_risk]
+    drivers.exit_multiple = _clamp(drivers.exit_multiple * cyc_exit_mult * gov_exit_mult, 2.0, 40.0)
+
     return {
         "growth_add": round(growth_add, 4),
         "margin_add": round(margin_add, 4),
@@ -184,5 +189,7 @@ def apply_story_driver_adjustments(drivers, story: StoryDriverProfile) -> dict[s
         "da_target_add": round(da_add, 4),
         "terminal_blend_gordon_weight": round(gordon_weight, 4),
         "terminal_blend_exit_weight": round(1.0 - gordon_weight, 4),
+        "exit_multiple_cyclicality_multiplier": round(cyc_exit_mult, 4),
+        "exit_multiple_governance_multiplier": round(gov_exit_mult, 4),
     }
 

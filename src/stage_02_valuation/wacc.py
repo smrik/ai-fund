@@ -127,20 +127,34 @@ WACC_METHODS = ("peer_bottom_up", "industry_proxy", "self_hamada")
 
 
 def _get_size_premium(market_cap: float) -> float:
-    """Determine size premium based on market capitalization."""
+    """Determine size premium via linear interpolation between Duff & Phelps breakpoints.
+
+    Smooth interpolation eliminates the step-function discontinuity at bucket boundaries
+    (e.g. a company at $1.99B vs $2.01B no longer gets a 50bp cliff jump).
+    Breakpoints are midpoints of the original D&P size buckets in $mm.
+    """
     if market_cap is None or market_cap <= 0:
-        return SIZE_PREMIA["mid"]  # Default
-    mcap_b = market_cap / 1e9
-    if mcap_b > 50:
-        return SIZE_PREMIA["mega"]
-    elif mcap_b > 10:
-        return SIZE_PREMIA["large"]
-    elif mcap_b > 2:
         return SIZE_PREMIA["mid"]
-    elif mcap_b > 0.5:
-        return SIZE_PREMIA["small"]
-    else:
-        return SIZE_PREMIA["micro"]
+    mcap_mm = market_cap / 1e6
+    # (market_cap_mm_midpoint, premium) — linear interpolation between adjacent points
+    breakpoints = [
+        (250.0, 0.025),    # micro cap centre
+        (1250.0, 0.015),   # small cap centre
+        (6000.0, 0.010),   # mid cap centre
+        (30000.0, 0.005),  # large cap centre
+        (75000.0, 0.000),  # mega cap
+    ]
+    if mcap_mm <= breakpoints[0][0]:
+        return breakpoints[0][1]
+    if mcap_mm >= breakpoints[-1][0]:
+        return breakpoints[-1][1]
+    for i in range(len(breakpoints) - 1):
+        x0, y0 = breakpoints[i]
+        x1, y1 = breakpoints[i + 1]
+        if x0 <= mcap_mm <= x1:
+            alpha = (mcap_mm - x0) / (x1 - x0)
+            return y0 + alpha * (y1 - y0)
+    return SIZE_PREMIA["mid"]
 
 
 def unlever_beta(beta_levered: float, de_ratio: float, tax_rate: float = DEFAULT_TAX_RATE) -> float:
@@ -262,6 +276,7 @@ def compute_wacc_from_yfinance(
     ticker: str,
     peer_tickers: list[str] = None,
     hist: dict = None,
+    risk_free_rate: float | None = None,
 ) -> WACCResult:
     """
     Convenience: compute WACC using yfinance data.
@@ -307,7 +322,8 @@ def compute_wacc_from_yfinance(
             except Exception:
                 continue
 
-    return compute_wacc(target, peers)
+    rf = risk_free_rate if risk_free_rate is not None else RISK_FREE_RATE
+    return compute_wacc(target, peers, risk_free_rate=rf)
 
 
 def _target_from_market_data(
@@ -322,11 +338,21 @@ def _target_from_market_data(
     if hist is None:
         hist = md_client.get_historical_financials(ticker)
 
+    # #4: Compute market_cap from price × shares when the API field is absent.
+    # This ensures _get_size_premium() uses the correct decile rather than the
+    # "mid" default, which matters for $500M-$2B names (small premium = 1.5% vs 1.0%).
+    mkt_cap = mkt.get("market_cap")
+    if not mkt_cap:
+        price = mkt.get("current_price") or mkt.get("regularMarketPrice")
+        shares = mkt.get("shares_outstanding")
+        if price and shares:
+            mkt_cap = float(price) * float(shares)
+
     cost_of_debt = (hist or {}).get("cost_of_debt_derived") or DEFAULT_COST_OF_DEBT
     return PeerData(
         ticker=ticker.upper(),
         beta=mkt.get("beta"),
-        market_cap=mkt.get("market_cap"),
+        market_cap=mkt_cap,
         total_debt=mkt.get("total_debt"),
         cash=mkt.get("cash"),
         cost_of_debt=cost_of_debt,
@@ -371,7 +397,7 @@ def _median_or_default(values: list[float], default: float) -> float:
     return float(np.median(cleaned))
 
 
-def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData]) -> WACCResult:
+def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData], risk_free_rate: float = RISK_FREE_RATE) -> WACCResult:
     peer_betas = [float(peer.beta) for peer in peers if peer.beta is not None and peer.beta > 0]
     peer_de_ratios = [ratio for peer in peers if (ratio := _de_ratio(peer)) is not None]
 
@@ -390,13 +416,13 @@ def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData]) -> WAC
         tax_rate=target.tax_rate,
         cost_of_debt=target.cost_of_debt,
     )
-    result = compute_wacc(proxy_target, [])
+    result = compute_wacc(proxy_target, [], risk_free_rate=risk_free_rate)
     result.peers_used = [peer.ticker for peer in peers] or ["industry_proxy"]
     return result
 
 
-def _compute_self_hamada_wacc(target: PeerData) -> WACCResult:
-    return compute_wacc(target, [])
+def _compute_self_hamada_wacc(target: PeerData, risk_free_rate: float = RISK_FREE_RATE) -> WACCResult:
+    return compute_wacc(target, [], risk_free_rate=risk_free_rate)
 
 
 def compute_wacc_methodology_set_for_ticker(
@@ -405,14 +431,16 @@ def compute_wacc_methodology_set_for_ticker(
     peer_tickers: list[str] | None = None,
     hist: dict | None = None,
     market_data: dict | None = None,
+    risk_free_rate: float | None = None,
 ) -> dict[str, WACCResult]:
     target = _target_from_market_data(ticker, market_data=market_data, hist=hist)
     peers = _load_peer_data(peer_tickers or [])
+    rf = risk_free_rate if risk_free_rate is not None else RISK_FREE_RATE
 
     return {
-        "peer_bottom_up": compute_wacc(target, peers),
-        "industry_proxy": _compute_industry_proxy_wacc(target, peers),
-        "self_hamada": _compute_self_hamada_wacc(target),
+        "peer_bottom_up": compute_wacc(target, peers, risk_free_rate=rf),
+        "industry_proxy": _compute_industry_proxy_wacc(target, peers, risk_free_rate=rf),
+        "self_hamada": _compute_self_hamada_wacc(target, risk_free_rate=rf),
     }
 
 

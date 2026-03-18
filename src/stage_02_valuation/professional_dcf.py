@@ -59,6 +59,12 @@ class ForecastDrivers:
     cost_of_equity: float | None = None
     debt_weight: float = 0.20
 
+    # NWC accuracy: use COGS (not revenue) as denominator for DIO and DPO
+    cogs_pct_of_revenue: float = 0.60
+
+    # Share dilution / buyback projection (Phase A — applied at terminal value)
+    annual_dilution_pct: float = 0.0
+
 
 @dataclass(slots=True)
 class ScenarioSpec:
@@ -239,10 +245,17 @@ def _growth_for_year(near: float, mid: float, year: int) -> float:
     return near + (mid - near) * alpha
 
 
-def _nwc_components(revenue: float, dso: float, dio: float, dpo: float) -> tuple[float, float, float, float]:
+def _nwc_components(
+    revenue: float,
+    dso: float,
+    dio: float,
+    dpo: float,
+    cogs_pct: float = 0.60,
+) -> tuple[float, float, float, float]:
     ar = revenue * dso / 365.0
-    inv = revenue * dio / 365.0
-    ap = revenue * dpo / 365.0
+    cogs = revenue * cogs_pct
+    inv = cogs * dio / 365.0
+    ap = cogs * dpo / 365.0
     nwc = ar + inv - ap
     return ar, inv, ap, nwc
 
@@ -318,6 +331,8 @@ def _apply_scenario(drivers: ForecastDrivers, scenario: ScenarioSpec) -> Forecas
         convertibles_value=drivers.convertibles_value,
         cost_of_equity=ke,
         debt_weight=drivers.debt_weight,
+        cogs_pct_of_revenue=drivers.cogs_pct_of_revenue,
+        annual_dilution_pct=drivers.annual_dilution_pct,
     )
 
 
@@ -327,6 +342,7 @@ def _compute_fcfe(
     fcff_11_for_gordon: float,
     nopat_11: float,
     non_equity_claims: float,
+    shares_out: float | None = None,
 ) -> tuple[float | None, float | None, float | None, float]:
     ke = d.cost_of_equity if d.cost_of_equity is not None else _clamp(d.wacc + 0.015, 0.04, 0.30)
 
@@ -350,9 +366,10 @@ def _compute_fcfe(
     non_debt_claims = non_equity_claims - d.net_debt
     equity_value = pv_fcfe_sum + pv_terminal + d.non_operating_assets - non_debt_claims
 
+    shares = shares_out if (shares_out is not None and shares_out > 0) else d.shares_outstanding
     iv = None
-    if d.shares_outstanding > 0:
-        iv = equity_value / d.shares_outstanding
+    if shares > 0:
+        iv = equity_value / shares
 
     return iv, equity_value, terminal_value, ke
 
@@ -364,7 +381,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     projections: list[ProjectionYear] = []
 
     revenue = d.revenue_base
-    _, _, _, prev_nwc = _nwc_components(revenue, d.dso_start, d.dio_start, d.dpo_start)
+    _, _, _, prev_nwc = _nwc_components(revenue, d.dso_start, d.dio_start, d.dpo_start, cogs_pct=d.cogs_pct_of_revenue)
     ic_prev = _derive_initial_invested_capital(d, prev_nwc)
 
     pv_fcff_sum = 0.0
@@ -387,7 +404,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         da = revenue * da_pct
         capex = revenue * capex_pct
 
-        ar, inv, ap, nwc = _nwc_components(revenue, dso, dio, dpo)
+        ar, inv, ap, nwc = _nwc_components(revenue, dso, dio, dpo, cogs_pct=d.cogs_pct_of_revenue)
         delta_nwc = nwc - prev_nwc
         prev_nwc = nwc
 
@@ -446,7 +463,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     nopat_11 = ebit_11 * (1.0 - y10.tax_rate)
     da_11 = revenue_11 * y10.da_pct
     capex_11 = revenue_11 * y10.capex_pct
-    _, _, _, nwc_11 = _nwc_components(revenue_11, y10.dso, y10.dio, y10.dpo)
+    _, _, _, nwc_11 = _nwc_components(revenue_11, y10.dso, y10.dio, y10.dpo, cogs_pct=d.cogs_pct_of_revenue)
     delta_nwc_11 = nwc_11 - y10.nwc
     fcff_11_bridge = nopat_11 + da_11 - capex_11 - delta_nwc_11
 
@@ -503,15 +520,20 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     non_equity_claims = _claims_total(d)
 
     equity_value = enterprise_value_total - non_equity_claims
-    iv_blended = equity_value / d.shares_outstanding
+
+    # Gap 3 (Phase A): project shares to Year 10 to capture dilution/buyback effect
+    shares_y10 = d.shares_outstanding * (1.0 + d.annual_dilution_pct) ** 10
+    shares_y10 = max(shares_y10, 1.0)
+
+    iv_blended = equity_value / shares_y10
 
     iv_gordon = None
     if gordon_valid and pv_tv_gordon is not None:
-        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / d.shares_outstanding
+        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / shares_y10
 
     iv_exit = None
     if exit_valid and pv_tv_exit is not None:
-        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / d.shares_outstanding
+        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / shares_y10
 
     reinvestment_10 = y10.reinvestment
     reinvestment_rate_10 = reinvestment_10 / y10.nopat if y10.nopat > 0 else None
@@ -550,7 +572,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
             dcf_ep_gap_pct = (ep_enterprise_value - enterprise_value_operations) / enterprise_value_operations
             ep_reconcile_flag = abs(dcf_ep_gap_pct) <= 0.15
         ep_equity = ep_enterprise_value + d.non_operating_assets - non_equity_claims
-        ep_intrinsic_value_per_share = ep_equity / d.shares_outstanding
+        ep_intrinsic_value_per_share = ep_equity / shares_y10
 
     fcfe_iv, fcfe_equity_value, fcfe_terminal_value, cost_of_equity_used = _compute_fcfe(
         d=d,
@@ -558,6 +580,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         fcff_11_for_gordon=fcff_11_for_gordon,
         nopat_11=nopat_11,
         non_equity_claims=non_equity_claims,
+        shares_out=shares_y10,
     )
 
     health_flags = {

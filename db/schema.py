@@ -545,6 +545,64 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
 
+    -- FRED macro series cache (daily snapshots)
+    CREATE TABLE IF NOT EXISTS macro_series (
+        series_id       TEXT NOT NULL,
+        series_date     TEXT NOT NULL,
+        value           REAL,
+        fetched_at      TEXT NOT NULL,
+        PRIMARY KEY (series_id, series_date)
+    );
+
+    -- Analyst estimate history snapshots (daily)
+    CREATE TABLE IF NOT EXISTS estimate_history (
+        ticker          TEXT NOT NULL,
+        snapshot_date   TEXT NOT NULL,
+        fy1_eps         REAL,
+        fy2_eps         REAL,
+        fy1_revenue     REAL,
+        fy2_revenue     REAL,
+        num_analysts    INTEGER,
+        eps_high        REAL,
+        eps_low         REAL,
+        revenue_high    REAL,
+        revenue_low     REAL,
+        pulled_at       TEXT NOT NULL,
+        PRIMARY KEY (ticker, snapshot_date)
+    );
+
+    -- DCF intrinsic value history (populated by batch_runner each run)
+    CREATE TABLE IF NOT EXISTS dcf_valuations (
+        ticker          TEXT NOT NULL,
+        run_date        TEXT NOT NULL,
+        iv_bear         REAL,
+        iv_base         REAL,
+        iv_bull         REAL,
+        iv_expected     REAL,
+        current_price   REAL,
+        upside_pct      REAL,
+        wacc            REAL,
+        exit_multiple   REAL,
+        net_debt_source TEXT,
+        revenue_source  TEXT,
+        PRIMARY KEY (ticker, run_date)
+    );
+
+    -- Market data cache (TTL-based, avoids duplicate yfinance calls in batch)
+    CREATE TABLE IF NOT EXISTS market_data_cache (
+        ticker          TEXT NOT NULL,
+        data_type       TEXT NOT NULL,
+        data_json       TEXT NOT NULL,
+        fetched_at      TEXT NOT NULL,
+        PRIMARY KEY (ticker, data_type)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_market_data_cache_lookup ON market_data_cache(ticker, data_type, fetched_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_macro_series_lookup ON macro_series(series_id, series_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_estimate_history_lookup ON estimate_history(ticker, snapshot_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_dcf_valuations_lookup ON dcf_valuations(ticker, run_date DESC);
+
     """)
 
     agent_run_log_columns = {

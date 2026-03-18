@@ -282,6 +282,13 @@ def build_dcf_audit_view(
         "ev_bridge": _ev_bridge(base_result),
         "driver_rows": _driver_rows(inputs.drivers, inputs.source_lineage),
         "health_flags": base_result.health_flags or {},
+        "model_integrity": {
+            "tv_pct_of_ev": round(base_result.tv_pct_of_ev * 100.0, 1) if base_result.tv_pct_of_ev is not None else None,
+            "tv_high_flag": bool((base_result.health_flags or {}).get("tv_high_flag", False)),
+            "revenue_data_quality_flag": inputs.source_lineage.get("revenue_data_quality_flag", "unknown"),
+            "nwc_driver_quality_flag": bool(base_result.nwc_driver_quality_flag),
+            "roic_consistency_flag": bool(base_result.roic_consistency_flag),
+        },
         "sensitivity": {
             "wacc_x_terminal_growth": _sensitivity_matrix(inputs.drivers, grid="wacc_x_terminal_growth"),
             "wacc_x_exit_multiple": _sensitivity_matrix(inputs.drivers, grid="wacc_x_exit_multiple"),

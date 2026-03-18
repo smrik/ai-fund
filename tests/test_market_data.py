@@ -243,6 +243,84 @@ def test_nwc_day_drivers_prefer_cogs_for_dio_and_dpo():
 
 
 
+def _make_balance_with_bridge():
+    """Balance sheet including EV bridge items."""
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    data = {
+        "Current Assets": [80e9, 72e9, 64e9],
+        "Current Liabilities": [40e9, 36e9, 32e9],
+        "Cash And Cash Equivalents": [20e9, 18e9, 16e9],
+        "Total Debt": [50e9, 45e9, 40e9],
+        "Minority Interest": [2e9, 1.8e9, 1.6e9],
+        "Preferred Stock": [1e9, 0.9e9, 0.8e9],
+        "Operating Lease Liability": [5e9, 4.5e9, 4e9],
+        "Finance Lease Liability": [1e9, 0.9e9, 0.8e9],
+    }
+    df = pd.DataFrame(data, index=pd.Index(dates, name=""))
+    return df.T
+
+
+def _make_cashflow_with_sbc():
+    """Cash flow including SBC."""
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    data = {
+        "Capital Expenditure": [-10e9, -9e9, -8e9],
+        "Depreciation And Amortization": [8e9, 7e9, 6e9],
+        "Stock Based Compensation": [3e9, 2.7e9, 2.4e9],
+    }
+    df = pd.DataFrame(data, index=pd.Index(dates, name=""))
+    return df.T
+
+
+def _make_financials_with_diluted():
+    """P&L including diluted shares."""
+    dates = pd.to_datetime(["2023-12-31", "2022-12-31", "2021-12-31"])
+    data = {
+        "Total Revenue": [200e9, 180e9, 160e9],
+        "Operating Income": [60e9, 54e9, 48e9],
+        "Interest Expense": [2e9, 1.8e9, 1.6e9],
+        "Tax Provision": [12e9, 10e9, 9e9],
+        "Pretax Income": [55e9, 50e9, 45e9],
+        "Diluted Average Shares": [7.5e9, 7.6e9, 7.7e9],
+    }
+    df = pd.DataFrame(data, index=pd.Index(dates, name=""))
+    return df.T
+
+
+def test_bridge_fields_extracted():
+    """Mocked: all bridge fields extracted from balance sheet, cashflow, and P&L."""
+    ticker_mock = mock.MagicMock()
+    ticker_mock.financials = _make_financials_with_diluted()
+    ticker_mock.cashflow = _make_cashflow_with_sbc()
+    ticker_mock.balance_sheet = _make_balance_with_bridge()
+
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        result = get_historical_financials("FAKE")
+
+    assert result["minority_interest_bs"] == 2e9
+    assert result["preferred_equity_bs"] == 1e9
+    assert result["lease_liabilities_bs"] == 6e9   # 5e9 operating + 1e9 finance
+    assert result["sbc"] == 3e9
+    assert result["diluted_shares"] == 7.5e9
+
+
+def test_bridge_fields_none_when_missing():
+    """Bridge fields are None when not present in statements."""
+    ticker_mock = mock.MagicMock()
+    ticker_mock.financials = _make_financials()
+    ticker_mock.cashflow = _make_cashflow()
+    ticker_mock.balance_sheet = _make_balance()
+
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        result = get_historical_financials("FAKE")
+
+    assert result["minority_interest_bs"] is None
+    assert result["preferred_equity_bs"] is None
+    assert result["lease_liabilities_bs"] is None
+    assert result["sbc"] is None
+    assert result["diluted_shares"] is None
+
+
 def test_effective_tax_rate_handles_negative_sign_convention():
     ticker_mock = mock.MagicMock()
 

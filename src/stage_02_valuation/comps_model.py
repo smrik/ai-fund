@@ -20,6 +20,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Any
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -328,6 +332,67 @@ def _select_primary(metrics: dict[str, PeerMultipleResult]) -> str | None:
         if m in metrics and metrics[m].n_clean >= 2:
             return m
     return None
+
+
+# ── yfinance peer adapter ─────────────────────────────────────────────────────
+
+def build_comps_detail_from_yfinance(
+    target_ticker: str,
+    peer_data: list[dict],
+    target_data: dict,
+) -> dict | None:
+    """
+    Convert yfinance peer list into the comps_detail format consumed by run_comps_model().
+
+    Args:
+        target_ticker: ticker symbol for the company being valued.
+        peer_data: list of dicts from get_peer_multiples() — each has keys
+                   ticker, market_cap_mm, ebitda_mm, ev_ebitda, pe_trailing.
+        target_data: dict from get_market_data() for the target ticker.
+
+    Returns:
+        comps_detail dict with "target" and "peers" keys, or None if no usable peers.
+    """
+    if not peer_data:
+        return None
+
+    mktcap = target_data.get("market_cap")
+    ebitda = target_data.get("ebitda_ttm")
+    tev = target_data.get("enterprise_value")
+
+    # Gap 8: read ebit_ltm_mm and eps_ltm if caller pre-computed and passed them
+    ebit_ltm_mm = target_data.get("ebit_ltm_mm")  # caller may supply in $mm already
+    eps_ltm = target_data.get("eps_ltm")
+
+    target = {
+        "ticker": target_ticker.upper(),
+        "market_cap_mm": mktcap / 1e6 if mktcap else None,
+        "tev_mm": tev / 1e6 if tev else None,
+        "ebitda_ltm_mm": ebitda / 1e6 if ebitda else None,
+        "ebit_ltm_mm": ebit_ltm_mm,
+        "eps_ltm": eps_ltm,
+    }
+
+    peers = []
+    for p in peer_data:
+        ebitda_mm = p.get("ebitda_mm")
+        ev_ebitda = p.get("ev_ebitda")
+        # Derive tev_ebitda_ltm from ev_ebitda ratio directly
+        peers.append({
+            "ticker": p.get("ticker", ""),
+            "market_cap_mm": p.get("market_cap_mm"),
+            "tev_ebitda_ltm": ev_ebitda if ev_ebitda and 0 < ev_ebitda < 100 else None,
+            "tev_ebit_ltm": None,
+            "tev_ebitda_fwd": None,
+            "tev_ebit_fwd": None,
+            "pe_ltm": p.get("pe_trailing") if p.get("pe_trailing") and 0 < p.get("pe_trailing") < 150 else None,
+        })
+
+    usable = [p for p in peers if p.get("tev_ebitda_ltm") is not None or p.get("pe_ltm") is not None]
+    if not usable:
+        return None
+
+    return {"target": target, "peers": peers, "medians": {}, "source": "yfinance"}
 
 
 # ── Public entry point ────────────────────────────────────────────────────────

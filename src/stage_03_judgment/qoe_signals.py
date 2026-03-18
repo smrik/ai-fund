@@ -241,6 +241,14 @@ def compute_qoe_signals(
     }
     qoe_score, qoe_flag = _composite_score(signal_scores)
 
+    # ── Forensic Scores (M-Score, Z-Score) ───────────────────────────────────
+    # Complementary signals — NOT integrated into QoE composite scoring.
+    try:
+        from src.stage_03_judgment.forensic_scores import compute_forensic_signals
+        forensic = compute_forensic_signals(hist, mkt.get("market_cap_mm"), sector)
+    except Exception:
+        forensic = {"available": False, "error": "forensic_scores unavailable"}
+
     return {
         "ticker": ticker.upper(),
         "sector": sector,
@@ -266,4 +274,11 @@ def compute_qoe_signals(
         "signal_scores": signal_scores,
         # Thresholds used (for audit trail)
         "accruals_thresholds": accruals_thresh,
+        # Forensic scores (M-Score / Z-Score) — complementary, not in composite
+        "forensic": forensic,
+        "m_score": forensic.get("m_score"),
+        "m_score_zone": forensic.get("m_score_zone"),
+        "z_score": forensic.get("z_score"),
+        "z_score_zone": forensic.get("z_score_zone"),
+        "forensic_flag": forensic.get("forensic_flag"),
     }

@@ -1,209 +1,110 @@
 import sys
 from pathlib import Path
-import sqlite3
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from db.schema import create_tables
 from src.stage_00_data import edgar_client
 
 
-def test_strip_html_tags_removes_ix_noise_and_decodes_entities():
-    raw = """
-    <html>
-      <head>
-        <style>.hide { display:none; }</style>
-        <script>console.log("ignore");</script>
-      </head>
-      <body>
-        <ix:header>
-          <xbrli:context>metadata only</xbrli:context>
-        </ix:header>
-        <div>Revenue increased 12% &amp; margins improved&nbsp;meaningfully.</div>
-        <p>Operating income reached &#160; $500 million.</p>
-      </body>
-    </html>
-    """
+def test_get_10k_text_returns_latest_text_from_edgartools(monkeypatch):
+    mock_company = MagicMock()
+    mock_filings = MagicMock()
+    mock_filing = MagicMock()
 
-    cleaned = edgar_client._strip_html_tags(raw)
+    mock_company.get_filings.return_value = mock_filings
+    mock_filings.empty = False
+    mock_filings.latest.return_value = mock_filing
+    mock_filing.text.return_value = "This is a full 10-K text."
 
-    assert "metadata only" not in cleaned
-    assert "console.log" not in cleaned
-    assert "display:none" not in cleaned
-    assert "Revenue increased 12% & margins improved meaningfully." in cleaned
-    assert "Operating income reached $500 million." in cleaned
-    assert "<div>" not in cleaned
-    assert "  " not in cleaned
+    monkeypatch.setattr(edgar_client, "Company", lambda ticker: mock_company)
+
+    text = edgar_client.get_10k_text("IBM", max_chars=10)
+    assert text == "This is a "
+    mock_company.get_filings.assert_called_with(form="10-K")
 
 
-def test_get_10k_text_cleans_markup_before_truncation(monkeypatch):
-    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_recent_filings",
-        lambda cik, form_type, limit=4: [
-            {
-                "accession_no": "0000123456-26-000001",
-                "filing_date": "2026-02-20",
-                "primary_doc": "annual.htm",
-            }
-        ],
-    )
-    monkeypatch.setattr(
-        edgar_client,
-        "get_filing_text",
-        lambda accession_no, cik, doc_name: (
-            "<html><ix:header>" + ("X" * 2000) + "</ix:header>"
-            "<body><p>Management discussion and analysis starts here.</p></body></html>"
-        ),
-    )
+def test_get_recent_10q_texts_returns_list_of_texts(monkeypatch):
+    mock_company = MagicMock()
+    mock_filings_list = [MagicMock(), MagicMock()]
+    mock_filings_list[0].text.return_value = "Quarterly update 1"
+    mock_filings_list[0].filing_date = "2026-06-30"
+    mock_filings_list[0].accession_no = "acc-1"
+    
+    mock_filings_list[1].text.return_value = "Quarterly update 2"
+    mock_filings_list[1].filing_date = "2026-03-31"
+    mock_filings_list[1].accession_no = "acc-2"
 
-    text = edgar_client.get_10k_text("IBM", max_chars=30)
+    mock_filings = MagicMock()
+    mock_filings.head.return_value = mock_filings_list
+    mock_company.get_filings.return_value = mock_filings
 
-    assert text == "Management discussion and anal"
+    monkeypatch.setattr(edgar_client, "Company", lambda ticker: mock_company)
+
+    results = edgar_client.get_recent_10q_texts("IBM", limit=2, max_chars_each=20)
+    assert len(results) == 2
+    assert results[0]["text"] == "Quarterly update 1"
+    assert results[1]["text"] == "Quarterly update 2"
 
 
-def test_get_8k_texts_cleans_each_markup_document(monkeypatch):
-    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_recent_filings",
-        lambda cik, form_type, limit=4: [
-            {
-                "accession_no": "0000123456-26-000010",
-                "filing_date": "2026-03-01",
-                "primary_doc": "earnings1.htm",
-            },
-            {
-                "accession_no": "0000123456-26-000011",
-                "filing_date": "2026-02-01",
-                "primary_doc": "earnings2.htm",
-            },
-        ],
-    )
+def test_get_8k_texts_returns_list_of_texts(monkeypatch):
+    mock_company = MagicMock()
+    mock_filing = MagicMock()
+    mock_filing.text.return_value = "8-K event: CEO resigned."
+    mock_filing.filing_date = "2026-05-01"
+    mock_filing.accession_no = "acc-8k"
 
-    def fake_text(accession_no, cik, doc_name):
-        return (
-            "<html><body><script>ignore()</script>"
-            f"<p>{doc_name} says guidance was raised &amp; cash flow improved.</p>"
-            "</body></html>"
-        )
+    mock_filings = MagicMock()
+    mock_filings.head.return_value = [mock_filing]
+    mock_company.get_filings.return_value = mock_filings
 
-    monkeypatch.setattr(edgar_client, "get_filing_text", fake_text)
+    monkeypatch.setattr(edgar_client, "Company", lambda ticker: mock_company)
 
-    filings = edgar_client.get_8k_texts("IBM", limit=2, max_chars_each=80)
-
-    assert len(filings) == 2
-    assert filings[0]["text"] == "earnings1.htm says guidance was raised & cash flow improved."
-    assert filings[1]["text"] == "earnings2.htm says guidance was raised & cash flow improved."
+    results = edgar_client.get_8k_texts("IBM", limit=1, max_chars_each=12)
+    assert len(results) == 1
+    assert results[0]["text"] == "8-K event: C"
 
 
-def test_get_recent_10q_texts_returns_cleaned_quarterly_text(monkeypatch):
-    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_recent_filings",
-        lambda cik, form_type, limit=2: [
-            {
-                "accession_no": "0000123456-26-000002",
-                "filing_date": "2026-06-30",
-                "primary_doc": "q2.htm",
-            },
-            {
-                "accession_no": "0000123456-26-000003",
-                "filing_date": "2026-03-31",
-                "primary_doc": "q1.htm",
-            },
-        ],
-    )
-    monkeypatch.setattr(
-        edgar_client,
-        "_get_cached_or_fetch_filing_text",
-        lambda **kwargs: f"{kwargs['doc_name']} discusses deferred revenue and restructuring.",
-    )
+def test_extract_financial_facts_returns_structured_metrics(monkeypatch):
+    import pandas as pd
+    
+    mock_company = MagicMock()
+    mock_facts = MagicMock()
+    mock_company.get_facts.return_value = mock_facts
 
-    results = edgar_client.get_recent_10q_texts("IBM", limit=2, max_chars_each=200)
+    mock_query_builder = MagicMock()
+    mock_facts.query.return_value = mock_query_builder
+    
+    mock_query_concept = MagicMock()
+    mock_query_builder.by_concept.return_value = mock_query_concept
+    
+    mock_query_quality = MagicMock()
+    mock_query_concept.high_quality_only.return_value = mock_query_quality
 
-    assert [item["accession_no"] for item in results] == ["0000123456-26-000002", "0000123456-26-000003"]
-    assert "deferred revenue and restructuring" in results[0]["text"]
+    # Create a mock dataframe that to_dataframe will return
+    df = pd.DataFrame([
+        {"numeric_value": 1000.0, "form_type": "10-K", "fiscal_period": "FY", "period_end": "2023-12-31", "unit": "USD"}
+    ])
+    
+    # We want it to be empty for everything except "Revenues" to limit the test scope
+    def fake_to_dataframe():
+        # Using sys._getframe to hack checking what concept was passed, 
+        # but simpler: just return the df and let it map to multiple
+        return df
 
+    mock_query_quality.to_dataframe.side_effect = fake_to_dataframe
 
-def test_get_10k_text_uses_cached_clean_text_before_refetch(monkeypatch, tmp_path):
-    db_path = tmp_path / "alpha_pod.db"
-    conn = sqlite3.connect(db_path)
-    create_tables(conn)
-    conn.close()
+    monkeypatch.setattr(edgar_client, "Company", lambda ticker: mock_company)
 
-    monkeypatch.setattr(edgar_client, "DB_PATH", db_path)
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_CLEAN_DIR", tmp_path / "clean")
-    monkeypatch.setattr(edgar_client, "EDGAR_PARSER_VERSION", "v1")
-    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_recent_filings",
-        lambda cik, form_type, limit=4: [
-            {
-                "accession_no": "0000123456-26-000001",
-                "filing_date": "2026-02-20",
-                "primary_doc": "annual.htm",
-            }
-        ],
-    )
-
-    calls = {"count": 0}
-
-    def _fake_fetch(accession_no, cik, doc_name):
-        calls["count"] += 1
-        return "<html><body><p>Cached management discussion text.</p></body></html>"
-
-    monkeypatch.setattr(edgar_client, "get_filing_text", _fake_fetch)
-
-    first = edgar_client.get_10k_text("IBM", max_chars=200)
-    second = edgar_client.get_10k_text("IBM", max_chars=200)
-
-    assert first == "Cached management discussion text."
-    assert second == "Cached management discussion text."
-    assert calls["count"] == 1
-
-
-def test_get_10k_text_reparses_raw_cache_when_parser_version_changes(monkeypatch, tmp_path):
-    db_path = tmp_path / "alpha_pod.db"
-    conn = sqlite3.connect(db_path)
-    create_tables(conn)
-    conn.close()
-
-    monkeypatch.setattr(edgar_client, "DB_PATH", db_path)
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_CLEAN_DIR", tmp_path / "clean")
-    monkeypatch.setattr(edgar_client, "get_cik", lambda ticker: "0000123456")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_recent_filings",
-        lambda cik, form_type, limit=4: [
-            {
-                "accession_no": "0000123456-26-000001",
-                "filing_date": "2026-02-20",
-                "primary_doc": "annual.htm",
-            }
-        ],
-    )
-
-    monkeypatch.setattr(
-        edgar_client,
-        "get_filing_text",
-        lambda accession_no, cik, doc_name: "<html><body><p>Parser version rollover text.</p></body></html>",
-    )
-    monkeypatch.setattr(edgar_client, "EDGAR_PARSER_VERSION", "v1")
-    first = edgar_client.get_10k_text("IBM", max_chars=200)
-
-    monkeypatch.setattr(edgar_client, "EDGAR_PARSER_VERSION", "v2")
-    monkeypatch.setattr(
-        edgar_client,
-        "get_filing_text",
-        lambda accession_no, cik, doc_name: (_ for _ in ()).throw(AssertionError("should not refetch")),
-    )
-    second = edgar_client.get_10k_text("IBM", max_chars=200)
-
-    assert first == "Parser version rollover text."
-    assert second == "Parser version rollover text."
+    extracted = edgar_client.extract_financial_facts("IBM")
+    
+    assert isinstance(extracted, list)
+    assert len(extracted) > 0
+    # Items are sorted alphabetically by metric name ("Capex", "EarningsPerShareBasic", ...)
+    metrics_returned = [x["metric"] for x in extracted]
+    assert "Revenues" in metrics_returned
+    
+    rev_item = next(x for x in extracted if x["metric"] == "Revenues")
+    assert rev_item["value"] == 1000.0
+    assert rev_item["form"] == "10-K"
+    assert "2023-12-31" in rev_item["end"]

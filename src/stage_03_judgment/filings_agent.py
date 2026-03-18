@@ -56,13 +56,10 @@ class FilingsAgent(BaseAgent):
     def _handle_company_facts(self, inp: dict) -> str:
         ticker = inp["ticker"]
         try:
-            cik = edgar_client.get_cik(ticker)
-            facts = edgar_client.get_company_facts(cik)
-            extracted = edgar_client.extract_financial_facts(facts)
-            company_name = facts.get("entityName", ticker)
-            return json.dumps({"company": company_name, "cik": cik, "facts": extracted}, default=str)
+            extracted = edgar_client.extract_financial_facts(ticker)
+            return json.dumps({"company": ticker, "ticker": ticker, "facts": extracted}, default=str)
         except Exception as e:
-            return json.dumps({"error": str(e), "ticker": ticker, "facts": {}})
+            return json.dumps({"error": str(e), "ticker": ticker, "facts": []})
 
     def analyze(self, ticker: str, filing_context: str | None = None) -> FilingsSummary:
         """Run filings analysis for ticker. Returns FilingsSummary."""

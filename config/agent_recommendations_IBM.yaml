@@ -1,13 +1,13 @@
 ticker: IBM
-generated_at: '2026-03-15T18:31:50+00:00'
-current_iv_base: 217.96
+generated_at: '2026-03-17T23:16:39+00:00'
+current_iv_base: 183.54
 recommendations:
 - agent: industry
-  field: ebit_margin_target
-  current_value: 0.21200000000000002
-  proposed_value: 0.18
+  field: revenue_growth_mid
+  current_value: 0.12
+  proposed_value: 0.1
   confidence: medium
-  rationale: 'Industry margin benchmark: 18.0% vs current target 21.2%'
+  rationale: 'Industry consensus mid-term growth: 10.0% vs current 12.0%'
   citation: null
   status: pending
 - agent: filings

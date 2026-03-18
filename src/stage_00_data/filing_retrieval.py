@@ -576,50 +576,32 @@ def _load_filing_payloads(ticker: str, *, include_10k: bool, ten_q_limit: int) -
     filings: list[dict[str, Any]] = []
 
     if include_10k:
-        ten_ks = edgar_client.get_recent_filings(cik, "10-K", limit=1)
-        for filing in ten_ks:
-            text = edgar_client._get_cached_or_fetch_filing_text(  # type: ignore[attr-defined]
-                ticker=ticker,
-                cik=cik,
-                form_type="10-K",
-                filing_date=filing.get("filing_date"),
-                accession_no=filing["accession_no"],
-                doc_name=filing["primary_doc"],
-                max_chars=250_000,
-            )
+        for meta in edgar_client.get_recent_filing_metadata(ticker, "10-K", limit=1):
+            text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=250_000)
             if text:
                 filings.append(
                     {
                         "ticker": ticker.upper(),
                         "cik": cik,
                         "form_type": "10-K",
-                        "accession_no": filing["accession_no"],
-                        "doc_name": filing["primary_doc"],
-                        "filing_date": filing.get("filing_date"),
+                        "accession_no": meta["accession_no"],
+                        "doc_name": meta["primary_doc"],
+                        "filing_date": meta.get("filing_date"),
                         "text": text,
                     }
                 )
 
-    ten_qs = edgar_client.get_recent_filings(cik, "10-Q", limit=ten_q_limit)
-    for filing in ten_qs:
-        text = edgar_client._get_cached_or_fetch_filing_text(  # type: ignore[attr-defined]
-            ticker=ticker,
-            cik=cik,
-            form_type="10-Q",
-            filing_date=filing.get("filing_date"),
-            accession_no=filing["accession_no"],
-            doc_name=filing["primary_doc"],
-            max_chars=180_000,
-        )
+    for meta in edgar_client.get_recent_filing_metadata(ticker, "10-Q", limit=ten_q_limit):
+        text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=180_000)
         if text:
             filings.append(
                 {
                     "ticker": ticker.upper(),
                     "cik": cik,
                     "form_type": "10-Q",
-                    "accession_no": filing["accession_no"],
-                    "doc_name": filing["primary_doc"],
-                    "filing_date": filing.get("filing_date"),
+                    "accession_no": meta["accession_no"],
+                    "doc_name": meta["primary_doc"],
+                    "filing_date": meta.get("filing_date"),
                     "text": text,
                 }
             )
@@ -790,6 +772,90 @@ def render_filing_context(bundle: FilingContextBundle, max_chars: int) -> str:
         rendered.append(block)
         total_chars += len(block)
     return "\n".join(rendered).strip()
+
+
+def query_filing_corpus(ticker: str, query_text: str, *, top_k: int = 5, include_10k: bool = True, ten_q_limit: int = 2) -> FilingContextBundle:
+    """
+    Search the filing corpus for a specific user query using semantic embeddings.
+    Used by the Chatbot RAG flow.
+    """
+    ticker = ticker.upper().strip()
+    corpus = build_filing_corpus(ticker, include_10k=include_10k, ten_q_limit=ten_q_limit)
+    
+    if not corpus["chunks"]:
+        return FilingContextBundle(
+            ticker=ticker,
+            profile_name="chat_query",
+            corpus_hash=corpus["corpus_hash"],
+            sources=corpus["sources"],
+            selected_chunks=[],
+            rendered_text="",
+            retrieval_summary={
+                "strategy": "empty",
+                "selected_chunk_count": 0,
+                "error": "No chunks available in corpus",
+            },
+        )
+
+    conn = _connect()
+    try:
+        # Embed the query
+        try:
+            query_embedding = _encode_texts([query_text], _EMBEDDING_MODEL)[0]
+            used_embeddings = True
+        except Exception as e:
+            query_embedding = []
+            used_embeddings = False
+            return FilingContextBundle(
+                ticker=ticker,
+                profile_name="chat_query",
+                corpus_hash=corpus["corpus_hash"],
+                sources=corpus["sources"],
+                selected_chunks=[],
+                rendered_text="",
+                retrieval_summary={
+                    "strategy": "fallback_failed",
+                    "selected_chunk_count": 0,
+                    "error": f"Embeddings unavailable for RAG: {e}",
+                },
+            )
+
+        # Score chunks
+        scored_chunks: list[FilingChunk] = []
+        for chunk in corpus["chunks"]:
+            chunk_embedding = _load_cached_chunk_embedding(conn, chunk.chunk_hash, _EMBEDDING_MODEL)
+            if not chunk_embedding:
+                try:
+                    chunk_embedding = _get_or_create_chunk_embedding(conn, chunk.chunk_hash, chunk.text, _EMBEDDING_MODEL)
+                except Exception:
+                    continue
+            
+            sim = _cosine_similarity(query_embedding, chunk_embedding)
+            score = _normalise_similarity(sim)
+            chunk.score = score
+            scored_chunks.append(chunk)
+
+        scored_chunks.sort(key=lambda c: c.score or 0.0, reverse=True)
+        selected_chunks = scored_chunks[:top_k]
+
+        bundle = FilingContextBundle(
+            ticker=ticker,
+            profile_name="chat_query",
+            corpus_hash=corpus["corpus_hash"],
+            sources=corpus["sources"],
+            selected_chunks=selected_chunks,
+            rendered_text="", # Built below
+            retrieval_summary={
+                "strategy": "semantic_search",
+                "used_embeddings": used_embeddings,
+                "selected_chunk_count": len(selected_chunks),
+                "top_k_requested": top_k,
+            },
+        )
+        bundle.rendered_text = render_filing_context(bundle, max_chars=100_000)
+        return bundle
+    finally:
+        conn.close()
 
 
 def get_agent_filing_context(

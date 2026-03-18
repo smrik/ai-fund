@@ -10,7 +10,7 @@ from typing import Any
 from config import DB_PATH
 from db.loader import upsert_sec_filing_metrics_snapshot
 from db.schema import create_tables
-from src.stage_00_data.edgar_client import get_cik, get_company_facts
+from src.stage_00_data.edgar_client import get_cik
 
 
 @dataclass
@@ -46,26 +46,32 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _extract_annual_series(company_facts: dict, metric_names: tuple[str, ...]) -> list[dict[str, float | str]]:
-    us_gaap = company_facts.get("facts", {}).get("us-gaap", {})
+def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[dict[str, float | str]]:
+    from edgar import Company
+    try:
+        facts = Company(ticker).get_facts()
+    except Exception:
+        return []
+        
     for metric_name in metric_names:
-        metric = us_gaap.get(metric_name)
-        if not metric:
+        try:
+            q = facts.query().by_concept(metric_name).latest_periods(5, annual=True).to_dataframe()
+            if q.empty:
+                continue
+                
+            annual: list[dict[str, float | str]] = []
+            for _, row in q.iterrows():
+                val = _to_float(row.get("numeric_value"))
+                period = row.get("period_end")
+                if not period or val is None:
+                    continue
+                annual.append({"period": str(period)[:10], "value": val})
+                
+            annual.sort(key=lambda x: str(x["period"]))
+            if annual:
+                return annual
+        except Exception:
             continue
-        units = metric.get("units", {})
-        vals = units.get("USD") or units.get("pure") or []
-        annual: list[dict[str, float | str]] = []
-        for item in vals:
-            if item.get("form") != "10-K":
-                continue
-            period = item.get("end")
-            value = _to_float(item.get("val"))
-            if not period or value is None:
-                continue
-            annual.append({"period": str(period), "value": value})
-        annual.sort(key=lambda row: str(row["period"]))
-        if annual:
-            return annual
     return []
 
 
@@ -150,6 +156,58 @@ def _load_cached_metrics(conn: sqlite3.Connection, ticker: str, as_of_date: str 
     return _row_to_metrics(row) if row is not None else None
 
 
+def get_bridge_items_from_xbrl(ticker: str) -> dict:
+    """
+    Extract most recent annual EV bridge items from EDGAR XBRL.
+
+    Returns a dict with keys (all in raw dollars, not millions):
+        minority_interest, preferred_equity, lease_liabilities,
+        pension_deficit, sbc
+    Returns {} on any failure — never raises.
+    """
+    try:
+        from edgar import Company
+        facts = Company(ticker.upper()).get_facts()
+    except Exception:
+        return {}
+
+    def _latest_annual_value(concept: str) -> float | None:
+        try:
+            q = facts.query().by_concept(concept).latest_periods(1, annual=True).to_dataframe()
+            if q.empty:
+                return None
+            val = _to_float(q.iloc[0].get("numeric_value"))
+            return val
+        except Exception:
+            return None
+
+    operating_lease = _latest_annual_value("OperatingLeaseLiability")
+    finance_lease = _latest_annual_value("FinanceLeaseLiability")
+    minority_interest = _latest_annual_value("MinorityInterest")
+    preferred_equity = _latest_annual_value("PreferredStockValue")
+    pension_obligation = _latest_annual_value("DefinedBenefitPlanBenefitObligation")
+    pension_assets = _latest_annual_value("DefinedBenefitPlanFairValueOfPlanAssets")
+    sbc = _latest_annual_value("ShareBasedCompensation")
+
+    lease_total = (operating_lease or 0.0) + (finance_lease or 0.0)
+    pension_deficit = None
+    if pension_obligation is not None and pension_assets is not None:
+        pension_deficit = max(0.0, pension_obligation - pension_assets)
+
+    result = {}
+    if minority_interest is not None:
+        result["minority_interest"] = minority_interest
+    if preferred_equity is not None:
+        result["preferred_equity"] = preferred_equity
+    if lease_total > 0:
+        result["lease_liabilities"] = lease_total
+    if pension_deficit is not None:
+        result["pension_deficit"] = pension_deficit
+    if sbc is not None:
+        result["sbc"] = sbc
+    return result
+
+
 def get_sec_filing_metrics(ticker: str, as_of_date: str | None = None) -> SecFilingMetrics | None:
     """Deterministically compute and cache filing-derived numeric metrics from SEC XBRL facts."""
     ticker = ticker.upper().strip()
@@ -160,10 +218,9 @@ def get_sec_filing_metrics(ticker: str, as_of_date: str | None = None) -> SecFil
             return cached
 
         cik = get_cik(ticker)
-        company_facts = get_company_facts(cik)
         revenue_series = _trim_series(
             _extract_annual_series(
-                company_facts,
+                ticker,
                 ("Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax"),
             ),
             n=3,
@@ -172,11 +229,11 @@ def get_sec_filing_metrics(ticker: str, as_of_date: str | None = None) -> SecFil
             return None
 
         operating_income_series = _trim_series(
-            _extract_annual_series(company_facts, ("OperatingIncomeLoss",)),
+            _extract_annual_series(ticker, ("OperatingIncomeLoss",)),
             n=3,
         )
         gross_profit_series = _trim_series(
-            _extract_annual_series(company_facts, ("GrossProfit",)),
+            _extract_annual_series(ticker, ("GrossProfit",)),
             n=3,
         )
 

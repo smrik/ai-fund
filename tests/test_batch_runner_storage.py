@@ -35,7 +35,7 @@ def test_persist_results_to_db_writes_snapshot_and_history(tmp_path, monkeypatch
         _sample_row("BBB", 10.0),
     ])
 
-    latest_count, history_count = batch_runner.persist_results_to_db(df, snapshot_date="2026-03-06")
+    latest_count, history_count, _dcf_count = batch_runner.persist_results_to_db(df, snapshot_date="2026-03-06")
 
     assert latest_count == 2
     assert history_count == 2

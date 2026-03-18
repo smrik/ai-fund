@@ -20,9 +20,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from config import DB_PATH, PEER_SIMILARITY_ENABLED, PEER_SIMILARITY_MODEL
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
+from src.stage_02_valuation.comps_model import build_comps_detail_from_yfinance
 from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
-from src.stage_02_valuation.input_assembler import build_valuation_inputs
+from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
 from src.stage_02_valuation.json_exporter import export_ticker_json
 from src.stage_02_valuation.professional_dcf import (
     ForecastDrivers,
@@ -336,6 +337,20 @@ def value_single_ticker(ticker: str) -> dict | None:
         # ── Comps model (IQR-cleaned, similarity-weighted) ───────────────────
         try:
             comps_detail_raw = get_ciq_comps_detail(ticker)
+            # yfinance peer fallback when CIQ comps are unavailable
+            if not comps_detail_raw:
+                _overrides = load_valuation_overrides()
+                _peer_list = (_overrides.get("tickers", {}).get(ticker, {}) or {}).get("peers")
+                if _peer_list:
+                    _peer_data = md_client.get_peer_multiples(_peer_list)
+                    # Gap 8: enrich target dict with EBIT and EPS for EV/EBIT and P/E comps
+                    _ebit_mm = inputs.drivers.ebit_margin_start * inputs.drivers.revenue_base / 1e6
+                    _pe = mkt.get("pe_trailing")
+                    _eps = (price / _pe) if (_pe and _pe > 0 and price > 0) else None
+                    _mkt_enriched = {**mkt, "ebit_ltm_mm": _ebit_mm, "eps_ltm": _eps}
+                    comps_detail_raw = build_comps_detail_from_yfinance(ticker, _peer_data, _mkt_enriched)
+                    if comps_detail_raw:
+                        row["comps_similarity_method"] = "yfinance_fallback"
             if comps_detail_raw:
                 similarity_scores = None
                 if PEER_SIMILARITY_ENABLED:
@@ -426,6 +441,18 @@ def value_single_ticker(ticker: str) -> dict | None:
             return row
 
         scenario_specs = default_scenario_specs()
+        try:
+            from src.stage_02_valuation.regime_model import detect_current_regime, get_scenario_weights
+            regime = detect_current_regime()
+            if regime.available:
+                weights = get_scenario_weights(regime)
+                scenario_specs = [
+                    ScenarioSpec("bear", weights.bear, growth_multiplier=0.8, margin_shift=-0.02, wacc_shift=0.01, exit_multiple_multiplier=0.9),
+                    ScenarioSpec("base", weights.base),
+                    ScenarioSpec("bull", weights.bull, growth_multiplier=1.2, margin_shift=0.02, wacc_shift=-0.01, exit_multiple_multiplier=1.1),
+                ]
+        except Exception:
+            pass
         probabilistic = run_probabilistic_valuation(inputs.drivers, scenario_specs, current_price=price)
 
         bear = _scenario_by_name(probabilistic.scenario_results, "bear")
@@ -707,7 +734,9 @@ def export_to_excel(results: list[dict], output_path: Path):
 
 
 def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int]:
+    from db.schema import create_tables
     conn = sqlite3.connect(str(DB_PATH))
+    create_tables(conn)
     try:
         df.to_sql("batch_valuations_latest", conn, if_exists="replace", index=False)
 
@@ -762,8 +791,40 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
             """,
             valuation_rows,
         )
+
+        # Gap 7: DCF IV history — table defined in db/schema.py, created via create_tables()
+        dcf_iv_rows = []
+        for _, row in df.iterrows():
+            if row.get("iv_base") is not None:
+                dcf_iv_rows.append(
+                    (
+                        row.get("ticker"),
+                        snapshot_date,
+                        _safe_float(row.get("iv_bear")),
+                        _safe_float(row.get("iv_base")),
+                        _safe_float(row.get("iv_bull")),
+                        _safe_float(row.get("expected_iv")),
+                        _safe_float(row.get("price")),
+                        _safe_float(row.get("expected_upside_pct")),
+                        _safe_float(row.get("wacc")),
+                        _safe_float(row.get("exit_multiple_used")),
+                        row.get("net_debt_source"),
+                        row.get("revenue_source"),
+                    )
+                )
+        if dcf_iv_rows:
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO dcf_valuations (
+                    ticker, run_date, iv_bear, iv_base, iv_bull, iv_expected,
+                    current_price, upside_pct, wacc, exit_multiple,
+                    net_debt_source, revenue_source
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                dcf_iv_rows,
+            )
         conn.commit()
-        return len(df), len(valuation_rows)
+        return len(df), len(valuation_rows), len(dcf_iv_rows)
     finally:
         conn.close()
 
@@ -787,7 +848,7 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
     print()
 
     results = []
-    errors = 0
+    failed_tickers: list[str] = []
     for i, ticker in enumerate(tickers, 1):
         print(f"  [{i:>3}/{len(tickers)}] {ticker:<8} ", end="", flush=True)
         result = value_single_ticker(ticker)
@@ -802,13 +863,15 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
             else:
                 print(f"${result['price']:>8.2f} → ${iv:>8.2f}  ({upside:>+6.1f}%)  WACC {result['wacc']:.1f}%")
         else:
-            errors += 1
+            failed_tickers.append(ticker)
             print("skipped (insufficient data)")
 
         time.sleep(0.3)
 
     print()
-    print(f"  Completed: {len(results)} valued, {errors} skipped")
+    print(f"  Completed: {len(results)} valued, {len(failed_tickers)} skipped")
+    if failed_tickers:
+        print(f"  Failed tickers: {', '.join(failed_tickers)}")
     print()
 
     if not results:
@@ -826,9 +889,16 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
     df.to_csv(latest_csv, index=False)
     print(f"✓ CSV: {latest_csv}")
 
-    latest_rows, valuation_rows = persist_results_to_db(df, snapshot_date=today)
+    # Gap 6: write batch_errors.json alongside CSV when failures occurred
+    if failed_tickers:
+        errors_path = OUTPUT_DIR / "batch_errors.json"
+        with errors_path.open("w", encoding="utf-8") as _ef:
+            json.dump({"run_date": today, "failed": failed_tickers}, _ef, indent=2)
+        print(f"✓ Errors: {errors_path}  ({len(failed_tickers)} failed)")
+
+    latest_rows, valuation_rows, dcf_rows = persist_results_to_db(df, snapshot_date=today)
     print(f"✓ SQLite: {DB_PATH}")
-    print(f"  batch_valuations_latest={latest_rows}, valuations={valuation_rows}")
+    print(f"  batch_valuations_latest={latest_rows}, valuations={valuation_rows}, dcf_valuations={dcf_rows}")
 
     xlsx_path = None
     if export_xlsx:

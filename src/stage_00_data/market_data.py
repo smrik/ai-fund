@@ -3,21 +3,95 @@ Market data client using yfinance (free, no API key).
 Provides prices, valuation multiples, analyst ratings, and news.
 """
 
-import yfinance as yf
+import json
+import sqlite3
+from datetime import datetime, timezone
 from typing import Optional
+
+import yfinance as yf
 import logging
 
 logger = logging.getLogger(__name__)
 
+# ── In-process Ticker cache ────────────────────────────────────────────────────
+# Reuses yf.Ticker objects within a session so multiple callers for the same
+# ticker don't each create separate objects and make duplicate network calls.
+_TICKER_CACHE: dict[str, yf.Ticker] = {}
 
-def get_market_data(ticker: str) -> dict:
+
+def _get_ticker(ticker: str) -> yf.Ticker:
+    key = ticker.upper()
+    if key not in _TICKER_CACHE:
+        _TICKER_CACHE[key] = yf.Ticker(key)
+    return _TICKER_CACHE[key]
+
+
+# ── SQLite result cache helpers ────────────────────────────────────────────────
+_MARKET_DATA_TTL_HOURS = 4  # How long to trust cached market data
+
+def _db_cache_get(ticker: str, data_type: str, ttl_hours: float = _MARKET_DATA_TTL_HOURS) -> dict | None:
+    """Return cached JSON result if fresh enough, else None."""
+    try:
+        from config import DB_PATH
+        from db.schema import create_tables
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        create_tables(conn)
+        row = conn.execute(
+            "SELECT data_json, fetched_at FROM market_data_cache WHERE ticker = ? AND data_type = ?",
+            [ticker.upper(), data_type],
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return None
+        fetched_at = datetime.fromisoformat(row["fetched_at"])
+        age_hours = (datetime.now(timezone.utc) - fetched_at.replace(tzinfo=timezone.utc)).total_seconds() / 3600
+        if age_hours > ttl_hours:
+            return None
+        return json.loads(row["data_json"])
+    except Exception:
+        return None
+
+
+def _db_cache_set(ticker: str, data_type: str, data: dict) -> None:
+    """Persist a result to the SQLite market_data_cache table."""
+    try:
+        from config import DB_PATH
+        from db.schema import create_tables
+        conn = sqlite3.connect(str(DB_PATH))
+        create_tables(conn)
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO market_data_cache (ticker, data_type, data_json, fetched_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            [
+                ticker.upper(),
+                data_type,
+                json.dumps(data, default=str),
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ],
+        )
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass
+
+
+def get_market_data(ticker: str, use_cache: bool = False) -> dict:
     """
     Return current market snapshot: price, market cap, multiples, 52w range.
+    Pass use_cache=True to enable SQLite result cache (TTL 4h). Used by refresh.py.
     """
+    if use_cache:
+        cached = _db_cache_get(ticker, "market_data")
+        if cached is not None:
+            return cached
+
     t = yf.Ticker(ticker)
     info = t.info or {}
 
-    return {
+    result = {
         "ticker": ticker.upper(),
         "name": info.get("longName", ""),
         "sector": info.get("sector", ""),
@@ -53,6 +127,9 @@ def get_market_data(ticker: str) -> dict:
         "analyst_recommendation": info.get("recommendationKey"),
         "number_of_analysts": info.get("numberOfAnalystOpinions"),
     }
+    if use_cache:
+        _db_cache_set(ticker, "market_data", result)
+    return result
 
 
 def get_price_history(ticker: str, period: str = "1y") -> list[dict]:
@@ -83,21 +160,30 @@ def get_volatility(ticker: str) -> Optional[float]:
     return float(round(returns.std() * (252 ** 0.5), 4))
 
 
-def get_peer_multiples(ticker: str) -> list[dict]:
+def get_peer_multiples(tickers: list[str]) -> list[dict]:
     """
-    Return basic multiples for sector peers (uses yfinance peer list if available,
-    otherwise returns empty list — enrich with Polygon later).
+    Fetch basic valuation multiples for a list of peer tickers via yfinance.
+    Returns list of dicts with keys: ticker, market_cap_mm, ebitda_mm,
+    ev_ebitda, pe_trailing, ev_revenue.
+    Never raises — skips tickers that fail.
     """
-    t = yf.Ticker(ticker)
-    info = t.info or {}
-    # yfinance doesn't expose a peer list directly; return sector context
-    return [{
-        "source": "self",
-        "ticker": ticker.upper(),
-        "pe_trailing": info.get("trailingPE"),
-        "ev_ebitda": info.get("enterpriseToEbitda"),
-        "price_to_sales": info.get("priceToSalesTrailing12Months"),
-    }]
+    results = []
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info or {}
+            mktcap = info.get("marketCap")
+            ebitda = info.get("ebitda")
+            results.append({
+                "ticker": t.upper(),
+                "market_cap_mm": mktcap / 1e6 if mktcap else None,
+                "ebitda_mm": ebitda / 1e6 if ebitda else None,
+                "ev_ebitda": info.get("enterpriseToEbitda"),
+                "pe_trailing": info.get("trailingPE"),
+                "ev_revenue": info.get("enterpriseToRevenue"),
+            })
+        except Exception:
+            continue
+    return results
 
 
 def get_news(ticker: str, limit: int = 15) -> list[dict]:
@@ -147,18 +233,21 @@ def _row(df, *keys):
     return []
 
 
-def get_historical_financials(ticker: str) -> dict:
+def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
     """
     Return 3-year historical financial series and derived DCF inputs.
 
     Uses yfinance annual statements (P&L, cash flow, balance sheet).
     Columns are ordered newest-first. Returns up to 3 years of data.
 
-    Returns a dict with raw series (lists, newest first) and derived
-    metrics (CAGR, average margins, etc.) used by the valuation layer.
-    Never raises — returns dict of Nones on any failure.
+    Pass use_cache=True to enable SQLite result cache (TTL 4h). Used by refresh.py.
     NWC sign: positive nwc_change means working capital consumed cash (use in FCF as negative).
     """
+    if use_cache:
+        cached = _db_cache_get(ticker, "historical_financials")
+        if cached is not None:
+            return cached
+
     _none_result = {
         "revenue": [],
         "operating_income": [],
@@ -178,6 +267,13 @@ def get_historical_financials(ticker: str) -> dict:
         "dso_derived": None,
         "dio_derived": None,
         "dpo_derived": None,
+        "minority_interest_bs": None,
+        "preferred_equity_bs": None,
+        "lease_liabilities_bs": None,
+        "sbc": None,
+        "diluted_shares": None,
+        "cogs_pct_of_revenue": None,
+        "invested_capital_derived": None,
     }
 
     try:
@@ -209,10 +305,18 @@ def get_historical_financials(ticker: str) -> dict:
         current_liabilities = _row(balance, "Current Liabilities")
         cash_bs = _row(balance, "Cash And Cash Equivalents", "Cash")
         total_debt = _row(balance, "Total Debt", "Long Term Debt")
+        total_assets = _row(balance, "Total Assets")
 
         accounts_receivable = _row(balance, "Accounts Receivable", "Net Receivables", "Receivables")
         inventory = _row(balance, "Inventory", "Inventories")
         accounts_payable = _row(balance, "Accounts Payable", "Payables And Accrued Expenses", "Trade Payables")
+
+        minority_interest = _row(balance, "Minority Interest", "MinorityInterest")
+        preferred_stock = _row(balance, "Preferred Stock", "Preferred Stock Value")
+        lease_liabilities = _row(balance, "Operating Lease Liability", "Long Term Operating Lease Liability")
+        finance_lease = _row(balance, "Finance Lease Liability", "Long Term Finance Lease Liability")
+        sbc = _row(cashflow, "Stock Based Compensation", "Share Based Compensation")
+        diluted_shares = _row(financials, "Diluted Average Shares", "Diluted Shares")
 
         # --- NWC change series ---
         # NWC[i] = (CurrentAssets[i] - Cash[i]) - CurrentLiabilities[i]
@@ -343,7 +447,26 @@ def get_historical_financials(ticker: str) -> dict:
             if 0.02 <= kd <= 0.15:
                 cost_of_debt_derived = round(kd, 4)
 
-        return {
+        _lease_total = (lease_liabilities[0] if lease_liabilities else 0.0) + (finance_lease[0] if finance_lease else 0.0)
+
+        # COGS as % of revenue (for DIO/DPO denominator in DCF NWC projection)
+        cogs_pct_of_revenue = None
+        if cost_of_revenue and revenue:
+            pcts = []
+            for i in range(min(len(cost_of_revenue), len(revenue))):
+                if revenue[i] and revenue[i] > 0 and cost_of_revenue[i] and cost_of_revenue[i] > 0:
+                    pcts.append(cost_of_revenue[i] / revenue[i])
+            if pcts:
+                cogs_pct_of_revenue = round(sum(pcts) / len(pcts), 4)
+
+        # Invested capital derived from balance sheet: Total Assets - Current Liabilities - Cash
+        invested_capital_derived = None
+        if total_assets and current_liabilities and cash_bs:
+            ic = total_assets[0] - current_liabilities[0] - cash_bs[0]
+            if ic > 0:
+                invested_capital_derived = ic
+
+        result = {
             "revenue": revenue,
             "operating_income": operating_income,
             "net_income": net_income,
@@ -362,7 +485,17 @@ def get_historical_financials(ticker: str) -> dict:
             "dso_derived": dso_derived,
             "dio_derived": dio_derived,
             "dpo_derived": dpo_derived,
+            "minority_interest_bs": minority_interest[0] if minority_interest else None,
+            "preferred_equity_bs": preferred_stock[0] if preferred_stock else None,
+            "lease_liabilities_bs": _lease_total if _lease_total > 0 else None,
+            "sbc": sbc[0] if sbc else None,
+            "diluted_shares": diluted_shares[0] if diluted_shares else None,
+            "cogs_pct_of_revenue": cogs_pct_of_revenue,
+            "invested_capital_derived": invested_capital_derived,
         }
+        if use_cache:
+            _db_cache_set(ticker, "historical_financials", result)
+        return result
 
     except Exception as e:
         logger.warning("get_historical_financials(%s) failed: %s", ticker, e)

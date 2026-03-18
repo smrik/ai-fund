@@ -11,6 +11,7 @@ import yaml
 from config import ROOT_DIR
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail, get_ciq_comps_valuation, get_ciq_snapshot
+from src.stage_00_data.sec_filing_metrics import get_bridge_items_from_xbrl
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
 from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
 from src.stage_02_valuation.wacc import blend_wacc_results, compute_wacc_from_yfinance, compute_wacc_methodology_set_for_ticker
@@ -65,6 +66,11 @@ class ValuationInputsWithLineage:
     wacc_inputs: dict[str, Any]
     story_profile: dict[str, Any] | None = None
     story_adjustments: dict[str, Any] | None = None
+
+
+def _mm(v: float | None) -> float | None:
+    """Convert raw dollar value to millions."""
+    return v / 1e6 if v is not None else None
 
 
 def _bounded(value: float | None, low: float, high: float, default: float) -> float:
@@ -181,6 +187,7 @@ def _derive_invested_capital_start(
     tax_start: float,
     ciq: dict[str, Any] | None,
     defaults: dict[str, float],
+    hist: dict[str, Any] | None = None,
 ) -> tuple[float, str]:
     ciq_roic = (ciq or {}).get("roic")
     ciq_ebit = (ciq or {}).get("operating_income_ttm")
@@ -192,6 +199,8 @@ def _derive_invested_capital_start(
         [
             ((ciq or {}).get("invested_capital"), "ciq"),
             (ciq_ic_from_roic, "ciq_derived_nopat_over_roic"),
+            # Gap 4: IC from yfinance balance sheet (Total Assets - Current Liabilities - Cash)
+            ((hist or {}).get("invested_capital_derived"), "yfinance_derived"),
         ],
         revenue_base / defaults["ic_turnover"],
         "default",
@@ -226,11 +235,28 @@ def build_valuation_inputs(
     ciq = get_ciq_snapshot(ticker, as_of_date=as_of_date)
     ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
     ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)
+    edgar_bridge = get_bridge_items_from_xbrl(ticker)
 
     price = float(mkt.get("current_price") or 0)
     sector = mkt.get("sector", "") or ""
     industry = mkt.get("industry", "") or ""
     defaults = SECTOR_DEFAULTS.get(sector, SECTOR_DEFAULTS["_default"])
+
+    # FRED live Rf override (best-effort — falls back to config if unavailable)
+    _fred_rf: float | None = None
+    try:
+        from src.stage_00_data.fred_client import get_macro_snapshot
+        _snap = get_macro_snapshot(lookback_days=5)
+        if _snap.get("available"):
+            _dgs10_series = _snap.get("series", {}).get("DGS10", {})
+            _fred_rf = _dgs10_series.get("latest_value")
+            if _fred_rf is not None:
+                _fred_rf = _fred_rf / 100.0  # FRED returns as percent
+    except Exception:
+        pass
+
+    # Use FRED live 10Y rate if available, else config default
+    rf_override = _fred_rf  # may be None (will use config default)
 
     if price <= 0:
         return None
@@ -287,6 +313,17 @@ def build_valuation_inputs(
         revenue_data_quality_flag = "needs_review"
 
     growth_near = _bounded(growth_near_raw, -0.10, 0.35, defaults["growth_near"])
+
+    # Revision momentum bias (bounded ±2%)
+    try:
+        from src.stage_02_valuation.revision_signals import get_revision_growth_bias
+        _rev_bias, _rev_source = get_revision_growth_bias(ticker)
+        if abs(_rev_bias) > 0.001:
+            growth_near = max(0.0, min(0.40, growth_near + _rev_bias))
+            growth_source_detail = growth_source_detail + f"|{_rev_source}"
+    except Exception:
+        pass
+
     fade = defaults.get("growth_fade_ratio", 0.65)
     growth_mid = _bounded(growth_near * fade, -0.08, 0.25, defaults["growth_near"] * fade)
 
@@ -300,7 +337,8 @@ def build_valuation_inputs(
         "default",
     )
     margin_start = _bounded(margin_start_raw, 0.02, 0.60, defaults["margin"])
-    margin_target = _bounded(defaults["margin"], 0.03, 0.65, defaults["margin"])
+    # #3: Blend company margin with sector default — halves reversion speed for outliers
+    margin_target = _bounded(0.5 * margin_start + 0.5 * defaults["margin"], 0.03, 0.65, defaults["margin"])
 
     tax_start_raw, tax_source = _pick(
         [
@@ -345,6 +383,7 @@ def build_valuation_inputs(
         peer_tickers=peer_tickers,
         hist=hist,
         market_data=mkt,
+        risk_free_rate=rf_override,
     )
     wacc_result = wacc_method_results["peer_bottom_up"]
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
@@ -389,7 +428,8 @@ def build_valuation_inputs(
     shares_raw, shares_source = _pick(
         [
             ((ciq or {}).get("shares_outstanding"), "ciq"),
-            (mkt.get("shares_outstanding"), "yfinance"),
+            (hist.get("diluted_shares"), "yfinance_diluted"),
+            (mkt.get("shares_outstanding"), "yfinance_basic"),
         ],
         1.0,
         "default",
@@ -448,6 +488,7 @@ def build_valuation_inputs(
         tax_start=float(tax_start),
         ciq=ciq,
         defaults=defaults,
+        hist=hist,
     )
 
     ronic_terminal_raw, ronic_terminal_source = _pick(
@@ -464,6 +505,8 @@ def build_valuation_inputs(
     minority_interest_raw, minority_interest_source = _pick(
         [
             ((ciq or {}).get("minority_interest"), "ciq"),
+            (hist.get("minority_interest_bs"), "yfinance"),
+            (edgar_bridge.get("minority_interest"), "edgar_xbrl"),
         ],
         0.0,
         "default",
@@ -471,6 +514,8 @@ def build_valuation_inputs(
     preferred_equity_raw, preferred_equity_source = _pick(
         [
             ((ciq or {}).get("preferred_equity"), "ciq"),
+            (hist.get("preferred_equity_bs"), "yfinance"),
+            (edgar_bridge.get("preferred_equity"), "edgar_xbrl"),
         ],
         0.0,
         "default",
@@ -478,6 +523,7 @@ def build_valuation_inputs(
     pension_deficit_raw, pension_deficit_source = _pick(
         [
             ((ciq or {}).get("pension_deficit"), "ciq"),
+            (edgar_bridge.get("pension_deficit"), "edgar_xbrl"),
         ],
         0.0,
         "default",
@@ -485,13 +531,27 @@ def build_valuation_inputs(
     lease_liabilities_raw, lease_liabilities_source = _pick(
         [
             ((ciq or {}).get("lease_liabilities"), "ciq"),
+            (hist.get("lease_liabilities_bs"), "yfinance"),
+            (edgar_bridge.get("lease_liabilities"), "edgar_xbrl"),
         ],
         0.0,
         "default",
     )
+    # #1: Add lease liabilities into net debt when yfinance is the source.
+    # yfinance total_debt often excludes operating leases; CIQ already includes them.
+    if net_debt_source == "yfinance" and lease_liabilities_raw > 0:
+        net_debt_raw = net_debt_raw + lease_liabilities_raw
+        net_debt_source = "yfinance+leases"
+        # P0: zero out standalone field — already folded into net_debt, prevent double-count in _claims_total()
+        lease_liabilities_raw = 0.0
+        lease_liabilities_source = "folded_into_net_debt"
+
+    _sbc_raw = hist.get("sbc") or edgar_bridge.get("sbc")
+    _options_proxy = _sbc_raw * 3.0 if _sbc_raw else None
     options_value_raw, options_value_source = _pick(
         [
             ((ciq or {}).get("options_value"), "ciq"),
+            (_options_proxy, "sbc_proxy"),
         ],
         0.0,
         "default",
@@ -505,6 +565,14 @@ def build_valuation_inputs(
     )
 
     terminal_growth = float(defaults.get("terminal_growth", 0.030))
+
+    # Gap 1: COGS ratio for accurate DIO/DPO projection (denominator fix)
+    cogs_pct_raw, cogs_pct_source = _pick(
+        [(hist.get("cogs_pct_of_revenue"), "yfinance")],
+        0.60,
+        "default",
+    )
+    cogs_pct_of_revenue = _bounded(cogs_pct_raw, 0.10, 0.95, 0.60)
 
     drivers = ForecastDrivers(
         revenue_base=float(revenue_base),
@@ -543,6 +611,7 @@ def build_valuation_inputs(
         convertibles_value=float(_bounded(convertibles_value_raw, 0.0, float(revenue_base) * 2.0, 0.0)),
         cost_of_equity=float(cost_of_equity),
         debt_weight=float(debt_weight),
+        cogs_pct_of_revenue=float(cogs_pct_of_revenue),
     )
 
     source_lineage = {
@@ -585,6 +654,8 @@ def build_valuation_inputs(
         "lease_liabilities": lease_liabilities_source,
         "options_value": options_value_source,
         "convertibles_value": convertibles_value_source,
+        "cogs_pct_of_revenue": cogs_pct_source,
+        "risk_free_rate": f"fred_live:{rf_override:.4f}" if rf_override else "config_default:0.0450",
     }
 
     story_profile, story_profile_source = resolve_story_driver_profile(ticker=ticker, sector=sector)
@@ -612,6 +683,12 @@ def build_valuation_inputs(
         source_lineage["capex_pct_target"] = story_profile_source
     if da_story_active:
         source_lineage["da_pct_target"] = story_profile_source
+
+    exit_cyc_mult = float(story_adjustments.get("exit_multiple_cyclicality_multiplier", 1.0))
+    exit_gov_mult = float(story_adjustments.get("exit_multiple_governance_multiplier", 1.0))
+    exit_mult_story_active = abs(exit_cyc_mult * exit_gov_mult - 1.0) > 1e-12
+    if exit_mult_story_active:
+        source_lineage["exit_multiple"] = f"{source_lineage['exit_multiple']}|{story_profile_source}"
 
     if apply_overrides:
         _apply_overrides(drivers, source_lineage, ticker=ticker, sector=sector)

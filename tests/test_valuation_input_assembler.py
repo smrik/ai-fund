@@ -156,6 +156,8 @@ def test_build_valuation_inputs_uses_sector_exit_metric_multiple(monkeypatch):
         ),
     )
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("XOM")
 
@@ -210,7 +212,8 @@ def test_margin_target_reverts_to_sector_default(monkeypatch):
 
     assert out is not None
     assert out.drivers.ebit_margin_start == 0.35
-    assert out.drivers.ebit_margin_target == 0.20
+    # margin_target = 0.5 × margin_start + 0.5 × sector_default = 0.5×0.35 + 0.5×0.20 = 0.275
+    assert out.drivers.ebit_margin_target == pytest.approx(0.275, abs=0.001)
 
 
 def test_net_debt_lineage_defaults_when_debt_and_cash_missing(monkeypatch):
@@ -577,6 +580,7 @@ def test_consensus_growth_falls_back_to_ciq_cagr_when_fy1_missing(monkeypatch):
 def test_forward_comps_take_priority_over_ltm_for_ev_ebitda(monkeypatch):
     """1.2 — Forward comps beat LTM when both present (ev_ebitda sector)."""
     from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
 
     monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
     monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
@@ -587,6 +591,7 @@ def test_forward_comps_take_priority_over_ltm_for_ev_ebitda(monkeypatch):
     })
     monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("TEST")
 
@@ -598,6 +603,7 @@ def test_forward_comps_take_priority_over_ltm_for_ev_ebitda(monkeypatch):
 def test_forward_comps_take_priority_over_ltm_for_ev_ebit(monkeypatch):
     """1.2 — Forward comps beat LTM for ev_ebit sectors (e.g. Energy)."""
     from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
 
     monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Energy", revenue=10_000_000_000.0))
     monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
@@ -608,6 +614,7 @@ def test_forward_comps_take_priority_over_ltm_for_ev_ebit(monkeypatch):
     })
     monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("TEST")
 
@@ -619,6 +626,7 @@ def test_forward_comps_take_priority_over_ltm_for_ev_ebit(monkeypatch):
 def test_forward_comps_fall_back_to_ltm_when_fwd_missing(monkeypatch):
     """1.2 — No forward comps → falls through to LTM as before."""
     from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
 
     monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
     monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
@@ -629,6 +637,7 @@ def test_forward_comps_fall_back_to_ltm_when_fwd_missing(monkeypatch):
     })
     monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
     monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
     out = build_valuation_inputs("TEST")
 
@@ -742,3 +751,118 @@ def test_growth_fade_ratio_differs_by_sector(monkeypatch):
     assert tech_out is not None and energy_out is not None
     assert tech_out.drivers.revenue_growth_mid == pytest.approx(0.10 * 0.70, abs=0.001)
     assert energy_out.drivers.revenue_growth_mid == pytest.approx(0.10 * 0.50, abs=0.001)
+
+
+# ── P0: Lease double-count fix ───────────────────────────────────────────────
+
+
+def test_lease_liabilities_zeroed_when_folded_into_net_debt(monkeypatch):
+    """P0 — leases folded into net_debt must not also appear as standalone claim."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_market_data",
+        lambda ticker, as_of_date=None: {
+            "ticker": ticker,
+            "name": "Lease Heavy Co",
+            "sector": "Consumer Cyclical",
+            "industry": "Retail",
+            "current_price": 50.0,
+            "revenue_ttm": 5_000_000_000.0,
+            "operating_margin": 0.10,
+            "revenue_growth": 0.04,
+            "total_debt": 2_000_000_000.0,
+            "cash": 300_000_000.0,
+            "shares_outstanding": 500_000_000.0,
+            "market_cap": 25_000_000_000.0,
+        },
+    )
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_historical_financials",
+        lambda ticker, as_of_date=None: {
+            # yfinance reports operating lease liability separately
+            "lease_liabilities_bs": 1_500_000_000.0,
+        },
+    )
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+
+    out = build_valuation_inputs("LSCO")
+
+    assert out is not None
+    # net_debt should include leases: (2000 - 300 + 1500) mm = 3200 mm
+    assert out.source_lineage["net_debt"] == "yfinance+leases"
+    # lease_liabilities field must be 0 — already captured in net_debt
+    assert out.drivers.lease_liabilities == 0.0
+    assert out.source_lineage["lease_liabilities"] == "folded_into_net_debt"
+    assert out.drivers.net_debt == pytest.approx(3_200_000_000.0, rel=0.01)
+
+
+# ── Gap 2: Story driver exit multiple ────────────────────────────────────────
+
+
+def test_high_cyclicality_compresses_exit_multiple(monkeypatch):
+    """Gap 2 — high cyclicality story should compress exit_multiple by ~10%."""
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Industrials"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    # provide a fixed exit multiple so we can measure the compression
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebit_ltm": 10.0,
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    # force high cyclicality story profile
+    monkeypatch.setattr(
+        ia,
+        "resolve_story_driver_profile",
+        lambda ticker, sector: (
+            StoryDriverProfile(cyclicality="high", governance_risk="medium"),
+            "story_ticker",
+        ),
+    )
+
+    out = build_valuation_inputs("CYC")
+
+    assert out is not None
+    # cyc_exit_mult=0.90, gov_exit_mult=1.00 → 10.0 * 0.90 = 9.0
+    assert out.drivers.exit_multiple == pytest.approx(9.0, abs=0.01)
+    # lineage should record the story adjustment
+    assert "story_ticker" in out.source_lineage["exit_multiple"]
+
+
+def test_story_exit_multiple_unchanged_for_medium_cyclicality(monkeypatch):
+    """Gap 2 — medium cyclicality + medium governance → no change to exit_multiple."""
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Industrials"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebit_ltm": 10.0,
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(
+        ia,
+        "resolve_story_driver_profile",
+        lambda ticker, sector: (
+            StoryDriverProfile(cyclicality="medium", governance_risk="medium"),
+            "story_global",
+        ),
+    )
+
+    out = build_valuation_inputs("NCYC")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == pytest.approx(10.0, abs=0.01)

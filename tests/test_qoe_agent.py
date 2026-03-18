@@ -80,40 +80,27 @@ def _fake_agent_init(self):
 
 # ── EDGAR client tests (unchanged) ────────────────────────────────────────────
 
-def test_get_10k_text_returns_most_recent_filing_and_truncates(monkeypatch, tmp_path):
-    calls = {}
+def test_get_10k_text_returns_most_recent_filing_and_truncates(monkeypatch):
+    """get_10k_text fetches the most recent 10-K via edgartools and truncates to max_chars."""
+    from unittest.mock import MagicMock
 
-    db_path = tmp_path / "alpha_pod.db"
-    conn = sqlite3.connect(db_path)
-    create_tables(conn)
-    conn.close()
+    fake_filing = MagicMock()
+    fake_filing.text.return_value = "ABCDEFGHIJ"
 
-    def fake_get_cik(ticker: str) -> str:
-        calls["ticker"] = ticker
-        return "0000123456"
+    fake_filings = MagicMock()
+    fake_filings.empty = False
+    fake_filings.latest.return_value = fake_filing
 
-    def fake_get_recent_filings(cik: str, form_type: str, limit: int = 4) -> list[dict]:
-        calls["recent_args"] = (cik, form_type, limit)
-        return [{"accession_no": "0000123456-26-000001", "filing_date": "2026-02-20", "primary_doc": "annual.htm"}]
+    fake_company = MagicMock()
+    fake_company.get_filings.return_value = fake_filings
 
-    def fake_get_filing_text(accession_no: str, cik: str, doc_name: str) -> str:
-        calls["filing_args"] = (accession_no, cik, doc_name)
-        return "ABCDEFGHIJ"
-
-    monkeypatch.setattr(edgar_client, "get_cik", fake_get_cik)
-    monkeypatch.setattr(edgar_client, "get_recent_filings", fake_get_recent_filings)
-    monkeypatch.setattr(edgar_client, "get_filing_text", fake_get_filing_text)
-    monkeypatch.setattr(edgar_client, "DB_PATH", db_path)
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_RAW_DIR", tmp_path / "raw")
-    monkeypatch.setattr(edgar_client, "EDGAR_CACHE_CLEAN_DIR", tmp_path / "clean")
-    monkeypatch.setattr(edgar_client, "EDGAR_PARSER_VERSION", "test-v1")
+    # Patch Company in edgar_client's own namespace (it was imported with `from edgar import Company`)
+    monkeypatch.setattr(edgar_client, "Company", lambda ticker: fake_company)
 
     text = edgar_client.get_10k_text("HALO", max_chars=5)
 
     assert text == "ABCDE"
-    assert calls["ticker"] == "HALO"
-    assert calls["recent_args"] == ("0000123456", "10-K", 1)
-    assert calls["filing_args"] == ("0000123456-26-000001", "0000123456", "annual.htm")
+    fake_company.get_filings.assert_called_once_with(form="10-K")
 
 
 def test_get_10k_text_returns_none_when_no_filings(monkeypatch):

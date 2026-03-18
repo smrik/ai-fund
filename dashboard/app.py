@@ -31,6 +31,8 @@ from src.stage_04_pipeline.wacc_workbench import (
     load_wacc_methodology_audit_history,
     preview_wacc_methodology_selection,
 )
+from src.stage_03_judgment.chat_agent import ChatAgent
+from src.stage_00_data.filing_retrieval import query_filing_corpus
 
 st.set_page_config(
     page_title="AI Research Pod",
@@ -382,6 +384,29 @@ with st.sidebar:
     st.caption(f"**LLM:** {LLM_MODEL}")
     st.caption("**Data:** SEC EDGAR · yfinance · CIQ")
 
+    with st.expander("Dev: Quick Load", expanded=False):
+        st.caption("Load the most recent archived snapshot for a ticker — no agents run.")
+        ql_ticker = st.text_input("Ticker", value="IBM", key="quickload_ticker").upper().strip()
+        if st.button("Load from archive", key="quickload_btn", width="stretch"):
+            _ql_snaps = list_report_snapshots(ql_ticker, limit=1)
+            if _ql_snaps:
+                _ql = load_report_snapshot(int(_ql_snaps[0]["id"]))
+                if _ql:
+                    st.session_state.memo = ICMemo(**_ql["memo"])
+                    _ds = _ql.get("dashboard_snapshot") or {}
+                    st.session_state.dcf_audit_view = _ds.get("dcf_audit")
+                    st.session_state.comps_view = _ds.get("comps_view")
+                    st.session_state.market_intel_view = _ds.get("market_intel_view")
+                    st.session_state.filings_browser_view = _ds.get("filings_browser_view")
+                    st.session_state.run_trace = _ql.get("run_trace") or []
+                    st.session_state.report_snapshot_id = _ql["id"]
+                    st.session_state.report_source = f"archive:{_ql['id']}"
+                    st.rerun()
+                else:
+                    st.error("Failed to load snapshot.")
+            else:
+                st.warning(f"No archived snapshots found for {ql_ticker}. Run the analysis first.")
+
     with st.expander("CIQ Tools", expanded=False):
         ciq_folder = st.text_input(
             "CIQ workbook folder",
@@ -488,6 +513,7 @@ for _k, _v in [
     ("report_snapshot_id", None),
     ("report_source", "live"),
     ("wacc_preview", None),
+    ("chat_history", {}), # ticker -> list of {"role": "...", "content": "...", "sources": [...]}
 ]:
     if _k not in st.session_state:
         st.session_state[_k] = _v
@@ -621,8 +647,8 @@ def _render_dcf_charts(audit: dict) -> None:
     TEAL = "#58a6ff"
 
     chart_series = audit.get("chart_series") or {}
-    forecast_tab, valuation_tab, sensitivity_tab, risk_tab = st.tabs(
-        ["Forecast", "Valuation", "Sensitivity", "Risk Impact"]
+    forecast_tab, valuation_tab, sensitivity_tab, risk_tab, chat_tab = st.tabs(
+        ["Forecast", "Valuation", "Sensitivity", "Risk Impact", "Chat with Filings"]
     )
 
     with forecast_tab:
@@ -817,6 +843,60 @@ def _render_dcf_charts(audit: dict) -> None:
             st.plotly_chart(fig, width="stretch")
             st.dataframe(risk_view.get("overlay_results") or [], width="stretch", hide_index=True)
 
+    with chat_tab:
+        ticker = audit.get("ticker", "UNKNOWN")
+        st.markdown(f"### Chat with {ticker} Filings")
+        st.caption("Ask questions about the company's financials, risks, and guidance directly using RAG indexing over EDGAR filings.")
+
+        # Display history for this ticker
+        ticker_history = st.session_state.chat_history.setdefault(ticker, [])
+        
+        chat_container = st.container(height=400)
+        with chat_container:
+            for message in ticker_history:
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
+                    if message.get("sources"):
+                        with st.expander("Sources"):
+                            for source in message["sources"]:
+                                st.caption(f"- {source}")
+
+        if prompt := st.chat_input("Ask a question about the filings..."):
+            ticker_history.append({"role": "user", "content": prompt})
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(prompt)
+
+                with st.chat_message("assistant"):
+                    with st.spinner("Searching SEC EDGAR corpus..."):
+                        context_bundle = query_filing_corpus(ticker, prompt, top_k=5)
+                        
+                        if context_bundle.retrieval_summary.get("error"):
+                            err = context_bundle.retrieval_summary["error"]
+                            st.error(f"Retrieval failed: {err}")
+                            full_response = "I encountered an error retrieving the filings."
+                            sources = []
+                        else:
+                            with st.spinner("Analyzing text..."):
+                                agent = ChatAgent()
+                                response = agent.answer_query(prompt, context_bundle)
+                                if response.error:
+                                    st.error(response.error)
+                                    full_response = "I encountered an error generating the response."
+                                    sources = []
+                                else:
+                                    full_response = response.answer
+                                    sources = response.sources
+
+                        st.markdown(full_response)
+                        if sources:
+                            with st.expander("Sources"):
+                                for source in sources:
+                                    st.caption(f"- {source}")
+                                    
+            ticker_history.append({"role": "assistant", "content": full_response, "sources": sources})
+            st.rerun()
+
 
 # ── Run pipeline ──────────────────────────────────────────────────────────────
 if run_btn and ticker_input:
@@ -913,11 +993,38 @@ if run_btn and ticker_input:
 st.session_state.running = False
 memo = st.session_state.memo
 
-if memo is None:
-    st.markdown("""
-## AI Research Pod
+# ── Navigation (always visible, even without a ticker) ─────────────────────────
+SECTION_GROUPS = {
+    "Research": ["Thesis", "Recommendations", "Risk", "Past Reports"],
+    "Valuation": ["Valuation", "DCF Audit", "IV History", "Assumption Lab", "WACC Lab", "Comps"],
+    "Filings": ["Filings", "Earnings", "Forensic Scores", "Filings Browser"],
+    "Market Intel": ["Sentiment", "News & Materiality", "Macro", "Revisions", "Factor Exposure"],
+    "Ops": ["Pipeline", "Portfolio Risk", "Export", "Raw JSON"],
+}
 
-Enter a **US-listed ticker** in the sidebar to run the full 10-agent analysis.
+# Sections that work without a ticker/memo
+_TICKER_FREE_SECTIONS = {"Macro", "Portfolio Risk", "Pipeline"}
+
+selected_group = st.segmented_control(
+    "Workspace",
+    options=list(SECTION_GROUPS.keys()),
+    default="Market Intel" if memo is None else "Research",
+    key="main_dashboard_group",
+)
+selected_section = st.segmented_control(
+    "Section",
+    options=SECTION_GROUPS[selected_group],
+    default="Macro" if (memo is None and "Macro" in SECTION_GROUPS[selected_group]) else SECTION_GROUPS[selected_group][0],
+    key=f"dashboard_section_{selected_group}",
+)
+
+st.divider()
+
+if memo is None and selected_section not in _TICKER_FREE_SECTIONS:
+    st.markdown("""
+### Enter a ticker to get started
+
+Run the full 10-agent analysis from the sidebar, or navigate to **Market Intel → Macro** or **Ops → Portfolio Risk** to explore ticker-independent views.
 
 | Agent | Role |
 |---|---|
@@ -937,50 +1044,28 @@ Enter a **US-listed ticker** in the sidebar to run the full 10-agent analysis.
     st.stop()
 
 
-# ── IC Memo Header ─────────────────────────────────────────────────────────────
-action_color = {"BUY": "BUY", "SELL SHORT": "SHORT", "WATCH": "WATCH", "PASS": "PASS"}.get(memo.action, "")
+# ── IC Memo Header (only when memo is loaded) ──────────────────────────────────
+if memo is not None:
+    action_color = {"BUY": "BUY", "SELL SHORT": "SHORT", "WATCH": "WATCH", "PASS": "PASS"}.get(memo.action, "")
 
-st.markdown(f"## {memo.ticker} — {memo.company_name}")
-st.caption(f"{memo.sector}  ·  {memo.date}  ·  Analyst: {memo.analyst}")
+    st.markdown(f"## {memo.ticker} — {memo.company_name}")
+    st.caption(f"{memo.sector}  ·  {memo.date}  ·  Analyst: {memo.analyst}")
 
-col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Action", memo.action)
-col2.metric("Conviction", memo.conviction.upper())
-col3.metric("Current Price", f"${memo.valuation.current_price or 0:,.2f}")
-col4.metric("Base Case IV", f"${memo.valuation.base:,.2f}")
-col5.metric(
-    "Upside (base)",
-    f"{(memo.valuation.upside_pct_base or 0)*100:+.1f}%",
-)
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Action", memo.action)
+    col2.metric("Conviction", memo.conviction.upper())
+    col3.metric("Current Price", f"${memo.valuation.current_price or 0:,.2f}")
+    col4.metric("Base Case IV", f"${memo.valuation.base:,.2f}")
+    col5.metric(
+        "Upside (base)",
+        f"{(memo.valuation.upside_pct_base or 0)*100:+.1f}%",
+    )
 
-st.info(f"**One-liner:** {memo.one_liner}")
-st.warning(
-    f"**Variant Thesis:** {memo.variant_thesis_prompt}\n\n"
-    "_This is the question the AI cannot answer for you. Answer this before sizing the position._"
-)
-
-st.divider()
-
-SECTION_GROUPS = {
-    "Research": ["Thesis", "Recommendations", "Risk", "Past Reports"],
-    "Valuation": ["Valuation", "DCF Audit", "Assumption Lab", "WACC Lab", "Comps"],
-    "Filings": ["Filings", "Earnings", "Filings Browser"],
-    "Market Intel": ["Sentiment", "News & Materiality"],
-    "Ops": ["Pipeline", "Export", "Raw JSON"],
-}
-
-selected_group = st.segmented_control(
-    "Workspace",
-    options=list(SECTION_GROUPS.keys()),
-    default="Research",
-    key="main_dashboard_group",
-)
-selected_section = st.segmented_control(
-    "Section",
-    options=SECTION_GROUPS[selected_group],
-    default=SECTION_GROUPS[selected_group][0],
-    key=f"dashboard_section_{selected_group}",
-)
+    st.info(f"**One-liner:** {memo.one_liner}")
+    st.warning(
+        f"**Variant Thesis:** {memo.variant_thesis_prompt}\n\n"
+        "_This is the question the AI cannot answer for you. Answer this before sizing the position._"
+    )
 
 
 def _get_cached_view(key: str, builder, *args, **kwargs):
@@ -1113,6 +1198,101 @@ if selected_section == "DCF Audit":
             st.caption("WACC × Exit Multiple")
             rows = _fmt_sens_table(audit["sensitivity"]["wacc_x_exit_multiple"])
             st.dataframe(rows, width="stretch", hide_index=True)
+
+        mi = audit.get("model_integrity") or {}
+        with st.expander("Model Integrity", expanded=False):
+            mi_c1, mi_c2 = st.columns(2)
+            tv_pct = mi.get("tv_pct_of_ev")
+            tv_label = f"{tv_pct:.1f}%" if tv_pct is not None else "—"
+            tv_delta = "High TV concentration (>75%)" if mi.get("tv_high_flag") else None
+            with mi_c1:
+                st.metric("Terminal Value % of EV", tv_label, delta=tv_delta,
+                          delta_color="inverse" if mi.get("tv_high_flag") else "normal")
+                rev_flag = mi.get("revenue_data_quality_flag", "—")
+                st.metric("Revenue Data Quality", rev_flag,
+                          delta="Review needed" if rev_flag in ("low_quality", "needs_review") else None,
+                          delta_color="inverse" if rev_flag in ("low_quality", "needs_review") else "normal")
+            with mi_c2:
+                nwc_flag = mi.get("nwc_driver_quality_flag", False)
+                st.metric("NWC Driver Quality", "Warning" if nwc_flag else "OK",
+                          delta="Check NWC assumption" if nwc_flag else None,
+                          delta_color="inverse" if nwc_flag else "normal")
+                roic_flag = mi.get("roic_consistency_flag", False)
+                st.metric("ROIC Consistency", "Warning" if roic_flag else "OK",
+                          delta="ROIC inconsistency detected" if roic_flag else None,
+                          delta_color="inverse" if roic_flag else "normal")
+
+
+# ── Section: IV History ────────────────────────────────────────────────────────
+if selected_section == "IV History":
+    st.subheader("IV History")
+    st.caption("Intrinsic value bear/base/bull vs. current price across batch runs.")
+
+    try:
+        import sqlite3 as _sqlite3
+        from config import DB_PATH as _DB_PATH
+        _conn = _sqlite3.connect(str(_DB_PATH))
+        _conn.row_factory = _sqlite3.Row
+        _iv_rows = _conn.execute(
+            """
+            SELECT run_date, iv_bear, iv_base, iv_bull, iv_expected, current_price, upside_pct, wacc, exit_multiple
+            FROM dcf_valuations
+            WHERE ticker = ?
+            ORDER BY run_date ASC
+            """,
+            [memo.ticker],
+        ).fetchall()
+        _conn.close()
+        iv_history = [dict(r) for r in _iv_rows]
+    except Exception as _e:
+        iv_history = []
+        st.error(f"IV history load error: {_e}")
+
+    if not iv_history:
+        st.info("No IV history yet. Run the batch valuation for this ticker first.")
+    else:
+        import plotly.graph_objects as _go
+
+        # Line chart
+        _fig = _go.Figure()
+        _dates = [r["run_date"] for r in iv_history]
+        for _label, _key, _color in [
+            ("IV Bear", "iv_bear", "#e74c3c"),
+            ("IV Base", "iv_base", "#2ecc71"),
+            ("IV Bull", "iv_bull", "#3498db"),
+            ("Price", "current_price", "#f39c12"),
+        ]:
+            _vals = [r.get(_key) for r in iv_history]
+            _fig.add_trace(_go.Scatter(x=_dates, y=_vals, mode="lines+markers", name=_label,
+                                       line=dict(color=_color)))
+        _fig.update_layout(title=f"{memo.ticker} — IV History", xaxis_title="Run Date",
+                           yaxis_title="Price ($)", legend=dict(orientation="h"))
+        st.plotly_chart(_fig, use_container_width=True)
+
+        # Summary table — last 10 runs with IV delta vs prior run
+        _summary = []
+        for _i, _r in enumerate(iv_history[-10:], start=max(0, len(iv_history) - 10)):
+            _prev = iv_history[_i - 1] if _i > 0 else None
+            _base = _r.get("iv_base")
+            _prev_base = _prev.get("iv_base") if _prev else None
+            _delta_pct = round((_base - _prev_base) / abs(_prev_base) * 100, 1) if (_base and _prev_base) else None
+            _flag = "⚠" if _delta_pct is not None and abs(_delta_pct) > 15 else ""
+            _summary.append({
+                "run_date": _r["run_date"],
+                "iv_bear": f"${_r.get('iv_bear') or 0:,.2f}" if _r.get("iv_bear") else "—",
+                "iv_base": f"${_base or 0:,.2f}" if _base else "—",
+                "iv_bull": f"${_r.get('iv_bull') or 0:,.2f}" if _r.get("iv_bull") else "—",
+                "price": f"${_r.get('current_price') or 0:,.2f}" if _r.get("current_price") else "—",
+                "upside_%": f"{_r.get('upside_pct') or 0:.1f}%" if _r.get("upside_pct") is not None else "—",
+                "Δ base %": f"{_delta_pct:+.1f}% {_flag}" if _delta_pct is not None else "—",
+                "wacc": f"{(_r.get('wacc') or 0)*100:.2f}%" if _r.get("wacc") else "—",
+            })
+        st.subheader("Last 10 Runs")
+        st.dataframe(_summary, use_container_width=True, hide_index=True)
+
+        _large_moves = [r for r in _summary if "⚠" in str(r.get("Δ base %", ""))]
+        if _large_moves:
+            st.warning(f"{len(_large_moves)} run(s) with IV base move >15% flagged above.")
 
 
 # ── Section: WACC Lab ────────────────────────────────────────────────────────
@@ -1639,6 +1819,52 @@ if selected_section == "Earnings":
     )
 
 
+# ── Section: Forensic Scores ──────────────────────────────────────────────────
+if selected_section == "Forensic Scores":
+    st.subheader("Forensic Accounting Scores")
+    try:
+        from src.stage_03_judgment.forensic_scores import compute_forensic_signals
+        _f_hist = md_client.get_historical_financials(memo.ticker)
+        _f_mkt = md_client.get_market_data(memo.ticker)
+        _f_mcap_mm = (_f_mkt.get("market_cap") or 0) / 1e6 or None
+        fsig = compute_forensic_signals(_f_hist, _f_mcap_mm, memo.sector)
+
+        col_m, col_z, col_flag = st.columns(3)
+
+        m_score = fsig.get("m_score")
+        m_zone = fsig.get("m_score_zone", "unknown")
+        m_badge = {"manipulator": "MANIPULATOR", "grey_zone": "GREY ZONE", "non_manipulator": "Non-Manipulator"}.get(m_zone, m_zone.upper())
+        col_m.metric("Beneish M-Score", f"{m_score:.2f}" if m_score is not None else "—", delta=m_badge)
+
+        z_score = fsig.get("z_score")
+        z_zone = fsig.get("z_score_zone", "unknown")
+        z_badge = {"distress": "DISTRESS", "grey_zone": "GREY ZONE", "safe": "Safe"}.get(z_zone, z_zone.upper())
+        col_z.metric("Altman Z'-Score", f"{z_score:.2f}" if z_score is not None else "—", delta=z_badge)
+
+        forensic_flag = fsig.get("forensic_flag", False)
+        col_flag.metric("Forensic Flag", "FLAGGED" if forensic_flag else "Clean")
+
+        st.divider()
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("**M-Score Interpretation**")
+            st.markdown(
+                "- > −1.78 → likely earnings manipulator\n"
+                "- −2.50 to −1.78 → grey zone (monitor)\n"
+                "- < −2.50 → non-manipulator"
+            )
+        with col_b:
+            st.markdown("**Z'-Score Interpretation** (non-manufacturing)")
+            st.markdown(
+                "- > 2.6 → safe zone\n"
+                "- 1.1 to 2.6 → grey zone\n"
+                "- < 1.1 → distress zone"
+            )
+
+    except Exception as _fsig_exc:
+        st.warning(f"Forensic scores unavailable: {_fsig_exc}")
+
+
 # ── Section: Sentiment ────────────────────────────────────────────────────────
 if selected_section == "Sentiment":
     s = memo.sentiment
@@ -1695,6 +1921,107 @@ if selected_section == "Risk":
 
 
 # ── Section: Pipeline ─────────────────────────────────────────────────────────
+# ── Section: Portfolio Risk ────────────────────────────────────────────────────
+if selected_section == "Portfolio Risk":
+    st.subheader("Portfolio Risk")
+    st.caption("Correlation, VaR/CVaR, sector concentration, and exposure metrics across the universe.")
+
+    # Load positions from DB
+    try:
+        import sqlite3 as _pr_sqlite
+        from config import DB_PATH as _PR_DB_PATH
+        _pr_conn = _pr_sqlite.connect(str(_PR_DB_PATH))
+        _pr_conn.row_factory = _pr_sqlite.Row
+        _pos_rows = _pr_conn.execute(
+            "SELECT ticker, direction, market_value, shares FROM positions WHERE market_value IS NOT NULL"
+        ).fetchall()
+        _pr_conn.close()
+        _positions = [dict(r) for r in _pos_rows]
+    except Exception as _pe:
+        _positions = []
+
+    # Fall back to universe tickers if no positions
+    try:
+        from config import UNIVERSE_TICKERS as _U_TICKERS
+        _universe_tickers = _U_TICKERS if _U_TICKERS else []
+    except Exception:
+        _universe_tickers = []
+
+    if _positions:
+        _pos_tickers = [p["ticker"] for p in _positions]
+    elif _universe_tickers:
+        _pos_tickers = list(_universe_tickers)[:20]
+    else:
+        _pos_tickers = [memo.ticker] if memo.ticker else []
+
+    if not _pos_tickers:
+        st.info("No positions or universe tickers found. Add positions or configure universe.csv.")
+    else:
+        _pr_period = st.selectbox("Return lookback", ["6mo", "1y", "2y"], index=1, key="pr_period")
+        if st.button("Compute Portfolio Risk", key="compute_pr"):
+            with st.spinner("Fetching price history and computing risk metrics..."):
+                try:
+                    from src.stage_02_valuation.portfolio_risk import build_portfolio_risk
+                    _weights = None
+                    if _positions:
+                        _total_long = sum(abs(p.get("market_value", 0) or 0) for p in _positions if (p.get("market_value") or 0) > 0)
+                        _weights = {p["ticker"]: (p.get("market_value") or 0) / _total_long for p in _positions if _total_long > 0}
+                    _pr_summary = build_portfolio_risk(_pos_tickers, weights=_weights, positions=_positions or None, period=_pr_period)
+                    st.session_state["pr_summary"] = _pr_summary
+                except Exception as _pre:
+                    st.error(f"Portfolio risk error: {_pre}")
+
+        _pr_summary = st.session_state.get("pr_summary")
+        if _pr_summary is not None:
+            # Exposure metrics
+            if _pr_summary.gross_exposure:
+                _exp_cols = st.columns(4)
+                _exp_cols[0].metric("Gross Exposure", f"${_pr_summary.gross_exposure:,.0f}")
+                _exp_cols[1].metric("Net Exposure", f"${_pr_summary.net_exposure:,.0f}")
+                _exp_cols[2].metric("Long", f"${_pr_summary.long_exposure:,.0f}")
+                _exp_cols[3].metric("Short", f"${_pr_summary.short_exposure:,.0f}")
+                st.divider()
+
+            # VaR/CVaR
+            st.subheader("VaR / CVaR (1-Day)")
+            _var_cols = st.columns(4)
+            for _ci, (_lbl, _key) in enumerate([("VaR 95%", "var_95"), ("VaR 99%", "var_99"),
+                                                 ("CVaR 95%", "cvar_95"), ("CVaR 99%", "cvar_99")]):
+                _val = getattr(_pr_summary, _key, None)
+                _var_cols[_ci].metric(_lbl, f"{_val*100:.2f}%" if _val is not None else "—")
+
+            # Correlation heatmap
+            if _pr_summary.correlation_matrix and len(_pr_summary.tickers) >= 2:
+                st.subheader("Correlation Heatmap")
+                import plotly.graph_objects as _pr_go
+                _cm = _pr_summary.correlation_matrix
+                _ct = _pr_summary.tickers
+                _pr_fig = _pr_go.Figure(data=_pr_go.Heatmap(
+                    z=_cm, x=_ct, y=_ct,
+                    colorscale="RdYlGn", zmin=-1, zmax=1,
+                    text=[[f"{v:.2f}" for v in row] for row in _cm],
+                    texttemplate="%{text}", showscale=True,
+                ))
+                _pr_fig.update_layout(height=max(300, 40 * len(_ct)))
+                st.plotly_chart(_pr_fig, use_container_width=True)
+
+                # Top 5 most correlated pairs
+                st.subheader("Top Correlated Pairs")
+                st.dataframe(_pr_summary.top_correlated_pairs, use_container_width=True, hide_index=True)
+
+            # Sector concentration
+            if _pr_summary.sector_weights:
+                st.subheader("Sector Concentration")
+                _sc_fig = _pr_go.Figure(data=_pr_go.Bar(
+                    x=list(_pr_summary.sector_weights.keys()),
+                    y=list(_pr_summary.sector_weights.values()),
+                    marker_color="#3498db",
+                ))
+                _sc_fig.update_layout(xaxis_title="Sector", yaxis_title="Weight (%)", height=300)
+                st.plotly_chart(_sc_fig, use_container_width=True)
+
+
+# ── Section: Pipeline ────────────────────────────────────────────────────────
 if selected_section == "Pipeline":
     st.subheader("Pipeline Trace")
     st.caption("Latest run trace plus persisted agent-run history from SQLite.")
@@ -2050,6 +2377,173 @@ if selected_section == "Past Reports":
             st.info("No agent run history found for this ticker.")
 
 
+# ── Section: Macro ────────────────────────────────────────────────────────────
+if selected_section == "Macro":
+    st.subheader("Macro Intelligence")
+
+    try:
+        from src.stage_00_data.fred_client import get_macro_snapshot, get_yield_curve, get_regime_indicators
+        from src.stage_02_valuation.regime_model import detect_current_regime, get_regime_badge_html, get_scenario_weights
+
+        col_regime, col_vix, col_hy, col_slope, col_ff = st.columns(5)
+
+        regime = detect_current_regime()
+        weights = get_scenario_weights(regime)
+
+        with col_regime:
+            st.markdown("**Market Regime**")
+            st.markdown(get_regime_badge_html(regime), unsafe_allow_html=True)
+            if regime.available:
+                for lbl, prob in regime.probabilities.items():
+                    st.caption(f"{lbl}: {prob:.0%}")
+
+        macro_snap = get_macro_snapshot(lookback_days=5)
+        if macro_snap.get("available"):
+            series = macro_snap.get("series", {})
+            vix = series.get("VIXCLS", {}).get("latest_value")
+            hy = series.get("BAMLH0A0HYM2", {}).get("latest_value")
+            slope = series.get("T10Y2Y", {}).get("latest_value")
+            ff_rate = series.get("FEDFUNDS", {}).get("latest_value")
+
+            with col_vix:
+                st.metric("VIX", f"{vix:.1f}" if vix else "—")
+            with col_hy:
+                st.metric("HY Spread (bps)", f"{hy*100:.0f}" if hy else "—")
+            with col_slope:
+                st.metric("2s10s Slope (bps)", f"{slope*100:.0f}" if slope else "—")
+            with col_ff:
+                st.metric("Fed Funds", f"{ff_rate:.2%}" if ff_rate else "—")
+
+        st.divider()
+        st.markdown("**DCF Scenario Weights (Regime-Adjusted)**")
+        weight_cols = st.columns(3)
+        weight_cols[0].metric("Bear", f"{weights.bear:.0%}")
+        weight_cols[1].metric("Base", f"{weights.base:.0%}")
+        weight_cols[2].metric("Bull", f"{weights.bull:.0%}")
+
+        st.divider()
+        st.markdown("**Yield Curve**")
+        yc = get_yield_curve()
+        if yc.get("available") and yc.get("maturities"):
+            import plotly.graph_objects as go
+            mats = yc["maturities"]
+            fig_yc = go.Figure()
+            fig_yc.add_trace(go.Scatter(
+                x=[m[0] for m in mats],
+                y=[m[2] for m in mats if m[2] is not None],
+                mode="lines+markers",
+                line=dict(color="#388bfd", width=2),
+                marker=dict(size=6),
+                name="Yield Curve",
+            ))
+            fig_yc.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="#0d1117",
+                plot_bgcolor="#0d1117",
+                height=280,
+                margin=dict(l=0, r=0, t=20, b=0),
+                yaxis_title="Yield (%)",
+                xaxis_title="Maturity",
+            )
+            st.plotly_chart(fig_yc, use_container_width=True)
+
+    except Exception as exc:
+        st.error(f"Macro data unavailable: {exc}")
+        st.info("Set FRED_API_KEY environment variable to enable live macro data.")
+
+
+# ── Section: Revisions ────────────────────────────────────────────────────────
+if selected_section == "Revisions":
+    st.subheader("Earnings Revision Tracker")
+
+    try:
+        from src.stage_00_data.estimate_tracker import get_revision_signals, snapshot_estimates
+
+        sigs = get_revision_signals(memo.ticker)
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("EPS Rev (30d)", f"{sigs.eps_revision_30d_pct:+.1%}" if sigs.eps_revision_30d_pct is not None else "—")
+        col2.metric("Rev Rev (30d)", f"{sigs.revenue_revision_30d_pct:+.1%}" if sigs.revenue_revision_30d_pct is not None else "—")
+        col3.metric("EPS Rev (90d)", f"{sigs.eps_revision_90d_pct:+.1%}" if sigs.eps_revision_90d_pct is not None else "—")
+        col4.metric("Est. Dispersion", f"{sigs.estimate_dispersion:.2%}" if sigs.estimate_dispersion is not None else "—")
+
+        momentum_colors = {
+            "strong_positive": "#22c55e", "positive": "#86efac",
+            "neutral": "#6b7a99", "negative": "#fca5a5", "strong_negative": "#ef4444",
+            "unavailable": "#6b7a99"
+        }
+        mom = sigs.revision_momentum
+        color = momentum_colors.get(mom, "#6b7a99")
+        st.markdown(f"**Revision Momentum:** <span style='color:{color};font-weight:700'>{mom.replace('_', ' ').title()}</span>", unsafe_allow_html=True)
+
+        if not sigs.available:
+            st.info(f"No revision history yet for {memo.ticker}.")
+            if st.button("Snapshot current estimates"):
+                result = snapshot_estimates(memo.ticker)
+                if result.get("available"):
+                    st.success("Estimates snapshot saved. Run again tomorrow to build revision history.")
+                else:
+                    st.warning(f"Snapshot failed: {result.get('error')}")
+
+    except Exception as exc:
+        st.error(f"Revision tracker error: {exc}")
+
+
+# ── Section: Factor Exposure ──────────────────────────────────────────────────
+if selected_section == "Factor Exposure":
+    st.subheader("Factor Exposure Decomposition")
+
+    try:
+        from src.stage_02_valuation.factor_model import decompose_factor_exposure, get_factor_summary_text
+
+        with st.spinner("Computing factor exposures (requires ~1yr of price history)..."):
+            exposure = decompose_factor_exposure(memo.ticker)
+
+        if exposure.available:
+            st.caption(get_factor_summary_text(exposure))
+
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Market Beta", f"{exposure.market_beta:.2f}" if exposure.market_beta else "—")
+            col2.metric("R²", f"{exposure.r_squared:.1%}" if exposure.r_squared else "—")
+            col3.metric("Alpha (ann.)", f"{exposure.annualized_alpha:+.1%}" if exposure.annualized_alpha else "—")
+
+            col4, col5, col6 = st.columns(3)
+            col4.metric("Value (HML)", f"{exposure.value_beta:.2f}" if exposure.value_beta else "—")
+            col5.metric("Momentum", f"{exposure.momentum_beta:.2f}" if exposure.momentum_beta else "—")
+            col6.metric("Quality (RMW)", f"{exposure.profitability_beta:.2f}" if exposure.profitability_beta else "—")
+
+            if exposure.factor_attribution:
+                import plotly.graph_objects as go
+                factor_names = list(exposure.factor_attribution.keys())
+                factor_vals = [exposure.factor_attribution[f] * 100 for f in factor_names]
+                colors = ["#388bfd" if v >= 0 else "#ef4444" for v in factor_vals]
+
+                fig_fa = go.Figure(go.Bar(
+                    x=factor_names,
+                    y=factor_vals,
+                    marker_color=colors,
+                    name="Factor Attribution (%)",
+                ))
+                fig_fa.update_layout(
+                    template="plotly_dark",
+                    paper_bgcolor="#0d1117",
+                    plot_bgcolor="#0d1117",
+                    height=280,
+                    margin=dict(l=0, r=0, t=20, b=0),
+                    yaxis_title="Attribution (%)",
+                    title_text="",
+                )
+                st.plotly_chart(fig_fa, use_container_width=True)
+
+            if exposure.r_squared and exposure.r_squared > 0.85:
+                st.warning("High R² (>85%) — returns highly systematic. Alpha opportunity may be limited.")
+        else:
+            st.info(f"Factor exposure unavailable: {exposure.error}")
+
+    except Exception as exc:
+        st.error(f"Factor model error: {exc}")
+
+
 # ── Section: Export ───────────────────────────────────────────────────────────
 if selected_section == "Export":
     st.subheader("Export Report")
@@ -2165,6 +2659,79 @@ ul {{ padding-left:24px; }} li {{ margin-bottom:4px; line-height:1.6; }}
 
     with st.expander("Preview HTML", expanded=False):
         st.components.v1.html(html_report, height=600, scrolling=True)
+
+    # Research note
+    st.markdown("#### AI Research Note")
+    st.caption("LLM-synthesized equity research note combining all pipeline outputs.")
+
+    col_note_a, col_note_b = st.columns([1, 3])
+    with col_note_a:
+        use_offline = st.checkbox("Offline mode (no LLM)", value=False)
+    with col_note_b:
+        generate_note = st.button("Generate Research Note", type="primary")
+
+    if generate_note:
+        with st.spinner("Generating research note..."):
+            try:
+                from src.stage_03_judgment.research_note_agent import ResearchNoteAgent, generate_research_note_offline
+                from src.stage_04_pipeline.report_export import export_research_note_for_download
+
+                # Gather optional context
+                _macro_ctx = None
+                _rev_ctx = None
+                _forensic_ctx = None
+                _factor_ctx = None
+
+                try:
+                    from src.stage_00_data.fred_client import get_regime_indicators
+                    _macro_ctx = get_regime_indicators()
+                except Exception:
+                    pass
+                try:
+                    from src.stage_00_data.estimate_tracker import get_revision_signals
+                    _rev_sigs = get_revision_signals(memo.ticker)
+                    if _rev_sigs.available:
+                        import dataclasses
+                        _rev_ctx = dataclasses.asdict(_rev_sigs)
+                except Exception:
+                    pass
+                try:
+                    from src.stage_03_judgment.forensic_scores import compute_forensic_signals
+                    _fh = md_client.get_historical_financials(memo.ticker)
+                    _fm = md_client.get_market_data(memo.ticker)
+                    _fmcap_mm = (_fm.get("market_cap") or 0) / 1e6 or None
+                    _forensic_ctx = compute_forensic_signals(_fh, _fmcap_mm, memo.sector)
+                except Exception:
+                    pass
+
+                memo_dict = memo.model_dump()
+
+                if use_offline:
+                    note = generate_research_note_offline(memo_dict, _macro_ctx, _rev_ctx, _forensic_ctx, _factor_ctx)
+                else:
+                    agent = ResearchNoteAgent()
+                    note = agent.generate_research_note(memo_dict, _macro_ctx, _rev_ctx, _forensic_ctx, _factor_ctx)
+
+                html_content, filename = export_research_note_for_download(note, memo_dict)
+                st.success("Research note generated.")
+                st.download_button(
+                    label="Download Research Note (HTML)",
+                    data=html_content,
+                    file_name=filename,
+                    mime="text/html",
+                    key="research_note_dl",
+                )
+
+                with st.expander("Preview Note"):
+                    for section_name in ["executive_summary", "investment_thesis", "variant_view", "valuation_summary", "earnings_quality", "macro_context", "factor_profile", "key_risks"]:
+                        section_text = getattr(note, section_name, "")
+                        if section_text:
+                            st.markdown(f"**{section_name.replace('_', ' ').title()}**")
+                            st.markdown(section_text)
+                            st.divider()
+
+            except Exception as exc:
+                st.error(f"Research note generation failed: {exc}")
 
 
 # ── Section: Raw JSON ─────────────────────────────────────────────────────────

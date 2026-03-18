@@ -29,6 +29,13 @@ openai>=1.0.0
 sentence-transformers>=3.0.0
 plotly>=5.0.0
 
+# Macro data
+fredapi>=0.5.0           # FRED economic data API
+# Stats / ML
+statsmodels>=0.14.0      # OLS regression for factor model
+hmmlearn>=0.3.0          # Hidden Markov Model for regime detection
+scikit-learn>=1.3.0      # Used by hmmlearn
+
 # Development
 pytest>=7.0.0
 ipython>=8.0.0
