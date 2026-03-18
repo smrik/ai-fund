@@ -1,25 +1,25 @@
 # Session State
 
-**Updated:** 2026-03-15 19:36 CET
+**Updated:** 2026-03-18 02:15 CET
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Finalize all pending repository changes, commit them safely, and push the branch.
+Push the current repository as an alpha snapshot to GitHub.
 
 ## Recent Actions
-- Committed the verified ExecPlan tranche as `839af2c` (`feat: finalize filing retrieval and valuation workbench tranche`).
-- Committed the remaining safe workspace changes as `fffdc8f` (`chore: sync remaining workspace updates`).
-- Pushed `main` to `origin`; remote advanced to `fffdc8f`.
+- Verified the touched Python modules with `python -m py_compile`; that pass succeeded.
+- Ran a focused pytest slice, which failed during collection because the local environment has an incompatible `pydantic` / `pydantic-core` install.
+- Committed the current repo snapshot as `3972776` (`feat: snapshot alpha repository state`) and pushed `main` to `origin`.
 
 ## Next Steps
-- No code changes are pending from this session.
-- If a future agent resumes, leave the local `.env` untracked unless the user explicitly wants a sanitized example file restored.
+- Fix the local dependency mismatch: installed `pydantic-core` is `2.42.0`, while installed `pydantic` expects `2.41.5`.
+- Resume the docs cleanup / archive reorganization if still desired; that work was analyzed but not implemented in this turn.
 
 ## Known Issues
 - `.env` remains untracked locally by design and was not committed.
-- PowerShell profile emits benign `Set-PSReadLineOption` warnings in non-interactive command runs.
+- The local Python environment cannot collect part of the test suite until `pydantic` and `pydantic-core` are aligned.
 
 ## Notes
-- The canonical ExecPlan remains `docs/plans/2026-03-15-dashboard-research-program.md`.
-- Remote push target: `origin/main` at `fffdc8f`.
+- Remote head: `origin/main` at `3972776`.
+- Cleanup findings from repo audit: duplicate plan indexes, stale plan references, root-level duplicate docs, screenshot artifacts, and `.env.example` drift still merit a follow-up cleanup pass.
