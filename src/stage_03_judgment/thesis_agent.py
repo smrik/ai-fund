@@ -46,6 +46,45 @@ Avoid generic analysis. Be specific to THIS company. Do not hedge everything.
 A good IC memo is a forcing function — it makes you decide."""
 
 
+def _normalize_structured_fields(data: dict) -> dict:
+    normalized = dict(data)
+    structured_catalysts = normalized.get("structured_catalysts") or []
+    if not structured_catalysts:
+        structured_catalysts = [
+            {
+                "catalyst_key": f"legacy-catalyst-{idx + 1}",
+                "title": title,
+                "description": "",
+                "expected_window": "",
+                "importance": "medium",
+            }
+            for idx, title in enumerate(normalized.get("key_catalysts") or [])
+            if title
+        ]
+    normalized["structured_catalysts"] = structured_catalysts
+
+    thesis_pillars = normalized.get("thesis_pillars") or []
+    if not thesis_pillars:
+        fallback_pairs = [
+            ("core_thesis", normalized.get("one_liner") or ""),
+            ("bull_case", normalized.get("bull_case") or ""),
+            ("base_case", normalized.get("base_case") or ""),
+        ]
+        thesis_pillars = [
+            {
+                "pillar_id": pillar_id,
+                "title": pillar_id.replace("_", " ").title(),
+                "description": description,
+                "falsifier": "",
+                "evidence_basis": "",
+            }
+            for pillar_id, description in fallback_pairs
+            if description
+        ]
+    normalized["thesis_pillars"] = thesis_pillars
+    return normalized
+
+
 class ThesisAgent(BaseAgent):
     def __init__(self):
         super().__init__(model=LLM_SYNTHESIS_MODEL)
@@ -104,7 +143,7 @@ SECTOR: {sector}
 {risk.model_dump_json(indent=2)}
 """
 
-        prompt = f"""Based on all research below, produce the final IC memo for {ticker.upper()}.
+        prompt = """Based on all research below, produce the final IC memo for {ticker_upper}.
 
 {context}
 
@@ -119,8 +158,26 @@ Return your synthesis as a JSON object with EXACTLY these fields:
   "variant_thesis_prompt": "<the single most important question only the human PM can answer>",
   "key_catalysts": ["<catalyst 1>", "<catalyst 2>", "<catalyst 3>"],
   "key_risks": ["<risk 1>", "<risk 2>", "<risk 3>"],
-  "open_questions": ["<question 1>", "<question 2>", "<question 3>"]
-}}"""
+  "open_questions": ["<question 1>", "<question 2>", "<question 3>"],
+  "thesis_pillars": [
+    {{
+      "pillar_id": "<stable id>",
+      "title": "<pillar title>",
+      "description": "<why this thesis pillar matters>",
+      "falsifier": "<what would break it>",
+      "evidence_basis": "<what evidence supports it>"
+    }}
+  ],
+  "structured_catalysts": [
+    {{
+      "catalyst_key": "<stable id>",
+      "title": "<catalyst title>",
+      "description": "<mechanism>",
+      "expected_window": "<timing window>",
+      "importance": "<high|medium|low>"
+    }}
+  ]
+}}""".format(ticker_upper=ticker.upper(), context=context)
 
         try:
             raw = self.run(prompt)
@@ -137,6 +194,8 @@ Return your synthesis as a JSON object with EXACTLY these fields:
                 "key_catalysts": [],
                 "key_risks": [],
                 "open_questions": [],
+                "thesis_pillars": [],
+                "structured_catalysts": [],
             }
             return ICMemo(
                 ticker=ticker.upper(),
@@ -164,7 +223,10 @@ Return your synthesis as a JSON object with EXACTLY these fields:
                 "key_catalysts": [],
                 "key_risks": [],
                 "open_questions": [],
+                "thesis_pillars": [],
+                "structured_catalysts": [],
             }
+        data = _normalize_structured_fields(data)
 
         return ICMemo(
             ticker=ticker.upper(),

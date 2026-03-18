@@ -28,3 +28,14 @@ def test_dashboard_wires_new_research_surface_payloads():
     assert "metric_options" in source
     assert "football_field" in source
     assert "historical_multiples_summary" in source
+
+
+def test_dashboard_exposes_deep_dive_workspace_group():
+    source = APP_PATH.read_text(encoding="utf-8")
+
+    assert '"Deep Dive"' in source
+    assert '"Company Hub"' in source
+    assert '"Model & Valuation"' in source
+    assert '"Sources"' in source
+    assert "ensure_dossier_workspace" in source
+    assert "upsert_dossier_source" in source

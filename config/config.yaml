@@ -13,6 +13,11 @@ paths:
   reports_dir: output/reports
   universe_path: config/universe.csv
 
+research_workspace:
+  dossier_root: data/dossiers
+  use_company_name_in_folder: true
+  note_extension: .md
+
 llm:
   model: gemini-3-flash-preview
   fast_model: gemini-3-flash-preview

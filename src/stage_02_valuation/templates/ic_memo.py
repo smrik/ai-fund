@@ -6,6 +6,7 @@ This is the final output of the pipeline, surfaced in the dashboard.
 from datetime import date
 from typing import Optional
 from pydantic import BaseModel, Field
+from src.stage_04_pipeline.templates.dossier_models import ThesisPillar, TrackedCatalyst
 
 
 class ValuationRange(BaseModel):
@@ -116,6 +117,8 @@ class ICMemo(BaseModel):
     key_catalysts: list[str] = Field(default_factory=list)
     key_risks: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    thesis_pillars: list[ThesisPillar] = Field(default_factory=list)
+    structured_catalysts: list[TrackedCatalyst] = Field(default_factory=list)
 
     def display_summary(self) -> str:
         """Terminal-friendly summary string."""

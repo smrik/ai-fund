@@ -418,6 +418,158 @@ def create_tables(conn: sqlite3.Connection | None = None):
         run_trace_json        TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS dossier_profiles (
+        ticker                        TEXT PRIMARY KEY,
+        company_name                  TEXT,
+        dossier_root_path             TEXT NOT NULL,
+        notes_root_path               TEXT NOT NULL,
+        model_root_path               TEXT NOT NULL,
+        exports_root_path             TEXT NOT NULL,
+        status                        TEXT NOT NULL,
+        current_model_version         TEXT,
+        current_thesis_version        TEXT,
+        current_publishable_memo_version TEXT,
+        initialized_at                TEXT NOT NULL,
+        updated_at                    TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_sections (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker          TEXT NOT NULL,
+        note_slug       TEXT NOT NULL,
+        note_title      TEXT NOT NULL,
+        relative_path   TEXT NOT NULL,
+        section_kind    TEXT NOT NULL,
+        is_private      INTEGER NOT NULL DEFAULT 0,
+        last_synced_at  TEXT NOT NULL,
+        content_hash    TEXT,
+        metadata_json   TEXT,
+        UNIQUE (ticker, note_slug)
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_sources (
+        id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker                    TEXT NOT NULL,
+        source_id                 TEXT NOT NULL,
+        title                     TEXT NOT NULL,
+        source_type               TEXT NOT NULL,
+        source_date               TEXT,
+        access_date               TEXT,
+        why_it_matters            TEXT,
+        file_path                 TEXT,
+        external_uri              TEXT,
+        zotero_key                TEXT,
+        relative_source_note_path TEXT,
+        supports_json             TEXT,
+        limitations_text          TEXT,
+        created_at                TEXT NOT NULL,
+        updated_at                TEXT NOT NULL,
+        UNIQUE (ticker, source_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_artifacts (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker            TEXT NOT NULL,
+        artifact_key      TEXT NOT NULL,
+        artifact_type     TEXT NOT NULL,
+        title             TEXT NOT NULL,
+        path_mode         TEXT NOT NULL,
+        path_value        TEXT NOT NULL,
+        source_id         TEXT,
+        linked_note_slug  TEXT,
+        linked_snapshot_id INTEGER,
+        model_version     TEXT,
+        is_private        INTEGER NOT NULL DEFAULT 0,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        metadata_json     TEXT,
+        UNIQUE (ticker, artifact_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_model_checkpoints (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker              TEXT NOT NULL,
+        checkpoint_ts       TEXT NOT NULL,
+        model_version       TEXT NOT NULL,
+        artifact_key        TEXT,
+        snapshot_id         INTEGER,
+        valuation_json      TEXT NOT NULL,
+        drivers_summary_json TEXT,
+        change_reason       TEXT,
+        thesis_version      TEXT,
+        source_ids_json     TEXT,
+        created_by          TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_tracker_state (
+        ticker             TEXT PRIMARY KEY,
+        overall_status     TEXT NOT NULL,
+        pm_action          TEXT,
+        pm_conviction      TEXT,
+        summary_note       TEXT,
+        pillar_states_json TEXT NOT NULL,
+        open_questions_json TEXT,
+        last_reviewed_at   TEXT,
+        latest_snapshot_id INTEGER,
+        metadata_json      TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_catalysts (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker                TEXT NOT NULL,
+        catalyst_key          TEXT NOT NULL,
+        title                 TEXT NOT NULL,
+        description           TEXT,
+        priority              TEXT NOT NULL,
+        status                TEXT NOT NULL,
+        expected_date         TEXT,
+        expected_window_start TEXT,
+        expected_window_end   TEXT,
+        status_reason         TEXT,
+        source_origin         TEXT NOT NULL,
+        source_snapshot_id    INTEGER,
+        updated_at            TEXT NOT NULL,
+        evidence_json         TEXT,
+        UNIQUE (ticker, catalyst_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_decision_log (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker              TEXT NOT NULL,
+        decision_ts         TEXT NOT NULL,
+        decision_title      TEXT NOT NULL,
+        action              TEXT NOT NULL,
+        conviction          TEXT,
+        beliefs_text        TEXT NOT NULL,
+        evidence_text       TEXT,
+        assumptions_text    TEXT,
+        falsifiers_text     TEXT,
+        review_due_date     TEXT,
+        snapshot_id         INTEGER,
+        model_checkpoint_id INTEGER,
+        private_notes_text  TEXT,
+        created_by          TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS dossier_review_log (
+        id                            INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker                        TEXT NOT NULL,
+        review_ts                     TEXT NOT NULL,
+        review_title                  TEXT NOT NULL,
+        period_type                   TEXT NOT NULL,
+        expectations_vs_outcomes_text TEXT NOT NULL,
+        factual_error_text            TEXT,
+        interpretive_error_text       TEXT,
+        behavioral_error_text         TEXT,
+        thesis_status                 TEXT NOT NULL,
+        model_status                  TEXT NOT NULL,
+        action_taken_text             TEXT,
+        linked_decision_id            INTEGER,
+        linked_snapshot_id            INTEGER,
+        private_notes_text            TEXT,
+        created_by                    TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS wacc_methodology_audit (
         id                    INTEGER PRIMARY KEY AUTOINCREMENT,
         event_ts              TEXT NOT NULL,
@@ -539,6 +691,15 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_run_log_id ON agent_run_artifacts(run_log_id);
     CREATE INDEX IF NOT EXISTS idx_pipeline_report_archive_ticker_ts ON pipeline_report_archive(ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_sections_ticker_slug ON dossier_sections(ticker, note_slug);
+    CREATE INDEX IF NOT EXISTS idx_dossier_profiles_status ON dossier_profiles(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_sources_ticker_id ON dossier_sources(ticker, source_id);
+    CREATE INDEX IF NOT EXISTS idx_dossier_artifacts_ticker_key ON dossier_artifacts(ticker, artifact_key);
+    CREATE INDEX IF NOT EXISTS idx_dossier_model_checkpoints_ticker_ts ON dossier_model_checkpoints(ticker, checkpoint_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_tracker_state_reviewed ON dossier_tracker_state(last_reviewed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_catalysts_ticker_key ON dossier_catalysts(ticker, catalyst_key);
+    CREATE INDEX IF NOT EXISTS idx_dossier_decision_log_ticker_ts ON dossier_decision_log(ticker, decision_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_review_log_ticker_ts ON dossier_review_log(ticker, review_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_wacc_methodology_audit_ticker_ts ON wacc_methodology_audit(ticker, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);

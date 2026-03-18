@@ -37,6 +37,7 @@ def _env_float(name: str, default: float) -> float:
 
 
 _paths = _RAW_CONFIG["paths"]
+_research_workspace = _RAW_CONFIG.get("research_workspace", {})
 _llm = _RAW_CONFIG["llm"]
 _portfolio = _RAW_CONFIG["portfolio"]
 _edgar = _RAW_CONFIG["edgar"]
@@ -57,6 +58,9 @@ SCREENS_DIR = _resolve_path(_paths["screens_dir"])
 MEMOS_DIR = _resolve_path(_paths["memos_dir"])
 REPORTS_DIR = _resolve_path(_paths["reports_dir"])
 UNIVERSE_PATH = _resolve_path(_paths["universe_path"])
+DOSSIER_ROOT = _resolve_path(_research_workspace.get("dossier_root", "data/dossiers"))
+USE_COMPANY_NAME_IN_FOLDER = bool(_research_workspace.get("use_company_name_in_folder", True))
+DOSSIER_NOTE_EXTENSION = str(_research_workspace.get("note_extension", ".md"))
 SCREENING_RULES_PATH = CONFIG_PATH
 SCREENING_RULES = copy.deepcopy(_RAW_CONFIG["screening"])
 
@@ -144,6 +148,8 @@ __all__ = [
     "DAILY_REFRESH_TIME",
     "DATA_DIR",
     "DB_PATH",
+    "DOSSIER_NOTE_EXTENSION",
+    "DOSSIER_ROOT",
     "EDGAR_BASE_URL",
     "EDGAR_CACHE_CLEAN_DIR",
     "EDGAR_CACHE_RAW_DIR",
@@ -180,6 +186,7 @@ __all__ = [
     "SCREENING_RULES_PATH",
     "STOP_LOSS_REVIEW_PCT",
     "UNIVERSE_PATH",
+    "USE_COMPANY_NAME_IN_FOLDER",
     "WEEKLY_SCREEN_DAY",
     "WEEKLY_SCREEN_TIME",
     "get_config",

@@ -3,14 +3,14 @@ Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from db.schema import get_connection
 
 
 def _now() -> str:
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def upsert_universe(conn: sqlite3.Connection, rows: list[dict]):
@@ -617,6 +617,449 @@ def insert_pipeline_report_archive(conn: sqlite3.Connection, row: dict[str, Any]
             :memo_json,
             :dashboard_snapshot_json,
             :run_trace_json
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def upsert_dossier_profile(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update dossier profile metadata for a ticker."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("initialized_at", _now())
+    row.setdefault("updated_at", _now())
+    conn.execute(
+        """
+        INSERT INTO dossier_profiles (
+            ticker,
+            company_name,
+            dossier_root_path,
+            notes_root_path,
+            model_root_path,
+            exports_root_path,
+            status,
+            current_model_version,
+            current_thesis_version,
+            current_publishable_memo_version,
+            initialized_at,
+            updated_at
+        ) VALUES (
+            :ticker,
+            :company_name,
+            :dossier_root_path,
+            :notes_root_path,
+            :model_root_path,
+            :exports_root_path,
+            :status,
+            :current_model_version,
+            :current_thesis_version,
+            :current_publishable_memo_version,
+            :initialized_at,
+            :updated_at
+        )
+        ON CONFLICT(ticker) DO UPDATE SET
+            company_name = excluded.company_name,
+            dossier_root_path = excluded.dossier_root_path,
+            notes_root_path = excluded.notes_root_path,
+            model_root_path = excluded.model_root_path,
+            exports_root_path = excluded.exports_root_path,
+            status = excluded.status,
+            current_model_version = excluded.current_model_version,
+            current_thesis_version = excluded.current_thesis_version,
+            current_publishable_memo_version = excluded.current_publishable_memo_version,
+            updated_at = excluded.updated_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_dossier_section_index(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update dossier note index metadata."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("is_private", 0)
+    row.setdefault("last_synced_at", _now())
+    conn.execute(
+        """
+        INSERT INTO dossier_sections (
+            ticker,
+            note_slug,
+            note_title,
+            relative_path,
+            section_kind,
+            is_private,
+            last_synced_at,
+            content_hash,
+            metadata_json
+        ) VALUES (
+            :ticker,
+            :note_slug,
+            :note_title,
+            :relative_path,
+            :section_kind,
+            :is_private,
+            :last_synced_at,
+            :content_hash,
+            :metadata_json
+        )
+        ON CONFLICT(ticker, note_slug) DO UPDATE SET
+            note_title = excluded.note_title,
+            relative_path = excluded.relative_path,
+            section_kind = excluded.section_kind,
+            is_private = excluded.is_private,
+            last_synced_at = excluded.last_synced_at,
+            content_hash = excluded.content_hash,
+            metadata_json = excluded.metadata_json
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_dossier_source(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update dossier source metadata."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("created_at", _now())
+    row.setdefault("updated_at", _now())
+    conn.execute(
+        """
+        INSERT INTO dossier_sources (
+            ticker,
+            source_id,
+            title,
+            source_type,
+            source_date,
+            access_date,
+            why_it_matters,
+            file_path,
+            external_uri,
+            zotero_key,
+            relative_source_note_path,
+            supports_json,
+            limitations_text,
+            created_at,
+            updated_at
+        ) VALUES (
+            :ticker,
+            :source_id,
+            :title,
+            :source_type,
+            :source_date,
+            :access_date,
+            :why_it_matters,
+            :file_path,
+            :external_uri,
+            :zotero_key,
+            :relative_source_note_path,
+            :supports_json,
+            :limitations_text,
+            :created_at,
+            :updated_at
+        )
+        ON CONFLICT(ticker, source_id) DO UPDATE SET
+            title = excluded.title,
+            source_type = excluded.source_type,
+            source_date = excluded.source_date,
+            access_date = excluded.access_date,
+            why_it_matters = excluded.why_it_matters,
+            file_path = excluded.file_path,
+            external_uri = excluded.external_uri,
+            zotero_key = excluded.zotero_key,
+            relative_source_note_path = excluded.relative_source_note_path,
+            supports_json = excluded.supports_json,
+            limitations_text = excluded.limitations_text,
+            updated_at = excluded.updated_at
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_dossier_artifact(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update linked dossier artifact metadata."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("is_private", 0)
+    row.setdefault("created_at", _now())
+    row.setdefault("updated_at", _now())
+    conn.execute(
+        """
+        INSERT INTO dossier_artifacts (
+            ticker,
+            artifact_key,
+            artifact_type,
+            title,
+            path_mode,
+            path_value,
+            source_id,
+            linked_note_slug,
+            linked_snapshot_id,
+            model_version,
+            is_private,
+            created_at,
+            updated_at,
+            metadata_json
+        ) VALUES (
+            :ticker,
+            :artifact_key,
+            :artifact_type,
+            :title,
+            :path_mode,
+            :path_value,
+            :source_id,
+            :linked_note_slug,
+            :linked_snapshot_id,
+            :model_version,
+            :is_private,
+            :created_at,
+            :updated_at,
+            :metadata_json
+        )
+        ON CONFLICT(ticker, artifact_key) DO UPDATE SET
+            artifact_type = excluded.artifact_type,
+            title = excluded.title,
+            path_mode = excluded.path_mode,
+            path_value = excluded.path_value,
+            source_id = excluded.source_id,
+            linked_note_slug = excluded.linked_note_slug,
+            linked_snapshot_id = excluded.linked_snapshot_id,
+            model_version = excluded.model_version,
+            is_private = excluded.is_private,
+            updated_at = excluded.updated_at,
+            metadata_json = excluded.metadata_json
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def insert_model_checkpoint(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a dossier model checkpoint and return its row id."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    cursor = conn.execute(
+        """
+        INSERT INTO dossier_model_checkpoints (
+            ticker,
+            checkpoint_ts,
+            model_version,
+            artifact_key,
+            snapshot_id,
+            valuation_json,
+            drivers_summary_json,
+            change_reason,
+            thesis_version,
+            source_ids_json,
+            created_by
+        ) VALUES (
+            :ticker,
+            :checkpoint_ts,
+            :model_version,
+            :artifact_key,
+            :snapshot_id,
+            :valuation_json,
+            :drivers_summary_json,
+            :change_reason,
+            :thesis_version,
+            :source_ids_json,
+            :created_by
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def upsert_tracker_state(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update current dossier tracker state."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    conn.execute(
+        """
+        INSERT INTO dossier_tracker_state (
+            ticker,
+            overall_status,
+            pm_action,
+            pm_conviction,
+            summary_note,
+            pillar_states_json,
+            open_questions_json,
+            last_reviewed_at,
+            latest_snapshot_id,
+            metadata_json
+        ) VALUES (
+            :ticker,
+            :overall_status,
+            :pm_action,
+            :pm_conviction,
+            :summary_note,
+            :pillar_states_json,
+            :open_questions_json,
+            :last_reviewed_at,
+            :latest_snapshot_id,
+            :metadata_json
+        )
+        ON CONFLICT(ticker) DO UPDATE SET
+            overall_status = excluded.overall_status,
+            pm_action = excluded.pm_action,
+            pm_conviction = excluded.pm_conviction,
+            summary_note = excluded.summary_note,
+            pillar_states_json = excluded.pillar_states_json,
+            open_questions_json = excluded.open_questions_json,
+            last_reviewed_at = excluded.last_reviewed_at,
+            latest_snapshot_id = excluded.latest_snapshot_id,
+            metadata_json = excluded.metadata_json
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def upsert_tracked_catalyst(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
+    """Insert or update dossier catalyst state."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("updated_at", _now())
+    conn.execute(
+        """
+        INSERT INTO dossier_catalysts (
+            ticker,
+            catalyst_key,
+            title,
+            description,
+            priority,
+            status,
+            expected_date,
+            expected_window_start,
+            expected_window_end,
+            status_reason,
+            source_origin,
+            source_snapshot_id,
+            updated_at,
+            evidence_json
+        ) VALUES (
+            :ticker,
+            :catalyst_key,
+            :title,
+            :description,
+            :priority,
+            :status,
+            :expected_date,
+            :expected_window_start,
+            :expected_window_end,
+            :status_reason,
+            :source_origin,
+            :source_snapshot_id,
+            :updated_at,
+            :evidence_json
+        )
+        ON CONFLICT(ticker, catalyst_key) DO UPDATE SET
+            title = excluded.title,
+            description = excluded.description,
+            priority = excluded.priority,
+            status = excluded.status,
+            expected_date = excluded.expected_date,
+            expected_window_start = excluded.expected_window_start,
+            expected_window_end = excluded.expected_window_end,
+            status_reason = excluded.status_reason,
+            source_origin = excluded.source_origin,
+            source_snapshot_id = excluded.source_snapshot_id,
+            updated_at = excluded.updated_at,
+            evidence_json = excluded.evidence_json
+        """,
+        row,
+    )
+    conn.commit()
+
+
+def insert_decision_log_entry(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a dossier decision-log entry."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    cursor = conn.execute(
+        """
+        INSERT INTO dossier_decision_log (
+            ticker,
+            decision_ts,
+            decision_title,
+            action,
+            conviction,
+            beliefs_text,
+            evidence_text,
+            assumptions_text,
+            falsifiers_text,
+            review_due_date,
+            snapshot_id,
+            model_checkpoint_id,
+            private_notes_text,
+            created_by
+        ) VALUES (
+            :ticker,
+            :decision_ts,
+            :decision_title,
+            :action,
+            :conviction,
+            :beliefs_text,
+            :evidence_text,
+            :assumptions_text,
+            :falsifiers_text,
+            :review_due_date,
+            :snapshot_id,
+            :model_checkpoint_id,
+            :private_notes_text,
+            :created_by
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def insert_review_log_entry(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a dossier review-log entry."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    cursor = conn.execute(
+        """
+        INSERT INTO dossier_review_log (
+            ticker,
+            review_ts,
+            review_title,
+            period_type,
+            expectations_vs_outcomes_text,
+            factual_error_text,
+            interpretive_error_text,
+            behavioral_error_text,
+            thesis_status,
+            model_status,
+            action_taken_text,
+            linked_decision_id,
+            linked_snapshot_id,
+            private_notes_text,
+            created_by
+        ) VALUES (
+            :ticker,
+            :review_ts,
+            :review_title,
+            :period_type,
+            :expectations_vs_outcomes_text,
+            :factual_error_text,
+            :interpretive_error_text,
+            :behavioral_error_text,
+            :thesis_status,
+            :model_status,
+            :action_taken_text,
+            :linked_decision_id,
+            :linked_snapshot_id,
+            :private_notes_text,
+            :created_by
         )
         """,
         row,

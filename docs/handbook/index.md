@@ -16,6 +16,7 @@ It is written for two audiences:
 - [Engineering Deep Dive](./engineering-deep-dive.md)
 - [Operations Runbook](./operations-runbook.md)
 - [Quality And Verification](./quality-and-verification.md)
+- [Deep Dive Dossier](./deep-dive-dossier.md)
 
 ## Mental Model
 

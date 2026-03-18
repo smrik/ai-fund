@@ -13,15 +13,17 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
-- No active canonical plans at the moment. Start a new one under `docs/plans/active/`.
+- No active canonical plans at the moment.
 
 ## Future
 
+- [Dashboard And AI Investing Feature Roadmap](./future/2026-03-18-dashboard-ai-investing-feature-roadmap.md)
 - [XBRL And RAG Chatbot](./future/2026-03-15-xbrl-and-rag-chatbot.md)
 - [Tech Debt Tracker](./future/tech-debt-tracker.md)
 
 ## Completed
 
+- [Single-Ticker Deep Dive Dossier System](./completed/2026-03-18-single-ticker-deep-dive-dossier.md)
 - [Dashboard Research Surface Remediation And Auditability](./completed/2026-03-15-dashboard-research-program.md)
 - [Dashboard Override Workbench](./completed/2026-03-14-dashboard-override-workbench.md)
 - [DCF Audit And Agent Cache](./completed/2026-03-14-dcf-audit-agent-cache.md)
