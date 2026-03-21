@@ -1,26 +1,26 @@
 # Session State
 
-**Updated:** 2026-03-18 22:41:30 +01:00
+**Updated:** 2026-03-21 22:27:55 +01:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Implemented and verified the Single-Ticker Deep Dive Dossier System across config, database, pipeline, dashboard, tests, docs, and plan lifecycle.
+Refactored the Deep Dive dashboard surface out of `dashboard/app.py` into a dedicated helper module and closed the refactor plan lifecycle.
 
 ## Recent Actions
-- Added dossier workspace, dossier index, dossier view, structured thesis/catalyst models, and Deep Dive dashboard sections for Company Hub, Business, Model & Valuation, Sources, Thesis Tracker, Decision Log, Review Log, and Publishable Memo.
-- Extended the SQLite schema/loader for dossier profiles, sections, sources, artifacts, checkpoints, tracker state, catalysts, decisions, and reviews; extended `ICMemo` and `ThesisAgent` for structured thesis fields.
-- Added handbook documentation, moved the ExecPlan from `docs/plans/active/` to `docs/plans/completed/`, ignored `data/dossiers/` as generated user data, and verified the full IBM dossier flow live.
+- Added `dashboard/deep_dive_sections.py` and `dashboard/__init__.py`, moving the eight Deep Dive dossier renderers into a dedicated dashboard helper module.
+- Updated `dashboard/app.py` to delegate through `render_deep_dive_section(...)`, and updated dashboard structure tests to assert the new boundary.
+- Created and completed the refactor ExecPlan at `docs/plans/completed/2026-03-21-deep-dive-dashboard-refactor.md`, updated plan indexes/nav, and added pytest temp-root ignore rules.
 
 ## Next Steps
-- Refactor the large dossier rendering blocks in `dashboard/app.py` into helper functions if dashboard maintainability becomes the next priority.
-- Consider moving shared structured-thesis models out of `src/stage_04_pipeline/templates/` into a more neutral module if stage-boundary purity becomes important.
+- If maintainability remains the priority, consider a second dashboard refactor tranche for other large inline surfaces in `dashboard/app.py` such as Comps, News & Materiality, and Filings Browser.
+- If architectural purity becomes important, move shared structured-thesis models out of `src/stage_04_pipeline/templates/` into a more neutral shared-model module.
 
 ## Known Issues
-- The local environment needed `pydantic-core==2.41.5` and `openpyxl` for the verification path; future agents should expect that dependency state in this machine.
-- Streamlit emits a non-blocking `regime_model` retrain warning about missing `hmmlearn` when the macro helper reloads cached artifacts.
+- Pytest runs that rely on `tmp_path` are currently blocked in this environment by a Windows permission failure during temp-dir cleanup (`WinError 5`), even with explicit `--basetemp` inside the repo.
+- Streamlit still emits a non-blocking `regime_model` retrain warning about missing `hmmlearn` when macro helpers touch cached artifacts.
 
 ## Notes
-- Fresh verification completed on the final tree: `python -m pytest tests/test_dossier_workspace.py tests/test_dossier_index.py tests/test_dossier_sources.py tests/test_dossier_artifacts.py tests/test_dossier_model_checkpoints.py tests/test_ic_memo.py tests/test_thesis_agent.py tests/test_dossier_thesis_tracker.py tests/test_dossier_decision_log.py tests/test_dossier_review_log.py tests/test_dossier_publishable_memo.py tests/test_dashboard_render_contracts.py tests/test_dashboard_thesis_tracker.py tests/test_report_archive.py -q` -> `23 passed in 4.99s`.
-- Fresh compile verification completed: `python -m py_compile config/__init__.py config/settings.py db/schema.py db/loader.py src/stage_04_pipeline/templates/dossier_models.py src/stage_04_pipeline/dossier_workspace.py src/stage_04_pipeline/dossier_index.py src/stage_04_pipeline/dossier_view.py src/stage_02_valuation/templates/ic_memo.py src/stage_03_judgment/thesis_agent.py dashboard/app.py`.
-- Live verification used Streamlit on port `8504` plus Playwright: loaded IBM from archive, initialized the dossier, saved a source, saved an artifact, saved a checkpoint, saved tracker state and catalyst status, saved a decision and review, saved the publishable memo, then reloaded and confirmed persistence.
+- Fresh verification for this tranche: `python -m pytest tests/test_dashboard_deep_dive_refactor.py tests/test_dashboard_render_contracts.py tests/test_dashboard_thesis_tracker.py -q` -> `7 passed in 0.60s`.
+- Fresh compile verification: `python -m py_compile dashboard/app.py dashboard/deep_dive_sections.py`.
+- The refactor plan was created under `docs/plans/active/` and then moved to `docs/plans/completed/` after verification, leaving no active canonical plans.

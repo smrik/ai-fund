@@ -4,6 +4,7 @@ from pathlib import Path
 
 
 APP_PATH = Path("dashboard/app.py")
+HELPER_PATH = Path("dashboard/deep_dive_sections.py")
 
 
 def test_dashboard_uses_shared_presentation_formatting_module():
@@ -31,11 +32,13 @@ def test_dashboard_wires_new_research_surface_payloads():
 
 
 def test_dashboard_exposes_deep_dive_workspace_group():
-    source = APP_PATH.read_text(encoding="utf-8")
+    app_source = APP_PATH.read_text(encoding="utf-8")
+    helper_source = HELPER_PATH.read_text(encoding="utf-8")
 
-    assert '"Deep Dive"' in source
-    assert '"Company Hub"' in source
-    assert '"Model & Valuation"' in source
-    assert '"Sources"' in source
-    assert "ensure_dossier_workspace" in source
-    assert "upsert_dossier_source" in source
+    assert '"Deep Dive"' in app_source
+    assert "render_deep_dive_section" in app_source
+    assert '"Company Hub"' in helper_source
+    assert '"Model & Valuation"' in helper_source
+    assert '"Sources"' in helper_source
+    assert "ensure_dossier_workspace" in helper_source
+    assert "upsert_dossier_source" in helper_source
