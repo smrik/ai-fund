@@ -29,7 +29,7 @@ from src.stage_04_pipeline.dossier_index import (
 from src.stage_04_pipeline.dossier_view import (
     build_model_checkpoint_view,
     build_publishable_memo_context,
-    build_thesis_diff_view,
+    build_thesis_tracker_view,
 )
 from src.stage_04_pipeline.dossier_workspace import (
     NOTE_TEMPLATES,
@@ -51,6 +51,19 @@ def _get_cached_view(key: str, builder, *args, **kwargs):
             return {"available": False, "error": str(exc)}
         st.session_state[key] = current
     return current
+
+
+def _text_to_lines(value: str) -> list[str]:
+    return [line.strip() for line in (value or "").splitlines() if line.strip()]
+
+
+def _render_change_list(title: str, items: list[str]) -> None:
+    st.markdown(f"**{title}**")
+    if not items:
+        st.caption("None.")
+        return
+    for item in items:
+        st.write(f"- {item}")
 
 
 def _sync_dossier_foundation(ticker: str, company_name: str) -> dict:
@@ -360,47 +373,113 @@ def render_model_and_valuation(memo: ICMemo) -> None:
 
 def render_thesis_tracker(memo: ICMemo) -> None:
     st.subheader("Thesis Tracker")
-    thesis_view = _get_cached_view("dossier_thesis_tracker_view", build_thesis_diff_view, memo.ticker)
+    notice = st.session_state.pop("dossier_thesis_tracker_notice", None)
+    if notice:
+        st.success(notice)
+    thesis_view = _get_cached_view("dossier_thesis_tracker_view", build_thesis_tracker_view, memo.ticker)
     if not thesis_view.get("available"):
-        st.info("No archived dossier thesis history is available yet.")
+        st.info("No archived dossier thesis history is available yet. Run the research pipeline for this ticker first, then reopen Thesis Tracker.")
         return
+    stance = thesis_view["stance"]
+    what_changed = thesis_view["what_changed"]
+    next_queue = thesis_view["next_queue"]
+    tracker_state = thesis_view.get("tracker_state") or {}
+
+    if thesis_view.get("audit_flags"):
+        fallback_labels = {
+            "legacy_pillar_fallback": "Structured thesis pillars were not present in the latest archive snapshot, so the tracker is using a compatibility fallback.",
+            "legacy_catalyst_fallback": "Structured catalysts were not present in the latest archive snapshot, so the tracker is using a compatibility fallback.",
+        }
+        for flag in thesis_view["audit_flags"]:
+            if flag in fallback_labels:
+                st.warning(fallback_labels[flag])
 
     col1, col2, col3 = st.columns(3)
-    col1.metric("Latest Action", thesis_view["latest_snapshot"].get("action") or "—")
-    col2.metric("Prior Action", thesis_view["prior_snapshot"].get("action") if thesis_view.get("prior_snapshot") else "—")
-    col3.metric(
-        "Base IV Delta",
-        format_metric_value(thesis_view["snapshot_diff"].get("base_iv_delta"), kind="price")
-        if thesis_view["snapshot_diff"].get("base_iv_delta") is not None
-        else "—",
-    )
-    st.markdown("#### Snapshot Diff")
-    st.json(thesis_view["snapshot_diff"])
-    if thesis_view.get("current_tracker_state"):
-        st.markdown("#### Current PM Tracker State")
-        st.json(thesis_view["current_tracker_state"])
-    if thesis_view.get("catalysts"):
-        st.markdown("#### Tracked Catalysts")
-        st.dataframe(
-            [
-                {
-                    "Title": row["title"],
-                    "Status": row["status"],
-                    "Priority": row["priority"],
-                    "Reason": row.get("status_reason") or "—",
-                }
-                for row in thesis_view["catalysts"]
-            ],
-            width="stretch",
-            hide_index=True,
-        )
+    col1.metric("PM Action", stance.get("pm_action") or "—")
+    col2.metric("PM Conviction", (stance.get("pm_conviction") or "—").upper())
+    col3.metric("Thesis Status", stance.get("overall_status") or "unknown")
 
-    with st.form("tracker_state_form", clear_on_submit=False):
-        overall_status = st.selectbox("Overall Status", ["intact", "monitor", "validated", "broken"], index=1)
-        pm_action = st.selectbox("PM Action", ["BUY", "SELL SHORT", "WATCH", "PASS"], index=2)
-        pm_conviction = st.selectbox("PM Conviction", ["high", "medium", "low"], index=1)
-        summary_note = st.text_area("Summary Note", value="", height=80)
-        save_tracker_state = st.form_submit_button("Save Tracker State")
+    col4, col5, col6 = st.columns(3)
+    col4.metric("Base IV", format_metric_value(stance.get("base_iv"), kind="price"))
+    col5.metric("Current Price", format_metric_value(stance.get("current_price"), kind="price"))
+    col6.metric("Upside", format_metric_value(stance.get("upside_pct"), kind="percent"))
+
+    next_catalyst = stance.get("next_catalyst")
+    st.caption(
+        " | ".join(
+            [
+                f"Next catalyst: {next_catalyst['title']}" if next_catalyst else "Next catalyst: —",
+                f"Latest archive stance: {stance.get('latest_archived_action') or '—'} / {(stance.get('latest_archived_conviction') or '—').upper()}",
+                f"Last review: {stance.get('last_reviewed_at') or '—'}",
+            ]
+        )
+    )
+
+    left, right = st.columns(2)
+    with left:
+        st.markdown("#### What Changed Since Last Snapshot")
+        action_delta = what_changed.get("action_delta", {})
+        conviction_delta = what_changed.get("conviction_delta", {})
+        st.write(f"Action: {action_delta.get('from') or '—'} -> {action_delta.get('to') or '—'}")
+        st.write(f"Conviction: {conviction_delta.get('from') or '—'} -> {conviction_delta.get('to') or '—'}")
+        st.write(
+            "Base IV delta: "
+            + (
+                format_metric_value(what_changed.get("base_iv_delta"), kind="price")
+                if what_changed.get("base_iv_delta") is not None
+                else "—"
+            )
+        )
+        _render_change_list("Catalysts added", what_changed.get("catalysts_added", []))
+        _render_change_list("Catalysts removed", what_changed.get("catalysts_removed", []))
+        _render_change_list("Risks added", what_changed.get("risks_added", []))
+        _render_change_list("Risks removed", what_changed.get("risks_removed", []))
+        _render_change_list("Open questions added", what_changed.get("open_questions_added", []))
+        _render_change_list("Open questions closed", what_changed.get("open_questions_closed", []))
+    with right:
+        st.markdown("#### Next Diligence Queue")
+        _render_change_list("Open questions", next_queue.get("open_questions", []))
+        upcoming = next_queue.get("upcoming_catalysts", [])
+        st.markdown("**Upcoming catalysts**")
+        if not upcoming:
+            st.caption("None.")
+        else:
+            for row in upcoming:
+                date_hint = row.get("expected_date") or row.get("expected_window") or "undated"
+                st.write(f"- {row['title']} ({row['status']}, {date_hint})")
+        review_status = next_queue.get("review_status") or "none"
+        st.write(f"Review queue: {review_status}")
+        missing_flags = next_queue.get("missing_evidence_flags", [])
+        if missing_flags:
+            _render_change_list("Missing evidence flags", missing_flags)
+
+    with st.form("tracker_overview_form", clear_on_submit=False):
+        overall_status_options = ["intact", "monitor", "validated", "broken", "unknown"]
+        overall_status = st.selectbox(
+            "Overall Status",
+            overall_status_options,
+            index=max(overall_status_options.index(stance.get("overall_status")), 0) if stance.get("overall_status") in overall_status_options else 1,
+        )
+        pm_action_options = ["BUY", "SELL SHORT", "WATCH", "PASS", "TRIM", "EXIT"]
+        pm_action = st.selectbox(
+            "PM Action",
+            pm_action_options,
+            index=pm_action_options.index(stance.get("pm_action")) if stance.get("pm_action") in pm_action_options else 2,
+        )
+        pm_conviction_options = ["high", "medium", "low"]
+        pm_conviction = st.selectbox(
+            "PM Conviction",
+            pm_conviction_options,
+            index=pm_conviction_options.index(stance.get("pm_conviction")) if stance.get("pm_conviction") in pm_conviction_options else 1,
+        )
+        summary_note = st.text_area("Summary Note", value=stance.get("summary_note") or "", height=90)
+        open_questions_text = st.text_area(
+            "Open Questions",
+            value="\n".join(next_queue.get("open_questions", [])),
+            height=120,
+            help="One question per line.",
+        )
+        save_tracker_state = st.form_submit_button("Save Overview")
 
     if save_tracker_state:
         upsert_tracker_state(
@@ -410,49 +489,173 @@ def render_thesis_tracker(memo: ICMemo) -> None:
                 "pm_action": pm_action,
                 "pm_conviction": pm_conviction,
                 "summary_note": summary_note.strip(),
-                "pillar_states_json": json.dumps({}, sort_keys=True),
-                "open_questions_json": json.dumps(memo.open_questions, sort_keys=True),
+                "pillar_states_json": tracker_state.get("pillar_states_json") or json.dumps({}, sort_keys=True),
+                "open_questions_json": json.dumps(_text_to_lines(open_questions_text), sort_keys=True),
                 "last_reviewed_at": memo.date,
                 "latest_snapshot_id": thesis_view["latest_snapshot"].get("id"),
-                "metadata_json": json.dumps({}, sort_keys=True),
+                "metadata_json": tracker_state.get("metadata_json") or json.dumps({}, sort_keys=True),
             }
         )
         st.session_state.pop("dossier_thesis_tracker_view", None)
-        thesis_view = _get_cached_view("dossier_thesis_tracker_view", build_thesis_diff_view, memo.ticker)
-        st.success("Tracker state saved.")
+        st.session_state["dossier_thesis_tracker_notice"] = "Overview saved."
+        st.rerun()
 
-    catalyst_options = {
-        f"{row['title']} ({row['status']})": row
-        for row in (thesis_view.get("catalysts") or [])
-    }
-    if catalyst_options:
-        with st.form("tracker_catalyst_form", clear_on_submit=False):
-            catalyst_label = st.selectbox("Catalyst", options=list(catalyst_options.keys()))
-            catalyst_status = st.selectbox("Status", ["open", "watching", "hit", "delayed", "missed", "killed"], index=1)
-            catalyst_reason = st.text_area("Status Reason", value="", height=80)
-            save_catalyst_state = st.form_submit_button("Save Catalyst Status")
+    pillars_tab, catalysts_tab, continuity_tab = st.tabs(["Pillars", "Catalysts", "Continuity"])
 
-        if save_catalyst_state:
-            selected_catalyst = catalyst_options[catalyst_label]
-            upsert_tracked_catalyst(
-                {
-                    "ticker": memo.ticker,
-                    "catalyst_key": selected_catalyst["catalyst_key"],
-                    "title": selected_catalyst["title"],
-                    "description": selected_catalyst.get("description"),
-                    "priority": selected_catalyst.get("priority", "medium"),
-                    "status": catalyst_status,
-                    "expected_date": selected_catalyst.get("expected_date"),
-                    "expected_window_start": selected_catalyst.get("expected_window_start"),
-                    "expected_window_end": selected_catalyst.get("expected_window_end"),
-                    "status_reason": catalyst_reason.strip(),
-                    "source_origin": selected_catalyst.get("source_origin", "pm"),
-                    "source_snapshot_id": selected_catalyst.get("source_snapshot_id"),
-                    "evidence_json": json.dumps({}, sort_keys=True),
-                }
-            )
-            st.session_state.pop("dossier_thesis_tracker_view", None)
-            st.success("Catalyst status saved.")
+    with pillars_tab:
+        pillar_board = thesis_view.get("pillar_board", [])
+        if not pillar_board:
+            st.info("No thesis pillars are available for this ticker yet.")
+        else:
+            with st.form("tracker_pillars_form", clear_on_submit=False):
+                updated_pillars: dict[str, dict[str, str]] = {}
+                for row in pillar_board:
+                    with st.expander(row["title"], expanded=True):
+                        st.write(row.get("description") or "No description recorded.")
+                        if row.get("falsifier"):
+                            st.caption(f"Falsifier: {row['falsifier']}")
+                        if row.get("latest_evidence_cue"):
+                            st.caption(f"Evidence cue: {row['latest_evidence_cue']}")
+                        status_options = ["intact", "monitor", "validated", "broken", "unknown"]
+                        status_key = f"pillar_status_{row['pillar_id']}"
+                        note_key = f"pillar_note_{row['pillar_id']}"
+                        updated_pillars[row["pillar_id"]] = {
+                            "status": st.selectbox(
+                                "Status",
+                                status_options,
+                                index=status_options.index(row.get("pm_status")) if row.get("pm_status") in status_options else 4,
+                                key=status_key,
+                            ),
+                            "title_slug": row["title"].strip().lower().replace(" ", "-"),
+                            "note": st.text_area("PM Note", value=row.get("pm_note") or "", height=80, key=note_key),
+                        }
+                save_pillars = st.form_submit_button("Save Pillar Board")
+
+            if save_pillars:
+                upsert_tracker_state(
+                    {
+                        "ticker": memo.ticker,
+                        "overall_status": stance.get("overall_status") or "unknown",
+                        "pm_action": stance.get("pm_action"),
+                        "pm_conviction": stance.get("pm_conviction"),
+                        "summary_note": stance.get("summary_note") or "",
+                        "pillar_states_json": json.dumps(updated_pillars, sort_keys=True),
+                        "open_questions_json": tracker_state.get("open_questions_json") or json.dumps(next_queue.get("open_questions", []), sort_keys=True),
+                        "last_reviewed_at": memo.date,
+                        "latest_snapshot_id": thesis_view["latest_snapshot"].get("id"),
+                        "metadata_json": tracker_state.get("metadata_json") or json.dumps({}, sort_keys=True),
+                    }
+                )
+                st.session_state.pop("dossier_thesis_tracker_view", None)
+                st.session_state["dossier_thesis_tracker_notice"] = "Pillar board saved."
+                st.rerun()
+
+    with catalysts_tab:
+        catalyst_board = thesis_view.get("catalyst_board", {})
+        all_catalysts = catalyst_board.get("urgent_open", []) + catalyst_board.get("watching", []) + catalyst_board.get("resolved", [])
+        if not all_catalysts:
+            st.info("No catalysts are available for this ticker yet.")
+        else:
+            with st.form("tracker_catalyst_board_form", clear_on_submit=False):
+                updated_catalysts = []
+                for row in all_catalysts:
+                    with st.expander(f"{row['title']} [{row['status']}]", expanded=row["status"] != "resolved"):
+                        st.write(row.get("description") or "No description recorded.")
+                        st.caption(f"Priority: {row.get('priority') or 'medium'} | Source: {row.get('source_origin') or 'archive'}")
+                        status_options = ["open", "watching", "hit", "delayed", "missed", "killed", "resolved"]
+                        updated_catalysts.append(
+                            {
+                                **row,
+                                "status": st.selectbox(
+                                    "Status",
+                                    status_options,
+                                    index=status_options.index(row.get("status")) if row.get("status") in status_options else 0,
+                                    key=f"catalyst_status_{row['catalyst_key']}",
+                                ),
+                                "expected_date": st.text_input(
+                                    "Expected Date",
+                                    value=row.get("expected_date") or "",
+                                    key=f"catalyst_date_{row['catalyst_key']}",
+                                ).strip()
+                                or None,
+                                "expected_window_start": st.text_input(
+                                    "Expected Window Start",
+                                    value=row.get("expected_window_start") or "",
+                                    key=f"catalyst_window_start_{row['catalyst_key']}",
+                                ).strip()
+                                or None,
+                                "expected_window_end": st.text_input(
+                                    "Expected Window End",
+                                    value=row.get("expected_window_end") or "",
+                                    key=f"catalyst_window_end_{row['catalyst_key']}",
+                                ).strip()
+                                or None,
+                                "status_reason": st.text_area(
+                                    "Status Reason",
+                                    value=row.get("status_reason") or "",
+                                    height=80,
+                                    key=f"catalyst_reason_{row['catalyst_key']}",
+                                ).strip(),
+                            }
+                        )
+                save_catalysts = st.form_submit_button("Save Catalyst Board")
+
+            if save_catalysts:
+                for row in updated_catalysts:
+                    upsert_tracked_catalyst(
+                        {
+                            "ticker": memo.ticker,
+                            "catalyst_key": row["catalyst_key"],
+                            "title": row["title"],
+                            "description": row.get("description"),
+                            "priority": row.get("priority", "medium"),
+                            "status": row["status"],
+                            "expected_date": row.get("expected_date"),
+                            "expected_window_start": row.get("expected_window_start"),
+                            "expected_window_end": row.get("expected_window_end"),
+                            "status_reason": row.get("status_reason", ""),
+                            "source_origin": row.get("source_origin", "pm"),
+                            "source_snapshot_id": row.get("source_snapshot_id"),
+                            "evidence_json": json.dumps(row.get("evidence_json") or {}, sort_keys=True),
+                        }
+                    )
+                st.session_state.pop("dossier_thesis_tracker_view", None)
+                st.session_state["dossier_thesis_tracker_notice"] = "Catalyst board saved."
+                st.rerun()
+
+    with continuity_tab:
+        continuity = thesis_view.get("continuity", {})
+        latest_decision = continuity.get("latest_decision")
+        latest_review = continuity.get("latest_review")
+        latest_checkpoint = continuity.get("latest_checkpoint")
+        snapshot_refs = continuity.get("snapshot_refs", {})
+
+        st.markdown("#### Latest Decision")
+        if latest_decision:
+            st.write(f"{latest_decision['decision_title']} | {latest_decision['action']} | {latest_decision.get('conviction') or '—'}")
+            st.caption(f"Review due: {latest_decision.get('review_due_date') or '—'}")
+        else:
+            st.caption("No decision log entry recorded yet.")
+
+        st.markdown("#### Latest Review")
+        if latest_review:
+            st.write(f"{latest_review['review_title']} | {latest_review['period_type']} | {latest_review['thesis_status']}")
+            st.caption(f"Model status: {latest_review.get('model_status') or '—'}")
+        else:
+            st.caption("No review log entry recorded yet.")
+
+        st.markdown("#### Latest Checkpoint")
+        if latest_checkpoint:
+            checkpoint_base = (latest_checkpoint.get("valuation") or {}).get("base_iv")
+            st.write(f"{latest_checkpoint['model_version']} | Base IV: {format_metric_value(checkpoint_base, kind='price')}")
+            st.caption(latest_checkpoint.get("change_reason") or "No checkpoint note.")
+        else:
+            st.caption("No model checkpoint recorded yet.")
+
+        st.markdown("#### Archive Snapshot References")
+        st.write(f"Latest snapshot: {snapshot_refs.get('latest_snapshot_id') or '—'} @ {snapshot_refs.get('latest_snapshot_created_at') or '—'}")
+        st.write(f"Prior snapshot: {snapshot_refs.get('prior_snapshot_id') or '—'} @ {snapshot_refs.get('prior_snapshot_created_at') or '—'}")
+        st.caption("Use Decision Log and Review Log for full journal entry editing.")
 
 
 def render_decision_log(memo: ICMemo) -> None:

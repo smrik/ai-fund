@@ -83,8 +83,9 @@ The `Deep Dive` group exposes eight sections:
    - links workbook or file artifacts without copying them into the database
 
 5. `Thesis Tracker`
-   - compares the latest archived thesis against the prior one
-   - stores current PM tracker state and catalyst status
+   - acts as the PM cockpit for the ticker
+   - shows current stance, what changed, thesis pillar health, catalyst status, continuity context, and the current diligence queue
+   - stores current PM tracker state and catalyst status without mutating archived evidence
 
 6. `Decision Log`
    - preserves what action the PM took and why
@@ -132,6 +133,85 @@ This matters because the PM needs to know both:
 - what the PM believes now after reviewing new evidence
 
 The tracker does not rewrite archived memos.
+
+## Thesis Tracker V2: PM Cockpit
+
+The tracker is no longer meant to feel like a raw state editor. It is the current operating page for one thesis.
+
+The page is organized around six questions:
+
+1. What is my current stance now?
+2. What changed since the last archived run?
+3. Which thesis pillars are intact, weakening, validated, or broken?
+4. Which catalysts are open, being watched, or resolved?
+5. What recent decision, review, and checkpoint context matters?
+6. What should I diligence next?
+
+The tracker therefore shows:
+
+- a summary header
+- a `What Changed Since Last Snapshot` panel
+- a `Next Diligence Queue` panel
+- a `Pillars` tab
+- a `Catalysts` tab
+- a `Continuity` tab
+
+This is a deliberate separation of concerns:
+
+- the archive remains the historical evidence baseline
+- the tracker is the PM-maintained current operating view
+- the decision and review logs remain adjacent dedicated journals
+
+The tracker uses PM-authored current state for:
+
+- overall thesis status
+- PM action
+- PM conviction
+- summary note
+- pillar statuses and notes
+- current open questions
+- catalyst statuses, dates, and reasons
+
+The tracker uses archive-derived state for:
+
+- latest and prior archived thesis snapshots
+- what changed between snapshots
+- fallback thesis pillars or catalysts when old memo structure is incomplete
+- baseline catalyst definitions when no PM catalyst overrides exist
+
+This means the PM can keep a living operating view without rewriting the historical record.
+
+## Pillar Status And Catalyst Status
+
+Use thesis pillars to track whether the core reasons for owning or shorting the name are still working.
+
+Recommended pillar statuses:
+
+- `intact`
+- `monitor`
+- `validated`
+- `broken`
+- `unknown`
+
+Use catalysts to track timing and mechanism.
+
+The tracker groups catalysts into:
+
+- `urgent_open`
+- `watching`
+- `resolved`
+
+Typical catalyst statuses remain:
+
+- `open`
+- `watching`
+- `hit`
+- `delayed`
+- `missed`
+- `killed`
+- `resolved`
+
+The point is not taxonomy purity. The point is to make the current operating state obvious without forcing the PM to inspect raw tables or old JSON.
 
 ## Private Versus Publishable
 

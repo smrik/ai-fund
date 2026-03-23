@@ -3,7 +3,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest_tmp/
+.pytest-tmp/
 pytest_basetemp_*/
+tmp*/
 
 # Local agent state
 .agent/
@@ -20,6 +22,7 @@ data/dossiers/
 data/valuations/
 data/exports/
 data/alpha_pod.db
+data/tracker-test-*.db
 data/stage1_survivors.csv
 data/regime_model.pkl
 

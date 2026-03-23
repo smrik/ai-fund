@@ -23,6 +23,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Completed
 
+- [Thesis Tracker V2: PM Cockpit](./completed/2026-03-23-thesis-tracker-v2-pm-cockpit.md)
 - [Deep Dive Dashboard Refactor](./completed/2026-03-21-deep-dive-dashboard-refactor.md)
 - [Single-Ticker Deep Dive Dossier System](./completed/2026-03-18-single-ticker-deep-dive-dossier.md)
 - [Dashboard Research Surface Remediation And Auditability](./completed/2026-03-15-dashboard-research-program.md)
