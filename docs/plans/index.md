@@ -13,7 +13,8 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
-- No active canonical plans at the moment.
+- [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)
+- [Structured Logging First Tranche](./active/2026-03-27-structured-logging-first-tranche.md)
 
 ## Future
 
@@ -23,6 +24,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Completed
 
+- [Dashboard Shell And Dossier Companion Workspace](./completed/2026-03-23-dashboard-shell-and-dossier-companion.md)
 - [Thesis Tracker V2: PM Cockpit](./completed/2026-03-23-thesis-tracker-v2-pm-cockpit.md)
 - [Deep Dive Dashboard Refactor](./completed/2026-03-21-deep-dive-dashboard-refactor.md)
 - [Single-Ticker Deep Dive Dossier System](./completed/2026-03-18-single-ticker-deep-dive-dossier.md)

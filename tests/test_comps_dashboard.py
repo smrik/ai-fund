@@ -134,6 +134,10 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     assert round(view["target_vs_peers"]["deltas"]["net_debt_to_ebitda"], 2) == 0.55
     assert view["football_field"]["range_min"] == 95.0
     assert view["football_field"]["range_max"] == 129.0
+    range_rows = {row["label"]: row for row in view["football_field"]["ranges"]}
+    assert range_rows["TEV / EBITDA LTM"]["bear"] == 95.0
+    assert range_rows["TEV / EBITDA LTM"]["base"] == 110.0
+    assert range_rows["TEV / EBITDA LTM"]["bull"] == 125.0
     labels = {marker["label"] for marker in view["football_field"]["markers"]}
     assert "Current Price" in labels
     assert "Analyst Target Mean" in labels
@@ -193,5 +197,6 @@ def test_build_comps_dashboard_view_handles_missing_ciq_data(monkeypatch):
     assert view["peers"] == []
     assert view["valuation_range"] == {}
     assert view["valuation_range_by_metric"] == {}
+    assert view["football_field"]["ranges"] == []
     assert view["football_field"]["markers"] == []
     assert view["audit_flags"] == ["No CIQ comps detail available"]

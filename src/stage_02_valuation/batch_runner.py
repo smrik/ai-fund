@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import sqlite3
 import sys
 import time
@@ -18,6 +19,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from config import DB_PATH, PEER_SIMILARITY_ENABLED, PEER_SIMILARITY_MODEL
+from src.logging_config import configure_logging
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
 from src.stage_02_valuation.comps_model import build_comps_detail_from_yfinance
@@ -38,6 +40,7 @@ from src.stage_02_valuation.professional_dcf import (
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
+logger = logging.getLogger(__name__)
 
 
 def _safe_float(value):
@@ -147,11 +150,16 @@ def _run_qoe_llm(ticker: str, valuation_result: dict) -> None:
     ebit_margin = valuation_result.get("ebit_margin_used") or 0.0
     reported_ebit = (ebit_margin / 100.0 if ebit_margin > 1 else ebit_margin) * revenue_mm * 1_000_000
 
-    print(f"\n{'='*60}")
-    print(f"QoE LLM analysis — {ticker}")
-    print(f"  Reported EBIT: ${reported_ebit/1e6:,.1f}mm  "
-          f"({ebit_margin:.1f}% margin on ${revenue_mm:,.0f}mm revenue)")
-    print(f"{'='*60}")
+    logger.info(
+        "\n%s\nQoE LLM analysis — %s\n  Reported EBIT: $%smm  (%s%% margin on $%smm revenue)\n%s",
+        "=" * 60,
+        ticker,
+        f"{reported_ebit / 1e6:,.1f}",
+        f"{ebit_margin:.1f}",
+        f"{revenue_mm:,.0f}",
+        "=" * 60,
+        extra={"ticker": ticker, "step": "qoe_llm"},
+    )
 
     try:
         agent = QoEAgent()
@@ -162,32 +170,64 @@ def _run_qoe_llm(ticker: str, valuation_result: dict) -> None:
         norm_ebit = llm.get("normalized_ebit")
         pending = llm.get("dcf_ebit_override_pending", False)
 
-        print(f"\n  QoE score : {qoe.get('qoe_score')}/5  ({qoe.get('qoe_flag', '').upper()})")
-        print(f"  Confidence: {llm.get('llm_confidence', 'low')}")
+        logger.info(
+            "\n  QoE score : %s/5  (%s)",
+            qoe.get("qoe_score"),
+            qoe.get("qoe_flag", "").upper(),
+            extra={"ticker": ticker, "step": "qoe_llm"},
+        )
+        logger.info(
+            "  Confidence: %s",
+            llm.get("llm_confidence", "low"),
+            extra={"ticker": ticker, "step": "qoe_llm"},
+        )
         if haircut is not None:
-            print(f"  EBIT haircut : {haircut:+.1f}%  "
-                  f"(${norm_ebit/1e6:,.1f}mm normalised)")
+            logger.info(
+                "  EBIT haircut : %+0.1f%%  ($%smm normalised)",
+                haircut,
+                f"{norm_ebit / 1e6:,.1f}",
+                extra={"ticker": ticker, "step": "qoe_llm"},
+            )
         if qoe.get("pm_summary"):
-            print(f"\n  PM Summary: {qoe['pm_summary']}")
+            logger.info(
+                "\n  PM Summary: %s",
+                qoe["pm_summary"],
+                extra={"ticker": ticker, "step": "qoe_llm"},
+            )
 
         if llm.get("ebit_adjustments"):
-            print("\n  Adjustments:")
+            logger.info("\n  Adjustments:", extra={"ticker": ticker, "step": "qoe_llm"})
             for adj in llm["ebit_adjustments"]:
-                print(f"    {adj['direction']} ${adj['amount']/1e6:.1f}mm  {adj['item']}")
-                print(f"      → {adj['rationale']}")
+                logger.info(
+                    "    %s $%.1fmm  %s",
+                    adj["direction"],
+                    adj["amount"] / 1e6,
+                    adj["item"],
+                    extra={"ticker": ticker, "step": "qoe_llm"},
+                )
+                logger.info(
+                    "      → %s",
+                    adj["rationale"],
+                    extra={"ticker": ticker, "step": "qoe_llm"},
+                )
 
         path = write_qoe_pending_override(ticker, qoe, revenue_mm)
 
         if pending:
-            print(f"\n  ⚠  Override warranted (haircut >{abs(haircut):.0f}% > 10% threshold)")
-            print(f"  → Review config/qoe_pending.yaml")
-            print(f"  → Set status: approved  to apply on next --json run")
+            logger.warning(
+                "\n  Override warranted (haircut >%s%% > 10%% threshold)\n  → Review config/qoe_pending.yaml\n  → Set status: approved  to apply on next --json run",
+                f"{abs(haircut):.0f}",
+                extra={"ticker": ticker, "step": "qoe_llm"},
+            )
         else:
-            print(f"\n  ✓  Haircut below 10% threshold — no override needed")
-            print(f"  → Logged to {path} (status: pending)")
+            logger.info(
+                "\n  Haircut below 10%% threshold — no override needed\n  → Logged to %s (status: pending)",
+                path,
+                extra={"ticker": ticker, "step": "qoe_llm"},
+            )
 
     except Exception as exc:
-        print(f"\n  ✗ QoE LLM failed: {exc}")
+        logger.error("\n  QoE LLM failed: %s", exc, extra={"ticker": ticker, "step": "qoe_llm"})
 
 
 def _compute_qoe_for_ticker(ticker: str) -> dict | None:
@@ -203,7 +243,7 @@ def _compute_qoe_for_ticker(ticker: str) -> dict | None:
         sector = mkt.get("sector") or "Unknown"
         return compute_qoe_signals(ticker, sector, ciq_snap, ciq_nwc, hist, mkt)
     except Exception as exc:
-        print(f"  ⚠ QoE failed for {ticker}: {exc}")
+        logger.warning("  QoE failed for %s: %s", ticker, exc, extra={"ticker": ticker, "step": "qoe"})
         return None
 
 
@@ -535,7 +575,7 @@ def value_single_ticker(ticker: str) -> dict | None:
         return row
 
     except Exception as exc:
-        print(f"  ✗ {ticker}: {exc}")
+        logger.warning("  Failed to value %s: %s", ticker, exc, extra={"ticker": ticker, "step": "valuation"})
         return None
 
 
@@ -730,10 +770,10 @@ def export_to_excel(results: list[dict], output_path: Path):
 
         df.to_excel(writer, sheet_name="All Data", index=False)
 
-    print(f"✓ Saved to {output_path}")
+    logger.info("Saved Excel workbook to %s", output_path, extra={"step": "excel_export"})
 
 
-def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int]:
+def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, int, int]:
     from db.schema import create_tables
     conn = sqlite3.connect(str(DB_PATH))
     create_tables(conn)
@@ -830,27 +870,22 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
 
 
 def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = False):
-    print("=" * 64)
-    print("ALPHA POD — Batch Valuation Runner")
-    print("=" * 64)
-    print()
+    logger.info("\n%s\nALPHA POD — Batch Valuation Runner\n%s\n", "=" * 64, "=" * 64, extra={"step": "run_batch"})
 
     if tickers is None:
         if not UNIVERSE_CSV.exists():
-            print("✗ No universe.csv found. Run Stage 1 screener first.")
+            logger.error("No universe.csv found. Run Stage 1 screener first.", extra={"step": "load_universe"})
             return
         with open(UNIVERSE_CSV, encoding="utf-8") as f:
             reader = csv.DictReader(f)
             tickers = [row["ticker"] for row in reader]
-        print(f"Loaded {len(tickers)} tickers from universe.csv")
+        logger.info("Loaded %s tickers from universe.csv", len(tickers), extra={"step": "load_universe"})
     else:
-        print(f"Running on {len(tickers)} tickers")
-    print()
+        logger.info("Running on %s tickers", len(tickers), extra={"step": "load_universe"})
 
     results = []
     failed_tickers: list[str] = []
     for i, ticker in enumerate(tickers, 1):
-        print(f"  [{i:>3}/{len(tickers)}] {ticker:<8} ", end="", flush=True)
         result = value_single_ticker(ticker)
         if result:
             results.append(result)
@@ -859,23 +894,43 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
             if upside is None:
                 upside = result.get("upside_base_pct")
             if iv is None:
-                print(f"${result['price']:>8.2f}  alt-model")
+                summary = f"${result['price']:>8.2f}  alt-model"
             else:
-                print(f"${result['price']:>8.2f} → ${iv:>8.2f}  ({upside:>+6.1f}%)  WACC {result['wacc']:.1f}%")
+                summary = (
+                    f"${result['price']:>8.2f} → ${iv:>8.2f}  "
+                    f"({upside:>+6.1f}%)  WACC {result['wacc']:.1f}%"
+                )
+            logger.info(
+                "  [%3d/%d] %-8s %s",
+                i,
+                len(tickers),
+                ticker,
+                summary,
+                extra={"ticker": ticker, "step": "run_batch"},
+            )
         else:
             failed_tickers.append(ticker)
-            print("skipped (insufficient data)")
+            logger.warning(
+                "  [%3d/%d] %-8s skipped (insufficient data)",
+                i,
+                len(tickers),
+                ticker,
+                extra={"ticker": ticker, "step": "run_batch"},
+            )
 
         time.sleep(0.3)
 
-    print()
-    print(f"  Completed: {len(results)} valued, {len(failed_tickers)} skipped")
+    logger.info(
+        "\n  Completed: %s valued, %s skipped",
+        len(results),
+        len(failed_tickers),
+        extra={"step": "run_batch"},
+    )
     if failed_tickers:
-        print(f"  Failed tickers: {', '.join(failed_tickers)}")
-    print()
+        logger.warning("  Failed tickers: %s", ", ".join(failed_tickers), extra={"step": "run_batch"})
 
     if not results:
-        print("No results to export.")
+        logger.warning("No results to export.", extra={"step": "run_batch"})
         return
 
     sort_col = "expected_upside_pct" if any(r.get("expected_upside_pct") is not None for r in results) else "upside_base_pct"
@@ -887,35 +942,48 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
 
     latest_csv = OUTPUT_DIR / "latest.csv"
     df.to_csv(latest_csv, index=False)
-    print(f"✓ CSV: {latest_csv}")
+    logger.info("CSV export written to %s", latest_csv, extra={"step": "run_batch"})
 
     # Gap 6: write batch_errors.json alongside CSV when failures occurred
     if failed_tickers:
         errors_path = OUTPUT_DIR / "batch_errors.json"
         with errors_path.open("w", encoding="utf-8") as _ef:
             json.dump({"run_date": today, "failed": failed_tickers}, _ef, indent=2)
-        print(f"✓ Errors: {errors_path}  ({len(failed_tickers)} failed)")
+        logger.warning(
+            "Error summary written to %s (%s failed)",
+            errors_path,
+            len(failed_tickers),
+            extra={"step": "run_batch"},
+        )
 
     latest_rows, valuation_rows, dcf_rows = persist_results_to_db(df, snapshot_date=today)
-    print(f"✓ SQLite: {DB_PATH}")
-    print(f"  batch_valuations_latest={latest_rows}, valuations={valuation_rows}, dcf_valuations={dcf_rows}")
+    logger.info("SQLite snapshot written to %s", DB_PATH, extra={"step": "run_batch"})
+    logger.info(
+        "  batch_valuations_latest=%s, valuations=%s, dcf_valuations=%s",
+        latest_rows,
+        valuation_rows,
+        dcf_rows,
+        extra={"step": "run_batch"},
+    )
 
     xlsx_path = None
     if export_xlsx:
         xlsx_path = OUTPUT_DIR / f"batch_valuation_{today}.xlsx"
         export_to_excel(results, xlsx_path)
 
-    print()
-    print("=" * 64)
-    print(f"TOP {min(top_n, len(results))} BY {sort_col.upper()}")
-    print("=" * 64)
-    print(f"{'Ticker':<8} {'Company':<30} {'Price':>8} {'Exp IV':>8} {'Exp Up':>8} {'Base IV':>8} {'WACC':>6} {'Status'}")
-    print("-" * 116)
+    lines = [
+        "",
+        "=" * 64,
+        f"TOP {min(top_n, len(results))} BY {sort_col.upper()}",
+        "=" * 64,
+        f"{'Ticker':<8} {'Company':<30} {'Price':>8} {'Exp IV':>8} {'Exp Up':>8} {'Base IV':>8} {'WACC':>6} {'Status'}",
+        "-" * 116,
+    ]
 
     for r in results[:top_n]:
         exp_iv = r.get("expected_iv")
         exp_up = r.get("expected_upside_pct")
-        print(
+        lines.append(
             f"{r['ticker']:<8} {r['company_name'][:29]:<30} "
             f"${r['price']:>7.2f} "
             f"{('$' + format(exp_iv, '7.2f')) if exp_iv is not None else '    N/A ':>8} "
@@ -924,13 +992,13 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
             f"{r['wacc']:>5.1f}% "
             f"{r.get('model_applicability_status', '')}"
         )
+    logger.info("\n".join(lines), extra={"step": "run_batch"})
 
-    print()
     if xlsx_path:
-        print(f"Excel: {xlsx_path}")
+        logger.info("Excel workbook: %s", xlsx_path, extra={"step": "run_batch"})
     else:
-        print("Excel: skipped (pass --xlsx to export workbook)")
-    print(f"CSV (for Power Query): {latest_csv}")
+        logger.info("Excel: skipped (pass --xlsx to export workbook)", extra={"step": "run_batch"})
+    logger.info("CSV (for Power Query): %s", latest_csv, extra={"step": "run_batch"})
 
     return results
 
@@ -997,16 +1065,20 @@ def _print_ic_memo(memo) -> None:
             border_style="blue",
         ))
     except Exception as e:
-        print(f"\n[IC Memo] Could not render Rich panel: {e}")
-        print(f"  Action: {getattr(memo, 'action', '?')}")
-        print(f"  Thesis: {getattr(memo, 'one_liner', '?')}")
+        logger.warning("\n[IC Memo] Could not render Rich panel: %s", e, extra={"step": "ic_memo"})
+        logger.info("  Action: %s", getattr(memo, "action", "?"), extra={"step": "ic_memo"})
+        logger.info("  Thesis: %s", getattr(memo, "one_liner", "?"), extra={"step": "ic_memo"})
 
 
 def _print_recommendations(recs) -> None:
     """Print a compact summary of agent recommendations to console."""
     from src.stage_04_pipeline.recommendations import TickerRecommendations
     if not recs or not recs.recommendations:
-        print(f"\n  No agent recommendations generated for {getattr(recs, 'ticker', '?')}.")
+        logger.info(
+            "\n  No agent recommendations generated for %s.",
+            getattr(recs, "ticker", "?"),
+            extra={"step": "recommendations"},
+        )
         return
 
     try:
@@ -1052,14 +1124,31 @@ def _print_recommendations(recs) -> None:
         if pending_count:
             console.print(f"  [yellow]{pending_count} pending item(s)[/yellow] — run [bold]--approve {recs.ticker}[/bold] to review")
     except Exception as e:
-        print(f"\nAgent Recommendations — {getattr(recs, 'ticker', '?')}:")
+        logger.warning(
+            "\nAgent Recommendations — %s (Rich render failed: %s):",
+            getattr(recs, "ticker", "?"),
+            e,
+            extra={"step": "recommendations"},
+        )
         for i, rec in enumerate(recs.recommendations):
             prop = f"{rec.proposed_value:.4f}" if isinstance(rec.proposed_value, float) else str(rec.proposed_value)
-            print(f"  [{i}] {rec.agent}.{rec.field}: {rec.current_value} → {prop} [{rec.confidence}] {rec.status}")
+            logger.info(
+                "  [%s] %s.%s: %s → %s [%s] %s",
+                i,
+                rec.agent,
+                rec.field,
+                rec.current_value,
+                prop,
+                rec.confidence,
+                rec.status,
+                extra={"step": "recommendations"},
+            )
 
 
 if __name__ == "__main__":
     import argparse
+
+    configure_logging(force=True)
 
     parser = argparse.ArgumentParser(description="Batch valuation runner")
     parser.add_argument("--top", type=int, default=30, help="Show top N results")
@@ -1085,10 +1174,10 @@ if __name__ == "__main__":
     # ── --macro: refresh macro context file ──────────────────────────────────
     if args.macro:
         from src.stage_03_judgment.macro_agent import MacroAgent, MACRO_OUTPUT_PATH
-        print("Refreshing macro context...")
+        logger.info("Refreshing macro context...", extra={"step": "macro"})
         macro = MacroAgent()
         macro.refresh()
-        print(f"✓ Macro context written to {MACRO_OUTPUT_PATH}")
+        logger.info("Macro context written to %s", MACRO_OUTPUT_PATH, extra={"step": "macro"})
         if not args.ticker and not args.full:
             sys.exit(0)
 
@@ -1103,9 +1192,13 @@ if __name__ == "__main__":
             recs = orch.collect_recommendations(args.ticker)
             rec_path = write_recommendations(recs)
             _print_recommendations(recs)
-            print(f"\n  → Recommendations written to {rec_path}")
-            print(f"  → Run --review {args.ticker} to see pending items")
-            print(f"  → Run --approve {args.ticker} to approve interactively")
+            logger.info(
+                "\n  → Recommendations written to %s\n  → Run --review %s to see pending items\n  → Run --approve %s to approve interactively",
+                rec_path,
+                args.ticker,
+                args.ticker,
+                extra={"ticker": args.ticker.upper(), "step": "recommendations"},
+            )
             sys.exit(0)
 
         # ── --review: display pending recommendations ─────────────────────────
@@ -1113,7 +1206,11 @@ if __name__ == "__main__":
             from src.stage_04_pipeline.recommendations import load_recommendations
             recs = load_recommendations(args.ticker)
             if recs is None:
-                print(f"No recommendations found for {args.ticker.upper()}. Run --full first.")
+                logger.error(
+                    "No recommendations found for %s. Run --full first.",
+                    args.ticker.upper(),
+                    extra={"ticker": args.ticker.upper(), "step": "recommendations"},
+                )
                 sys.exit(1)
             _print_recommendations(recs)
             sys.exit(0)
@@ -1129,17 +1226,24 @@ if __name__ == "__main__":
 
             recs = load_recommendations(args.ticker)
             if recs is None:
-                print(f"No recommendations found for {args.ticker.upper()}. Run --full first.")
+                logger.error(
+                    "No recommendations found for %s. Run --full first.",
+                    args.ticker.upper(),
+                    extra={"ticker": args.ticker.upper(), "step": "approve"},
+                )
                 sys.exit(1)
 
             pending = [r for r in recs.recommendations if r.status == "pending"]
             if not pending:
-                print(f"No pending recommendations for {args.ticker.upper()}.")
+                logger.info(
+                    "No pending recommendations for %s.",
+                    args.ticker.upper(),
+                    extra={"ticker": args.ticker.upper(), "step": "approve"},
+                )
                 _print_recommendations(recs)
                 sys.exit(0)
 
-            print(f"\nPending recommendations for {args.ticker.upper()}:")
-            print("─" * 60)
+            lines = [f"\nPending recommendations for {args.ticker.upper()}:", "─" * 60]
             for i, rec in enumerate(pending):
                 cur_str = f"{rec.current_value:.4f}" if rec.current_value is not None else "none"
                 prop_str = (
@@ -1147,20 +1251,23 @@ if __name__ == "__main__":
                     if isinstance(rec.proposed_value, float)
                     else str(rec.proposed_value)
                 )
-                print(f"  [{i}] [{rec.confidence.upper()}] {rec.agent}.{rec.field}")
-                print(f"        {cur_str}  →  {prop_str}")
-                print(f"        {rec.rationale}")
+                lines.append(f"  [{i}] [{rec.confidence.upper()}] {rec.agent}.{rec.field}")
+                lines.append(f"        {cur_str}  →  {prop_str}")
+                lines.append(f"        {rec.rationale}")
                 if rec.citation:
-                    print(f"        Citation: {rec.citation[:120]}")
-                print()
+                    lines.append(f"        Citation: {rec.citation[:120]}")
+                lines.append("")
 
-            print("Enter indices to approve (space-separated), or 'all', or blank to skip:")
-            raw_input = input("> ").strip().lower()
+            logger.info(
+                "\n".join(lines),
+                extra={"ticker": args.ticker.upper(), "step": "approve"},
+            )
+            raw_input = input("Enter indices to approve (space-separated), or 'all', or blank to skip:\n> ").strip().lower()
 
             if raw_input == "all":
                 indices = list(range(len(pending)))
             elif raw_input == "":
-                print("No items approved.")
+                logger.info("No items approved.", extra={"ticker": args.ticker.upper(), "step": "approve"})
                 sys.exit(0)
             else:
                 indices = []
@@ -1186,18 +1293,29 @@ if __name__ == "__main__":
 
             count = apply_approved_to_overrides(args.ticker)
             clear_valuation_overrides_cache()
-            print(f"\n✓ {count} override(s) written to config/valuation_overrides.yaml")
+            logger.info(
+                "\n%s override(s) written to config/valuation_overrides.yaml",
+                count,
+                extra={"ticker": args.ticker.upper(), "step": "approve"},
+            )
 
             if count > 0:
-                print(f"\nRe-running valuation for {args.ticker.upper()}...")
+                logger.info(
+                    "\nRe-running valuation for %s...",
+                    args.ticker.upper(),
+                    extra={"ticker": args.ticker.upper(), "step": "approve"},
+                )
                 from src.stage_04_pipeline.recommendations import preview_with_approvals
                 preview = preview_with_approvals(args.ticker, approved_fields)
                 if preview:
                     cur = preview.get("current_iv", {})
                     prop = preview.get("proposed_iv", {})
                     dlt = preview.get("delta_pct", {})
-                    print(f"\n  {'Scenario':<10}  {'Current IV':>12}  {'Proposed IV':>12}  {'Delta':>8}")
-                    print(f"  {'-'*10}  {'-'*12}  {'-'*12}  {'-'*8}")
+                    lines = [
+                        "",
+                        f"  {'Scenario':<10}  {'Current IV':>12}  {'Proposed IV':>12}  {'Delta':>8}",
+                        f"  {'-'*10}  {'-'*12}  {'-'*12}  {'-'*8}",
+                    ]
                     for scenario in ("bear", "base", "bull"):
                         c = cur.get(scenario)
                         p = prop.get(scenario)
@@ -1205,7 +1323,11 @@ if __name__ == "__main__":
                         c_str = f"${c:,.2f}" if c is not None else "—"
                         p_str = f"${p:,.2f}" if p is not None else "—"
                         d_str = f"{d:+.1f}%" if d is not None else "—"
-                        print(f"  {scenario.capitalize():<10}  {c_str:>12}  {p_str:>12}  {d_str:>8}")
+                        lines.append(f"  {scenario.capitalize():<10}  {c_str:>12}  {p_str:>12}  {d_str:>8}")
+                    logger.info(
+                        "\n".join(lines),
+                        extra={"ticker": args.ticker.upper(), "step": "approve"},
+                    )
             sys.exit(0)
 
         # ── --story-profile: generate LLM story driver profile ────────────────
@@ -1213,9 +1335,13 @@ if __name__ == "__main__":
             from src.stage_03_judgment.thesis_agent import ThesisAgent, write_story_driver_pending
             from src.stage_00_data import edgar_client
             from src.stage_02_valuation.templates.ic_memo import FilingsSummary, EarningsSummary
-            print(f"\n{'='*60}")
-            print(f"Story Profile Generation — {args.ticker.upper()}")
-            print(f"{'='*60}")
+            logger.info(
+                "\n%s\nStory Profile Generation — %s\n%s",
+                "=" * 60,
+                args.ticker.upper(),
+                "=" * 60,
+                extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+            )
             try:
                 agent = ThesisAgent()
                 # Use lightweight stubs so we don't need a full pipeline run
@@ -1231,27 +1357,45 @@ if __name__ == "__main__":
                 )
                 if profile:
                     path = write_story_driver_pending(args.ticker, profile)
-                    print(f"\n  Moat:          {profile.get('moat_strength')}/5")
-                    print(f"  Pricing power: {profile.get('pricing_power')}/5")
-                    print(f"  Cyclicality:   {profile.get('cyclicality')}")
-                    print(f"  Cap intensity: {profile.get('capital_intensity')}")
-                    print(f"  Gov risk:      {profile.get('governance_risk')}")
-                    print(f"  Moat years:    {profile.get('competitive_advantage_years')}")
+                    logger.info(
+                        "\n  Moat:          %s/5\n  Pricing power: %s/5\n  Cyclicality:   %s\n  Cap intensity: %s\n  Gov risk:      %s\n  Moat years:    %s",
+                        profile.get("moat_strength"),
+                        profile.get("pricing_power"),
+                        profile.get("cyclicality"),
+                        profile.get("capital_intensity"),
+                        profile.get("governance_risk"),
+                        profile.get("competitive_advantage_years"),
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
                     if profile.get("rationale"):
-                        print(f"\n  Rationale: {profile['rationale']}")
-                    print(f"\n  → Written to {path}")
-                    print(f"  → Set status: approved to apply on next valuation run")
+                        logger.info(
+                            "\n  Rationale: %s",
+                            profile["rationale"],
+                            extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                        )
+                    logger.info(
+                        "\n  → Written to %s\n  → Set status: approved to apply on next valuation run",
+                        path,
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
                 else:
-                    print("  ✗ Story profile generation failed")
+                    logger.error(
+                        "  Story profile generation failed",
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
             except Exception as exc:
-                print(f"  ✗ Story profile error: {exc}")
+                logger.error(
+                    "  Story profile error: %s",
+                    exc,
+                    extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                )
             if not args.json and not args.qoe_llm:
                 sys.exit(0)
 
         # ── deterministic valuation (default) ────────────────────────────────
         result = value_single_ticker(args.ticker)
         if result:
-            print(json.dumps(result, indent=2))
+            sys.stdout.write(f"{json.dumps(result, indent=2)}\n")
 
             # ── --qoe-llm: LLM normalisation + write pending override ─────────
             if getattr(args, "qoe_llm", False):
@@ -1266,13 +1410,17 @@ if __name__ == "__main__":
                     result, qoe=qoe_data, comps_detail=comps_data,
                     output_dir=json_dir, date_str=today,
                 )
-                print(f"\n✓ JSON: {out_path}")
-                print(f"✓ JSON (latest): {json_dir / (args.ticker.upper() + '_latest.json')}")
+                logger.info(
+                    "\nJSON export written to %s\nJSON latest written to %s",
+                    out_path,
+                    json_dir / (args.ticker.upper() + "_latest.json"),
+                    extra={"ticker": args.ticker.upper(), "step": "json_export"},
+                )
         else:
-            print(f"Could not value {args.ticker}")
+            logger.error("Could not value %s", args.ticker, extra={"ticker": args.ticker.upper(), "step": "valuation"})
     else:
         if args.full:
-            print("--full requires --ticker")
+            logger.error("--full requires --ticker", extra={"step": "cli"})
             sys.exit(1)
         tickers = None
         if args.limit:
@@ -1292,4 +1440,4 @@ if __name__ == "__main__":
                     result, qoe=qoe_data, comps_detail=comps_data,
                     output_dir=json_dir, date_str=today,
                 )
-            print(f"\n✓ JSON exports: {json_dir}")
+            logger.info("\nJSON exports written to %s", json_dir, extra={"step": "json_export"})

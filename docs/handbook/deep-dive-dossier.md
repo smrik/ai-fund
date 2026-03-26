@@ -26,6 +26,7 @@ The default structure is:
           08 Review Log.md
           09 KPI Tracker.md
           10 Publishable Memo.md
+          11 Research Notebook.md
           Sources/
         Model/
         Exports/
@@ -62,40 +63,65 @@ The PM authors or approves the judgment layer:
 
 This split is intentional. The system should help the PM preserve thinking and evidence, not hide decisions behind automation.
 
-## Deep Dive Sections In The Dashboard
+## Dashboard Operating Model
 
-The `Deep Dive` group exposes eight sections:
+The dossier no longer lives as a top-level dashboard destination. It now acts as a companion research layer around a simpler app shell.
 
-1. `Company Hub`
-   - initializes the dossier
-   - shows root paths and note skeleton
+The main shell is organized into five tabs:
 
-2. `Business`
-   - edits the long-form working notes for business, financial history, management, and KPI tracking
+1. `Overview`
+   - cross-functional ticker cockpit
+   - combines thesis, valuation, market pulse, and audit health
 
-3. `Model & Valuation`
-   - saves checkpoint snapshots of the current valuation state
-   - ties checkpoint history to model versions
+2. `Valuation`
+   - grouped around summary, DCF, comparables, and multiples
 
-4. `Sources`
-   - registers source IDs such as `S-001`
-   - creates source-note files under `Notes/Sources/`
-   - links workbook or file artifacts without copying them into the database
+3. `Market`
+   - grouped around macro, news and revisions, sentiment, and factor framing
 
-5. `Thesis Tracker`
-   - acts as the PM cockpit for the ticker
-   - shows current stance, what changed, thesis pillar health, catalyst status, continuity context, and the current diligence queue
-   - stores current PM tracker state and catalyst status without mutating archived evidence
+4. `Research`
+   - the working research board
+   - combines current stance, tracker context, and durable note blocks
 
-6. `Decision Log`
-   - preserves what action the PM took and why
+5. `Audit`
+   - pipeline review, filings evidence, dossier admin, exports, and operational checks
 
-7. `Review Log`
-   - preserves what happened later and what was learned
+This is deliberate. The shell is organized around PM jobs rather than internal implementation modules.
 
-8. `Publishable Memo`
-   - stores the outward-facing memo draft
-   - excludes private artifacts from the rendered public context
+## Dossier Companion
+
+The dossier now appears as a global right-side companion rail inside the dashboard instead of a standalone navigation tree.
+
+Use the `Show Notes Rail` toggle in the shell header to open or close the rail without leaving the current page. This keeps note capture context-linked while avoiding a permanent left-navigation burden.
+
+It is available from any loaded-ticker page and has three modes:
+
+1. `Scratchpad`
+   - temporary capture layer
+   - scoped to the current page context
+
+2. `Notebook`
+   - durable ticker notebook grouped by block type
+   - each type is sorted newest-first
+
+3. `Pinned`
+   - note blocks marked as especially important for the active research board
+
+The scratchpad is intentionally cheap and temporary. It does not enter the durable record until the PM promotes it.
+
+## Research And Audit Pages
+
+The `Research` tab is the working board, not a read-only memo archive.
+
+It should show:
+
+- current stance and tracker context
+- notable change since the last archived snapshot
+- diligence queue and open questions
+- note blocks grouped by type
+- the selected evidence context that supports the current view
+
+The `Audit` tab now absorbs operational review, filings evidence, exports, and dossier administration. Keep it auditable, but do not make it the primary thinking surface.
 
 ## Source IDs And Artifact Discipline
 
@@ -133,6 +159,39 @@ This matters because the PM needs to know both:
 - what the PM believes now after reviewing new evidence
 
 The tracker does not rewrite archived memos.
+
+## Research Notebook Blocks
+
+Promoted scratchpad entries become durable note blocks.
+
+Each note block stores:
+
+- block type
+- title
+- body
+- timestamp
+- page context
+- linked snapshot id
+- linked source ids
+- linked artifact ids
+- pinned flag
+
+The notebook is type-first:
+
+- `thesis`
+- `risk`
+- `catalyst`
+- `question`
+- `decision`
+- `review`
+- `evidence`
+- `general`
+
+Within each type, blocks are sorted newest-first.
+
+This preserves both semantic organization and time continuity. A pure timeline becomes noisy too quickly, and a pure static note tree hides evolution.
+
+The durable notebook is also mirrored into `11 Research Notebook.md` so the research record remains inspectable outside the app.
 
 ## Thesis Tracker V2: PM Cockpit
 

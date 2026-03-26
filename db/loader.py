@@ -1066,3 +1066,47 @@ def insert_review_log_entry(conn: sqlite3.Connection, row: dict[str, Any]) -> in
     )
     conn.commit()
     return int(cursor.lastrowid)
+
+
+def insert_dossier_note_block(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a durable dossier note block."""
+    row = dict(row)
+    row["ticker"] = str(row["ticker"]).upper()
+    row.setdefault("linked_sources_json", "[]")
+    row.setdefault("linked_artifacts_json", "[]")
+    row.setdefault("status", "active")
+    row.setdefault("pinned_to_report", 0)
+    cursor = conn.execute(
+        """
+        INSERT INTO dossier_note_blocks (
+            ticker,
+            block_ts,
+            block_type,
+            title,
+            body,
+            source_context_json,
+            linked_snapshot_id,
+            linked_sources_json,
+            linked_artifacts_json,
+            status,
+            pinned_to_report,
+            created_by
+        ) VALUES (
+            :ticker,
+            :block_ts,
+            :block_type,
+            :title,
+            :body,
+            :source_context_json,
+            :linked_snapshot_id,
+            :linked_sources_json,
+            :linked_artifacts_json,
+            :status,
+            :pinned_to_report,
+            :created_by
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)

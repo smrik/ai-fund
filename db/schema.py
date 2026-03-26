@@ -570,6 +570,22 @@ def create_tables(conn: sqlite3.Connection | None = None):
         created_by                    TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS dossier_note_blocks (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker               TEXT NOT NULL,
+        block_ts             TEXT NOT NULL,
+        block_type           TEXT NOT NULL,
+        title                TEXT NOT NULL,
+        body                 TEXT NOT NULL,
+        source_context_json  TEXT NOT NULL,
+        linked_snapshot_id   INTEGER,
+        linked_sources_json  TEXT,
+        linked_artifacts_json TEXT,
+        status               TEXT NOT NULL,
+        pinned_to_report     INTEGER NOT NULL DEFAULT 0,
+        created_by           TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS wacc_methodology_audit (
         id                    INTEGER PRIMARY KEY AUTOINCREMENT,
         event_ts              TEXT NOT NULL,
@@ -700,6 +716,7 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_dossier_catalysts_ticker_key ON dossier_catalysts(ticker, catalyst_key);
     CREATE INDEX IF NOT EXISTS idx_dossier_decision_log_ticker_ts ON dossier_decision_log(ticker, decision_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_dossier_review_log_ticker_ts ON dossier_review_log(ticker, review_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_dossier_note_blocks_ticker_type_ts ON dossier_note_blocks(ticker, block_type, block_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_wacc_methodology_audit_ticker_ts ON wacc_methodology_audit(ticker, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);

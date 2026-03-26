@@ -114,6 +114,11 @@ Every valuation row includes:
 - Writes `latest.csv` every run
 - Optional multi-tab Excel for manual review
 
+Operational logging behavior:
+
+- `batch_runner.py` now routes lifecycle, warning, and export-path diagnostics through the shared CLI logging setup in `src/logging_config.py`
+- the operator-facing summary remains concise, while `ALPHA_POD_LOG_FILE` can capture machine-readable JSON log lines for debugging and audit trails
+
 Practical usage pattern:
 
 - Use SQLite as system-of-record for analytics and automation
@@ -131,6 +136,20 @@ Current specialized modules:
 Guardrail:
 
 - Agent outputs should be treated as contextual overlays unless promoted through a deterministic acceptance rule.
+
+## Dashboard Shell
+
+The Streamlit dashboard is the operator-facing review surface for the valuation workflow.
+
+Current shell model:
+
+- `Overview` for the cross-functional cockpit
+- `Valuation` for DCF, comparables, and multiples
+- `Market` for macro, revisions, sentiment, and factor context
+- `Research` for the working research board and dossier-backed note blocks
+- `Audit` for pipeline review, filings evidence, exports, and operational checks
+
+The dossier companion is available as a right-side collapsible rail from loaded-ticker pages. Use the `Show Notes Rail` toggle in the shell header to open or close it without leaving the current analysis page.
 
 ## Legacy Full-Memo Path
 

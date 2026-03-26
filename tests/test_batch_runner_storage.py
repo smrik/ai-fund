@@ -1,4 +1,5 @@
 import csv
+import logging
 import sqlite3
 from pathlib import Path
 
@@ -119,3 +120,21 @@ def test_run_batch_with_xlsx_flag_calls_excel_export(tmp_path, monkeypatch):
     assert len(calls) == 1
     assert calls[0].name.startswith("batch_valuation_")
     assert calls[0].suffix == ".xlsx"
+
+
+def test_run_batch_logs_summary_without_printing_contracts(tmp_path, monkeypatch, caplog):
+    output_dir = tmp_path / "valuations"
+    db_path = tmp_path / "alpha_pod.db"
+
+    monkeypatch.setattr(batch_runner, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(batch_runner, "DB_PATH", db_path)
+    monkeypatch.setattr(batch_runner.time, "sleep", lambda _: None)
+    monkeypatch.setattr(batch_runner, "value_single_ticker", lambda ticker: _sample_row(ticker, 25.0))
+    monkeypatch.setattr(batch_runner, "export_to_excel", lambda results, output_path: None)
+
+    with caplog.at_level(logging.INFO, logger=batch_runner.__name__):
+        batch_runner.run_batch(tickers=["AAA"], export_xlsx=False)
+
+    assert "Completed: 1 valued, 0 skipped" in caplog.text
+    assert "CSV export written to" in caplog.text
+    assert "SQLite snapshot written to" in caplog.text

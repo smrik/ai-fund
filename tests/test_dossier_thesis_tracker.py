@@ -276,6 +276,7 @@ def test_build_thesis_tracker_view_returns_pm_cockpit_contract(monkeypatch):
         assert thesis_view["what_changed"]["conviction_delta"] == {"from": "low", "to": "high"}
         assert thesis_view["what_changed"]["base_iv_delta"] == 15.0
         assert thesis_view["what_changed"]["catalysts_added"] == ["Mainframe cycle", "Consulting stabilization"]
+        assert "Action changed from WATCH to BUY." in thesis_view["what_changed"]["summary_lines"]
         assert thesis_view["what_changed"]["risks_added"] == ["AI monetization timing"]
         assert thesis_view["what_changed"]["open_questions_added"] == ["Can software mix hold?"]
         assert thesis_view["pillar_board"][0]["pillar_id"] == "pillar-1"
@@ -288,6 +289,8 @@ def test_build_thesis_tracker_view_returns_pm_cockpit_contract(monkeypatch):
         assert thesis_view["continuity"]["latest_review"]["review_title"] == "Q1 Review"
         assert thesis_view["continuity"]["latest_checkpoint"]["model_version"] == "v02"
         assert thesis_view["next_queue"]["open_questions"] == ["Can consulting stabilize?"]
+        assert thesis_view["next_queue"]["open_question_count"] == 1
+        assert thesis_view["next_queue"]["upcoming_catalyst_count"] == 2
         assert thesis_view["audit_flags"] == []
 
 
@@ -523,3 +526,60 @@ def test_build_thesis_tracker_view_preserves_pm_state_across_title_matched_ids(m
         assert thesis_view["pillar_board"][0]["pm_status"] == "monitor"
         assert thesis_view["pillar_board"][0]["pm_note"] == "Old note."
         assert thesis_view["catalyst_board"]["watching"][0]["title"] == "Margin recovery"
+
+
+def test_build_thesis_tracker_view_dedupes_upcoming_catalysts_by_title_and_status(monkeypatch):
+    from src.stage_04_pipeline import dossier_index, dossier_view, report_archive
+
+    with _db_factory() as factory:
+        monkeypatch.setattr(dossier_index, "get_connection", factory)
+        monkeypatch.setattr(dossier_view, "get_connection", factory)
+        monkeypatch.setattr(report_archive, "get_connection", factory)
+        timestamps = iter(["2026-03-18T20:00:00+00:00", "2026-03-18T21:00:00+00:00"])
+        monkeypatch.setattr(report_archive, "_now", lambda: next(timestamps))
+
+        report_archive.save_report_snapshot(
+            "IBM",
+            _build_memo(key_catalysts=["Q1 earnings"]),
+            dcf_audit=None,
+            comps_view=None,
+            market_intel_view=None,
+            filings_browser_view=None,
+            run_trace=[],
+        )
+        report_archive.save_report_snapshot(
+            "IBM",
+            _build_memo(
+                structured_catalysts=[
+                    {"catalyst_key": "cat-1", "title": "Q1 earnings", "description": "archive row"},
+                    {"catalyst_key": "cat-2", "title": "Q1 earnings", "description": "duplicate archive row"},
+                ],
+            ),
+            dcf_audit=None,
+            comps_view=None,
+            market_intel_view=None,
+            filings_browser_view=None,
+            run_trace=[],
+        )
+        dossier_index.upsert_tracked_catalyst(
+            {
+                "ticker": "IBM",
+                "catalyst_key": "cat-1",
+                "title": "Q1 earnings",
+                "description": "pm row",
+                "priority": "high",
+                "status": "watching",
+                "expected_date": None,
+                "expected_window_start": None,
+                "expected_window_end": None,
+                "status_reason": "waiting",
+                "source_origin": "pm",
+                "source_snapshot_id": 2,
+                "evidence_json": json.dumps({}, sort_keys=True),
+            }
+        )
+
+        thesis_view = dossier_view.build_thesis_tracker_view("IBM")
+
+        assert thesis_view["next_queue"]["upcoming_catalyst_count"] == 1
+        assert [row["title"] for row in thesis_view["next_queue"]["upcoming_catalysts"]] == ["Q1 earnings"]

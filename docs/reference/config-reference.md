@@ -27,7 +27,7 @@ flowchart TD
 ## File Roles
 
 - `config/config.yaml`: single source of truth for committed project configuration.
-- `.env`: secrets such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, and `FRED_API_KEY`, plus optional local overrides for runtime values.
+- `.env`: secrets such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, and `FRED_API_KEY`, plus optional local overrides for runtime values such as CLI logging.
 - `config/__init__.py`: loader/facade. This is code, not an independent config source.
 - `config/settings.py`: compatibility shim for older imports. New code should prefer `config` or `APP_CONFIG` directly.
 
@@ -61,6 +61,15 @@ Model defaults used by the judgment layer.
 Supported local overrides in `.env`:
 - `LLM_MODEL`
 - `LLM_MODEL_FAST`
+
+### Logging Overrides
+
+These are machine-local runtime controls for CLI entry points that opt into `src/logging_config.py`.
+
+| Env Var | Meaning |
+|---|---|
+| `ALPHA_POD_LOG_LEVEL` | Root CLI log level, default `INFO` |
+| `ALPHA_POD_LOG_FILE` | Optional file path for JSON-formatted log lines |
 
 ### `portfolio`
 

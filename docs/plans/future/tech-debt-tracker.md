@@ -20,6 +20,7 @@ When fixed, move to the relevant sprint's completed log.
 | TD-09 | `dashboard/app.py`, `src/stage_04_pipeline/dcf_audit.py` | Dashboard lacks a model-integrity panel for balance-sheet ties, cash-flow ties, terminal-value concentration, and logic warnings despite existing DCF/WACC surfaces | High | 2026-03-15 |
 | TD-10 | `dashboard/app.py`, `src/stage_04_pipeline/news_materiality.py`, `src/stage_04_pipeline/agent_cache.py` | No structured thesis-tracker or earnings-update surface for beat/miss, old-vs-new estimates, catalyst calendar, and thesis-pillar drift over time | High | 2026-03-15 |
 | TD-11 | `dashboard/app.py`, `src/stage_04_pipeline/filings_browser.py`, `src/stage_00_data/edgar_client.py` | Filings Browser is audit-friendly but still text-first; it does not yet expose structured XBRL/statement-table browsing or exhibit-level navigation | Medium | 2026-03-15 |
+| TD-26 | `src/stage_02_valuation/batch_runner.py`, `src/stage_04_pipeline/daily_refresh.py`, `src/stage_04_pipeline/refresh.py`, `src/stage_03_judgment/base_agent.py` | Structured logging migration is only partially complete. `batch_runner.py` first tranche moved to shared logging, but the remaining CLI/operator surfaces and adjacent pipeline modules still need to leave the print-debt allowlist and converge on one logging path. | Medium | 2026-03-27 |
 
 ---
 
@@ -38,4 +39,5 @@ When fixed, move to the relevant sprint's completed log.
 | TD-20 | **Batch error summary** — `batch_runner.py` collects failed tickers and prints summary + writes `batch_errors.json` at end of run. | Valuation pipeline deep gap fix | 2026-03-16 |
 | TD-21 | **DCF IV history in DB** — Added `dcf_valuations` table (PK: ticker, run_date) with iv_bear/base/bull/expected, wacc, exit_multiple, source flags. `persist_results_to_db()` returns 3-tuple. | Valuation pipeline deep gap fix | 2026-03-16 |
 | TD-22 | **Comps target EBIT/EPS** — `batch_runner.py` enriches target dict with `ebit_ltm_mm` and `eps_ltm` before calling comps; `build_comps_detail_from_yfinance()` reads them from `target_data`. | Valuation pipeline deep gap fix | 2026-03-16 |
+| TD-24 | Added GitHub Actions CI, pre-commit enforcement, branch-protection guidance for `main`, and expanded architecture-boundary tests to freeze current `print()`/`sqlite3.connect()` debt while blocking new spread. | Infrastructure hardening | 2026-03-27 |
 

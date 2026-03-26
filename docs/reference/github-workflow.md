@@ -2,6 +2,19 @@
 
 This repo uses a trackable, review-first workflow.
 
+## Branch Protection For `main`
+
+Configure `main` with these rules:
+
+1. Require a pull request before merging.
+2. Require branches to be up to date before merging.
+3. Require status checks to pass before merging.
+4. Require the GitHub Actions check `CI / pre-commit`.
+5. Restrict direct pushes to `main`.
+6. Disable force pushes to `main`.
+
+The required check name matches the workflow/job names in [`.github/workflows/ci.yml`](/mnt/c/Projects/03-Finance/ai-fund/.github/workflows/ci.yml): workflow `CI`, job `pre-commit`, status check `CI / pre-commit`.
+
 ## Default Flow
 
 1. Update local `main`.

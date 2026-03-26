@@ -24,6 +24,17 @@ python setup.py
 
 ## Core Command Set
 
+### Local Dashboard Validation
+
+Canonical local UI validation is host-side PowerShell, not WSL:
+
+```powershell
+ca ai-fund
+python -m streamlit run dashboard/app.py --server.headless true --server.address 127.0.0.1 --server.port 8502 --browser.serverAddress 127.0.0.1 --browser.serverPort 8502
+```
+
+For the full Playwright smoke-test flow, see `docs/handbook/local-dashboard-validation.md`.
+
 ### Stage 1 Screen
 ```bash
 python -m src.stage_01_screening.stage1_filter

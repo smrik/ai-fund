@@ -7,6 +7,7 @@ from typing import Any
 
 from db.schema import create_tables, get_connection
 from src.stage_04_pipeline.dossier_index import (
+    list_dossier_note_blocks,
     list_decision_log,
     list_review_log,
     list_tracked_catalysts,
@@ -185,6 +186,18 @@ def _sort_catalysts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     )
 
 
+def _dedupe_catalyst_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for row in rows:
+        key = _stable_slug(row.get("title") or "")
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    return deduped
+
+
 def _build_catalyst_board(
     latest_snapshot: dict[str, Any],
     tracked_catalysts: list[dict[str, Any]],
@@ -261,7 +274,7 @@ def _list_delta(latest_items: list[str], prior_items: list[str]) -> tuple[list[s
 
 def _build_what_changed(latest: dict[str, Any], prior: dict[str, Any] | None) -> dict[str, Any]:
     if prior is None:
-        return {
+        payload = {
             "action_delta": {"from": None, "to": latest.get("action")},
             "conviction_delta": {"from": None, "to": latest.get("conviction")},
             "base_iv_delta": None,
@@ -275,6 +288,8 @@ def _build_what_changed(latest: dict[str, Any], prior: dict[str, Any] | None) ->
             "pillars_added": [row.get("title") for row in latest.get("thesis_pillars") or [] if row.get("title")],
             "pillars_removed": [],
         }
+        payload["summary_lines"] = ["No prior archived snapshot available yet."]
+        return payload
 
     latest_catalysts = [row.get("title") for row in latest.get("structured_catalysts") or [] if row.get("title")]
     prior_catalysts = [row.get("title") for row in prior.get("structured_catalysts") or [] if row.get("title")]
@@ -287,7 +302,7 @@ def _build_what_changed(latest: dict[str, Any], prior: dict[str, Any] | None) ->
     latest_upside = _coerce_float(latest.get("upside_pct"))
     prior_upside = _coerce_float(prior.get("upside_pct"))
 
-    return {
+    payload = {
         "action_delta": {"from": prior.get("action"), "to": latest.get("action")},
         "conviction_delta": {"from": prior.get("conviction"), "to": latest.get("conviction")},
         "base_iv_delta": (
@@ -305,6 +320,29 @@ def _build_what_changed(latest: dict[str, Any], prior: dict[str, Any] | None) ->
         "pillars_added": pillars_added,
         "pillars_removed": pillars_removed,
     }
+    summary_lines: list[str] = []
+    if payload["action_delta"]["from"] != payload["action_delta"]["to"]:
+        summary_lines.append(f"Action changed from {payload['action_delta']['from'] or '—'} to {payload['action_delta']['to'] or '—'}.")
+    if payload["conviction_delta"]["from"] != payload["conviction_delta"]["to"]:
+        summary_lines.append(
+            f"Conviction changed from {payload['conviction_delta']['from'] or '—'} to {payload['conviction_delta']['to'] or '—'}."
+        )
+    if payload["base_iv_delta"] not in (None, 0):
+        summary_lines.append(f"Base IV moved by {payload['base_iv_delta']:+.2f}.")
+    if catalysts_added:
+        summary_lines.append(f"{len(catalysts_added)} catalyst{'s' if len(catalysts_added) != 1 else ''} added.")
+    if catalysts_removed:
+        summary_lines.append(f"{len(catalysts_removed)} catalyst{'s' if len(catalysts_removed) != 1 else ''} removed.")
+    if risks_added or risks_removed:
+        summary_lines.append(f"Risk framing changed ({len(risks_added)} added, {len(risks_removed)} removed).")
+    if questions_added or questions_closed:
+        summary_lines.append(
+            f"Open-question set changed ({len(questions_added)} added, {len(questions_closed)} closed)."
+        )
+    if pillars_added or pillars_removed:
+        summary_lines.append(f"Pillar set changed ({len(pillars_added)} added, {len(pillars_removed)} removed).")
+    payload["summary_lines"] = summary_lines or ["No material thesis delta versus the prior archived snapshot."]
+    return payload
 
 
 def _review_due_bucket(review_due_date: str | None) -> str | None:
@@ -355,6 +393,63 @@ def build_model_checkpoint_view(ticker: str) -> dict[str, Any]:
         "latest_checkpoint": latest,
         "prior_checkpoint": prior,
         "diff": diff,
+    }
+
+
+_NOTEBOOK_TYPES = [
+    "thesis",
+    "risk",
+    "catalyst",
+    "question",
+    "decision",
+    "review",
+    "evidence",
+    "general",
+]
+
+
+def build_dossier_notebook_view(ticker: str) -> dict[str, Any]:
+    dossier_ticker = _coerce_ticker(ticker)
+    rows = list_dossier_note_blocks(dossier_ticker)
+    blocks_by_type: dict[str, list[dict[str, Any]]] = {key: [] for key in _NOTEBOOK_TYPES}
+    counts: dict[str, int] = {key: 0 for key in _NOTEBOOK_TYPES}
+    pinned_count = 0
+    for row in rows:
+        normalized = dict(row)
+        normalized["source_context"] = _parse_json(row.get("source_context_json"), fallback={})
+        normalized["linked_sources"] = _parse_json(row.get("linked_sources_json"), fallback=[])
+        normalized["linked_artifacts"] = _parse_json(row.get("linked_artifacts_json"), fallback=[])
+        block_type = (row.get("block_type") or "general").lower()
+        if block_type not in blocks_by_type:
+            block_type = "general"
+        blocks_by_type[block_type].append(normalized)
+        counts[block_type] += 1
+        if int(row.get("pinned_to_report") or 0):
+            pinned_count += 1
+    counts["all"] = len(rows)
+    return {
+        "available": bool(rows),
+        "ticker": dossier_ticker,
+        "blocks_by_type": blocks_by_type,
+        "counts": counts,
+        "pinned_count": pinned_count,
+    }
+
+
+def build_research_board_view(ticker: str) -> dict[str, Any]:
+    dossier_ticker = _coerce_ticker(ticker)
+    tracker = build_thesis_tracker_view(dossier_ticker)
+    notebook = build_dossier_notebook_view(dossier_ticker)
+    publishable_note = ""
+    try:
+        publishable_note = read_dossier_note(dossier_ticker, "publishable_memo")
+    except Exception:
+        publishable_note = ""
+    return {
+        "ticker": dossier_ticker,
+        "tracker": tracker,
+        "notebook": notebook,
+        "publishable_memo_preview": publishable_note,
     }
 
 
@@ -442,9 +537,12 @@ def build_thesis_tracker_view(ticker: str) -> dict[str, Any]:
         },
     }
 
+    upcoming_catalysts = _dedupe_catalyst_rows(catalyst_board["urgent_open"][:3] + catalyst_board["watching"][:2])
     next_queue = {
         "open_questions": tracker_open_questions,
-        "upcoming_catalysts": catalyst_board["urgent_open"][:3] + catalyst_board["watching"][:2],
+        "open_question_count": len(tracker_open_questions),
+        "upcoming_catalysts": upcoming_catalysts,
+        "upcoming_catalyst_count": len(upcoming_catalysts),
         "review_status": review_due_bucket,
         "missing_evidence_flags": [flag for flag in audit_flags if flag in {"legacy_pillar_fallback", "legacy_catalyst_fallback", "no_pillars", "no_catalysts"}],
     }

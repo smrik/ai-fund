@@ -120,6 +120,7 @@ def _football_field(
     analyst_target_mean: float | None,
 ) -> dict:
     markers: list[dict] = []
+    ranges: list[dict] = []
     values: list[float] = []
     if current_price is not None:
         current_value = float(current_price)
@@ -127,18 +128,32 @@ def _football_field(
         markers.append({"label": "Current Price", "value": current_value, "type": "spot"})
     for metric_name, payload in valuation_by_metric.items():
         label_prefix = payload.get("label") or METRIC_LABELS.get(metric_name, metric_name)
+        bear = payload.get("bear")
+        base = payload.get("base")
+        bull = payload.get("bull")
+        for band_value in (bear, base, bull):
+            if band_value is not None:
+                values.append(float(band_value))
+        if bear is not None or base is not None or bull is not None:
+            ranges.append(
+                {
+                    "metric": metric_name,
+                    "label": label_prefix,
+                    "bear": float(bear) if bear is not None else None,
+                    "base": float(base) if base is not None else None,
+                    "bull": float(bull) if bull is not None else None,
+                }
+            )
         for band in ("bear", "base", "bull"):
             band_value = payload.get(band)
             if band_value is None:
                 continue
-            numeric = float(band_value)
-            values.append(numeric)
             markers.append(
                 {
                     "label": f"{label_prefix} {band.title()}",
                     "metric": metric_name,
                     "band": band,
-                    "value": numeric,
+                    "value": float(band_value),
                     "type": "range_point",
                 }
             )
@@ -147,6 +162,7 @@ def _football_field(
         values.append(analyst_value)
         markers.append({"label": "Analyst Target Mean", "value": analyst_value, "type": "spot"})
     return {
+        "ranges": ranges,
         "markers": markers,
         "range_min": min(values) if values else None,
         "range_max": max(values) if values else None,
@@ -183,7 +199,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             "valuation_range": {},
             "valuation_range_by_metric": {},
             "target_vs_peers": {"target": {}, "peer_medians": {}, "deltas": {}},
-            "football_field": {"markers": [], "range_min": None, "range_max": None},
+            "football_field": {"ranges": [], "markers": [], "range_min": None, "range_max": None},
             "historical_multiples_summary": {"available": False, "metrics": {}, "audit_flags": []},
             "audit_flags": ["No CIQ comps detail available"],
         }

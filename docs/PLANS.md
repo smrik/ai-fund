@@ -5,7 +5,9 @@ This file is the top-level documentation guide for Alpha Pod. Keep it current at
 The repository follows a harness-style structure:
 
 - `AGENTS.md` is the short operating map for coding agents.
+- `.agent/session-state.md` is the lightweight handoff log for the next session.
 - `docs/` is the system of record for humans and agents.
+- `docs/plans/active/` holds the single canonical implementation plan for each non-trivial workstream.
 - each important concept should have one canonical home
 - finished work should move out of `active` areas quickly
 - stale docs should be archived, not left next to current guidance
@@ -54,6 +56,8 @@ When creating or maintaining plans:
 
 - create new canonical plans under `docs/plans/`
 - put current work in `docs/plans/active/`
+- keep exactly one active canonical plan per live workstream
+- update the active plan as implementation reality changes; do not leave the plan frozen while code moves
 - move shipped plans to `docs/plans/completed/`
 - move superseded planning material to `docs/plans/archive/`
 - keep future ideas and backlog docs in `docs/plans/future/`
@@ -61,14 +65,28 @@ When creating or maintaining plans:
 
 Historical execution notes may remain under `docs/exec-plans/`, but they are supporting artifacts rather than the main source of truth.
 
+Session continuity rules:
+
+- read `.agent/session-state.md` at the start of each session if it exists
+- update `.agent/session-state.md` before handoff or when stopping mid-stream
+- treat session state as a resume note, not as a replacement for the canonical plan and docs
+
+Branch hygiene rules:
+
+- before creating a new branch, check whether `main` is both clean and pushed to GitHub
+- if `main` is dirty or ahead of `origin/main`, surface that explicitly instead of silently branching off stale state
+- when the user says they want to start fresh branch work, prefer getting `main` fully up to date first unless they explicitly choose stacked or deferred integration
+
 ## Maintenance Standard
 
 These rules are mandatory:
 
 - `AGENTS.md` must stay concise and point to canonical docs instead of duplicating them
+- `AGENTS.md` should explain how to find the current plan and handoff state, not restate plan content
 - `docs/index.md` must reflect the actual structure on disk
 - `mkdocs.yml` must match the current published documentation structure
 - stale active plans must be moved to `completed/` or `archive/`
+- active plans must include current scope, verification expectations, and next steps that match the codebase
 - duplicate root-level docs should be removed once a canonical docs copy exists
 - setup docs must match the actual environment files and ignore rules
 

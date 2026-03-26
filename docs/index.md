@@ -12,6 +12,7 @@ Start here when you need to understand how the repository is organized, where cu
 - [Architecture Overview](./design-docs/architecture-overview.md)
 - [Core Beliefs](./design-docs/core-beliefs.md)
 - [Workflow End To End](./handbook/workflow-end-to-end.md)
+- [Local Dashboard Validation](./handbook/local-dashboard-validation.md)
 
 ## Current System
 

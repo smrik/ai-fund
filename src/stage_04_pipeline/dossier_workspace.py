@@ -19,6 +19,7 @@ NOTE_TEMPLATES: dict[str, dict[str, str | int]] = {
     "review_log": {"filename": "08 Review Log", "title": "08 Review Log", "section_kind": "review_log", "is_private": 0},
     "kpi_tracker": {"filename": "09 KPI Tracker", "title": "09 KPI Tracker", "section_kind": "kpi_tracker", "is_private": 0},
     "publishable_memo": {"filename": "10 Publishable Memo", "title": "10 Publishable Memo", "section_kind": "publishable_memo", "is_private": 0},
+    "research_notebook": {"filename": "11 Research Notebook", "title": "11 Research Notebook", "section_kind": "research_notebook", "is_private": 0},
 }
 
 WORKSPACE_DIRS = ("Notes", "Notes/Sources", "Model", "Exports", "Filings", "Decks", "Transcripts", "Private")
@@ -106,6 +107,18 @@ def _default_note_body(ticker: str, company_name: str | None, note_slug: str) ->
                 "## Sources",
             ]
         )
+    elif note_slug == "research_notebook":
+        lines.extend(
+            [
+                "## How To Use",
+                "",
+                "- Promoted scratchpad entries are appended here as durable note blocks.",
+                "- Use block types to keep thesis, risk, catalyst, and review thinking organized.",
+                "",
+                "## Notebook Blocks",
+                "",
+            ]
+        )
     else:
         lines.append(f"Working note for `{note_meta['section_kind']}`.")
     lines.append("")
@@ -188,6 +201,17 @@ def ensure_dossier_source_note(ticker: str, source_id: str, title: str) -> Path:
         ]
         path.write_text("\n".join(lines), encoding="utf-8")
     return path
+
+
+def append_research_notebook_block(ticker: str, markdown_block: str) -> None:
+    root_path = _locate_dossier_root(ticker)
+    notebook_path = _note_path(root_path, "research_notebook")
+    existing = notebook_path.read_text(encoding="utf-8")
+    suffix = markdown_block.strip()
+    if not suffix:
+        return
+    updated = existing.rstrip() + "\n\n---\n\n" + suffix + "\n"
+    notebook_path.write_text(updated, encoding="utf-8")
 
 
 def normalize_linked_artifact_path(path_value: str | Path, *, path_mode: str = "absolute") -> dict[str, Any]:

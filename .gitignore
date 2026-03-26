@@ -4,6 +4,7 @@ __pycache__/
 .pytest_cache/
 .pytest_tmp/
 .pytest-tmp/
+.pytest-tmp*/
 pytest_basetemp_*/
 tmp*/
 
@@ -28,6 +29,21 @@ data/regime_model.pkl
 
 # Excel temp files
 ~$*.xlsx
+
+# Local automation and browser scratch
+.playwright-cli/
+.playwright-*.png
+.playwright-*.log
+.playwright-*.err.log
+.playwright-*.out.log
+.pwtmp/
+.streamlit/
+.tmp-*
+streamlit-*.log
+streamlit-*.out.log
+streamlit-*.err.log
+test-results/
+.venv/
 
 # Editor/OS noise
 .DS_Store

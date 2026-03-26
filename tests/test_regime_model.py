@@ -154,3 +154,15 @@ def test_detect_current_regime_no_data_returns_neutral():
     assert isinstance(result, RegimeState)
     assert result.label == "Neutral"
     assert result.available is False
+
+
+def test_detect_current_regime_short_circuits_when_hmmlearn_missing():
+    with patch("src.stage_02_valuation.regime_model._has_hmmlearn", return_value=False):
+        from src.stage_02_valuation.regime_model import detect_current_regime
+
+        result = detect_current_regime(retrain=False)
+
+    assert isinstance(result, RegimeState)
+    assert result.label == "Neutral"
+    assert result.available is False
+    assert result.error == "hmmlearn not installed"

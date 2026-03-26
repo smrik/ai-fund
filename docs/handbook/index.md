@@ -15,6 +15,8 @@ It is written for two audiences:
 - [Valuation Task Breakdown](./valuation-task-breakdown.md)
 - [Engineering Deep Dive](./engineering-deep-dive.md)
 - [Operations Runbook](./operations-runbook.md)
+- [Local Dashboard Validation](./local-dashboard-validation.md)
+- [WSL Playwright Fallback](./wsl-playwright.md)
 - [Quality And Verification](./quality-and-verification.md)
 - [Deep Dive Dossier](./deep-dive-dossier.md)
 

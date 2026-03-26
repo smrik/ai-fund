@@ -9,6 +9,7 @@ mapping HMM states to economic interpretation via emission means.
 """
 from __future__ import annotations
 
+import importlib.util
 import logging
 import pickle
 from dataclasses import dataclass, field
@@ -67,6 +68,10 @@ class ScenarioWeights:
 def _model_path():
     from config import ROOT_DIR
     return ROOT_DIR / "data" / "regime_model.pkl"
+
+
+def _has_hmmlearn() -> bool:
+    return importlib.util.find_spec("hmmlearn") is not None
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +309,9 @@ def detect_current_regime(retrain: bool = False) -> RegimeState:
         feature_columns: list[str] = []
 
         pkl_path = _model_path()
+
+        if not _has_hmmlearn():
+            return _neutral_fallback(error="hmmlearn not installed")
 
         # --- Load or train ---
         if not retrain and pkl_path.exists():

@@ -9,8 +9,11 @@ APP_PATH = Path("dashboard/app.py")
 
 def test_dashboard_app_delegates_deep_dive_rendering_to_helper_module():
     source = APP_PATH.read_text(encoding="utf-8")
+    research_source = Path("dashboard/sections/research.py").read_text(encoding="utf-8")
+    audit_source = Path("dashboard/sections/audit.py").read_text(encoding="utf-8")
 
-    assert "from dashboard.deep_dive_sections import render_deep_dive_section" in source
+    assert "from dashboard.deep_dive_sections import (" not in source
+    assert "SECTION_REGISTRY[selected_primary_tab]" in source
     assert 'if selected_section == "Company Hub":' not in source
     assert 'if selected_section == "Business":' not in source
     assert 'if selected_section == "Sources":' not in source
@@ -19,7 +22,12 @@ def test_dashboard_app_delegates_deep_dive_rendering_to_helper_module():
     assert 'if selected_section == "Decision Log":' not in source
     assert 'if selected_section == "Review Log":' not in source
     assert 'if selected_section == "Publishable Memo":' not in source
-    assert "render_deep_dive_section(" in source
+    assert "render_company_hub(" in audit_source
+    assert "render_business(" in audit_source
+    assert "render_model_and_valuation(" in audit_source
+    assert "render_sources(" in audit_source
+    assert "render_thesis_tracker(" in research_source
+    assert "render_decision_log(" in research_source
 
 
 def test_deep_dive_helper_module_exposes_expected_section_registry():

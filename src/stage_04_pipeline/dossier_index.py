@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from db.loader import (
+    insert_dossier_note_block as _insert_dossier_note_block_row,
     insert_decision_log_entry as _insert_decision_log_entry_row,
     insert_model_checkpoint as _insert_model_checkpoint_row,
     insert_review_log_entry as _insert_review_log_entry_row,
@@ -222,4 +223,28 @@ def list_review_log(ticker: str) -> list[dict[str, Any]]:
             """,
             [dossier_ticker],
         ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def insert_dossier_note_block(row: dict[str, Any]) -> int:
+    with get_connection() as conn:
+        _ensure_schema(conn)
+        return _insert_dossier_note_block_row(conn, row)
+
+
+def list_dossier_note_blocks(ticker: str, *, block_type: str | None = None) -> list[dict[str, Any]]:
+    dossier_ticker = _coerce_ticker(ticker)
+    query = """
+        SELECT *
+        FROM dossier_note_blocks
+        WHERE ticker = ?
+    """
+    params: list[Any] = [dossier_ticker]
+    if block_type:
+        query += " AND block_type = ?"
+        params.append(block_type)
+    query += " ORDER BY block_ts DESC, id DESC"
+    with get_connection() as conn:
+        _ensure_schema(conn)
+        rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
