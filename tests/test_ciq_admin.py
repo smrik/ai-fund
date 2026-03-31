@@ -90,8 +90,6 @@ def test_get_ciq_runtime_status_warns_when_no_live_workbooks_exist(tmp_path, mon
 
 
 def test_run_ciq_operation_ingest_saved_uses_ingest_only(tmp_path, monkeypatch):
-    calls: list[tuple[str, str]] = []
-
     monkeypatch.setattr(ciq_admin, "ingest_ciq_folder", lambda folder_path: {"folder": str(folder_path), "processed": 1})
     monkeypatch.setattr(ciq_admin, "_list_candidate_workbooks", lambda folder: [Path(folder) / "LYFT_Standard.xlsx"])
 

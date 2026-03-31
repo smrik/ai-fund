@@ -15,6 +15,14 @@ Configure `main` with these rules:
 
 The required check name matches the workflow/job names in [`.github/workflows/ci.yml`](/mnt/c/Projects/03-Finance/ai-fund/.github/workflows/ci.yml): workflow `CI`, job `pre-commit`, status check `CI / pre-commit`.
 
+The `pre-commit` job currently ratchets on changed files in CI:
+
+- pull requests run hooks from the PR base SHA to the PR head SHA
+- pushes run hooks from the previous pushed SHA to the current SHA
+- non-diffable cases fall back to `--all-files`
+
+This keeps `main` protected without forcing every feature PR to clear unrelated legacy lint debt across the entire repository in one step.
+
 ## Default Flow
 
 1. Update local `main`.

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 from dashboard import design_system
 from dashboard.sections import _shared, audit, batch_funnel, valuation
 from src.stage_02_valuation.templates.ic_memo import ICMemo, ValuationRange

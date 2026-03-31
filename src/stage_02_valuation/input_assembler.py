@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import functools
 from dataclasses import asdict, dataclass
-from pathlib import Path
 from typing import Any
 
 import yaml
@@ -14,7 +13,7 @@ from src.stage_00_data.ciq_adapter import get_ciq_comps_detail, get_ciq_comps_va
 from src.stage_00_data.sec_filing_metrics import get_bridge_items_from_xbrl
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
 from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
-from src.stage_02_valuation.wacc import blend_wacc_results, compute_wacc_from_yfinance, compute_wacc_methodology_set_for_ticker
+from src.stage_02_valuation.wacc import blend_wacc_results, compute_wacc_methodology_set_for_ticker
 
 
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"

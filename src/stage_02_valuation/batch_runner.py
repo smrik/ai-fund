@@ -1097,7 +1097,6 @@ def _print_ic_memo(memo) -> None:
 
 def _print_recommendations(recs) -> None:
     """Print a compact summary of agent recommendations to console."""
-    from src.stage_04_pipeline.recommendations import TickerRecommendations
     if not recs or not recs.recommendations:
         logger.info(
             "\n  No agent recommendations generated for %s.",
@@ -1358,7 +1357,6 @@ if __name__ == "__main__":
         # ── --story-profile: generate LLM story driver profile ────────────────
         if getattr(args, "story_profile", False):
             from src.stage_03_judgment.thesis_agent import ThesisAgent, write_story_driver_pending
-            from src.stage_00_data import edgar_client
             from src.stage_02_valuation.templates.ic_memo import FilingsSummary, EarningsSummary
             logger.info(
                 "\n%s\nStory Profile Generation — %s\n%s",

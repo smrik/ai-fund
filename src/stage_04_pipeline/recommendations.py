@@ -9,7 +9,6 @@ Data flow:
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field, replace as dc_replace
 from datetime import datetime, timezone
 from pathlib import Path

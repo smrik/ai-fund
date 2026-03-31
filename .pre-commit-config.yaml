@@ -3,11 +3,13 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: ruff check .
+        entry: ruff check
         language: python
         additional_dependencies:
           - ruff
-        pass_filenames: false
+        types_or:
+          - python
+          - pyi
       - id: architecture-boundaries
         name: architecture boundary tests
         entry: python -m pytest tests/test_architecture_boundaries.py -q
