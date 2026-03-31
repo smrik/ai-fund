@@ -28,6 +28,28 @@ Alpha Pod is an AI-augmented fundamental research system built around a strict s
 4. Run `python setup.py` to initialize the local database.
 5. Run `python -m pytest -q` to verify the environment.
 
+## Local Git Hygiene
+
+Install the local git hooks once per clone:
+
+```bash
+python -m pip install pre-commit ruff pytest
+python -m pre_commit install
+python -m pre_commit install --hook-type pre-push
+```
+
+Before pushing a branch, run the lightweight local gate:
+
+```bash
+python scripts/dev/run_local_quality_gate.py
+```
+
+That command runs Ruff on changed Python files versus `origin/main` and then runs the architecture-boundary test. To force a full-repo Ruff pass:
+
+```bash
+python scripts/dev/run_local_quality_gate.py --all-files
+```
+
 ### Optional Conda Setup
 
 If you use Conda, create the environment with:

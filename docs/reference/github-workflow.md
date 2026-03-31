@@ -23,6 +23,29 @@ The `pre-commit` job currently ratchets on changed files in CI:
 
 This keeps `main` protected without forcing every feature PR to clear unrelated legacy lint debt across the entire repository in one step.
 
+## Local Guardrails
+
+Set up local hooks once per clone:
+
+```bash
+python -m pip install pre-commit ruff pytest
+python -m pre_commit install
+python -m pre_commit install --hook-type pre-push
+```
+
+Before pushing, run:
+
+```bash
+python scripts/dev/run_local_quality_gate.py
+```
+
+That helper runs:
+
+- `ruff check` on changed Python files versus `origin/main`
+- `pytest tests/test_architecture_boundaries.py -q`
+
+Use `python scripts/dev/run_local_quality_gate.py --all-files` when you intentionally want a full-repo Ruff pass.
+
 ## Default Flow
 
 1. Update local `main`.
