@@ -7,10 +7,15 @@ __pycache__/
 .pytest-tmp*/
 pytest_basetemp_*/
 tmp*/
+.ruff_cache/
+.coverage
+htmlcov/
 
 # Local agent state
 .agent/
 .claude/
+.codex/
+.gemini/
 
 # Local secrets
 .env

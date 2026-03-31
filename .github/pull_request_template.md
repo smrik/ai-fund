@@ -25,6 +25,7 @@ Issue / ticket: #
 - [ ] Unit tests updated/added
 - [ ] Integration or manual test run
 - [ ] `python -m pytest -q` passed
+- [ ] `python scripts/dev/run_local_quality_gate.py` passed
 
 Evidence:
 
@@ -38,3 +39,4 @@ Any config, data, or deployment considerations.
 - [ ] CI green
 - [ ] No secrets in diff
 - [ ] Docs updated when behavior changed
+- [ ] Scope is one change stream, not a bundled grab-bag

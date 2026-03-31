@@ -2,6 +2,8 @@
 
 This repo uses a trackable, review-first workflow.
 
+See also: [GitHub Hardening Checklist](./github-hardening-checklist.md) and [Contributing Guide](../../CONTRIBUTING.md).
+
 ## Branch Protection For `main`
 
 Configure `main` with these rules:

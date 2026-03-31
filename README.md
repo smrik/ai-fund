@@ -12,6 +12,7 @@ Alpha Pod is an AI-augmented fundamental research system built around a strict s
 ## Documentation
 
 - [Agent Map](AGENTS.md)
+- [Contributing Guide](CONTRIBUTING.md)
 - [Docs Home](docs/index.md)
 - [Repository Guidance](docs/PLANS.md)
 - [Architecture Overview](docs/design-docs/architecture-overview.md)

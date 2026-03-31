@@ -2,3 +2,28 @@
 markers = [
     "live: marks tests that require network access (yfinance, SEC EDGAR, etc.) — deselect with -m 'not live'",
 ]
+
+[tool.ruff]
+target-version = "py311"
+force-exclude = true
+extend-exclude = [
+    ".agent",
+    ".claude",
+    ".codex",
+    ".gemini",
+    ".venv",
+    ".venv-wsl",
+    ".playwright",
+    ".playwright-cli",
+    ".pwtmp",
+    ".pytest_cache",
+    ".ruff_cache",
+    "data",
+    "frontend/dist",
+    "frontend/node_modules",
+    "site",
+]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
