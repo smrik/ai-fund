@@ -53,6 +53,7 @@ DATA_DIR = _resolve_path(_paths["data_dir"])
 DB_PATH = _resolve_path(_paths["db_path"])
 CIQ_TEMPLATES_DIR = _resolve_path(_paths["ciq_templates_dir"])
 CIQ_EXPORTS_DIR = _resolve_path(_paths["ciq_exports_dir"])
+CIQ_ARCHIVE_DIR = _resolve_path(_paths.get("ciq_archive_dir", "data/ciq_archive"))
 OUTPUT_DIR = _resolve_path(_paths["output_dir"])
 SCREENS_DIR = _resolve_path(_paths["screens_dir"])
 MEMOS_DIR = _resolve_path(_paths["memos_dir"])
@@ -135,6 +136,7 @@ def get_screening_rules() -> dict:
 __all__ = [
     "APP_CONFIG",
     "CIQ_BATCH_SIZE",
+    "CIQ_ARCHIVE_DIR",
     "CIQ_DROP_FOLDER",
     "CIQ_ENFORCE_TEMPLATE_LOCK",
     "CIQ_EXPORTS_DIR",

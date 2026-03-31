@@ -14,6 +14,7 @@ SECTION_MODULES = {
     "audit",
 }
 CHILD_MODULES = {
+    "batch_funnel",
     "comps",
     "wacc_lab",
     "assumption_lab",

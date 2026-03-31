@@ -114,6 +114,14 @@ All agents inherit from `base_agent.py` (wraps Anthropic SDK).
 | `src/stage_01_screening/stage1_filter.py` | Sunday 6 PM | Full universe screen |
 | `ciq/ciq_refresh.py` | Sunday 6 PM (after Stage 1) | CIQ data refresh → DB |
 
+### Interface Layer (`dashboard/`, `api/`, `frontend/`)
+
+| Surface | Purpose | Notes |
+|---|---|---|
+| `dashboard/` | Streamlit operator shell | Current operator-facing review surface |
+| `api/` | Thin FastAPI transport layer | May call `src/stage_04_pipeline/`, `src/stage_03_judgment/`, `src/stage_02_valuation/`, `db/`, and `config/` |
+| `frontend/` | React + TypeScript + Vite quote-terminal shell | Consumes `api/`; contains no valuation logic |
+
 ---
 
 ## Dependency Rules
@@ -126,6 +134,9 @@ src/stage_02_valuation/   → src/stage_00_data/
 src/stage_00_data/        → nothing (external APIs only)
 src/stage_01_screening/   → src/stage_00_data/, db/
 src/stage_04_pipeline/    → src/stage_02_valuation/, src/stage_03_judgment/, src/stage_00_data/, db/
+dashboard/                → src/stage_04_pipeline/, src/stage_03_judgment/, src/stage_02_valuation/, config/
+api/                      → src/stage_04_pipeline/, src/stage_03_judgment/, src/stage_02_valuation/, db/, config/
+frontend/                 → api/ only
 ```
 
 **Never allowed:**

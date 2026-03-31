@@ -599,6 +599,40 @@ def create_tables(conn: sqlite3.Connection | None = None):
         resulting_config_json TEXT NOT NULL,
         preview_json          TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS generated_exports (
+        export_id            TEXT PRIMARY KEY,
+        scope                TEXT NOT NULL,
+        ticker               TEXT,
+        status               TEXT NOT NULL,
+        export_format        TEXT NOT NULL,
+        source_mode          TEXT NOT NULL,
+        template_strategy    TEXT NOT NULL,
+        title                TEXT NOT NULL,
+        bundle_dir           TEXT NOT NULL,
+        primary_artifact_key TEXT,
+        created_by           TEXT NOT NULL,
+        snapshot_id          INTEGER,
+        created_at           TEXT NOT NULL,
+        updated_at           TEXT NOT NULL,
+        metadata_json        TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS generated_export_artifacts (
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        export_id            TEXT NOT NULL,
+        artifact_key         TEXT NOT NULL,
+        artifact_role        TEXT NOT NULL,
+        title                TEXT NOT NULL,
+        path                 TEXT NOT NULL,
+        mime_type            TEXT NOT NULL,
+        size_bytes           INTEGER,
+        is_primary           INTEGER NOT NULL DEFAULT 0,
+        created_at           TEXT NOT NULL,
+        metadata_json        TEXT,
+        UNIQUE (export_id, artifact_key),
+        FOREIGN KEY (export_id) REFERENCES generated_exports(export_id)
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -718,6 +752,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_dossier_review_log_ticker_ts ON dossier_review_log(ticker, review_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_dossier_note_blocks_ticker_type_ts ON dossier_note_blocks(ticker, block_type, block_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_wacc_methodology_audit_ticker_ts ON wacc_methodology_audit(ticker, event_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_generated_exports_scope_ts ON generated_exports(scope, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_generated_exports_ticker_ts ON generated_exports(ticker, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);

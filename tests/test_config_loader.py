@@ -76,3 +76,21 @@ def test_settings_shim_matches_package_exports(monkeypatch):
     assert settings_module.UNIVERSE_PATH == config_module.UNIVERSE_PATH
     assert settings_module.SCREENING_RULES_PATH == config_module.SCREENING_RULES_PATH
     assert settings_module.CIQ_BATCH_SIZE == config_module.CIQ_BATCH_SIZE
+
+
+def test_ciq_drop_folder_defaults_to_exports_not_templates(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    config_module, _ = _reload_config_modules()
+
+    assert config_module.CIQ_DROP_FOLDER == config_module.CIQ_EXPORTS_DIR
+    assert config_module.CIQ_DROP_FOLDER != config_module.CIQ_TEMPLATES_DIR
+
+
+def test_ciq_archive_dir_is_configured_separately_from_exports(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    config_module, _ = _reload_config_modules()
+
+    assert config_module.CIQ_ARCHIVE_DIR == config_module.ROOT_DIR / "data" / "ciq_archive"
+    assert config_module.CIQ_ARCHIVE_DIR != config_module.CIQ_EXPORTS_DIR

@@ -143,6 +143,53 @@ export PLAYWRIGHT_CLI_SESSION=alpha-pod-dashboard
 "$PWCLI" close
 ```
 
+## React + API Review Stack
+
+Use this when you want the lightweight React quote-terminal plus FastAPI layer for Playwright review, not the full Streamlit dashboard.
+
+Canonical React references:
+
+- [React Frontend Setup And Runtime Map](./react-frontend-setup.md)
+- [React Playwright Review Loop](./react-playwright-review-loop.md)
+
+This path uses [`requirements-api.txt`](/mnt/c/Projects/03-Finance/ai-fund/requirements-api.txt) instead of the full `requirements.txt`, while still including the lightweight API dependencies the React routes actually need during browser review, including the EDGAR client chain used by overview, valuation, market, and audit endpoints.
+
+Launcher:
+
+```bash
+bash scripts/manual/launch-react-wsl.sh
+bash scripts/manual/launch-react-wsl.sh --bootstrap
+bash scripts/manual/launch-react-wsl.sh --status
+bash scripts/manual/launch-react-wsl.sh --stop
+```
+
+Expected URLs:
+
+- API: `http://127.0.0.1:8000`
+- Frontend: `http://127.0.0.1:4173`
+
+Playwright smoke test for the React routes:
+
+```bash
+export HOME=/tmp/codex-playwright-home
+export TMPDIR=/tmp
+export TMP=/tmp
+export TEMP=/tmp
+
+playwright-cli open http://127.0.0.1:4173/watchlist
+playwright-cli open http://127.0.0.1:4173/ticker/IBM/overview
+playwright-cli open http://127.0.0.1:4173/ticker/IBM/valuation
+playwright-cli snapshot
+playwright-cli screenshot
+```
+
+How this differs from the Streamlit path:
+
+- Streamlit serves the legacy dashboard on `:8502`
+- React + API serves the new quote-terminal UI on `:4173` with FastAPI on `:8000`
+- the React path is meant for faster visual review and route-level Playwright checks
+- the Streamlit path is still the fallback for the existing dashboard shell
+
 ## Troubleshooting
 
 ### `listen ENOTSUP ... .sock`

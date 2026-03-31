@@ -43,7 +43,13 @@ streamlit-*.log
 streamlit-*.out.log
 streamlit-*.err.log
 test-results/
+playwright-report/
 .venv/
+.venv-wsl/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
 
 # Editor/OS noise
 .DS_Store

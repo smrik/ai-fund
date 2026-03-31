@@ -203,7 +203,10 @@ def render_clean_table(
     payload = style_dataframe_rows(rows, dict(schema or {})) if schema else rows
     if column_order:
         payload = [{key: row.get(key) for key in column_order} for row in payload]
-    st.dataframe(payload, width="stretch", hide_index=True, height=height)
+    dataframe_kwargs = {"width": "stretch", "hide_index": True}
+    if height is not None:
+        dataframe_kwargs["height"] = height
+    st.dataframe(payload, **dataframe_kwargs)
 
 
 def render_drilldown_button(
@@ -216,10 +219,27 @@ def render_drilldown_button(
     key: str,
 ) -> None:
     if st.button(label, key=key):
-        set_state(session_state, "selected_primary_tab", target_tab)
-        if target_key and target_value:
-            set_state(session_state, target_key, target_value)
+        queue_navigation(
+            session_state,
+            target_tab=target_tab,
+            target_key=target_key,
+            target_value=target_value,
+        )
         st.rerun()
+
+
+def queue_navigation(
+    session_state: Any,
+    *,
+    target_tab: str,
+    target_key: str | None = None,
+    target_value: str | None = None,
+) -> None:
+    payload = {"selected_primary_tab": target_tab}
+    if target_key and target_value is not None:
+        payload["target_key"] = target_key
+        payload["target_value"] = target_value
+    set_state(session_state, "_pending_nav", payload)
 
 
 def normalize_football_field_payload(football_field: dict | None) -> dict:
@@ -259,6 +279,7 @@ __all__ = [
     "input_step",
     "metric_label",
     "normalize_football_field_payload",
+    "queue_navigation",
     "rec_unit",
     "render_change_list",
     "render_clean_table",

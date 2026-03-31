@@ -7,11 +7,11 @@ import streamlit as st
 from dashboard.deep_dive_sections import render_business, render_company_hub, render_model_and_valuation, render_sources
 from src.stage_04_pipeline.agent_cache import load_agent_run_history
 
-from . import export as export_section
+from . import batch_funnel, export as export_section
 from . import filings_browser, portfolio_risk
 from ._shared import render_clean_table, set_note_context
 
-_AUDIT_VIEWS = ["Overview", "Pipeline", "Filings & Evidence", "Portfolio Risk", "Dossier Admin", "Export"]
+_AUDIT_VIEWS = ["Batch Funnel", "Overview", "Pipeline", "Filings & Evidence", "Portfolio Risk", "Dossier Admin", "Export"]
 
 
 def _render_overview(memo, session_state: Any | None) -> None:
@@ -88,6 +88,8 @@ def render(memo, session_state: Any | None) -> None:
                 render_clean_table(latest_trace, column_order=None)
             else:
                 st.info("No in-session run trace yet. Load a ticker and run the pipeline to populate it.")
+        elif selected_view == "Batch Funnel":
+            batch_funnel.render(None, session_state=state)
         elif selected_view == "Portfolio Risk":
             portfolio_risk.render(None, session_state=state)
         else:
@@ -96,6 +98,8 @@ def render(memo, session_state: Any | None) -> None:
 
     if selected_view == "Pipeline":
         _render_pipeline(memo, session_state=state)
+    elif selected_view == "Batch Funnel":
+        batch_funnel.render(memo, session_state=state)
     elif selected_view == "Filings & Evidence":
         filings_browser.render(memo, session_state=state)
     elif selected_view == "Portfolio Risk":

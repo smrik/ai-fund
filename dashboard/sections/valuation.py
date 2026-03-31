@@ -7,7 +7,13 @@ import streamlit as st
 from . import assumption_lab, comps, dcf_audit, recommendations, wacc_lab
 from ._shared import render_clean_table, set_note_context
 
-_VALUATION_VIEWS = ["Summary", "DCF", "Comparables", "Multiples"]
+_VALUATION_VIEWS = ["Summary", "DCF", "Comparables", "Multiples", "Assumptions", "WACC", "Recommendations"]
+
+
+def _scenario_upside(value: float | None, current_price: float | None) -> str:
+    if value is None or current_price in (None, 0):
+        return "+0.0%"
+    return f"{((value / current_price) - 1.0) * 100:+.1f}%"
 
 
 def _render_summary(memo, session_state: Any | None) -> None:
@@ -19,18 +25,12 @@ def _render_summary(memo, session_state: Any | None) -> None:
     top[3].metric("Conviction", memo.conviction.upper())
 
     scenario_rows = [
-        {"Scenario": "Bear", "Intrinsic Value": f"${memo.valuation.bear:.2f}", "Upside / (Downside)": f"{(memo.valuation.upside_pct_bear or 0) * 100:+.1f}%"},
+        {"Scenario": "Bear", "Intrinsic Value": f"${memo.valuation.bear:.2f}", "Upside / (Downside)": _scenario_upside(memo.valuation.bear, memo.valuation.current_price)},
         {"Scenario": "Base", "Intrinsic Value": f"${memo.valuation.base:.2f}", "Upside / (Downside)": f"{(memo.valuation.upside_pct_base or 0) * 100:+.1f}%"},
-        {"Scenario": "Bull", "Intrinsic Value": f"${memo.valuation.bull:.2f}", "Upside / (Downside)": f"{(memo.valuation.upside_pct_bull or 0) * 100:+.1f}%"},
+        {"Scenario": "Bull", "Intrinsic Value": f"${memo.valuation.bull:.2f}", "Upside / (Downside)": _scenario_upside(memo.valuation.bull, memo.valuation.current_price)},
     ]
     render_clean_table(scenario_rows, column_order=["Scenario", "Intrinsic Value", "Upside / (Downside)"])
-
-    with st.expander("WACC", expanded=True):
-        wacc_lab.render(memo, session_state=session_state)
-    with st.expander("Assumption Lab", expanded=False):
-        assumption_lab.render(memo, session_state=session_state)
-    with st.expander("Recommendations", expanded=False):
-        recommendations.render(memo, session_state=session_state)
+    st.caption("Use the visible valuation tabs for DCF, comparables, assumptions, WACC, and recommendation overlays.")
 
 
 def render(memo, session_state: Any | None) -> None:
@@ -58,5 +58,11 @@ def render(memo, session_state: Any | None) -> None:
         comps.render_comparables(memo, session_state=state)
     elif selected_view == "Multiples":
         comps.render_multiples(memo, session_state=state)
+    elif selected_view == "Assumptions":
+        assumption_lab.render(memo, session_state=state)
+    elif selected_view == "WACC":
+        wacc_lab.render(memo, session_state=state)
+    elif selected_view == "Recommendations":
+        recommendations.render(memo, session_state=state)
     else:
         _render_summary(memo, session_state=state)

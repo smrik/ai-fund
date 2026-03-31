@@ -126,6 +126,13 @@ Capital IQ refresh and batching settings.
 | `refresh_wait_sec` | Poll interval while waiting for CIQ recalculation |
 | `refresh_timeout_sec` | Maximum wait before timing out CIQ refresh |
 | `batch_size` | Names per CIQ template refresh |
+| `drop_folder` | Live CIQ workbook export/drop directory used for refresh + ingest |
+| `workbook_glob` | Workbook filename pattern scanned in the CIQ drop folder |
+
+Important:
+- `ciq.drop_folder` is for live CIQ workbook ingestion into SQLite.
+- It should point at the export/drop directory, not `ciq/templates`.
+- The Power Query Excel review path is separate and reads valuation JSON outputs, not CIQ workbooks.
 
 ### `risk_limits`
 

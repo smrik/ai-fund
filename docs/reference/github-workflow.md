@@ -15,6 +15,37 @@ Configure `main` with these rules:
 
 The required check name matches the workflow/job names in [`.github/workflows/ci.yml`](/mnt/c/Projects/03-Finance/ai-fund/.github/workflows/ci.yml): workflow `CI`, job `pre-commit`, status check `CI / pre-commit`.
 
+The `pre-commit` job currently ratchets on changed files in CI:
+
+- pull requests run hooks from the PR base SHA to the PR head SHA
+- pushes run hooks from the previous pushed SHA to the current SHA
+- non-diffable cases fall back to `--all-files`
+
+This keeps `main` protected without forcing every feature PR to clear unrelated legacy lint debt across the entire repository in one step.
+
+## Local Guardrails
+
+Set up local hooks once per clone:
+
+```bash
+python -m pip install pre-commit ruff pytest
+python -m pre_commit install
+python -m pre_commit install --hook-type pre-push
+```
+
+Before pushing, run:
+
+```bash
+python scripts/dev/run_local_quality_gate.py
+```
+
+That helper runs:
+
+- `ruff check` on changed Python files versus `origin/main`
+- `pytest tests/test_architecture_boundaries.py -q`
+
+Use `python scripts/dev/run_local_quality_gate.py --all-files` when you intentionally want a full-repo Ruff pass.
+
 ## Default Flow
 
 1. Update local `main`.

@@ -53,6 +53,7 @@ def build_nested_structure(
     result: dict,
     qoe: dict | None = None,
     comps_detail: dict | None = None,
+    comps_analysis: dict | None = None,
 ) -> dict:
     """
     Transform the flat ~120-key result dict from value_single_ticker() into
@@ -327,6 +328,9 @@ def build_nested_structure(
     if comps_detail is not None:
         out["comps_detail"] = comps_detail
 
+    if comps_analysis is not None:
+        out["comps_analysis"] = comps_analysis
+
     if qoe is not None:
         out["qoe"] = qoe
 
@@ -339,6 +343,7 @@ def export_ticker_json(
     result: dict,
     qoe: dict | None = None,
     comps_detail: dict | None = None,
+    comps_analysis: dict | None = None,
     output_dir: Path | str | None = None,
     date_str: str | None = None,
 ) -> Path:
@@ -360,7 +365,12 @@ def export_ticker_json(
     if date_str is None:
         date_str = datetime.utcnow().strftime("%Y-%m-%d")
 
-    nested = build_nested_structure(result, qoe=qoe, comps_detail=comps_detail)
+    nested = build_nested_structure(
+        result,
+        qoe=qoe,
+        comps_detail=comps_detail,
+        comps_analysis=comps_analysis,
+    )
 
     dated_path = output_dir / f"{ticker}_{date_str}.json"
     latest_path = output_dir / f"{ticker}_latest.json"

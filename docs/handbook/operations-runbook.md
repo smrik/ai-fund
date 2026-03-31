@@ -62,6 +62,30 @@ Optional workbook export:
 python -m src.stage_02_valuation.batch_runner --top 50 --xlsx
 ```
 
+### CIQ Single-Ticker Refresh
+
+Run this from the host PowerShell `ai-fund` environment, not WSL. It stages a ticker-specific workbook from `ciq/templates/ciq_cleandata.xlsx`, updates `financials_input.json`, refreshes the workbook in desktop Excel, then ingests the result into SQLite.
+
+Explicit CIQ symbol:
+```powershell
+ca ai-fund
+python -m ciq.ciq_refresh --ticker CALM --ciq-symbol NASDAQ:CALM
+```
+
+If the exchange prefix is simple and known:
+```powershell
+ca ai-fund
+python -m ciq.ciq_refresh --ticker IBM --exchange NYSE
+```
+
+Notes:
+- this requires desktop Excel plus the CIQ add-in to already be installed and signed in
+- the source template workbook is `ciq/templates/ciq_cleandata.xlsx`
+- the default staged workbook path is `data/exports/{TICKER}_Standard.xlsx`
+- successful single-ticker runs also copy the workbook into `data/ciq_archive/{TICKER}_{as_of_date}_{timestamp}.xlsx`
+- if automatic exchange inference is wrong or unavailable, pass `--ciq-symbol` explicitly
+- if you only want to ingest an already-refreshed staged workbook, add `--no-refresh`
+
 ### Optional Legacy Memo Pipeline
 
 ```bash

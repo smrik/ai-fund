@@ -1,0 +1,58 @@
+ticker: CALM
+generated_at: '2026-03-31T13:04:17+00:00'
+current_iv_base: 542.75
+recommendations:
+- agent: accounting_recast
+  field: non_operating_assets
+  current_value: 285181140.0
+  proposed_value: 903008000.0
+  confidence: high
+  rationale: The company holds a significant portfolio of fixed income securities
+    (municipal bonds, corporate bonds, T-bills) that are not required for day-to-day
+    operations and should be treated as part of the EV bridge.
+  citation: Total investment securities available-for-sale measured at fair value
+    ... May 31, 2025 ... $ 892,708 [in thousands]
+  status: pending
+- agent: accounting_recast
+  field: pension_deficit
+  current_value: 0.0
+  proposed_value: 4100000.0
+  confidence: high
+  rationale: Deferred compensation and postretirement obligations are non-operating
+    liabilities treated as debt-equivalents in an enterprise value bridge.
+  citation: The liability recorded related to these agreements was $ 4.1 million and
+    $ 3.8 million at May 31, 2025 and June 1, 2024, respectively
+  status: pending
+- agent: accounting_recast
+  field: ebit_margin_start
+  current_value: 0.6
+  proposed_value: 0.363179
+  confidence: high
+  rationale: 'Accounting recast EBIT: Equity in income of unconsolidated entities
+    (-6200000.0M)'
+  citation: null
+  status: pending
+- agent: industry
+  field: revenue_growth_near
+  current_value: 0.145326581472905
+  proposed_value: 0.042
+  confidence: medium
+  rationale: 'Industry consensus near-term growth: 4.2% vs current 14.5%'
+  citation: null
+  status: approved
+- agent: industry
+  field: revenue_growth_mid
+  current_value: -0.051870000000000006
+  proposed_value: 0.038
+  confidence: medium
+  rationale: 'Industry consensus mid-term growth: 3.8% vs current -5.2%'
+  citation: null
+  status: pending
+- agent: industry
+  field: ebit_margin_target
+  current_value: 0.382
+  proposed_value: 0.065
+  confidence: medium
+  rationale: 'Industry margin benchmark: 6.5% vs current target 38.2%'
+  citation: null
+  status: pending

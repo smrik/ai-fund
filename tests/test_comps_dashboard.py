@@ -146,6 +146,13 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     assert view["compare_to_target"]["target"]["tev_ebitda_ltm"] == 10.5
     assert "Outliers removed from tev_ebitda_ltm: ORCL" in view["audit_flags"]
     assert abs(sum(row["model_weight"] for row in view["peers"]) - 1.0) < 1e-9
+    assert view["valuation_by_metric_rows"][0]["metric"] == "tev_ebitda_ltm"
+    assert view["valuation_by_metric_rows"][0]["is_primary"] is True
+    assert view["comparison_summary"][0]["metric"] == "tev_ebitda_ltm"
+    status_rows = {(row["ticker"], row["metric"]): row["status"] for row in view["metric_status_rows"]}
+    assert status_rows[("ORCL", "tev_ebitda_ltm")] == "outlier_removed"
+    assert status_rows[("ACN", "tev_ebitda_ltm")] == "included"
+    assert view["peer_table"][0]["display_name"] == "ACN"
 
 
 def test_build_comps_dashboard_view_survives_similarity_failure(monkeypatch):
@@ -197,6 +204,10 @@ def test_build_comps_dashboard_view_handles_missing_ciq_data(monkeypatch):
     assert view["peers"] == []
     assert view["valuation_range"] == {}
     assert view["valuation_range_by_metric"] == {}
+    assert view["valuation_by_metric_rows"] == []
+    assert view["comparison_summary"] == []
+    assert view["peer_table"] == []
+    assert view["metric_status_rows"] == []
     assert view["football_field"]["ranges"] == []
     assert view["football_field"]["markers"] == []
     assert view["audit_flags"] == ["No CIQ comps detail available"]

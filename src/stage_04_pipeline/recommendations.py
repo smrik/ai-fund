@@ -9,7 +9,6 @@ Data flow:
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field, replace as dc_replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -385,18 +384,45 @@ def load_recommendations(ticker: str) -> TickerRecommendations | None:
 
 # ── Apply to overrides ────────────────────────────────────────────────────────
 
-def apply_approved_to_overrides(ticker: str) -> int:
-    """Write all approved recommendations into config/valuation_overrides.yaml.
+def apply_approved_to_overrides(
+    ticker: str,
+    approved_fields: list[str] | None = None,
+    *,
+    actor: str = "api",
+) -> dict[str, Any]:
+    """Write approved recommendations into config/valuation_overrides.yaml.
 
-    Returns count of items written.
+    When ``approved_fields`` is provided, treat those field selections as an
+    explicit PM approval path for the React workbench and persist that approval
+    back to the recommendations YAML before writing overrides.
     """
     ticker = ticker.upper().strip()
+    selected_fields = [str(field).strip() for field in (approved_fields or []) if str(field).strip()]
+    selected_field_set = set(selected_fields)
     recs = load_recommendations(ticker)
     if recs is None:
-        return 0
-    approved = [r for r in recs.recommendations if r.status == "approved"]
+        return {"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor}
+
+    if selected_field_set:
+        updated = False
+        refreshed: list[Recommendation] = []
+        for rec in recs.recommendations:
+            next_rec = rec
+            if rec.field in selected_field_set and rec.status != "approved":
+                next_rec = dc_replace(rec, status="approved")
+                updated = True
+            refreshed.append(next_rec)
+        if updated:
+            recs = dc_replace(recs, recommendations=refreshed)
+            write_recommendations(recs)
+
+    approved = [
+        r
+        for r in recs.recommendations
+        if r.status == "approved" and (not selected_field_set or r.field in selected_field_set)
+    ]
     if not approved:
-        return 0
+        return {"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor}
 
     overrides: dict = {"global": {}, "sectors": {}, "tickers": {}}
     if OVERRIDES_PATH.exists():
@@ -418,7 +444,12 @@ def apply_approved_to_overrides(ticker: str) -> int:
         yaml.dump(overrides, default_flow_style=False, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
-    return count
+    return {
+        "ticker": ticker,
+        "applied_count": count,
+        "approved_fields": selected_fields,
+        "actor": actor,
+    }
 
 
 # ── What-if preview ────────────────────────────────────────────────────────────

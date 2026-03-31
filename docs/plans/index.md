@@ -15,6 +15,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 - [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)
 - [Structured Logging First Tranche](./active/2026-03-27-structured-logging-first-tranche.md)
+- [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)
 
 ## Future
 
@@ -31,6 +32,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 - [Dashboard Research Surface Remediation And Auditability](./completed/2026-03-15-dashboard-research-program.md)
 - [Dashboard Override Workbench](./completed/2026-03-14-dashboard-override-workbench.md)
 - [DCF Audit And Agent Cache](./completed/2026-03-14-dcf-audit-agent-cache.md)
+- [Universe Watchlist Landing Page](./completed/2026-03-28-universe-watchlist-landing-page.md)
 
 ## Archive
 
