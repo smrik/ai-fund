@@ -13,6 +13,9 @@ Start here when you need to understand how the repository is organized, where cu
 - [Core Beliefs](./design-docs/core-beliefs.md)
 - [Workflow End To End](./handbook/workflow-end-to-end.md)
 - [Local Dashboard Validation](./handbook/local-dashboard-validation.md)
+- [Quote-Terminal UI And API Dev Guide](./handbook/quote-terminal-ui.md)
+- [React Frontend Setup And Runtime Map](./handbook/react-frontend-setup.md)
+- [React Playwright Review Loop](./handbook/react-playwright-review-loop.md)
 
 ## Current System
 
@@ -20,10 +23,15 @@ Start here when you need to understand how the repository is organized, where cu
 - [Handbook](./handbook/index.md)
 - [Reference](./reference/config-reference.md)
 - [Strategy](./strategy/index.md)
+- [API Surface](../api/README.md)
+- [Quote-Terminal UI And API Dev Guide](./handbook/quote-terminal-ui.md)
+- [React Frontend Setup And Runtime Map](./handbook/react-frontend-setup.md)
+- [React Playwright Review Loop](./handbook/react-playwright-review-loop.md)
 
 ## Planning
 
 - [Canonical Plan Registry](./plans/index.md)
+- [Quote-Terminal Migration Plan](./plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 
 ## Archive

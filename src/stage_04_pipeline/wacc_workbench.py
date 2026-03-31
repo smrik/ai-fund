@@ -110,6 +110,32 @@ def _peer_tickers(ticker: str) -> list[str]:
     ]
 
 
+def _cached_method_results(inputs: Any) -> dict[str, WACCResult]:
+    cached = ((getattr(inputs, "wacc_inputs", None) or {}).get("method_results")) or {}
+    results: dict[str, WACCResult] = {}
+    for method, payload in cached.items():
+        if method not in METHOD_LABELS or not isinstance(payload, dict):
+            continue
+        results[method] = WACCResult(
+            wacc=float(payload.get("wacc") or 0.0),
+            cost_of_equity=float(payload.get("cost_of_equity") or 0.0),
+            cost_of_debt_after_tax=float(payload.get("cost_of_debt_after_tax") or 0.0),
+            equity_weight=float(payload.get("equity_weight") or 0.0),
+            debt_weight=float(payload.get("debt_weight") or 0.0),
+            risk_free_rate=float(payload.get("risk_free_rate") or 0.0),
+            equity_risk_premium=float(payload.get("equity_risk_premium") or 0.0),
+            beta_relevered=float(payload.get("beta_relevered") or 0.0),
+            size_premium=float(payload.get("size_premium") or 0.0),
+            beta_unlevered_median=float(payload.get("beta_unlevered_median") or 0.0),
+            peers_used=list(payload.get("peers_used") or []),
+            peer_betas_unlevered=list(payload.get("peer_betas_unlevered") or []),
+            target_de_ratio=float(payload.get("target_de_ratio") or 0.0),
+            target_market_cap=float(payload.get("target_market_cap") or 0.0),
+            target_net_debt=float(payload.get("target_net_debt") or 0.0),
+        )
+    return results
+
+
 def _compute_method_results(ticker: str) -> dict[str, WACCResult]:
     return compute_wacc_methodology_set_for_ticker(
         ticker,
@@ -205,7 +231,7 @@ def build_wacc_workbench(ticker: str, apply_overrides: bool = True) -> dict[str,
     if effective_inputs is None:
         return {"ticker": ticker, "available": False, "methods": []}
 
-    method_results = _compute_method_results(ticker)
+    method_results = _cached_method_results(effective_inputs) or _compute_method_results(ticker)
     selection = _selection_payload_from_overrides(ticker) if apply_overrides else {
         "mode": "single_method",
         "selected_method": "peer_bottom_up",
@@ -243,7 +269,7 @@ def preview_wacc_methodology_selection(
     if effective_inputs is None:
         return {}
 
-    method_results = _compute_method_results(ticker)
+    method_results = _cached_method_results(effective_inputs) or _compute_method_results(ticker)
     selection = _normalize_selection(mode=mode, selected_method=selected_method, weights=weights)
     selected_result = _effective_result(method_results, selection)
     proposed_inputs = _clone_inputs_with_wacc(effective_inputs, selected_result)

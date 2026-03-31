@@ -1,4 +1,4 @@
-"""CIQ workbook parser for IBM Standard template (v1)."""
+"""CIQ workbook parser for the committed cleandata workbook contract."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,7 +23,7 @@ OPTIONAL_SHEETS = ["Summary Comps"]
 
 
 class CIQTemplateContractError(ValueError):
-    """Raised when workbook layout does not match IBM_Standard v1 contract."""
+    """Raised when workbook layout does not match the expected CIQ workbook contract."""
 
 
 @dataclass(slots=True)

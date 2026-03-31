@@ -1,6 +1,7 @@
 """Compatibility shim for code that still imports from config.settings."""
 from config import (
     CIQ_BATCH_SIZE,
+    CIQ_ARCHIVE_DIR,
     CIQ_DROP_FOLDER,
     CIQ_ENFORCE_TEMPLATE_LOCK,
     CIQ_EXPORTS_DIR,
@@ -42,6 +43,7 @@ from config import (
 
 __all__ = [
     "CIQ_BATCH_SIZE",
+    "CIQ_ARCHIVE_DIR",
     "CIQ_DROP_FOLDER",
     "CIQ_ENFORCE_TEMPLATE_LOCK",
     "CIQ_EXPORTS_DIR",

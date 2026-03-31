@@ -266,6 +266,85 @@ MINIMAL_COMPS: dict = {
     },
 }
 
+MINIMAL_COMPS_ANALYSIS: dict = {
+    "available": True,
+    "primary_metric": "tev_ebitda_ltm",
+    "peer_counts": {"raw": 5, "clean": 4},
+    "similarity_method": "embedding_cosine",
+    "similarity_model": "all-MiniLM-L6-v2",
+    "weighting_formula": "0.60*description_similarity + 0.40*market_cap_proximity",
+    "valuation_range": {
+        "bear": 190.0,
+        "base": 202.0,
+        "bull": 216.0,
+        "blended_base": 205.0,
+    },
+    "valuation_by_metric_rows": [
+        {
+            "metric": "tev_ebitda_ltm",
+            "label": "TEV / EBITDA LTM",
+            "target_multiple": 3.0,
+            "peer_median_multiple": 17.0,
+            "bear_multiple": 15.0,
+            "base_multiple": 17.0,
+            "bull_multiple": 19.0,
+            "bear_iv": 190.0,
+            "base_iv": 202.0,
+            "bull_iv": 216.0,
+            "n_raw": 5,
+            "n_clean": 4,
+            "outliers_removed": ["MSFT"],
+            "is_primary": True,
+        }
+    ],
+    "comparison_summary": [
+        {
+            "metric": "revenue_growth",
+            "label": "Revenue Growth",
+            "target": 0.03,
+            "peer_median": 0.05,
+            "delta": -0.02,
+        }
+    ],
+    "peer_table": [
+        {
+            "ticker": "ACN",
+            "display_name": "Accenture",
+            "market_cap_mm": 200_000.0,
+            "tev_ebitda_ltm": 17.0,
+            "similarity_score": 0.81,
+            "model_weight": 0.42,
+        }
+    ],
+    "metric_status_rows": [
+        {
+            "ticker": "ACN",
+            "metric": "tev_ebitda_ltm",
+            "label": "TEV / EBITDA LTM",
+            "raw_multiple": 17.0,
+            "status": "included",
+        }
+    ],
+    "football_field": {
+        "ranges": [{"label": "TEV / EBITDA LTM", "bear": 190.0, "base": 202.0, "bull": 216.0}],
+        "markers": [{"label": "Current Price", "value": 260.0, "type": "spot"}],
+        "range_min": 190.0,
+        "range_max": 260.0,
+    },
+    "historical_multiples_summary": {
+        "available": True,
+        "metrics": {
+            "pe_trailing": {
+                "current": 20.0,
+                "summary": {"median": 18.0, "p25": 16.0, "p75": 22.0, "current_percentile": 0.65},
+            }
+        },
+    },
+    "audit_flags": ["Outliers removed from tev_ebitda_ltm: MSFT"],
+    "notes": "primary=tev_ebitda_ltm",
+    "source_lineage": {"as_of_date": "2026-03-01", "source_file": "IBM_comps.xlsx"},
+}
+
 
 # ── Tests: build_nested_structure ─────────────────────────────────────────────
 
@@ -340,6 +419,12 @@ class TestBuildNestedStructure:
         assert out["comps_detail"]["target"]["ticker"] == "IBM"
         assert len(out["comps_detail"]["peers"]) == 1
 
+    def test_comps_analysis_attached(self):
+        out = build_nested_structure(MINIMAL_RESULT, comps_analysis=MINIMAL_COMPS_ANALYSIS)
+        assert "comps_analysis" in out
+        assert out["comps_analysis"]["primary_metric"] == "tev_ebitda_ltm"
+        assert out["comps_analysis"]["peer_table"][0]["ticker"] == "ACN"
+
     def test_qoe_not_present_by_default(self):
         out = build_nested_structure(MINIMAL_RESULT)
         assert "qoe" not in out
@@ -396,13 +481,16 @@ class TestExportTickerJson:
 
     def test_json_contains_all_sections(self, tmp_path):
         dated = export_ticker_json(
-            MINIMAL_RESULT, qoe=MINIMAL_QOE, comps_detail=MINIMAL_COMPS,
+            MINIMAL_RESULT,
+            qoe=MINIMAL_QOE,
+            comps_detail=MINIMAL_COMPS,
+            comps_analysis=MINIMAL_COMPS_ANALYSIS,
             output_dir=tmp_path, date_str="2026-01-01",
         )
         content = json.loads(dated.read_text())
         for sec in ("market", "assumptions", "wacc", "valuation", "scenarios",
                     "terminal", "health_flags", "forecast_bridge",
-                    "source_lineage", "ciq_lineage", "comps_detail", "qoe"):
+                    "source_lineage", "ciq_lineage", "comps_detail", "comps_analysis", "qoe"):
             assert sec in content, f"Section {sec!r} missing from JSON"
 
     def test_dated_and_latest_identical(self, tmp_path):

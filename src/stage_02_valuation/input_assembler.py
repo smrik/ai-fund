@@ -94,6 +94,20 @@ def _canonical_source(source_detail: str) -> str:
     return source_detail
 
 
+def _get_market_data_cached(ticker: str) -> dict[str, Any]:
+    try:
+        return md_client.get_market_data(ticker, use_cache=True)
+    except TypeError:
+        return md_client.get_market_data(ticker)
+
+
+def _get_historical_financials_cached(ticker: str) -> dict[str, Any]:
+    try:
+        return md_client.get_historical_financials(ticker, use_cache=True)
+    except TypeError:
+        return md_client.get_historical_financials(ticker)
+
+
 def _growth_period_type(source_detail: str) -> str:
     if source_detail == "ciq_consensus":
         return "consensus_fy1"
@@ -230,8 +244,8 @@ def build_valuation_inputs(
     apply_overrides: bool = True,
 ) -> ValuationInputsWithLineage | None:
     ticker = ticker.upper().strip()
-    mkt = md_client.get_market_data(ticker)
-    hist = md_client.get_historical_financials(ticker)
+    mkt = _get_market_data_cached(ticker)
+    hist = _get_historical_financials_cached(ticker)
     ciq = get_ciq_snapshot(ticker, as_of_date=as_of_date)
     ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
     ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)

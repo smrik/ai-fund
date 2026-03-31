@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import streamlit as st
 
 from config import LLM_MODEL
-from dashboard.design_system import DASHBOARD_CSS, render_shell_header
+from dashboard.design_system import DASHBOARD_CSS, render_shell_header, render_ticker_strip
 from dashboard.dossier_companion import render_dossier_companion
 from dashboard.sections import SECTION_REGISTRY
 from src.stage_02_valuation.templates.ic_memo import ICMemo
@@ -70,17 +70,21 @@ _SESSION_DEFAULTS = {
     "filings_browser_view": None,
     "comps_view": None,
     "market_intel_view": None,
+    "batch_funnel_view": None,
+    "batch_funnel_runs": [],
     "report_snapshot_id": None,
     "report_source": "live",
     "wacc_preview": None,
     "chat_history": {},
-    "selected_primary_tab": "Overview",
+    "selected_primary_tab": "Audit",
     "valuation_view": "Summary",
     "market_view": "Summary",
     "research_view": "Board",
-    "audit_view": "Overview",
+    "audit_view": "Batch Funnel",
     "notes_rail_open": False,
     "note_context": None,
+    "_pending_nav": None,
+    "_pending_snapshot": None,
 }
 
 
@@ -98,6 +102,8 @@ def _clear_dashboard_views() -> None:
         "filings_browser_view",
         "comps_view",
         "market_intel_view",
+        "batch_funnel_view",
+        "batch_funnel_runs",
         "wacc_preview",
         "workbench_preview",
     ]:
@@ -115,6 +121,20 @@ def _hydrate_loaded_snapshot(loaded: dict) -> None:
     st.session_state.report_snapshot_id = loaded["id"]
     st.session_state.report_source = f"archive:{loaded['id']}"
     st.session_state.selected_primary_tab = "Overview"
+
+
+def _consume_pending_ui_actions() -> None:
+    pending_snapshot = st.session_state.pop("_pending_snapshot", None)
+    if pending_snapshot is not None:
+        _hydrate_loaded_snapshot(pending_snapshot)
+
+    pending_nav = st.session_state.pop("_pending_nav", None) or {}
+    target_tab = pending_nav.get("selected_primary_tab")
+    if target_tab:
+        st.session_state.selected_primary_tab = target_tab
+    target_key = pending_nav.get("target_key")
+    if target_key:
+        st.session_state[target_key] = pending_nav.get("target_value")
 
 
 def _load_latest_archive_snapshot(ticker: str) -> None:
@@ -168,6 +188,8 @@ def _render_sidebar() -> tuple[str, bool, bool, list[str]]:
                 _load_latest_archive_snapshot(ql_ticker)
 
         with st.expander("CIQ Tools", expanded=False):
+            ciq_memo_preview = st.session_state.get("memo")
+            default_ciq_ticker = ciq_memo_preview.ticker if ciq_memo_preview is not None else ""
             ciq_folder = st.text_input(
                 "CIQ workbook folder",
                 value=str(get_ciq_runtime_status().get("folder", "")),
@@ -186,6 +208,9 @@ def _render_sidebar() -> tuple[str, bool, bool, list[str]]:
                     f"snaps={db_counts.get('ciq_valuation_snapshot', 0)}, "
                     f"comps={db_counts.get('ciq_comps_snapshot', 0)}"
                 )
+
+            for warning in ciq_status.get("warnings", []):
+                st.warning(warning)
 
             candidates = ciq_status.get("candidate_workbooks", [])
             st.caption("Workbooks: " + ", ".join(candidates) if candidates else "No candidate workbooks found.")
@@ -206,12 +231,45 @@ def _render_sidebar() -> tuple[str, bool, bool, list[str]]:
                 except Exception as exc:
                     st.session_state.ciq_last_result = {"error": str(exc)}
 
+            st.caption("Single ticker refresh")
+            single_col1, single_col2, single_col3 = st.columns(3)
+            ciq_single_ticker = single_col1.text_input("Ticker", value=default_ciq_ticker, key="ciq_single_ticker").upper().strip()
+            ciq_single_symbol = single_col2.text_input(
+                "CIQ Symbol",
+                value="",
+                key="ciq_single_symbol",
+                help="Optional explicit symbol, e.g. NASDAQ:CALM",
+            ).upper().strip()
+            ciq_single_exchange = single_col3.text_input(
+                "Exchange",
+                value="",
+                key="ciq_single_exchange",
+                help="Optional exchange prefix if CIQ symbol is not provided, e.g. NYSE",
+            ).upper().strip()
+            if st.button("Refresh Single Ticker", width="stretch"):
+                try:
+                    st.session_state.ciq_last_result = run_ciq_operation(
+                        "refresh_single_ticker",
+                        folder_path=ciq_folder,
+                        ticker=ciq_single_ticker,
+                        ciq_symbol=ciq_single_symbol or None,
+                        exchange=ciq_single_exchange or None,
+                    )
+                except Exception as exc:
+                    st.session_state.ciq_last_result = {"error": str(exc)}
+
             ciq_last_result = st.session_state.get("ciq_last_result")
             if ciq_last_result:
                 if ciq_last_result.get("error"):
                     st.error(f"CIQ failed: {ciq_last_result['error']}")
                 else:
                     report = ciq_last_result.get("report", {})
+                    if ciq_last_result.get("action") == "refresh_single_ticker":
+                        st.caption(
+                            f"Ticker: `{ciq_last_result.get('ticker', '')}` | "
+                            f"CIQ Symbol: `{ciq_last_result.get('ciq_symbol', '')}` | "
+                            f"Workbook: `{ciq_last_result.get('workbook_path', '')}`"
+                        )
                     st.success(
                         f"{ciq_last_result.get('action')}: ok={report.get('processed', 0)}, skip={report.get('skipped', 0)}, fail={report.get('failed', 0)}"
                     )
@@ -395,9 +453,9 @@ def _render_empty_state() -> None:
 
 Three ways to use the dashboard:
 
-1. Run a full ticker analysis from the sidebar.
-2. Use **Market → Macro** for the cross-market backdrop.
-3. Use **Audit → Pipeline** or **Audit → Portfolio Risk** for ticker-free operational views.
+1. Use **Audit → Batch Funnel** for deterministic screening and shortlist creation.
+2. Run a full ticker analysis from the sidebar when a name deserves deeper work.
+3. Use **Market → Macro** for the cross-market backdrop.
 
 Core workflow once a ticker is loaded:
 
@@ -410,15 +468,31 @@ Core workflow once a ticker is loaded:
     )
 
 
+def _render_expanded_overview_banner(memo: ICMemo) -> None:
+    st.markdown(f"## {memo.ticker} — {memo.company_name}")
+    st.caption(f"{memo.sector}  ·  {memo.date}  ·  Analyst: {memo.analyst}")
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Action", memo.action)
+    col2.metric("Conviction", memo.conviction.upper())
+    col3.metric("Current Price", f"${memo.valuation.current_price or 0:,.2f}")
+    col4.metric("Base Case IV", f"${memo.valuation.base:,.2f}")
+    col5.metric("Upside (base)", f"{(memo.valuation.upside_pct_base or 0) * 100:+.1f}%")
+    st.info(f"**One-liner:** {memo.one_liner}")
+    st.warning(
+        f"**Variant Thesis:** {memo.variant_thesis_prompt}\n\n_This is the question the AI cannot answer for you. Answer this before sizing the position._"
+    )
+
+
 def main() -> None:
     _ensure_session_defaults()
+    _consume_pending_ui_actions()
     ticker_input, run_btn, use_agent_cache, force_refresh_agents = _render_sidebar()
     if run_btn and ticker_input:
         _run_pipeline(ticker_input, use_agent_cache=use_agent_cache, force_refresh_agents=force_refresh_agents)
 
     memo = st.session_state.memo
     available_primary_tabs = _PRIMARY_TABS if memo is not None else _NO_MEMO_PRIMARY_TABS
-    _ensure_nav_selection("selected_primary_tab", "Overview" if memo is not None else "Market", available_primary_tabs)
+    _ensure_nav_selection("selected_primary_tab", "Overview" if memo is not None else "Audit", available_primary_tabs)
 
     selected_primary_tab = st.segmented_control(
         "Primary tabs",
@@ -427,17 +501,33 @@ def main() -> None:
         label_visibility="collapsed",
     )
 
+    if memo is None and selected_primary_tab == "Audit":
+        st.session_state["audit_view"] = "Batch Funnel"
+
     st.divider()
 
     shell_col, shell_tools_col = st.columns([0.82, 0.18], gap="large", vertical_alignment="top")
     with shell_col:
-        render_shell_header(
-            workspace=selected_primary_tab,
-            section=_current_subpage_label(selected_primary_tab),
-            description=PAGE_DESCRIPTIONS.get(selected_primary_tab, ""),
-            ticker=(memo.ticker if memo is not None else None),
-            company_name=(memo.company_name if memo is not None else None),
-        )
+        if memo is None or selected_primary_tab == "Overview":
+            render_shell_header(
+                workspace=selected_primary_tab,
+                section=_current_subpage_label(selected_primary_tab),
+                description=PAGE_DESCRIPTIONS.get(selected_primary_tab, ""),
+                ticker=(memo.ticker if memo is not None else None),
+                company_name=(memo.company_name if memo is not None else None),
+            )
+        else:
+            render_ticker_strip(
+                ticker=memo.ticker,
+                company_name=memo.company_name,
+                sector=memo.sector,
+                action=memo.action,
+                conviction=memo.conviction,
+                current_price=memo.valuation.current_price,
+                base_iv=memo.valuation.base,
+                upside_pct_base=memo.valuation.upside_pct_base,
+                snapshot_label=st.session_state.get("report_source", "live"),
+            )
 
     with shell_tools_col:
         if memo is not None:
@@ -453,23 +543,15 @@ def main() -> None:
         notes_col = None
 
     with main_col:
-        if memo is None:
+        if memo is None and selected_primary_tab == "Overview":
             _render_empty_state()
-        else:
-            st.markdown(f"## {memo.ticker} — {memo.company_name}")
-            st.caption(f"{memo.sector}  ·  {memo.date}  ·  Analyst: {memo.analyst}")
-            col1, col2, col3, col4, col5 = st.columns(5)
-            col1.metric("Action", memo.action)
-            col2.metric("Conviction", memo.conviction.upper())
-            col3.metric("Current Price", f"${memo.valuation.current_price or 0:,.2f}")
-            col4.metric("Base Case IV", f"${memo.valuation.base:,.2f}")
-            col5.metric("Upside (base)", f"{(memo.valuation.upside_pct_base or 0) * 100:+.1f}%")
-            st.info(f"**One-liner:** {memo.one_liner}")
-            st.warning(
-                f"**Variant Thesis:** {memo.variant_thesis_prompt}\n\n_This is the question the AI cannot answer for you. Answer this before sizing the position._"
-            )
+        elif memo is not None and selected_primary_tab == "Overview":
+            _render_expanded_overview_banner(memo)
 
-        SECTION_REGISTRY[selected_primary_tab](memo, st.session_state)
+        if memo is None and selected_primary_tab == "Overview":
+            pass
+        else:
+            SECTION_REGISTRY[selected_primary_tab](memo, st.session_state)
 
     if notes_col is not None and memo is not None:
         with notes_col:

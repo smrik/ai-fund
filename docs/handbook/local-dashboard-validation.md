@@ -80,6 +80,11 @@ The WSL fallback is documented here:
 
 - `docs/handbook/wsl-playwright.md`
 
+If you are validating the React quote-terminal instead of Streamlit, use these docs instead:
+
+- [React Frontend Setup And Runtime Map](./react-frontend-setup.md)
+- [React Playwright Review Loop](./react-playwright-review-loop.md)
+
 ## Current Limitation In Codex
 
 This Codex runtime can inspect the app terminal and confirm when the host prompt is already active as `(ai-fund)`, but it cannot currently launch host-side PowerShell subprocesses from the bash execution sandbox because Windows interop fails with:

@@ -55,6 +55,11 @@ nav:
       - Valuation Task Breakdown: handbook/valuation-task-breakdown.md
       - Engineering Deep Dive: handbook/engineering-deep-dive.md
       - Operations Runbook: handbook/operations-runbook.md
+      - Local Dashboard Validation: handbook/local-dashboard-validation.md
+      - Quote-Terminal UI And API Dev Guide: handbook/quote-terminal-ui.md
+      - React Frontend Setup And Runtime Map: handbook/react-frontend-setup.md
+      - React Playwright Review Loop: handbook/react-playwright-review-loop.md
+      - WSL Playwright Fallback: handbook/wsl-playwright.md
       - Quality And Verification: handbook/quality-and-verification.md
       - Deep Dive Dossier: handbook/deep-dive-dossier.md
   - Reference:

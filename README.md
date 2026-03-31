@@ -16,6 +16,8 @@ Alpha Pod is an AI-augmented fundamental research system built around a strict s
 - [Repository Guidance](docs/PLANS.md)
 - [Architecture Overview](docs/design-docs/architecture-overview.md)
 - [Workflow End To End](docs/handbook/workflow-end-to-end.md)
+- [React Frontend Setup And Runtime Map](docs/handbook/react-frontend-setup.md)
+- [React Playwright Review Loop](docs/handbook/react-playwright-review-loop.md)
 - [Plan Registry](docs/plans/index.md)
 
 ## Setup
@@ -38,6 +40,34 @@ If you use Conda, create the environment with:
 python -m pip install mkdocs mkdocs-material
 python -m mkdocs serve
 ```
+
+## One-Script Dashboard Run
+
+For the React dashboard + FastAPI backend on WSL, use the launcher script:
+
+```bash
+bash scripts/manual/launch-react-wsl.sh
+```
+
+Useful variants:
+
+```bash
+bash scripts/manual/launch-react-wsl.sh --status
+bash scripts/manual/launch-react-wsl.sh --stop
+bash scripts/manual/launch-react-wsl.sh --bootstrap
+```
+
+After changing `.env`, restart the stack so the backend reloads the new keys:
+
+```bash
+bash scripts/manual/launch-react-wsl.sh --stop
+bash scripts/manual/launch-react-wsl.sh
+```
+
+Default URLs:
+
+- frontend: `http://127.0.0.1:4173`
+- API: `http://127.0.0.1:8000`
 
 ## Notes
 

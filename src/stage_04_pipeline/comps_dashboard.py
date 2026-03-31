@@ -13,6 +13,16 @@ METRIC_LABELS = {
     "tev_ebit_ltm": "TEV / EBIT LTM",
     "pe_ltm": "P / E LTM",
 }
+COMPARISON_LABELS = {
+    "tev_ebitda_ltm": "TEV / EBITDA LTM",
+    "tev_ebitda_fwd": "TEV / EBITDA Fwd",
+    "tev_ebit_ltm": "TEV / EBIT LTM",
+    "tev_ebit_fwd": "TEV / EBIT Fwd",
+    "pe_ltm": "P / E LTM",
+    "revenue_growth": "Revenue Growth",
+    "ebit_margin": "EBIT Margin",
+    "net_debt_to_ebitda": "Net Debt / EBITDA",
+}
 
 
 def _safe_round(value: float | None, digits: int = 2) -> float | None:
@@ -185,6 +195,111 @@ def _metric_options(valuation_by_metric: dict[str, dict], primary_metric: str | 
     return options
 
 
+def _comparison_summary(target_vs_peers: dict) -> list[dict]:
+    ordered_keys = (
+        "tev_ebitda_ltm",
+        "tev_ebitda_fwd",
+        "tev_ebit_ltm",
+        "tev_ebit_fwd",
+        "pe_ltm",
+        "revenue_growth",
+        "ebit_margin",
+        "net_debt_to_ebitda",
+    )
+    target = (target_vs_peers or {}).get("target") or {}
+    peer_medians = (target_vs_peers or {}).get("peer_medians") or {}
+    deltas = (target_vs_peers or {}).get("deltas") or {}
+    rows: list[dict] = []
+    for key in ordered_keys:
+        if target.get(key) is None and peer_medians.get(key) is None:
+            continue
+        rows.append(
+            {
+                "metric": key,
+                "label": COMPARISON_LABELS.get(key, key.replace("_", " ").title()),
+                "target": target.get(key),
+                "peer_median": peer_medians.get(key),
+                "delta": deltas.get(key),
+            }
+        )
+    return rows
+
+
+def _valuation_by_metric_rows(
+    valuation_by_metric: dict[str, dict],
+    target_vs_peers: dict,
+    comps_result,
+    primary_metric: str | None,
+) -> list[dict]:
+    target_payload = (target_vs_peers or {}).get("target") or {}
+    peer_medians = (target_vs_peers or {}).get("peer_medians") or {}
+    rows: list[dict] = []
+    for metric_name, payload in valuation_by_metric.items():
+        metric_result = comps_result.metrics.get(metric_name) if comps_result else None
+        rows.append(
+            {
+                "metric": metric_name,
+                "label": payload.get("label") or METRIC_LABELS.get(metric_name, metric_name.replace("_", " ").upper()),
+                "target_multiple": target_payload.get(metric_name),
+                "peer_median_multiple": peer_medians.get(metric_name),
+                "bear_multiple": payload.get("bear_multiple"),
+                "base_multiple": payload.get("base_multiple"),
+                "bull_multiple": payload.get("bull_multiple"),
+                "bear_iv": payload.get("bear"),
+                "base_iv": payload.get("base"),
+                "bull_iv": payload.get("bull"),
+                "n_raw": getattr(metric_result, "n_raw", None),
+                "n_clean": getattr(metric_result, "n_clean", None),
+                "outliers_removed": list(getattr(metric_result, "outliers_removed", []) or []),
+                "is_primary": metric_name == primary_metric,
+            }
+        )
+    return rows
+
+
+def _peer_table_rows(peer_rows: list[dict]) -> list[dict]:
+    rows: list[dict] = []
+    for row in peer_rows:
+        peer_row = dict(row)
+        peer_row["display_name"] = (
+            row.get("display_name")
+            or row.get("name")
+            or row.get("company_name")
+            or row.get("ticker")
+        )
+        rows.append(peer_row)
+    return rows
+
+
+def _metric_status_rows(peer_rows: list[dict], valuation_by_metric: dict[str, dict], comps_result) -> list[dict]:
+    rows: list[dict] = []
+    metric_results = getattr(comps_result, "metrics", {}) or {}
+    for metric_name, payload in valuation_by_metric.items():
+        metric_result = metric_results.get(metric_name)
+        outliers = set(getattr(metric_result, "outliers_removed", []) or [])
+        label = payload.get("label") or METRIC_LABELS.get(metric_name, metric_name.replace("_", " ").upper())
+        for row in peer_rows:
+            ticker = row.get("ticker")
+            raw_multiple = row.get(metric_name)
+            if raw_multiple is None:
+                status = "missing"
+            elif ticker in outliers:
+                status = "outlier_removed"
+            else:
+                status = "included"
+            rows.append(
+                {
+                    "ticker": ticker,
+                    "display_name": row.get("display_name") or row.get("name") or row.get("ticker"),
+                    "metric": metric_name,
+                    "label": label,
+                    "raw_multiple": raw_multiple,
+                    "status": status,
+                }
+            )
+    return rows
+
+
 def build_comps_dashboard_view(ticker: str) -> dict:
     ticker = ticker.upper().strip()
     comps_detail = get_ciq_comps_detail(ticker)
@@ -194,11 +309,15 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             "available": False,
             "target": {},
             "peers": [],
+            "peer_table": [],
             "metric_options": [],
             "selected_metric_default": None,
             "valuation_range": {},
             "valuation_range_by_metric": {},
+            "valuation_by_metric_rows": [],
             "target_vs_peers": {"target": {}, "peer_medians": {}, "deltas": {}},
+            "comparison_summary": [],
+            "metric_status_rows": [],
             "football_field": {"ranges": [], "markers": [], "range_min": None, "range_max": None},
             "historical_multiples_summary": {"available": False, "metrics": {}, "audit_flags": []},
             "audit_flags": ["No CIQ comps detail available"],
@@ -275,6 +394,21 @@ def build_comps_dashboard_view(ticker: str) -> dict:
 
     multiples_summary = build_multiples_dashboard_view(ticker)
     metric_options = _metric_options(valuation_by_metric, primary_metric)
+    target_vs_peers = _target_vs_peers_payload(
+        target,
+        market,
+        comps_detail.get("medians") or {},
+        peer_rows,
+    )
+    peer_table = _peer_table_rows(peer_rows)
+    valuation_by_metric_rows = _valuation_by_metric_rows(
+        valuation_by_metric,
+        target_vs_peers,
+        comps_result,
+        primary_metric,
+    )
+    comparison_summary = _comparison_summary(target_vs_peers)
+    metric_status_rows = _metric_status_rows(peer_table, valuation_by_metric, comps_result)
 
     return {
         "ticker": ticker,
@@ -287,6 +421,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             "industry": market.get("industry"),
         },
         "peers": peer_rows,
+        "peer_table": peer_table,
         "peer_counts": {
             "raw": comps_result.peer_count_raw if comps_result else len(peer_rows),
             "clean": comps_result.peer_count_clean if comps_result else len(peer_rows),
@@ -296,17 +431,15 @@ def build_comps_dashboard_view(ticker: str) -> dict:
         "selected_metric_default": primary_metric,
         "valuation_range": valuation_range,
         "valuation_range_by_metric": valuation_by_metric,
+        "valuation_by_metric_rows": valuation_by_metric_rows,
         "similarity_method": comps_result.similarity_method if comps_result else "market_cap_only",
         "similarity_model": comps_result.similarity_model if comps_result else None,
         "weighting_formula": comps_result.weighting_formula if comps_result else "market_cap_proximity_only",
         "medians": comps_detail.get("medians") or {},
         "compare_to_target": _compare_payload(target, comps_detail.get("medians") or {}),
-        "target_vs_peers": _target_vs_peers_payload(
-            target,
-            market,
-            comps_detail.get("medians") or {},
-            peer_rows,
-        ),
+        "target_vs_peers": target_vs_peers,
+        "comparison_summary": comparison_summary,
+        "metric_status_rows": metric_status_rows,
         "football_field": _football_field(
             market.get("current_price"),
             valuation_by_metric,

@@ -2,7 +2,9 @@
 
 ## Overview
 
-The Python pipeline writes a structured JSON per ticker. An Excel workbook (`templates/ticker_review.xlsx`) pulls that JSON via Power Query, seeds assumptions into an override column, and live Excel formulas recompute the full DCF, WACC, comps valuation, and equity bridge. You own the template; Python only produces the data.
+The Python pipeline writes a structured JSON per ticker. The staged Excel workbook (`templates/ticker_review.xlsx`) carries that JSON as a sidecar export payload and uses it to populate the review tabs. The DCF, WACC, and summary sheets remain workbook-native; the comps appendix is now written directly from the richer JSON payload during export staging.
+
+This Power Query path is separate from CIQ workbook ingestion. CIQ data enters SQLite through the deterministic workbook refresh + ingest flow under `ciq/`; Power Query here is only for loading Alpha Pod valuation JSON into Excel review templates.
 
 ---
 
@@ -40,6 +42,7 @@ Top-level sections and their Power Query navigation targets:
 | `health_flags` | boolean diagnostics (tv_high, tv_extreme, guardrails, etc.) |
 | `forecast_bridge` | array[10] — year-by-year FCFF projection |
 | `comps_detail` | target + per-peer metrics + medians |
+| `comps_analysis` | workbook-ready comps appendix rows, diagnostics, and history |
 | `source_lineage` | data source tag for every assumption |
 | `ciq_lineage` | CIQ run / date / file audit trail |
 | `qoe` | QoE signals (present only when `--qoe` flag used) |
@@ -51,13 +54,22 @@ Top-level sections and their Power Query navigation targets:
 
 ### Step 1 — Config sheet
 
-Create a sheet named **Config**. In cell `A1` type `json_path`, in `B1` enter the full path to the latest JSON:
+The canonical template already includes a sheet named **Config** plus the defined name `json_path`.
+
+For the shipped `templates/ticker_review.xlsx` workbook:
+
+- `Config!B2` stores the staged JSON path
+- the defined name `json_path` points at `Config!$B$2`
+
+When the React export flow stages a workbook, it copies `templates/ticker_review.xlsx`, writes a job-scoped `{TICKER}_latest.json` into the export bundle, and updates `Config!B2` to the absolute path of that staged JSON.
+
+If you are building or repairing the template manually, enter the full path in `B2`:
 
 ```
 C:\Projects\03-Finance\ai-fund\data\valuations\json\IBM_latest.json
 ```
 
-Name the range `B1` as `json_path` (Formulas → Name Manager → New → refers to `=Config!$B$1`).
+The defined name should refer to `=Config!$B$2`.
 
 ### Step 2 — Create the base JSON query
 
@@ -65,7 +77,7 @@ Name the range `B1` as `json_path` (Formulas → Name Manager → New → refers
 
 ```m
 let
-    FilePath = Excel.CurrentWorkbook(){[Name="ConfigTable"]}[Content]{0}[json_path],
+    FilePath = Excel.CurrentWorkbook(){[Name="json_path"]}[Content]{0}[Column1],
     Source   = Json.Document(File.Contents(FilePath)),
     Output   = Source
 in
@@ -189,17 +201,25 @@ Pulls PV sums from Sheets 5/6/7:
 Three scenario columns (Bear / Base / Bull) + expected IV column = weighted average using scenario probabilities from Assumptions.
 
 ### Sheet 9 — Comps
-- Power Query loads `comps_detail.peers` as a table + `comps_detail.target` as header row
-- Column layout: Ticker | Name | MCap | TEV | Revenue | EBITDA | EBIT | EPS | EV/EBITDA LTM | EV/EBITDA Fwd | EV/EBIT | P/E
-- **Include** column: PM types `x` to exclude a peer from medians
-- Live MEDIAN that skips excluded rows:
-  ```excel
-  =MEDIAN(IF(Include_range<>"x", EV_EBITDA_range))
-  ```
-  (Enter as array formula: Ctrl+Shift+Enter, or CTRL+SHIFT+ENTER in older Excel)
-- Implied IV row: `= peer_median_multiple × target_metric`, bridge to equity, ÷ shares
+- Export staging writes this tab directly from `comps_analysis`
+- Purpose: PM-facing comparable-companies appendix
+- Sections:
+  - headline valuation summary: primary metric, blended base IV, bear/base/bull IV, raw/clean peer counts, similarity method
+  - valuation-by-metric table: target multiple, peer median, bear/base/bull multiples, bear/base/bull IV, primary flag
+  - target-vs-peer benchmark table: growth, margins, leverage, and valuation deltas
+  - peer table: ticker, display name, similarity score, model weight, operating benchmarks, and trading multiples
+- The shipped workbook no longer treats Excel median formulas or manual `"x"` exclusions as the official comps engine. Official comps outputs come from the deterministic backend payload.
 
-### Sheet 10 — QoE Signals
+### Sheet 10 — Comps Diagnostics
+- Export staging writes this tab directly from `comps_analysis`
+- Purpose: support diagnostics for the comps appendix
+- Sections:
+  - audit flags and model notes
+  - per-peer, per-metric status rows (`included`, `outlier_removed`, `missing`)
+  - football-field ranges by metric
+  - historical multiple summary with current, median, quartiles, and percentile
+
+### Sheet 11 — QoE Signals
 - Power Query loads `qoe` section
 - Composite score banner at top (colour-coded)
 - Per-signal table: signal name | value | score | threshold
@@ -210,21 +230,21 @@ Three scenario columns (Bear / Base / Bull) + expected IV column = weighted aver
 
 ## 5. Refresh Workflow
 
-1. Run the pipeline: `python -m src.stage_02_valuation.batch_runner --ticker IBM --json --qoe`
-2. Open `ticker_review.xlsx`
-3. Update `Config!B1` to point to the new ticker's `_latest.json`
-4. **Data → Refresh All** (or Ctrl+Alt+F5)
-5. All sheets populate from the JSON; Col D (Active) switches to any overrides you've typed in Col C
-6. Override any assumption in Col C → FCFF projections, equity bridge, and IV recalculate immediately
+1. Use the React export hub on `/ticker/:ticker/audit` or the `Valuation -> Export Excel` shortcut
+2. The backend stages a copied workbook plus a job-scoped JSON bundle under `data/exports/generated/`
+3. Open the staged workbook in desktop Excel
+4. Run **Data → Refresh All** (or Ctrl+Alt+F5) for workbook-native assumption sheets if needed
+5. The staged workbook already writes the `Comps` and `Comps Diagnostics` tabs directly from the JSON payload; the assumption-driven tabs continue to use the workbook formulas
+6. Override any assumption in Col C and the workbook recalculates immediately
 
 ---
 
 ## 6. Adding a New Ticker
 
-1. Run `--ticker MSFT --json --qoe` → creates `MSFT_latest.json`
-2. Open `ticker_review.xlsx`, change `Config!B1` to `.../MSFT_latest.json`
+1. Stage a new export from the React `Audit` hub or by rerunning the JSON export manually
+2. Open the copied workbook and confirm `Config!B2` points at the intended `{TICKER}_latest.json`
 3. Refresh All
-4. Overrides in Col C are **not** ticker-specific — clear them when switching tickers
+4. Overrides in Col C are **not** ticker-specific inside a workbook copy — clear them when switching tickers or stage a fresh bundle
 
 ---
 
@@ -234,6 +254,13 @@ Three scenario columns (Bear / Base / Bull) + expected IV column = weighted aver
 |----------|------|
 | JSON (dated) | `data/valuations/json/{TICKER}_{YYYY-MM-DD}.json` |
 | JSON (latest) | `data/valuations/json/{TICKER}_latest.json` |
+| Staged React export bundle | `data/exports/generated/ticker/{TICKER}/{TIMESTAMP}-{FORMAT}-{ID}/` |
 | Excel template | `templates/ticker_review.xlsx` |
 | JSON exporter module | `src/stage_02_valuation/json_exporter.py` |
 | JSON exporter tests | `tests/test_json_exporter.py` |
+| Rich comps appendix payload | `comps_analysis` |
+
+## Canonical Template Notes
+
+- `templates/ticker_review.xlsx` is the canonical review workbook used by the export flow
+- `templates/ticker_review2.xlsx` and `templates/CALM_ticker_review2.xlsx` should be treated as legacy/non-canonical variants unless they are explicitly promoted in a later docs update

@@ -71,6 +71,28 @@ Per ticker sequence inside `value_single_ticker()`:
 6. Run reverse DCF (implied growth at current price)
 7. Emit one row with full assumptions + outputs + quality flags
 
+## Optional CIQ Workbook Refresh Path
+
+Entry point: `python -m ciq.ciq_refresh --ticker CALM --ciq-symbol NASDAQ:CALM`
+
+This is the host-Windows Excel path for refreshing CIQ workbook data into SQLite.
+
+Per ticker sequence:
+
+1. Update `ciq/templates/financials_input.json` with the target CIQ symbol and date
+2. Copy `ciq/templates/ciq_cleandata.xlsx` to `data/exports/{TICKER}_Standard.xlsx`
+3. Open the staged workbook in desktop Excel via `xlwings`
+4. Trigger workbook refresh and wait for async query completion
+5. Save and close the workbook
+6. Copy the refreshed staged workbook into `data/ciq_archive/` using ticker + date + timestamp
+7. Run deterministic CIQ workbook ingest into SQLite
+
+Important:
+
+- this is separate from the Power Query JSON review path
+- this should be run from host PowerShell, not WSL
+- the safest operator path is passing `--ciq-symbol` explicitly when there is any doubt about exchange prefix
+
 ## Assumption Source Priority (Per Ticker)
 
 The deterministic layer uses explicit priority order:
@@ -139,7 +161,7 @@ Guardrail:
 
 ## Dashboard Shell
 
-The Streamlit dashboard is the operator-facing review surface for the valuation workflow.
+The Streamlit dashboard remains available as a transitional review surface for the valuation workflow.
 
 Current shell model:
 
@@ -148,8 +170,50 @@ Current shell model:
 - `Market` for macro, revisions, sentiment, and factor context
 - `Research` for the working research board and dossier-backed note blocks
 - `Audit` for pipeline review, filings evidence, exports, and operational checks
+  - `Audit -> Batch Funnel` is the default no-memo landing surface and restores the latest saved deterministic universe watchlist on load.
+  - The primary table is the full ranked universe watchlist with current price, scenario IVs, expected IV, analyst target, and latest archived PM stance metadata.
+  - Deterministic batch refresh is manual. Use it to overwrite the saved watchlist from `config/universe.csv` or an ad hoc ticker subset.
+  - Deep analysis stays explicit and cost-aware: open the latest archived snapshot for a ticker when it exists, or manually run deep analysis only for the focused ticker or selected shortlist when needed.
 
 The dossier companion is available as a right-side collapsible rail from loaded-ticker pages. Use the `Show Notes Rail` toggle in the shell header to open or close it without leaving the current analysis page.
+
+## Transitional UI Surfaces
+
+Alpha Pod currently has two operator-facing shells during the quote-terminal migration:
+
+- `dashboard/app.py`
+  - Streamlit stabilization path
+  - default no-memo landing remains `Audit -> Batch Funnel`
+  - loaded tickers use a compact strip on non-`Overview` pages
+  - `Valuation` now exposes `Assumptions`, `WACC`, and `Recommendations` as first-class visible subviews
+- `frontend/`
+  - React + TypeScript + Vite quote-terminal scaffold
+  - strategic shell for the migration and the primary export surface
+  - routes:
+    - `/watchlist`
+    - `/ticker/:ticker/overview`
+    - `/ticker/:ticker/valuation`
+    - `/ticker/:ticker/market`
+    - `/ticker/:ticker/research`
+    - `/ticker/:ticker/audit`
+  - uses the thin FastAPI layer in `api/`
+  - `Audit` is the canonical ticker export hub
+  - `/watchlist` exposes explicit batch Excel and HTML export actions
+  - `Valuation` and `Research` expose contextual export shortcuts
+
+Local development commands:
+
+```bash
+python -m uvicorn api.main:app --reload
+npm --prefix frontend run dev
+python -m streamlit run dashboard/app.py
+```
+
+Migration guardrails:
+
+- keep business logic in `src/stage_04_pipeline/`, `src/stage_03_judgment/`, and `src/stage_02_valuation/`
+- keep `api/` as a transport layer only
+- do not duplicate valuation logic in the frontend
 
 ## Legacy Full-Memo Path
 
@@ -168,6 +232,7 @@ Caution:
 1. Refresh/seed universe if needed
 2. Run Stage 1 screen and inspect survivor count
 3. Run batch valuation (`--top` and optional `--xlsx`)
+   - dashboard alternative: `Audit -> Batch Funnel`, which auto-restores the latest saved watchlist before you refresh
 4. Verify required output columns and coverage
 5. Review highest-upside names with `tv_high_flag`, implied growth, and WACC reasonableness
 6. Optionally overlay QoE/industry context for final PM judgment

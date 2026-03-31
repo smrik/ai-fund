@@ -37,6 +37,10 @@ Use these buckets consistently:
   - this is not the primary planning system anymore
 - `docs/archive/`
   - scratch notes, deprecated top-level docs, and historical material kept only for posterity
+- `api/`
+  - thin FastAPI transport surface for UI clients; never the source of business logic
+- `frontend/`
+  - React + TypeScript + Vite quote-terminal client and its test/build config
 
 ## Canonical Entry Points
 
@@ -97,6 +101,8 @@ These rules are mandatory:
 - [Reference Index](./reference/config-reference.md)
 - [Strategy Docs](./strategy/index.md)
 - [Plan Registry](./plans/index.md)
+- [API README](../api/README.md)
+- [Frontend README](../frontend/README.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 - [General Archive](./archive/index.md)
 

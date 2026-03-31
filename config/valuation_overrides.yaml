@@ -3,3 +3,12 @@ sectors: {}
 tickers:
   IBM:
     revenue_growth_mid: 0.12
+  CALM:
+    wacc_methodology:
+      mode: blended
+      selected_method: null
+      weights:
+        peer_bottom_up: 0.25
+        industry_proxy: 0.5
+        self_hamada: 0.25
+    revenue_growth_near: 0.145326581472905

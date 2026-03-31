@@ -7,6 +7,7 @@ paths:
   db_path: data/alpha_pod.db
   ciq_templates_dir: ciq/templates
   ciq_exports_dir: data/exports
+  ciq_archive_dir: data/ciq_archive
   output_dir: output
   screens_dir: output/screens
   memos_dir: output/memos
@@ -51,7 +52,7 @@ ciq:
   refresh_wait_sec: 5
   refresh_timeout_sec: 300
   batch_size: 50
-  drop_folder: ciq/templates
+  drop_folder: data/exports
   workbook_glob: "*.xlsx"
   parser_version: ibm_standard_v1
   enforce_template_lock: true

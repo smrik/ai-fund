@@ -23,8 +23,15 @@ The hard rule is unchanged: LLM code never touches the deterministic computation
 3. [`docs/design-docs/architecture-overview.md`](./docs/design-docs/architecture-overview.md) — architecture and boundaries
 4. [`docs/design-docs/core-beliefs.md`](./docs/design-docs/core-beliefs.md) — design principles
 5. [`docs/handbook/workflow-end-to-end.md`](./docs/handbook/workflow-end-to-end.md) — operator workflow
-6. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
-7. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
+6. [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) — React/API runtime map
+7. [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) — canonical UI review workflow
+8. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
+9. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
+
+If you are touching `dashboard/`, `frontend/`, `api/`, or browser validation, also read:
+
+- [`docs/handbook/quote-terminal-ui.md`](./docs/handbook/quote-terminal-ui.md)
+- [`docs/handbook/local-dashboard-validation.md`](./docs/handbook/local-dashboard-validation.md)
 
 ## Canonical Structure
 
@@ -61,6 +68,19 @@ For any multi-step change:
 3. Update the canonical plan and adjacent docs when scope or behavior changes
 4. Update `.agent/session-state.md` before handoff so the next agent can resume quickly
 
+## React And Playwright Rules
+
+When working on the React shell:
+
+1. Prefer the documented React stack and review workflow in [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) and [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) over inventing a new local run path.
+2. `dashboard/` is still the operator-facing shell today. `frontend/` + `api/` is the strategic migration path. Keep both working during the transition.
+3. `api/` is transport only. New business logic belongs in `src/stage_04_pipeline/`, `src/stage_03_judgment/`, `src/stage_02_valuation/`, `db/`, or `config/`.
+4. Preserve the current route invariants unless the active plan explicitly changes them: `/watchlist` as the landing route, selected-row focus pane on watchlist, compact non-`Overview` ticker strip, and visible valuation subviews.
+5. For React route review in WSL, prefer [`scripts/manual/launch-react-wsl.sh`](./scripts/manual/launch-react-wsl.sh). For Streamlit + Playwright, host PowerShell remains canonical.
+6. Use the route-matrix runner in [`scripts/manual/review_react_route_matrix.py`](./scripts/manual/review_react_route_matrix.py) before claiming a React route set is healthy.
+7. Do not trust `200 OK` or a clean browser console by themselves; inspect screenshots and distinguish true empty-state data from render bugs.
+8. If a frontend route looks wrong, compare the rendered page against the direct API payload before changing UI code.
+
 ## Branch Hygiene
 
 Before starting a new branch or ending a major work session:
@@ -76,6 +96,7 @@ Before starting a new branch or ending a major work session:
 
 ```text
 config/         Committed config and overrides
+api/            Thin FastAPI surface over stage_04/stage_03/stage_02 helpers
 ciq/            Capital IQ Excel integration
 db/             SQLite schema and loaders
 src/
@@ -85,6 +106,7 @@ src/
   stage_03_judgment/    LLM agents only
   stage_04_pipeline/    Orchestration, dashboard helpers, refresh flows
 dashboard/      Streamlit app
+frontend/       React + TypeScript + Vite quote-terminal scaffold
 tests/          Offline-first test suite
 docs/           Canonical documentation
 skills/         Project-local skills and prompts
@@ -96,6 +118,8 @@ skills/         Project-local skills and prompts
 python -m src.stage_01_screening.stage1_filter
 python -m src.stage_02_valuation.batch_runner --top 50
 python -m src.stage_02_valuation.batch_runner --ticker IBM
+python -m uvicorn api.main:app --reload
+npm --prefix frontend run dev
 python -m ciq.ciq_refresh
 python -m pytest -v
 ```

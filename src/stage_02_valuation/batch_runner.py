@@ -10,6 +10,7 @@ import logging
 import sqlite3
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import asdict, replace
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +28,7 @@ from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
 from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
 from src.stage_02_valuation.json_exporter import export_ticker_json
+from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_02_valuation.professional_dcf import (
     ForecastDrivers,
     ScenarioSpec,
@@ -778,7 +780,9 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
     conn = sqlite3.connect(str(DB_PATH))
     create_tables(conn)
     try:
-        df.to_sql("batch_valuations_latest", conn, if_exists="replace", index=False)
+        latest_df = df.copy()
+        latest_df["snapshot_date"] = snapshot_date
+        latest_df.to_sql("batch_valuations_latest", conn, if_exists="replace", index=False)
 
         conn.execute(
             """
@@ -864,12 +868,17 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
                 dcf_iv_rows,
             )
         conn.commit()
-        return len(df), len(valuation_rows), len(dcf_iv_rows)
+        return len(latest_df), len(valuation_rows), len(dcf_iv_rows)
     finally:
         conn.close()
 
 
-def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = False):
+def run_batch(
+    tickers: list[str] = None,
+    top_n: int = 30,
+    export_xlsx: bool = False,
+    progress_callback: Callable[[dict], None] | None = None,
+):
     logger.info("\n%s\nALPHA POD — Batch Valuation Runner\n%s\n", "=" * 64, "=" * 64, extra={"step": "run_batch"})
 
     if tickers is None:
@@ -882,6 +891,9 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
         logger.info("Loaded %s tickers from universe.csv", len(tickers), extra={"step": "load_universe"})
     else:
         logger.info("Running on %s tickers", len(tickers), extra={"step": "load_universe"})
+
+    if progress_callback is not None:
+        progress_callback({"completed": 0, "total": len(tickers), "ticker": None, "status": "starting"})
 
     results = []
     failed_tickers: list[str] = []
@@ -916,6 +928,16 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
                 len(tickers),
                 ticker,
                 extra={"ticker": ticker, "step": "run_batch"},
+            )
+
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "completed": i,
+                    "total": len(tickers),
+                    "ticker": ticker,
+                    "status": "valued" if result else "skipped",
+                }
             )
 
         time.sleep(0.3)
@@ -999,6 +1021,9 @@ def run_batch(tickers: list[str] = None, top_n: int = 30, export_xlsx: bool = Fa
     else:
         logger.info("Excel: skipped (pass --xlsx to export workbook)", extra={"step": "run_batch"})
     logger.info("CSV (for Power Query): %s", latest_csv, extra={"step": "run_batch"})
+
+    if progress_callback is not None:
+        progress_callback({"completed": len(tickers), "total": len(tickers), "ticker": None, "status": "complete"})
 
     return results
 
@@ -1406,8 +1431,12 @@ if __name__ == "__main__":
                 json_dir = OUTPUT_DIR / "json"
                 qoe_data = _compute_qoe_for_ticker(args.ticker) if args.qoe else None
                 comps_data = get_ciq_comps_detail(args.ticker)
+                comps_analysis = build_comps_dashboard_view(args.ticker)
                 out_path = export_ticker_json(
-                    result, qoe=qoe_data, comps_detail=comps_data,
+                    result,
+                    qoe=qoe_data,
+                    comps_detail=comps_data,
+                    comps_analysis=comps_analysis,
                     output_dir=json_dir, date_str=today,
                 )
                 logger.info(
@@ -1436,8 +1465,12 @@ if __name__ == "__main__":
                 t = result.get("ticker", "UNKNOWN")
                 qoe_data = _compute_qoe_for_ticker(t) if args.qoe else None
                 comps_data = get_ciq_comps_detail(t)
+                comps_analysis = build_comps_dashboard_view(t)
                 export_ticker_json(
-                    result, qoe=qoe_data, comps_detail=comps_data,
+                    result,
+                    qoe=qoe_data,
+                    comps_detail=comps_data,
+                    comps_analysis=comps_analysis,
                     output_dir=json_dir, date_str=today,
                 )
             logger.info("\nJSON exports written to %s", json_dir, extra={"step": "json_export"})

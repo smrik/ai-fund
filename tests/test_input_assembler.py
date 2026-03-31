@@ -210,6 +210,26 @@ def test_net_debt_includes_leases_when_yfinance_source():
     assert result.source_lineage["net_debt"] == "yfinance+leases"
 
 
+def test_build_valuation_inputs_prefers_cached_market_data_calls():
+    """Workbench-facing input assembly should request cached market/historical data."""
+    with (
+        mock.patch("src.stage_02_valuation.input_assembler.md_client.get_market_data", return_value=_make_mkt()) as get_market_data,
+        mock.patch("src.stage_02_valuation.input_assembler.md_client.get_historical_financials", return_value=_make_hist()) as get_historical_financials,
+        mock.patch("src.stage_02_valuation.input_assembler.get_ciq_snapshot", return_value=None),
+        mock.patch("src.stage_02_valuation.input_assembler.get_ciq_comps_valuation", return_value=None),
+        mock.patch("src.stage_02_valuation.input_assembler.get_ciq_comps_detail", return_value=None),
+        mock.patch("src.stage_02_valuation.input_assembler.get_bridge_items_from_xbrl", return_value={}),
+        mock.patch("src.stage_02_valuation.input_assembler.compute_wacc_methodology_set_for_ticker", return_value={"peer_bottom_up": _wacc_result(), "single_capm": _wacc_result()}),
+        mock.patch("src.stage_02_valuation.input_assembler.resolve_story_driver_profile", return_value=(StoryDriverProfile(), "default")),
+        mock.patch("src.stage_02_valuation.input_assembler.apply_story_driver_adjustments", return_value={"growth_add": 0.0, "margin_add": 0.0, "cyclicality_growth_multiplier": 1.0, "cyclicality_wacc_add": 0.0, "governance_wacc_add": 0.0, "capex_target_add": 0.0, "da_target_add": 0.0}),
+    ):
+        result = build_valuation_inputs("FAKE", apply_overrides=False)
+
+    assert result is not None
+    get_market_data.assert_called_with("FAKE", use_cache=True)
+    get_historical_financials.assert_called_with("FAKE", use_cache=True)
+
+
 def test_margin_target_blends_company_and_sector():
     """#3: margin_target = 0.5×margin_start + 0.5×sector_default."""
     # margin_start from yfinance op_margin_avg_3yr = 0.35 (35%)
