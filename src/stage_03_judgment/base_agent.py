@@ -33,9 +33,7 @@ class BaseAgent:
 	"""
 
 	def __init__(self, model: str | None = None):
-		import os
 		api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY", "")
-		print(api_key)
 		kwargs: dict = {"api_key": api_key}
 		if LLM_BASE_URL:
 			kwargs["base_url"] = LLM_BASE_URL
