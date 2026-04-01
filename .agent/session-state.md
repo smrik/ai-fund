@@ -1,30 +1,31 @@
 # Session State
 
-**Updated:** 2026-03-31 21:05:00 +02:00
+**Updated:** 2026-04-01 00:20:00 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Improve the canonical comps workbook/export path by adding a richer `comps_analysis` JSON contract, workbook-ready comps diagnostics rows, and an upgraded `ticker_review.xlsx` comps appendix.
+Harden the repository’s GitHub workflow and local developer hygiene before starting new feature work.
 
 ## Recent Actions
-- Extended `src/stage_04_pipeline/comps_dashboard.py` with workbook-ready rows: `valuation_by_metric_rows`, `comparison_summary`, `peer_table`, and `metric_status_rows`.
-- Extended `src/stage_02_valuation/json_exporter.py` and `src/stage_02_valuation/batch_runner.py` so ticker JSON exports now include top-level `comps_analysis` alongside `comps_detail`.
-- Updated `src/stage_04_pipeline/export_service.py` so staged Excel exports populate `Comps` and `Comps Diagnostics` directly from the richer comps payload, and refreshed `templates/ticker_review.xlsx` to include the new diagnostics tab/layout.
-- Added/updated focused tests in `tests/test_json_exporter.py`, `tests/test_comps_dashboard.py`, `tests/test_export_service.py`, and `tests/test_ticker_review_template.py`, plus doc updates in `docs/handbook/excel-template-guide.md`.
+- Added CI and local workflow hardening: diff-scoped pre-commit runner, local quality-gate runner, and doc/test coverage for both.
+- Added GitHub/process files: `CODEOWNERS`, issue templates, Dependabot config, `CONTRIBUTING.md`, explicit Ruff config, and broader ignore rules for local agent/tooling artifacts.
+- Added repo-hardening documentation and tracking: active plan `docs/plans/active/2026-03-31-github-hygiene-and-repo-hardening.md`, `docs/reference/github-hardening-checklist.md`, and `docs/reference/index.md`.
+- Updated branch/PR workflow docs and upgraded CI action majors to Node 24 compatible versions.
 
 ## Next Steps
-- If desired, validate a live staged workbook export end-to-end from the React `Audit` page and inspect the new comps tabs in desktop Excel.
-- Decide whether the next tranche should enrich raw peer display fields further at the CIQ adapter level or move on to improving the DCF workbook surfaces.
-- Check git hygiene carefully before any commit or branch cleanup; the worktree remains heavily dirty with unrelated tracked and untracked files.
+- Refresh PR #2 in GitHub and confirm the latest pushed commit `10681d3` is attached to the PR and has a green `CI / pre-commit` check.
+- Merge PR #2 once GitHub reflects the latest head commit and checks.
+- After merge, update local `main` and start any further hygiene work on a fresh branch.
 
 ## Known Issues
-- Focused comps/export tests passed, but a broader architecture pass still fails on an unrelated existing bare `print()` in `src/stage_03_judgment/base_agent.py`.
-- Focused pytest commands still need to run outside the sandbox because Windows temp-dir cleanup under the sandbox is blocked.
-- `edgar` deprecation warnings and an `openpyxl` named-range deprecation warning remain in the focused test output.
-- The repository worktree is heavily dirty with unrelated tracked and untracked changes; do not assume this session’s diff is isolated.
+- GitHub branch head on `origin/codex/dashboard-ops-batch-funnel` is `10681d3`, but the PR API was still reporting the previous head `eeab497` at the end of the session; likely GitHub lag, but it should be rechecked before merge.
+- The broader repo still has substantial legacy Ruff debt outside the changed-file ratchet; see `docs/reference/github-hardening-checklist.md`.
+- Local `pre-commit` CLI/module is not installed in the active Python environment, so local verification used the dedicated quality-gate script instead.
+- Pytest emits a Windows cache-permission warning when writing `.pytest_cache` in this environment.
 
 ## Notes
-- Verified commands this session:
-- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_json_exporter.py tests/test_comps_dashboard.py tests/test_export_service.py tests/test_ticker_review_template.py -q --basetemp C:\Users\patri\.codex\memories\pytest-comps-temp-20260331b -p no:cacheprovider`
-- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_batch_runner_professional.py tests/test_architecture_boundaries.py -q --basetemp C:\Users\patri\.codex\memories\pytest-comps-temp-20260331c -p no:cacheprovider`
+- Verified in this tranche:
+- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_repo_hygiene_files.py tests/test_local_quality_gate.py tests/test_ci_precommit_scope.py tests/test_architecture_boundaries.py -q --basetemp C:\Users\patri\.codex\memories\pytest-github-hardening-20260331c -p no:cacheprovider`
+- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe scripts/dev/run_local_quality_gate.py`
+- Current local branch is clean and pushed; latest local/remote branch SHA is `10681d3a963115e866553706ab4c40a8bc5aed4b`.
