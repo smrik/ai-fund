@@ -2,7 +2,9 @@
 
 This repo uses a trackable, review-first workflow.
 
-See also: [GitHub Hardening Checklist](./github-hardening-checklist.md) and [Contributing Guide](../../CONTRIBUTING.md).
+See also: [GitHub Hardening Checklist](./github-hardening-checklist.md) and `CONTRIBUTING.md` in the repo root.
+
+For versioning and release-candidate preparation, use [Release Process](./release-process.md).
 
 ## Branch Protection For `main`
 

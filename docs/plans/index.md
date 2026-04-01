@@ -14,6 +14,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 ## Active
 
 - [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)
+- [Internal Release Readiness And Mock Publish](./active/2026-04-01-internal-release-readiness-and-mock-publish.md)
 - [GitHub Hygiene And Repo Hardening](./active/2026-03-31-github-hygiene-and-repo-hardening.md)
 - [Structured Logging First Tranche](./active/2026-03-27-structured-logging-first-tranche.md)
 - [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)

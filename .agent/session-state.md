@@ -1,31 +1,31 @@
 # Session State
 
-**Updated:** 2026-04-01 00:20:00 +02:00
+**Updated:** 2026-04-01 12:50:17 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Harden the repository’s GitHub workflow and local developer hygiene before starting new feature work.
+Finalize the internal `v0.1.0` release-readiness tranche, push it, then audit what still needs to be done before new feature work.
 
 ## Recent Actions
-- Added CI and local workflow hardening: diff-scoped pre-commit runner, local quality-gate runner, and doc/test coverage for both.
-- Added GitHub/process files: `CODEOWNERS`, issue templates, Dependabot config, `CONTRIBUTING.md`, explicit Ruff config, and broader ignore rules for local agent/tooling artifacts.
-- Added repo-hardening documentation and tracking: active plan `docs/plans/active/2026-03-31-github-hygiene-and-repo-hardening.md`, `docs/reference/github-hardening-checklist.md`, and `docs/reference/index.md`.
-- Updated branch/PR workflow docs and upgraded CI action majors to Node 24 compatible versions.
+- Added release/versioning metadata: `VERSION`, `CHANGELOG.md`, `SECURITY.md`, `.github/release.yml`, and `docs/reference/release-process.md`.
+- Added the mock-release helper `scripts/release/prepare_mock_release.py`, tests in `tests/test_release_readiness.py`, and the active plan `docs/plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md`.
+- Extended CI with `frontend-build`, `docs-build`, and `release-readiness`, and updated docs/navigation so the new release workflow is discoverable.
+- Re-verified the tranche locally with pytest, frontend build, mkdocs strict build, and `scripts/dev/run_local_quality_gate.py`.
 
 ## Next Steps
-- Refresh PR #2 in GitHub and confirm the latest pushed commit `10681d3` is attached to the PR and has a green `CI / pre-commit` check.
-- Merge PR #2 once GitHub reflects the latest head commit and checks.
-- After merge, update local `main` and start any further hygiene work on a fresh branch.
+- Commit and push the release-readiness tranche on `codex/dashboard-ops-batch-funnel`.
+- Confirm PR #2 picks up the new head commit and all checks rerun cleanly.
+- Review remaining repo hardening work: rulesets/manual GitHub settings, repo-wide Ruff debt, and any missing CI or docs cleanup.
 
 ## Known Issues
-- GitHub branch head on `origin/codex/dashboard-ops-batch-funnel` is `10681d3`, but the PR API was still reporting the previous head `eeab497` at the end of the session; likely GitHub lag, but it should be rechecked before merge.
-- The broader repo still has substantial legacy Ruff debt outside the changed-file ratchet; see `docs/reference/github-hardening-checklist.md`.
-- Local `pre-commit` CLI/module is not installed in the active Python environment, so local verification used the dedicated quality-gate script instead.
-- Pytest emits a Windows cache-permission warning when writing `.pytest_cache` in this environment.
+- GitHub previously lagged on PR head updates for branch `codex/dashboard-ops-batch-funnel`; recheck PR #2 after the next push.
+- The repo still has substantial legacy Ruff debt outside the changed-file ratchet; see `docs/reference/github-hardening-checklist.md`.
+- `scripts/dev/run_local_quality_gate.py` still emits a non-fatal Windows `.pytest_cache` permission warning in this environment.
 
 ## Notes
-- Verified in this tranche:
-- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_repo_hygiene_files.py tests/test_local_quality_gate.py tests/test_ci_precommit_scope.py tests/test_architecture_boundaries.py -q --basetemp C:\Users\patri\.codex\memories\pytest-github-hardening-20260331c -p no:cacheprovider`
+- Verified:
+- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_release_readiness.py tests/test_repo_hygiene_files.py tests/test_local_quality_gate.py tests/test_ci_precommit_scope.py tests/test_architecture_boundaries.py -q --basetemp C:\Projects\03-Finance\ai-fund\.tmp-tests\pytest-release-final -p no:cacheprovider`
+- `npm --prefix frontend run build`
+- `C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m mkdocs build --strict`
 - `C:\Users\patri\miniconda3\envs\ai-fund\python.exe scripts/dev/run_local_quality_gate.py`
-- Current local branch is clean and pushed; latest local/remote branch SHA is `10681d3a963115e866553706ab4c40a8bc5aed4b`.

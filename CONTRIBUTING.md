@@ -45,6 +45,7 @@ python scripts/dev/run_local_quality_gate.py --all-files
 - one branch per change stream
 - one PR per branch
 - docs updated when behavior changes
+- version/changelog updated when the change affects a release checkpoint
 - no secrets in the diff
 - local quality gate passed
 - CI green before merge
@@ -59,3 +60,5 @@ Use the PR template in [.github/pull_request_template.md](./.github/pull_request
 - do not merge red PRs
 
 For branch protection and GitHub settings, see [docs/reference/github-workflow.md](./docs/reference/github-workflow.md) and [docs/reference/github-hardening-checklist.md](./docs/reference/github-hardening-checklist.md).
+
+For versioning and internal release-candidate prep, see [docs/reference/release-process.md](./docs/reference/release-process.md).

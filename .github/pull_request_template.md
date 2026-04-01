@@ -33,6 +33,11 @@ Evidence:
 
 Any config, data, or deployment considerations.
 
+## Release Impact
+
+- [ ] No release metadata impact
+- [ ] `VERSION` / `CHANGELOG.md` updated if this should land in the next release checkpoint
+
 ## Checklist
 
 - [ ] Branch rebased/merged with latest `main`

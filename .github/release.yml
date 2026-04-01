@@ -1,0 +1,19 @@
+changelog:
+  categories:
+    - title: Product And Workflow
+      labels:
+        - feature
+        - enhancement
+        - workflow
+    - title: Fixes
+      labels:
+        - bug
+        - fix
+    - title: Infra And Tooling
+      labels:
+        - chore
+        - ci
+        - docs
+    - title: Other Changes
+      labels:
+        - "*"

@@ -14,6 +14,16 @@ This document is the concrete checklist for making Alpha Pod safer to operate in
 - Ruff config made explicit in `pyproject.toml`
 - `.gitignore` expanded to cover local agent/tooling noise
 
+## Release-Readiness Additions
+
+- canonical repo version file: `VERSION`
+- root `CHANGELOG.md`
+- release metadata config: `.github/release.yml`
+- minimal `SECURITY.md`
+- release-process guide: `docs/reference/release-process.md`
+- mock release-note generator: `scripts/release/prepare_mock_release.py`
+- CI jobs for frontend build, docs build, and release-readiness validation
+
 ## GitHub Settings To Enable Manually
 
 These cannot be fully enforced from the repository contents alone and should be set in the GitHub UI.

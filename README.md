@@ -13,6 +13,7 @@ Alpha Pod is an AI-augmented fundamental research system built around a strict s
 
 - [Agent Map](AGENTS.md)
 - [Contributing Guide](CONTRIBUTING.md)
+- [Release Process](docs/reference/release-process.md)
 - [Docs Home](docs/index.md)
 - [Repository Guidance](docs/PLANS.md)
 - [Architecture Overview](docs/design-docs/architecture-overview.md)
@@ -49,6 +50,16 @@ That command runs Ruff on changed Python files versus `origin/main` and then run
 
 ```bash
 python scripts/dev/run_local_quality_gate.py --all-files
+```
+
+## Release Readiness
+
+The repo now uses a canonical repo version in `VERSION` and tracks release notes in `CHANGELOG.md`.
+
+To validate release metadata without generating artifacts:
+
+```bash
+python scripts/release/prepare_mock_release.py --check-only
 ```
 
 ### Optional Conda Setup
