@@ -8,6 +8,8 @@ __pycache__/
 pytest_basetemp_*/
 tmp*/
 .ruff_cache/
+.pre-commit-cache/
+.npm-cache/
 .coverage
 htmlcov/
 

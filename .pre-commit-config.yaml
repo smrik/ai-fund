@@ -8,6 +8,8 @@ repos:
         args:
           - --markdown-linebreak-ext=md
       - id: check-yaml
+        args:
+          - --unsafe
   - repo: local
     hooks:
       - id: ruff-check
