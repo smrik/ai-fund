@@ -499,7 +499,3 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
     except Exception as e:
         logger.warning("get_historical_financials(%s) failed: %s", ticker, e)
         return _none_result
-
-
-
-

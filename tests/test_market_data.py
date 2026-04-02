@@ -342,4 +342,3 @@ def test_effective_tax_rate_handles_negative_sign_convention():
 
     assert result["effective_tax_rate_avg"] is not None
     assert abs(result["effective_tax_rate_avg"] - 0.20) < 0.001
-

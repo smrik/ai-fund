@@ -111,4 +111,3 @@ def test_reverse_dcf_returns_plausible_growth():
 
     assert implied is not None
     assert abs(implied - 0.10) < 0.01
-

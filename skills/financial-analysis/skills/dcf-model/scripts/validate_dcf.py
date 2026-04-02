@@ -29,7 +29,7 @@ class DCFModelValidator:
         self.errors = []
         self.warnings = []
         self.info = []
-        
+
     def validate_all(self) -> dict:
         """
         Run all validation checks
@@ -55,7 +55,7 @@ class DCFModelValidator:
         }
 
         return results
-    
+
     def check_sheet_structure(self):
         """Verify required sheets exist"""
         required_sheets = ['DCF', 'WACC', 'Sensitivity']
@@ -104,7 +104,7 @@ class DCFModelValidator:
             self.errors.append(f"Total formula errors: {total_errors}")
 
         return error_details, total_errors
-    
+
     def check_dcf_logic(self):
         """Validate DCF-specific logic and calculations"""
         self._check_terminal_growth_vs_wacc()
@@ -229,7 +229,7 @@ class DCFModelValidator:
 
         except Exception as e:
             self.warnings.append(f"Could not validate terminal value proportion: {str(e)}")
-    
+
 
 
 def validate_dcf_model(excel_path: str) -> dict:

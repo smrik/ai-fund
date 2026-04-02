@@ -171,4 +171,3 @@ if __name__ == "__main__":
             "results": [asdict(r) for r in report.results],
         }
     )
-
