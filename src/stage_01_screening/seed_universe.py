@@ -6,9 +6,7 @@ No API keys needed. Results are cached locally.
 Usage:
     python -m src.stage_01_screening.seed_universe
 """
-import csv
 import json
-import io
 import time
 from pathlib import Path
 from datetime import datetime
@@ -153,9 +151,9 @@ if __name__ == "__main__":
         sec = s.get("sector") or "Unknown"
         sectors[sec] = sectors.get(sec, 0) + 1
 
-    print(f"\nStats:")
+    print("\nStats:")
     print(f"  Total:          {len(stocks)}")
     print(f"  With market cap: {len(with_mcap)}")
-    print(f"  Sectors:")
+    print("  Sectors:")
     for sec, count in sorted(sectors.items(), key=lambda x: -x[1]):
         print(f"    {sec}: {count}")

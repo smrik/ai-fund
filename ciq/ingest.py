@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
-import sqlite3
 from pathlib import Path
 
 from config import CIQ_DROP_FOLDER, CIQ_WORKBOOK_GLOB

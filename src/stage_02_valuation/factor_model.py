@@ -1,7 +1,13 @@
 """Factor exposure decomposition using Fama-French 5-factor + momentum model."""
 
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +73,6 @@ def decompose_factor_exposure(
     )
 
     try:
-        import numpy as np
         import pandas as pd
     except ImportError as exc:
         _unavailable.error = f"numpy/pandas not available: {exc}"
@@ -276,12 +281,14 @@ def get_factor_summary_text(exposure: FactorExposure) -> str:
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
-def _find_col(df: "pd.DataFrame", name: str) -> str | None:
+def _find_col(df: pd.DataFrame, name: str) -> str | None:
     """
     Return the actual column name in df that matches name (case-insensitive,
     treating hyphens and underscores as equivalent).  Returns None if not found.
     """
-    normalise = lambda s: s.lower().replace("-", "_")
+    def normalise(value: str) -> str:
+        return value.lower().replace("-", "_")
+
     target = normalise(name)
     for col in df.columns:
         if normalise(str(col)) == target:

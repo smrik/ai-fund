@@ -13,7 +13,6 @@ via valuation_overrides.yaml when the haircut exceeds 10%.
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any

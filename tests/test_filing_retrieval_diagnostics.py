@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 from db.schema import create_tables
 import src.stage_00_data.filing_retrieval as fr

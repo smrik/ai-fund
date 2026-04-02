@@ -20,10 +20,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side, numbers
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.table import Table, TableStyleInfo
-from openpyxl.formatting.rule import CellIsRule, DataBarRule
+from openpyxl.formatting.rule import CellIsRule
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent

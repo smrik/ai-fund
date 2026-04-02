@@ -12,11 +12,15 @@ from __future__ import annotations
 import importlib.util
 import logging
 import pickle
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal, Optional
+from typing import TYPE_CHECKING, Literal, Optional
 
 import numpy as np
+
+if TYPE_CHECKING:
+    import pandas as pd
+    from hmmlearn.hmm import GaussianHMM
 
 logger = logging.getLogger(__name__)
 
@@ -78,7 +82,7 @@ def _has_hmmlearn() -> bool:
 # Feature engineering
 # ---------------------------------------------------------------------------
 
-def _fetch_training_features(lookback_days: int = 504) -> "pd.DataFrame | None":
+def _fetch_training_features(lookback_days: int = 504) -> pd.DataFrame | None:
     """
     Fetch and normalize macro features for HMM training.
 
@@ -119,7 +123,7 @@ def _fetch_training_features(lookback_days: int = 504) -> "pd.DataFrame | None":
             if snapshot.get("available"):
                 series = snapshot["series"]
 
-                def _series_to_df(series_id: str, col_name: str) -> "pd.Series | None":
+                def _series_to_df(series_id: str, col_name: str) -> pd.Series | None:
                     raw = series.get(series_id, {})
                     values = raw.get("values", [])
                     if not values:
@@ -181,7 +185,7 @@ def _fetch_training_features(lookback_days: int = 504) -> "pd.DataFrame | None":
 # State label assignment
 # ---------------------------------------------------------------------------
 
-def _assign_regime_labels(model, features_df: "pd.DataFrame") -> dict[int, str]:
+def _assign_regime_labels(model, features_df: pd.DataFrame) -> dict[int, str]:
     """
     Map HMM state indices to regime labels based on emission means.
 
@@ -224,7 +228,7 @@ def _assign_regime_labels(model, features_df: "pd.DataFrame") -> dict[int, str]:
 def train_regime_model(
     lookback_days: int = 504,
     n_states: int = 3,
-) -> "tuple[GaussianHMM | None, dict[int, str], str | None]":
+) -> tuple[GaussianHMM | None, dict[int, str], str | None]:
     """
     Fetch features, fit GaussianHMM, save to disk.
 
@@ -302,7 +306,6 @@ def detect_current_regime(retrain: bool = False) -> RegimeState:
     Never raises.
     """
     try:
-        import numpy as _np
 
         model = None
         label_map: dict[int, str] = {}

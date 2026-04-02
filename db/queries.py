@@ -4,7 +4,6 @@ Reusable read functions. All return lists of dicts or single values.
 """
 import sqlite3
 import pandas as pd
-from db.schema import get_connection
 
 
 def _rows_to_dicts(cursor: sqlite3.Cursor) -> list[dict]:

@@ -1,6 +1,8 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
@@ -435,6 +437,3 @@ def test_get_ciq_snapshot_includes_forward_revenue_from_comps(tmp_path, monkeypa
     assert out is not None
     assert out["revenue_fy1"] == pytest.approx(1_100_000_000.0)
     assert out["revenue_fy2"] == pytest.approx(1_200_000_000.0)
-
-
-import pytest

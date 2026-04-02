@@ -1,7 +1,6 @@
 """Revision signal integration for DCF input assembly."""
 
 import logging
-from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 

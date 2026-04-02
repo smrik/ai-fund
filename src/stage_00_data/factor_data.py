@@ -1,10 +1,16 @@
 """Fama-French factor data downloader and cache manager."""
 
+from __future__ import annotations
+
 import io
 import logging
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +69,7 @@ def _extract_first_csv(zip_bytes: bytes) -> bytes | None:
         return None
 
 
-def _parse_ff_csv(content: bytes, date_format: str = "%Y%m%d") -> "pd.DataFrame":
+def _parse_ff_csv(content: bytes, date_format: str = "%Y%m%d") -> pd.DataFrame:
     """
     Parse CSV content from a Ken French Data Library ZIP file.
 
@@ -143,7 +149,7 @@ def _parse_ff_csv(content: bytes, date_format: str = "%Y%m%d") -> "pd.DataFrame"
 def get_fama_french_factors(
     start_date: str | None = None,
     end_date: str | None = None,
-) -> "pd.DataFrame | None":
+) -> pd.DataFrame | None:
     """
     Return daily Fama-French 5-factor + Momentum factor returns as a DataFrame.
 
@@ -230,10 +236,10 @@ def get_fama_french_factors(
 
 
 def _filter_dates(
-    df: "pd.DataFrame",
+    df: pd.DataFrame,
     start_date: str | None,
     end_date: str | None,
-) -> "pd.DataFrame":
+) -> pd.DataFrame:
     """Slice DataFrame by optional YYYY-MM-DD start/end bounds."""
     import pandas as pd
 

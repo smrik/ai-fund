@@ -29,7 +29,6 @@ def main():
 
     # Optionally save JSON
     if "--save" in sys.argv:
-        import json
         out = f"{ticker}_ic_memo.json"
         with open(out, "w") as f:
             f.write(memo.model_dump_json(indent=2))

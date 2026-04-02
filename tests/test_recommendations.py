@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import copy
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import yaml
@@ -13,7 +12,6 @@ from src.stage_04_pipeline.recommendations import (
     Recommendation,
     TickerRecommendations,
     _recs_from_dict,
-    _recs_path,
     _recs_to_dict,
     apply_approved_to_overrides,
     extract_recommendations,

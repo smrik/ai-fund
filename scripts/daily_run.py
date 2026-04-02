@@ -46,7 +46,7 @@ def run_portfolio_brief(tracker: PortfolioTracker) -> dict:
 
 def run_screen(limit: int | None = None, top: int = 20, export_json: bool = False) -> list[dict]:
     """Run batch valuation. Returns results list."""
-    from src.stage_02_valuation.batch_runner import run_batch, value_single_ticker
+    from src.stage_02_valuation.batch_runner import run_batch
     import csv
 
     _section("BATCH VALUATION")
@@ -117,8 +117,8 @@ def generate_report(
         lines += [
             "## Portfolio",
             "",
-            f"| Metric | Value |",
-            f"|--------|-------|",
+            "| Metric | Value |",
+            "|--------|-------|",
             f"| NAV | ${risk['nav']:,.0f} |",
             f"| Unrealized P&L | ${risk['unrealized_pnl']:+,.0f} |",
             f"| Realized P&L | ${risk['realized_pnl']:+,.0f} |",

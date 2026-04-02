@@ -22,53 +22,56 @@ This document is the concrete checklist for making Alpha Pod safer to operate in
 - minimal `SECURITY.md`
 - release-process guide: `docs/reference/release-process.md`
 - mock release-note generator: `scripts/release/prepare_mock_release.py`
-- CI jobs for frontend build, docs build, and release-readiness validation
+- CI jobs for frontend build, backend/API contracts, docs build, and release-readiness validation
+- repo-level merge settings tightened: squash-only merges and automatic branch deletion on merge
+- live branch ruleset updated to require `pre-commit`, `frontend-build`, `backend-api-tests`, `docs-build`, and `release-readiness`
 
-## GitHub Settings To Enable Manually
+## GitHub Settings Status
 
-These cannot be fully enforced from the repository contents alone and should be set in the GitHub UI.
+These are now enforced live in GitHub for `smrik/ai-fund` and should be periodically re-verified.
 
 ### Branch Ruleset For `main`
 
 - require a pull request before merging
 - require branches to be up to date before merging
 - require status checks before merging
-- require `CI / pre-commit`
+- require `pre-commit`
+- require `frontend-build`
+- require `backend-api-tests`
+- require `docs-build`
+- require `release-readiness`
 - block force pushes
 - restrict branch deletion
 
 ### Repository Settings
 
-- prefer squash merge as the default merge method
+- allow squash merge
+- disable merge commits
+- disable rebase merges
 - enable automatic branch deletion after merge
 - keep `main` as the default branch
 
 ## Current Audit Findings
 
-### 1. Repo-Wide Ruff Debt Still Exists
+### 1. Repo-Wide Ruff Now Passes
 
-The repository still contains a broader backlog of Ruff findings outside the changed-file CI ratchet. At the time of this audit, the main clusters were:
+`ruff check .` now passes repo-wide.
 
-- `scripts/create_ibm_review.py`
-- `scripts/build_valuation_template.py`
-- `src/stage_02_valuation/templates/ic_memo.py`
-- `src/stage_03_judgment/forensic_scores.py`
-- several older tests with unused imports and import-order drift
+One intentional exception remains in config: `scripts/create_ibm_review.py` is covered by a narrow per-file ignore for `E402`, `E701`, and `E702` because it is a legacy one-off workbook generation script with dense layout code rather than maintained library logic.
 
-The repo now makes Ruff configuration explicit, but `E501` is intentionally ignored for now so long-line debt does not make the local and CI gates unusable while the rest of the hygiene system is being put in place.
+`E501` is still intentionally ignored to avoid turning long-line cleanup into an unrelated blocker.
 
-Recommended next step: create a dedicated lint-debt cleanup branch and clear the backlog by directory, not mixed into feature work.
+Recommended next step: either leave the legacy script ignored, or replace/archive it rather than force style-only rewrites into it.
 
-### 2. CI Coverage Is Still Thin
+### 2. CI Coverage Is Better, But Still Not Full Product Coverage
 
-The current required check is intentionally lightweight. It protects the branch, but it does not yet fully exercise the product.
+The required checks now cover hygiene, frontend build, backend/API contracts, docs, and release metadata, but they still do not exhaustively exercise every product path.
 
 Recommended next additions:
 
-- frontend build job: `npm --prefix frontend run build`
-- focused frontend route tests
-- focused backend/API pytest job
-- optional docs build or `mkdocs build` check once docs navigation drift is addressed
+- focused frontend route tests in CI
+- expanded backend pytest coverage beyond `tests/test_api_contracts.py`
+- optional smoke workflow for Streamlit/operator flows if that shell remains supported
 
 ### 3. Docs Navigation Still Has Drift
 
@@ -76,9 +79,9 @@ MkDocs navigation and docs index pages do not yet fully reflect every active pla
 
 Recommended next step: run a docs-navigation cleanup so `docs/index.md`, `mkdocs.yml`, and the actual tree match exactly.
 
-### 4. Repo Hygiene Is Better, But Not Fully Automated
+### 4. Repo Hygiene Is Strong, But Still Needs Periodic Review
 
-Local hooks still require per-clone installation, and GitHub UI settings still need to be maintained manually.
+Local hooks still require per-clone installation, and live GitHub settings should be periodically verified against the documented workflow.
 
 Recommended next step: keep `CONTRIBUTING.md` current and periodically verify the live branch ruleset against `docs/reference/github-workflow.md`.
 

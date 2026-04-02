@@ -8,7 +8,6 @@ from __future__ import annotations
 import html
 import re
 from datetime import date
-from typing import Optional
 
 from src.stage_03_judgment.research_note_agent import ResearchNote
 

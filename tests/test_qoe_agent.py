@@ -1,16 +1,15 @@
 """Tests for QoEAgent — covers LLM parsing, fallback, and full output contract."""
 import json
-import sqlite3
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from db.schema import create_tables
 from src.stage_00_data import edgar_client
 from src.stage_03_judgment.qoe_agent import QoEAgent
-from src.stage_03_judgment import qoe_signals
 
 
 # ── Schema helpers ─────────────────────────────────────────────────────────────
@@ -292,6 +291,3 @@ def test_qoe_agent_revenue_recognition_flags_passed_through(monkeypatch):
     assert len(out["llm"]["revenue_recognition_flags"]) == 2
     assert len(out["llm"]["auditor_flags"]) == 1
     assert out["llm"]["narrative_credibility"] == "low"
-
-
-import pytest

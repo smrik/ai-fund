@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
@@ -143,7 +142,7 @@ def refresh_all(universe: list[str] | None = None, *, verbose: bool = True) -> d
     est_results = refresh_estimates(universe, verbose=verbose)
 
     if verbose:
-        print(f"\n── Macro ────────────────────────────────────────────────────────")
+        print("\n── Macro ────────────────────────────────────────────────────────")
     macro_result = refresh_macro(verbose=verbose)
 
     duration = round(time.time() - t0, 1)

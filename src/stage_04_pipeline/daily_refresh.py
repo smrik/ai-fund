@@ -16,11 +16,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from config.settings import (
     MAX_SINGLE_POSITION_PCT, MAX_GROSS_EXPOSURE_PCT,
     MAX_NET_EXPOSURE_PCT, STOP_LOSS_REVIEW_PCT,
-    MAX_SECTOR_CONCENTRATION_PCT, REPORTS_DIR,
+    REPORTS_DIR,
 )
 from db.schema import get_connection
 from db.loader import upsert_prices, upsert_positions, insert_risk_snapshot, log_pipeline_run
-from db.queries import get_tickers, get_positions, get_risk_snapshot
+from db.queries import get_tickers, get_positions
 from ibkr.connection import IBKRConnection
 from ibkr.price_feed import get_batch_prices
 from ibkr.account import get_account_summary, get_portfolio_positions, compute_risk_snapshot

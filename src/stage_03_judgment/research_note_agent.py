@@ -5,7 +5,7 @@ Follows BaseAgent pattern. Output is a structured markdown document.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
@@ -393,7 +393,6 @@ def generate_research_note_offline(
     upside = (val.get("upside_pct_base") or 0.0) * 100
 
     filings = memo.get("filings", {})
-    earnings = memo.get("earnings", {})
 
     # Build deterministic section text
     exec_summary = (

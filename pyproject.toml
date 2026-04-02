@@ -27,3 +27,6 @@ extend-exclude = [
 [tool.ruff.lint]
 select = ["E", "F"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/create_ibm_review.py" = ["E402", "E701", "E702"]

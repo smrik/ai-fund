@@ -13,7 +13,7 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from config.settings import UNIVERSE_PATH, DB_PATH
+from config.settings import UNIVERSE_PATH
 from db.schema import create_tables, get_connection
 from db.loader import upsert_universe
 
