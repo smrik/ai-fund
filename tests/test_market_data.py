@@ -1,8 +1,11 @@
 """
 Tests for get_historical_financials() in src/stage_00_data/market_data.py.
 """
-import sys
 import os
+import sys
+import unittest.mock as mock
+
+import pandas as pd
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -52,12 +55,7 @@ def test_cost_of_debt_in_bounds():
     if kd is not None:
         assert 0.02 <= kd <= 0.15
 
-
 # ── Unit tests with mocked data (no network) ──────────────────────
-
-import unittest.mock as mock
-import pandas as pd
-import numpy as np
 
 
 def _make_financials():
@@ -344,4 +342,3 @@ def test_effective_tax_rate_handles_negative_sign_convention():
 
     assert result["effective_tax_rate_avg"] is not None
     assert abs(result["effective_tax_rate_avg"] - 0.20) < 0.001
-

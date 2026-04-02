@@ -658,15 +658,14 @@ def _dcf_sheet(wb: openpyxl.Workbook, name: str, d: dict,
     Aex = f"{A}!$D${ASS['exit_mult']}"
     Aro = f"{A}!$D${ASS['ronic']}"
     Aw  = f"{A}!$D${ASS['wacc']}"
-    Ash = f"{A}!$D${ASS['shares']}"
     Aic = f"{A}!$D${ASS['inv_cap']}"
 
     # Scenario modifiers (only applied to Bear/Bull)
-    gm = f"*$B$3" if (bear or bull) else ""
-    mm = f"*$B$4" if (bear or bull) else ""
-    cm = f"*$B$5" if (bear or bull) else ""
-    wm = f"+$B$6" if (bear or bull) else ""
-    em = f"*$B$7" if (bear or bull) else ""
+    gm = "*$B$3" if (bear or bull) else ""
+    mm = "*$B$4" if (bear or bull) else ""
+    cm = "*$B$5" if (bear or bull) else ""
+    wm = "+$B$6" if (bear or bull) else ""
+    em = "*$B$7" if (bear or bull) else ""
 
     def wacc_formula():
         return f"({Aw}{wm})" if (bear or bull) else Aw
@@ -903,7 +902,9 @@ def build_equity_bridge(wb: openpyxl.Workbook, d: dict) -> None:
         return f"={sheet}!{map_[key]}"
 
     A = "Assumptions"
-    R_base = 0; R_bear = 7; R_bull = 7
+    R_base = 0
+    R_bear = 7
+    R_bull = 7
 
     rows = [
         # (label, bear_fml, base_fml, bull_fml, fmt, bold, note)
@@ -1196,7 +1197,7 @@ def build_sensitivity(wb: openpyxl.Workbook, d: dict) -> None:
     wacc_steps = [-0.02, -0.015, -0.01, -0.005, 0.0, 0.005, 0.01, 0.015, 0.02]
     g_steps    = [-0.02, -0.015, -0.01, -0.005, 0.0, 0.005, 0.01, 0.015, 0.02]
 
-    _section_hdr(ws, 2, f"  IV/Share ($) — WACC (rows) × Terminal Growth (cols)", ncols=10)
+    _section_hdr(ws, 2, "  IV/Share ($) — WACC (rows) × Terminal Growth (cols)", ncols=10)
 
     ws.cell(row=3, column=1, value="WACC \\ Term. g").font = _font(bold=True)
     ws.cell(row=3, column=1).alignment = _align(h="center")
@@ -1214,7 +1215,6 @@ def build_sensitivity(wb: openpyxl.Workbook, d: dict) -> None:
     # IV = FCFF_Y1 * [(1-(1/(1+w))^10) / w]  +  TV / (1+w)^10   ... approximation
     # We use the full Gordon formula TV: NOPAT_Y11 * (1 - g/RONIC) / (WACC - g)
     # NOPAT_Y11 ≈ Revenue * (1+g_near)^5 * (1+g_mid)^5 * (1+g_term) * ebit_t * (1-tax_t)
-    import math
 
     rev = d["revenue_mm"]
     g_near = d["g_near"]

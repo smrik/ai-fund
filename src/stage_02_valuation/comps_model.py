@@ -375,7 +375,6 @@ def build_comps_detail_from_yfinance(
 
     peers = []
     for p in peer_data:
-        ebitda_mm = p.get("ebitda_mm")
         ev_ebitda = p.get("ev_ebitda")
         # Derive tev_ebitda_ltm from ev_ebitda ratio directly
         peers.append({

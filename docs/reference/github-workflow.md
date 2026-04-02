@@ -13,11 +13,11 @@ Configure `main` with these rules:
 1. Require a pull request before merging.
 2. Require branches to be up to date before merging.
 3. Require status checks to pass before merging.
-4. Require the GitHub Actions check `CI / pre-commit`.
+4. Require the GitHub Actions checks `pre-commit`, `frontend-build`, `backend-api-tests`, `docs-build`, and `release-readiness`.
 5. Restrict direct pushes to `main`.
 6. Disable force pushes to `main`.
 
-The required check name matches the workflow/job names in [`.github/workflows/ci.yml`](/mnt/c/Projects/03-Finance/ai-fund/.github/workflows/ci.yml): workflow `CI`, job `pre-commit`, status check `CI / pre-commit`.
+The required checks match the workflow/job names in `.github/workflows/ci.yml`.
 
 The `pre-commit` job currently ratchets on changed files in CI:
 
@@ -92,9 +92,11 @@ This avoids long-lived branches and painful merge conflicts.
 ## Practical Merge Rules
 
 1. Small PRs merge faster and conflict less.
-2. Prefer squash merge for noisy commits.
+2. Default to squash merge.
 3. Keep commit history meaningful when changes are tightly structured.
 4. Never mix unrelated features in one PR.
+
+Merged branches should be auto-deleted by the repository setting once the PR lands.
 
 ## Fast Conflict Routine
 

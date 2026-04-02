@@ -2,7 +2,6 @@
 Alpha Pod — IBKR Price Feed
 Pull historical daily bars and compute derived metrics.
 """
-from datetime import datetime, timedelta
 from ib_insync import IB, Stock, util
 import pandas as pd
 

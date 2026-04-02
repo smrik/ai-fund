@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 import pandas as pd
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from src.portfolio.tracker import PortfolioTracker
 
@@ -118,7 +118,6 @@ def test_closed_position_logged_to_history(tracker):
 def test_update_prices_populates_fields(tracker):
     tracker.add_position("IBM", "LONG", 100, 185.00)
 
-    mock_df = pd.DataFrame({"Close": [195.0]}, index=["IBM"])
     # yf.download returns a DataFrame; mock it
     with patch("yfinance.download") as mock_dl:
         mock_dl.return_value = pd.DataFrame({"Close": [195.0]})

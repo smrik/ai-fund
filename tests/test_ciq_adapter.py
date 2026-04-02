@@ -1,11 +1,22 @@
 import sys
+import uuid
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import sqlite3
 
 from src.stage_00_data import ciq_adapter
+
+
+def _workspace_tempdir(name: str) -> Path:
+    root = Path(".tmp-tests") / "ciq-adapter"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{name}-{uuid.uuid4().hex}"
+    path.mkdir(parents=True, exist_ok=False)
+    return path
 
 
 def test_get_ciq_comps_valuation_returns_implied_values(monkeypatch):
@@ -76,8 +87,8 @@ def test_get_ciq_comps_valuation_returns_implied_values(monkeypatch):
     assert out["implied_price_base"] is not None
 
 
-def test_get_ciq_comps_valuation_uses_latest_run_only(tmp_path, monkeypatch):
-    db_path = tmp_path / "ciq_adapter.sqlite"
+def test_get_ciq_comps_valuation_uses_latest_run_only(monkeypatch):
+    db_path = _workspace_tempdir("latest-run") / "ciq_adapter.sqlite"
     monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
 
     conn = sqlite3.connect(str(db_path))
@@ -177,8 +188,8 @@ def test_get_ciq_comps_valuation_includes_ev_ebit_outputs(monkeypatch):
     assert out["implied_price_ev_ebit"] == 8.75
 
 
-def test_get_ciq_snapshot_includes_nwc_day_drivers_from_long_form(tmp_path, monkeypatch):
-    db_path = tmp_path / "ciq_snapshot.sqlite"
+def test_get_ciq_snapshot_includes_nwc_day_drivers_from_long_form(monkeypatch):
+    db_path = _workspace_tempdir("snapshot-direct") / "ciq_snapshot.sqlite"
     monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
 
     conn = sqlite3.connect(str(db_path))
@@ -249,8 +260,8 @@ def test_get_ciq_snapshot_includes_nwc_day_drivers_from_long_form(tmp_path, monk
     assert out["dpo"] == 40.0
 
 
-def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(tmp_path, monkeypatch):
-    db_path = tmp_path / "ciq_snapshot_derived.sqlite"
+def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(monkeypatch):
+    db_path = _workspace_tempdir("snapshot-derived") / "ciq_snapshot_derived.sqlite"
     monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
 
     conn = sqlite3.connect(str(db_path))
@@ -377,9 +388,9 @@ def test_get_ciq_comps_valuation_fwd_multiples_none_when_absent(monkeypatch):
     assert out["peer_median_tev_ebit_fwd"] is None
 
 
-def test_get_ciq_snapshot_includes_forward_revenue_from_comps(tmp_path, monkeypatch):
+def test_get_ciq_snapshot_includes_forward_revenue_from_comps(monkeypatch):
     """revenue_fy1 / revenue_fy2 are extracted from comps target row and added to snapshot."""
-    db_path = tmp_path / "ciq_fwd_rev.sqlite"
+    db_path = _workspace_tempdir("snapshot-forward-revenue") / "ciq_fwd_rev.sqlite"
     monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
 
     conn = sqlite3.connect(str(db_path))
@@ -435,6 +446,3 @@ def test_get_ciq_snapshot_includes_forward_revenue_from_comps(tmp_path, monkeypa
     assert out is not None
     assert out["revenue_fy1"] == pytest.approx(1_100_000_000.0)
     assert out["revenue_fy2"] == pytest.approx(1_200_000_000.0)
-
-
-import pytest

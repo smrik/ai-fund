@@ -80,13 +80,17 @@ def compute_beneish_m_score(hist: dict) -> dict:
             return None
 
         # Current (t=0) and prior (t=1) year values
-        rev_t   = _safe(rev, 0);    rev_p   = _safe(rev, 1)
-        gp_t    = _safe(gp, 0);     gp_p    = _safe(gp, 1)
+        rev_t = _safe(rev, 0)
+        rev_p = _safe(rev, 1)
+        gp_t = _safe(gp, 0)
+        gp_p = _safe(gp, 1)
         ni_t    = _safe(ni, 0)
-        ta_t    = _safe(ta, 0);     ta_p    = _safe(ta, 1)
-        capex_t = _safe(capex, 0);  capex_p = _safe(capex, 1)
-        da_t    = _safe(da, 0);     da_p    = _safe(da, 1)
-        cffo_t  = _safe(cffo, 0)
+        ta_t = _safe(ta, 0)
+        capex_t = _safe(capex, 0)
+        capex_p = _safe(capex, 1)
+        da_t = _safe(da, 0)
+        da_p = _safe(da, 1)
+        cffo_t = _safe(cffo, 0)
 
         components: dict[str, Optional[float]] = {}
 
@@ -222,12 +226,8 @@ def compute_altman_z_score(hist: dict, market_cap_mm: Optional[float]) -> dict:
     dict with keys: z_score, zone, components, interpretation, available, error
     """
     try:
-        rev   = hist.get("revenue", [])
-        gp    = hist.get("gross_profit", [])
-        ni    = hist.get("net_income", [])
-        ta    = hist.get("total_assets", [])
-        cffo  = hist.get("cffo", [])
-
+        ni = hist.get("net_income", [])
+        ta = hist.get("total_assets", [])
         def _safe(lst, idx):
             if lst and len(lst) > idx:
                 v = lst[idx]
@@ -242,9 +242,6 @@ def compute_altman_z_score(hist: dict, market_cap_mm: Optional[float]) -> dict:
         ni_t  = _safe(ni, 0)
         ni_1  = _safe(ni, 1)
         ni_2  = _safe(ni, 2)
-        gp_t  = _safe(gp, 0)
-        rev_t = _safe(rev, 0)
-
         if ta_t is None or ta_t == 0:
             return {
                 "z_score":       None,

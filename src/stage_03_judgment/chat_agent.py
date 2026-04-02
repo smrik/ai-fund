@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from typing import Any
 
 from config import LLM_MODEL_FAST
 from src.stage_00_data.filing_retrieval import FilingContextBundle
@@ -20,13 +18,13 @@ class ChatResponse:
 
 class ChatAgent(BaseAgent):
     """
-    RAG Chatbot agent: answers PM questions heavily grounded 
+    RAG Chatbot agent: answers PM questions heavily grounded
     in the semantic search results from the SEC filing corpus.
     """
 
     def __init__(self, model: str = LLM_MODEL_FAST):
         super().__init__(model=model)
-        self.system_prompt = """You are a specialized Hedge Fund compliance and research assistant. 
+        self.system_prompt = """You are a specialized Hedge Fund compliance and research assistant.
 Your ONLY job is to answer the Portfolio Manager's questions using stringently verified text from the provided SEC filings.
 
 CRITICAL RULES:
@@ -58,7 +56,7 @@ AVAILABLE SEC FILING CONTEXT:
 """
         try:
             raw_response = self.run(prompt_text)
-            
+
             # Reconstruct list of unique headers for tracing
             sources = []
             for chunk in context_bundle.selected_chunks:

@@ -5,7 +5,6 @@ Returns bear/base/bull intrinsic value per share.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass

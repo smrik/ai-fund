@@ -30,6 +30,6 @@ Make the repository safer to operate by tightening GitHub workflow discipline, d
 
 ## Remaining Follow-Up
 
-- split broader repo lint debt into its own cleanup tranche
-- add dedicated frontend/backend CI jobs beyond `pre-commit`
+- expand backend/frontend CI beyond baseline contract/build checks where worthwhile
 - finish aligning MkDocs navigation with the current docs tree
+- periodically verify live GitHub rulesets/settings still match the documented workflow

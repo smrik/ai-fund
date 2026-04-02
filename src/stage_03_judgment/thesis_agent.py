@@ -8,7 +8,6 @@ structured StoryDriverProfile for the ticker, suitable for writing to
 config/story_drivers_pending.yaml for PM review and approval.
 """
 
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 

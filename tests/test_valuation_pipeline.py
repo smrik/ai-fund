@@ -6,10 +6,7 @@ import sys
 sys.path.insert(0, ".")
 
 from config import LLM_MODEL
-from src.stage_03_judgment.base_agent import BaseAgent
-from src.stage_03_judgment.valuation_agent import ValuationAgent
-from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_dcf, run_scenario_dcf
-from src.stage_02_valuation.templates.ic_memo import ICMemo, ValuationRange
+from src.stage_02_valuation.templates.dcf_model import DCFAssumptions, run_scenario_dcf
 from src.stage_00_data.market_data import get_market_data
 
 print("Testing imports...")
@@ -114,4 +111,3 @@ def test_reverse_dcf_returns_plausible_growth():
 
     assert implied is not None
     assert abs(implied - 0.10) < 0.01
-

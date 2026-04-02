@@ -151,7 +151,6 @@ def get_price_history(ticker: str, period: str = "1y") -> list[dict]:
 
 def get_volatility(ticker: str) -> Optional[float]:
     """Return annualized 1-year historical volatility."""
-    import numpy as np
     t = yf.Ticker(ticker)
     hist = t.history(period="1y")
     if hist.empty or len(hist) < 20:
@@ -500,7 +499,3 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
     except Exception as e:
         logger.warning("get_historical_financials(%s) failed: %s", ticker, e)
         return _none_result
-
-
-
-

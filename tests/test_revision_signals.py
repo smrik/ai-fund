@@ -1,5 +1,4 @@
 """Tests for earnings revision tracker and revision signal integration."""
-import importlib
 import sqlite3
 import sys
 from dataclasses import fields
@@ -24,8 +23,8 @@ for _mod in [
     if _mod not in sys.modules:
         sys.modules[_mod] = MagicMock()
 
-from src.stage_02_valuation.revision_signals import get_revision_growth_bias, REVISION_GROWTH_BIAS
-from src.stage_00_data.estimate_tracker import RevisionSignals, get_revision_signals
+from src.stage_02_valuation.revision_signals import get_revision_growth_bias, REVISION_GROWTH_BIAS  # noqa: E402
+from src.stage_00_data.estimate_tracker import RevisionSignals, get_revision_signals  # noqa: E402
 
 
 # ---------------------------------------------------------------------------

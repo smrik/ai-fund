@@ -31,6 +31,8 @@ def test_ci_workflow_uses_node24_compatible_action_majors():
 
 	assert "actions/checkout@v5" in workflow or "actions/checkout@v6" in workflow
 	assert "actions/setup-python@v6" in workflow
+	assert "name: backend-api-tests" in workflow
+	assert "python -m pytest tests/test_api_contracts.py -q" in workflow
 
 
 def test_pyproject_has_explicit_ruff_configuration():
@@ -42,12 +44,14 @@ def test_pyproject_has_explicit_ruff_configuration():
 	assert "[tool.ruff.lint]" in pyproject
 	assert 'select = ["E", "F"]' in pyproject
 	assert 'ignore = ["E501"]' in pyproject
+	assert "[tool.ruff.lint.per-file-ignores]" in pyproject
+	assert '"scripts/create_ibm_review.py" = ["E402", "E701", "E702"]' in pyproject
 
 
 def test_gitignore_covers_local_agent_and_ruff_artifacts():
 	gitignore = _read(".gitignore")
 
-	for expected in (".ruff_cache/", ".codex/", ".gemini/"):
+	for expected in (".ruff_cache/", ".codex/", ".gemini/", ".tmp-tests/"):
 		assert expected in gitignore
 
 
