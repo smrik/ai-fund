@@ -1,33 +1,30 @@
 # Session State
 
-**Updated:** 2026-04-02 16:55:00 +02:00
+**Updated:** 2026-04-02 14:20:00 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Finish the final repo-hygiene pass on `codex/final-hygiene-pass`, including repo-wide Ruff cleanup, a dedicated backend/API CI lane, and docs/test alignment with the live GitHub protection settings.
+Finish the final hygiene branch by stabilizing the remaining Windows-sensitive pytest file and preparing the branch for push/PR update.
 
 ## Recent Actions
-- Added `backend-api-tests` to [`.github/workflows/ci.yml`](C:\Projects\03-Finance\ai-fund\.github\workflows\ci.yml) and aligned docs/tests with the live required checks.
-- Cleaned the remaining repo-wide Ruff findings across scripts, library modules, and tests; `ruff check .` now passes with a narrow documented carveout for `scripts/create_ibm_review.py`.
-- Tightened the documented workflow to match the live GitHub state: squash-only merge preference, auto-delete merged branches, and the five required checks on `main`.
-- Moved `tests/test_api_contracts.py` temp directories to repo-local `.tmp-tests/` to avoid the earlier `Path.home()` permission problem.
+- Confirmed the final hygiene branch was already committed as `f2a521a` and narrowed the remaining uncommitted work to `tests/test_ciq_adapter.py`.
+- Verified repo hygiene locally: `ruff check .`, `npm --prefix frontend run build`, `python -m mkdocs build --strict`, `python scripts/dev/run_local_quality_gate.py`, and focused pytest suites all pass.
+- Root-caused the remaining flaky test behavior to pytest temp-directory permissions on Windows and replaced `tmp_path` usage in `tests/test_ciq_adapter.py` with a repo-local temp helper.
 
 ## Next Steps
-- Stage, commit, and push `codex/final-hygiene-pass`.
-- Open a PR back to `main` for the final hygiene tranche and let the new required checks run.
-- Merge once green, then fast-forward local `main`.
+- Commit the `tests/test_ciq_adapter.py` stabilization fix on `codex/final-hygiene-pass`.
+- Push the branch so the existing PR or follow-up review picks up the Windows test fix.
+- Reconfirm the branch/PR is green, then merge when ready.
 
 ## Known Issues
-- `python scripts/dev/run_local_quality_gate.py` still emits a non-fatal Windows `.pytest_cache` warning in this environment.
-- `mkdocs build --strict` is green, but handbook docs still contain several absolute `/mnt/c/...` links that show informational build noise.
+- `python scripts/dev/run_local_quality_gate.py` still emits a non-fatal `.pytest_cache` permission warning in this Windows environment.
+- `mkdocs build --strict` still reports informational absolute-link notices in handbook docs, but the build passes.
 
 ## Notes
-- Verified locally:
-- `ruff check .`
-- `python -m pytest tests/test_api_contracts.py tests/test_repo_hygiene_files.py tests/test_architecture_boundaries.py -q --basetemp .tmp-tests\pytest-final-hygiene-main -p no:cacheprovider`
-- `python -m pytest tests/test_api_contracts.py -q`
-- `python -m pytest tests/test_repo_hygiene_files.py -q --basetemp .tmp-tests\pytest-repo-hygiene -p no:cacheprovider`
-- `npm --prefix frontend run build`
-- `python -m mkdocs build --strict`
+- Verified locally after the CIQ test fix:
+- `python -m pytest tests/test_ciq_adapter.py -q --basetemp .tmp-tests/pytest-ciq-final-fixed -p no:cacheprovider`
+- `python -m pytest tests/test_qoe_agent.py tests/test_revision_signals.py -q --basetemp .tmp-tests/pytest-extra-final-fixed -p no:cacheprovider`
+- `python -m pytest tests/test_api_contracts.py tests/test_repo_hygiene_files.py tests/test_architecture_boundaries.py -q --basetemp .tmp-tests/pytest-final-hygiene-core -p no:cacheprovider`
 - `python scripts/dev/run_local_quality_gate.py`
+- Branch state before final commit: `codex/final-hygiene-pass` with one modified file: `tests/test_ciq_adapter.py`
