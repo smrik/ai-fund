@@ -1,46 +1,32 @@
 # Session State
 
-**Updated:** 2026-04-02 15:05:00 +02:00
+**Updated:** 2026-04-02 23:09:01 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Finish the PR fix for the failing `pre-commit` GitHub check on `codex/final-hygiene-pass` and carry the formatting-only cleanup through commit/push.
+Reshape the repo planning docs into a more human-friendly roadmap dashboard plus short epic pages, while keeping the repo-native docs system canonical.
 
 ## Recent Actions
-- Investigated the PR failure and confirmed the root cause was not Ruff or tests; CI failed because `end-of-file-fixer` and `trailing-whitespace` modified 9 files on the branch.
-- Applied the exact whitespace/EOF cleanup locally to those files:
-  - `ciq/ingest.py`
-  - `skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py`
-  - `skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py`
-  - `src/stage_00_data/market_data.py`
-  - `src/stage_02_valuation/story_drivers.py`
-  - `src/stage_03_judgment/chat_agent.py`
-  - `src/stage_04_pipeline/daily_refresh.py`
-  - `tests/test_market_data.py`
-  - `tests/test_valuation_pipeline.py`
-- Re-ran the same pre-commit hooks with elevated permissions after local cache-path permissions blocked reproduction in the sandbox; all relevant hooks passed.
+- Switched back to clean, up-to-date `main`, then created the new branch `codex/roadmap-docs-cleanup` for the documentation tranche.
+- Added a new future roadmap dashboard and five short epic pages under `docs/plans/future/` covering dossier integrity, research/RAG, PM web cockpit, solo PM state, and platform reliability/DevOps.
+- Updated `docs/PLANS.md`, `docs/index.md`, `docs/plans/index.md`, and `mkdocs.yml` so the new dashboard-plus-short-pages pattern is the visible default.
+- Moved the older future roadmap docs (`2026-03-18-dashboard-ai-investing-feature-roadmap.md` and `2026-03-15-xbrl-and-rag-chatbot.md`) into `docs/plans/archive/` because they are now superseded.
+- Fixed one stale historical link in `docs/plans/completed/2026-03-18-single-ticker-deep-dive-dossier.md` to point at the archived roadmap path.
+- Verified the docs with `python -m mkdocs build --strict`; the build passed, with only existing informational absolute-link notices in handbook pages.
 
 ## Next Steps
-- Stage and commit the 9 formatting-only file changes on `codex/final-hygiene-pass`.
-- Push the branch so the PR picks up the pre-commit fix.
-- Recheck the PR checks and merge if green.
+- Stage the docs changes and commit them on `codex/roadmap-docs-cleanup`.
+- Push the branch and open a PR if the user wants the planning-system cleanup reviewed/merged.
+- After merge, use the new roadmap dashboard as the single scan-first entry point for future product planning.
 
 ## Known Issues
-- Running `pre_commit` locally inside the sandbox hit cache permission failures in both the default user cache and repo-local temp directories. The successful verification used elevated permissions with:
-  - `PRE_COMMIT_HOME=C:\Users\patri\.codex\memories\pre-commit-home-ci`
-- This is an environment/tooling issue, not a repo code issue.
-- `python scripts/dev/run_local_quality_gate.py` still emits a non-fatal `.pytest_cache` permission warning in this Windows environment.
-- `mkdocs build --strict` still reports informational absolute-link notices in handbook docs, but the build passes.
+- `mkdocs build --strict` still emits existing informational absolute-link notices in `docs/handbook/react-frontend-setup.md` and `docs/handbook/react-playwright-review-loop.md`, but the build succeeds.
+- The current branch has uncommitted docs changes until the cleanup tranche is committed.
 
 ## Notes
-- Current branch state:
-  - branch: `codex/final-hygiene-pass`
-  - worktree: dirty with the 9 formatting-only files listed above
-- Exact successful verification command for the CI fix:
-  - `python -m pre_commit run --files ciq/ingest.py skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py src/stage_00_data/market_data.py src/stage_02_valuation/story_drivers.py src/stage_03_judgment/chat_agent.py src/stage_04_pipeline/daily_refresh.py tests/test_market_data.py tests/test_valuation_pipeline.py --show-diff-on-failure --color always`
-- Result:
-  - `fix end of files` passed
-  - `trim trailing whitespace` passed
-  - `ruff check` passed
-  - `architecture boundary tests` passed
+- Recommended human workflow for docs remains: edit in VS Code, read via `python -m mkdocs serve` in the browser.
+- The new planning model is intentionally simple:
+  - roadmap dashboard for scanning
+  - short epic pages for scope
+  - active plans only when implementation starts
