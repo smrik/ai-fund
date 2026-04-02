@@ -1,0 +1,14 @@
+# Default ownership
+* @smrik
+
+# Core deterministic valuation and pipeline logic
+/src/stage_02_valuation/ @smrik
+/src/stage_04_pipeline/ @smrik
+
+# UI and transport surfaces
+/frontend/ @smrik
+/api/ @smrik
+
+# Repo process and docs
+/.github/ @smrik
+/docs/ @smrik

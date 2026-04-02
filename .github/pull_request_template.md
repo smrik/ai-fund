@@ -25,6 +25,7 @@ Issue / ticket: #
 - [ ] Unit tests updated/added
 - [ ] Integration or manual test run
 - [ ] `python -m pytest -q` passed
+- [ ] `python scripts/dev/run_local_quality_gate.py` passed
 
 Evidence:
 
@@ -32,9 +33,15 @@ Evidence:
 
 Any config, data, or deployment considerations.
 
+## Release Impact
+
+- [ ] No release metadata impact
+- [ ] `VERSION` / `CHANGELOG.md` updated if this should land in the next release checkpoint
+
 ## Checklist
 
 - [ ] Branch rebased/merged with latest `main`
 - [ ] CI green
 - [ ] No secrets in diff
 - [ ] Docs updated when behavior changed
+- [ ] Scope is one change stream, not a bundled grab-bag

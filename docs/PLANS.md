@@ -101,8 +101,6 @@ These rules are mandatory:
 - [Reference Index](./reference/config-reference.md)
 - [Strategy Docs](./strategy/index.md)
 - [Plan Registry](./plans/index.md)
-- [API README](../api/README.md)
-- [Frontend README](../frontend/README.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 - [General Archive](./archive/index.md)
 

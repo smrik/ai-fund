@@ -26,10 +26,10 @@ class BaseAgent:
 	Base class for all research agents.
 
 	Subclasses define:
-	  - self.name: display name
-	  - self.system_prompt: agent-specific instructions
-	  - self.tools: list of OpenAI tool definitions
-	  - self.tool_handlers: dict mapping tool name → callable(input_dict) → str
+	- self.name: display name
+	- self.system_prompt: agent-specific instructions
+	- self.tools: list of OpenAI tool definitions
+	- self.tool_handlers: dict mapping tool name → callable(input_dict) → str
 	"""
 
 	def __init__(self, model: str | None = None):

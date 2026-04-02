@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Repository workflow and branch discipline
+    url: https://github.com/smrik/ai-fund/blob/main/docs/reference/github-workflow.md
+    about: Read this before opening process or workflow issues.
+  - name: Contributing and local quality gate
+    url: https://github.com/smrik/ai-fund/blob/main/CONTRIBUTING.md
+    about: Use this when setting up hooks or preparing a branch for review.

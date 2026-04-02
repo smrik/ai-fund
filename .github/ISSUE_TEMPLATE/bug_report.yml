@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a defect with clear reproduction steps and impact.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is broken and why it matters.
+      placeholder: Short description of the bug and impact.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Exact steps, inputs, and environment details.
+      placeholder: |
+        1. Go to ...
+        2. Run ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Logs, screenshots, stack traces, or failing checks.
+  - type: textarea
+    id: scope
+    attributes:
+      label: Suspected scope
+      description: Files, routes, tickers, commands, or workflows affected.

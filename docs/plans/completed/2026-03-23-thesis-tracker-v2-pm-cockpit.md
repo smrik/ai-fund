@@ -2,7 +2,7 @@
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-The repository's checked-in planning guide is [docs/PLANS.md](../PLANS.md). This plan served as the sole canonical active plan for this tranche during execution and is now the completed implementation record.
+The repository's checked-in planning guide is [docs/PLANS.md](../../PLANS.md). This plan served as the sole canonical active plan for this tranche during execution and is now the completed implementation record.
 
 ## Purpose / Big Picture
 

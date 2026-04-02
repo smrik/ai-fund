@@ -287,5 +287,3 @@ Prefer the WSL review launcher for screenshot-based verification. The built bund
 - [Quote-Terminal UI And API Dev Guide](./quote-terminal-ui.md)
 - [React Playwright Review Loop](./react-playwright-review-loop.md)
 - [WSL Playwright Fallback](./wsl-playwright.md)
-- [Frontend README](../../frontend/README.md)
-- [API README](../../api/README.md)

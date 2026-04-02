@@ -21,9 +21,8 @@ Start here when you need to understand how the repository is organized, where cu
 
 - [Design Docs](./design-docs/index.md)
 - [Handbook](./handbook/index.md)
-- [Reference](./reference/config-reference.md)
+- [Reference](./reference/index.md)
 - [Strategy](./strategy/index.md)
-- [API Surface](../api/README.md)
 - [Quote-Terminal UI And API Dev Guide](./handbook/quote-terminal-ui.md)
 - [React Frontend Setup And Runtime Map](./handbook/react-frontend-setup.md)
 - [React Playwright Review Loop](./handbook/react-playwright-review-loop.md)
@@ -31,6 +30,8 @@ Start here when you need to understand how the repository is organized, where cu
 ## Planning
 
 - [Canonical Plan Registry](./plans/index.md)
+- [Internal Release Readiness And Mock Publish](./plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md)
+- [GitHub Hygiene And Repo Hardening](./plans/active/2026-03-31-github-hygiene-and-repo-hardening.md)
 - [Quote-Terminal Migration Plan](./plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 

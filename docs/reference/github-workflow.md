@@ -2,6 +2,10 @@
 
 This repo uses a trackable, review-first workflow.
 
+See also: [GitHub Hardening Checklist](./github-hardening-checklist.md) and `CONTRIBUTING.md` in the repo root.
+
+For versioning and release-candidate preparation, use [Release Process](./release-process.md).
+
 ## Branch Protection For `main`
 
 Configure `main` with these rules:
@@ -106,4 +110,3 @@ This avoids long-lived branches and painful merge conflicts.
 - Tests run locally
 - Docs updated for behavior changes
 - Rollback path understood for risky changes
-
