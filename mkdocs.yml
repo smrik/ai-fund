@@ -46,6 +46,20 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Valuation:
+      - Index: valuation/index.md
+      - Company Analysis: valuation/01_company-analysis.md
+      - Industry Analysis: valuation/02_industry-analysis.md
+      - Historical Financial Analysis: valuation/03_historical-financial-analysis.md
+      - Financial Forecasting: valuation/04_financial-forecasting.md
+      - DCF Valuation: valuation/05_dcf-valuation.md
+      - WACC And Capital Structure: valuation/06_wacc-and-capital-structure.md
+      - Terminal Value: valuation/07_terminal-value.md
+      - Sensitivity, Scenarios, And Reverse DCF: valuation/08_sensitivity-scenarios-and-reverse-dcf.md
+      - Comparable Company Analysis: valuation/09_comps.md
+      - QoE And Normalization: valuation/10_qoe-and-normalization.md
+      - PM Review Framework: valuation/11_pm-review-framework.md
+      - Deterministic Vs LLM Boundary: valuation/12_deterministic-vs-llm-boundary.md
   - Guidance:
       - Repository Guidance: PLANS.md
   - Design Docs:
@@ -56,6 +70,7 @@ nav:
       - Deterministic Valuation Flow Spec: design-docs/deterministic-valuation-flow-spec.md
       - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
       - Deterministic Valuation Inputs And CIQ Retrieval Spec: design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md
+      - Deterministic Valuation Benchmark And Gap Analysis: design-docs/deterministic-valuation-benchmark-and-gap-analysis.md
       - Accounting Recast Agent Spec: design-docs/accounting-recast-agent-spec.md
       - QoE Agent Spec: design-docs/qoe-agent-spec.md
       - Risk Impact Agent Spec: design-docs/risk-impact-agent-spec.md

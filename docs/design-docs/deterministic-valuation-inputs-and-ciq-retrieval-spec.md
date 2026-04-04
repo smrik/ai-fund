@@ -15,6 +15,7 @@ This is a companion to:
 
 - `docs/design-docs/deterministic-valuation-flow-spec.md`
 - `docs/design-docs/deterministic-valuation-workflow.md`
+- `docs/design-docs/deterministic-valuation-benchmark-and-gap-analysis.md`
 - `docs/handbook/valuation-dcf-logic.md`
 
 Those docs explain the valuation system at a higher level.

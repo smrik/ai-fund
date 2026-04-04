@@ -19,6 +19,7 @@ Start here when you need to understand how the repository is organized, where cu
 
 ## Current System
 
+- [Valuation](./valuation/index.md)
 - [Design Docs](./design-docs/index.md)
 - [Handbook](./handbook/index.md)
 - [Reference](./reference/index.md)

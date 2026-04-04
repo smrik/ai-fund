@@ -7,6 +7,9 @@ It is written for two audiences:
 1. **Finance operators**: how numbers are produced, what assumptions mean, and where human judgment belongs.
 2. **Software engineers**: how data flows through the codebase, where to modify logic, and how to verify changes safely.
 
+Finance-first valuation methodology now lives in [`docs/valuation/`](../valuation/index.md).
+Use this handbook for operator workflow, practical interpretation, and implementation-adjacent usage notes.
+
 ## Read This First
 
 - [End-to-End Workflow](./workflow-end-to-end.md)

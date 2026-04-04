@@ -15,6 +15,7 @@ Audit the actual deterministic single-ticker valuation path to identify every ma
 ## Deliverables
 
 - `docs/design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md`
+- `docs/design-docs/deterministic-valuation-benchmark-and-gap-analysis.md`
 - updates to the design-doc index and plan registry
 - cross-links from the existing deterministic valuation workflow docs to the new audit/spec
 
@@ -29,6 +30,10 @@ Audit the actual deterministic single-ticker valuation path to identify every ma
   - a documented retrieval source
   - a documented fallback
   - or an explicit gap entry
+- the benchmark doc records:
+  - external valuation principles
+  - Alpha Pod alignment vs gaps
+  - issue-ready follow-up recommendations
 - `python -m mkdocs build --strict` passes
 
 ## Remaining Follow-Up
