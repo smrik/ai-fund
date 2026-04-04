@@ -62,8 +62,13 @@
     "editor.wordWrap": "bounded",
     "editor.wordWrapColumn": 100,
     "editor.minimap.enabled": false,
-    "editor.quickSuggestions": false,
+    "editor.quickSuggestions": {
+		"comments": "off",
+		"strings": "off",
+		"other": "off"
+	},
     "editor.renderWhitespace": "boundary",
     "files.trimTrailingWhitespace": false
-  }
+  },
+  "python.terminal.useEnvFile": true
 }

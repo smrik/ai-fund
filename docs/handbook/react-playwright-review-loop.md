@@ -53,10 +53,10 @@ For this repo, the best review path is not the Vite dev server.
 The current stable review path is:
 
 - build `frontend/dist`
-- serve it through [`serve_frontend_dist.py`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/serve_frontend_dist.py)
+- serve it through `scripts/manual/serve_frontend_dist.py`
 - proxy `/api/*` to FastAPI
 
-That is what [`launch-react-wsl.sh`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/launch-react-wsl.sh) does.
+That is what `scripts/manual/launch-react-wsl.sh` does.
 
 ### 5. Use required and forbidden text
 
@@ -149,7 +149,7 @@ Each run contains:
 
 Start with:
 
-- [`manifest.json`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/manifest.json)
+- `output/playwright/route-matrix/20260329-130142/manifest.json`
 
 Check:
 
@@ -169,11 +169,11 @@ Review at least:
 
 Current clean reference set:
 
-- watchlist: [`page-2026-03-29T11-01-49-785Z.png`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/watchlist/page-2026-03-29T11-01-49-785Z.png)
-- overview: [`page-2026-03-29T11-01-59-896Z.png`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/overview/page-2026-03-29T11-01-59-896Z.png)
-- valuation summary: [`page-2026-03-29T11-02-10-640Z.png`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/valuation-summary/page-2026-03-29T11-02-10-640Z.png)
-- research: [`page-2026-03-29T11-04-09-011Z.png`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/research/page-2026-03-29T11-04-09-011Z.png)
-- audit: [`page-2026-03-29T11-04-15-811Z.png`](/mnt/c/Projects/03-Finance/ai-fund/output/playwright/route-matrix/20260329-130142/audit/page-2026-03-29T11-04-15-811Z.png)
+- watchlist: `output/playwright/route-matrix/20260329-130142/watchlist/page-2026-03-29T11-01-49-785Z.png`
+- overview: `output/playwright/route-matrix/20260329-130142/overview/page-2026-03-29T11-01-59-896Z.png`
+- valuation summary: `output/playwright/route-matrix/20260329-130142/valuation-summary/page-2026-03-29T11-02-10-640Z.png`
+- research: `output/playwright/route-matrix/20260329-130142/research/page-2026-03-29T11-04-09-011Z.png`
+- audit: `output/playwright/route-matrix/20260329-130142/audit/page-2026-03-29T11-04-15-811Z.png`
 
 ## Manual Smoke Commands
 
@@ -257,8 +257,8 @@ If any of those are missing, the route is not done.
 
 ## Related Files
 
-- [`scripts/manual/review_react_route_matrix.py`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/review_react_route_matrix.py)
-- [`scripts/manual/launch-react-wsl.sh`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/launch-react-wsl.sh)
-- [`scripts/manual/serve_frontend_dist.py`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/serve_frontend_dist.py)
-- [`frontend/src/test/appRoutes.test.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/test/appRoutes.test.tsx)
+- `scripts/manual/review_react_route_matrix.py`
+- `scripts/manual/launch-react-wsl.sh`
+- `scripts/manual/serve_frontend_dist.py`
+- `frontend/src/test/appRoutes.test.tsx`
 - [React Frontend Setup And Runtime Map](./react-frontend-setup.md)
