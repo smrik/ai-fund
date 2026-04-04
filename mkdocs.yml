@@ -55,6 +55,7 @@ nav:
       - Hedge Fund Org Mapping: design-docs/hedge-fund-org-mapping.md
       - Deterministic Valuation Flow Spec: design-docs/deterministic-valuation-flow-spec.md
       - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
+      - Deterministic Valuation Inputs And CIQ Retrieval Spec: design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md
       - Accounting Recast Agent Spec: design-docs/accounting-recast-agent-spec.md
       - QoE Agent Spec: design-docs/qoe-agent-spec.md
       - Risk Impact Agent Spec: design-docs/risk-impact-agent-spec.md
@@ -98,6 +99,7 @@ nav:
           - Quote-Terminal UI Redesign And Streamlit Migration: plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md
           - Internal Release Readiness And Mock Publish: plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md
           - GitHub Hygiene And Repo Hardening: plans/active/2026-03-31-github-hygiene-and-repo-hardening.md
+          - "Spike: Review Valuation Inputs And CIQ Retrieval Requirements": plans/active/2026-04-04-spike-review-valuation-inputs-and-ciq-requirements.md
       - Future:
           - Dashboard And AI Investing Feature Roadmap: plans/future/2026-03-18-dashboard-ai-investing-feature-roadmap.md
           - XBRL And RAG Chatbot: plans/future/2026-03-15-xbrl-and-rag-chatbot.md

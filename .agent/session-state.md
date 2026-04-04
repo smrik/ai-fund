@@ -1,46 +1,49 @@
 # Session State
 
-**Updated:** 2026-04-02 15:05:00 +02:00
+**Updated:** 2026-04-04 12:25:00 +02:00
 **Agent:** Codex CLI
-**Project:** C:\Projects\03-Finance\ai-fund
+**Project:** C:\Projects\03-Finance\ai-fund\.worktrees\28-spike-review-valuation
 
 ## Current Task
-Finish the PR fix for the failing `pre-commit` GitHub check on `codex/final-hygiene-pass` and carry the formatting-only cleanup through commit/push.
+Document the deterministic valuation process at field level so CIQ retrieval requirements are explicit before further API, JSON export, and Excel work.
 
 ## Recent Actions
-- Investigated the PR failure and confirmed the root cause was not Ruff or tests; CI failed because `end-of-file-fixer` and `trailing-whitespace` modified 9 files on the branch.
-- Applied the exact whitespace/EOF cleanup locally to those files:
-  - `ciq/ingest.py`
-  - `skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py`
-  - `skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py`
-  - `src/stage_00_data/market_data.py`
-  - `src/stage_02_valuation/story_drivers.py`
-  - `src/stage_03_judgment/chat_agent.py`
-  - `src/stage_04_pipeline/daily_refresh.py`
-  - `tests/test_market_data.py`
-  - `tests/test_valuation_pipeline.py`
-- Re-ran the same pre-commit hooks with elevated permissions after local cache-path permissions blocked reproduction in the sandbox; all relevant hooks passed.
+- Created a clean isolated git worktree on branch `28-spike-review-valuation` from `main` to avoid contaminating the spike with unrelated roadmap-docs changes on `codex/roadmap-docs-cleanup`.
+- Added the active spike plan `docs/plans/active/2026-04-04-spike-review-valuation-inputs-and-ciq-requirements.md`.
+- Added the canonical design doc `docs/design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md` with:
+  - deterministic step-by-step valuation flow
+  - input/output ownership by module
+  - CIQ retrieval requirement matrix
+  - key current gaps
+  - downstream API/JSON/Excel implications
+  - implementation-grounded pseudocode
+- Updated `docs/plans/index.md`, `docs/design-docs/index.md`, and `docs/design-docs/deterministic-valuation-workflow.md` to point to the new canonical material.
+- Verified the docs with `python -m mkdocs build --strict` inside the worktree.
 
 ## Next Steps
-- Stage and commit the 9 formatting-only file changes on `codex/final-hygiene-pass`.
-- Push the branch so the PR picks up the pre-commit fix.
-- Recheck the PR checks and merge if green.
+- Review the new CIQ retrieval gap list and turn the chosen gaps into concrete implementation issues.
+- Decide whether to keep the valuation spike as docs-only or immediately follow it with retrieval/API contract work on the same branch.
+- If continuing implementation from this branch, use the new spec as the source of truth instead of the older `docs/other/` drafts.
 
 ## Known Issues
-- Running `pre_commit` locally inside the sandbox hit cache permission failures in both the default user cache and repo-local temp directories. The successful verification used elevated permissions with:
-  - `PRE_COMMIT_HOME=C:\Users\patri\.codex\memories\pre-commit-home-ci`
-- This is an environment/tooling issue, not a repo code issue.
-- `python scripts/dev/run_local_quality_gate.py` still emits a non-fatal `.pytest_cache` permission warning in this Windows environment.
-- `mkdocs build --strict` still reports informational absolute-link notices in handbook docs, but the build passes.
+- `mkdocs build --strict` passes, but the baseline branch still emits existing informational absolute-link notices in:
+  - `docs/handbook/react-frontend-setup.md`
+  - `docs/handbook/react-playwright-review-loop.md`
+  - `docs/handbook/wsl-playwright.md`
+- The new doc and active plan are linked from indexes, but they are not explicitly listed in `mkdocs.yml` nav, so MkDocs reports them as not included in the nav configuration.
+- The original workspace at `codex/roadmap-docs-cleanup` remains dirty and ahead of `main`; do not resume valuation work there by accident.
 
 ## Notes
-- Current branch state:
-  - branch: `codex/final-hygiene-pass`
-  - worktree: dirty with the 9 formatting-only files listed above
-- Exact successful verification command for the CI fix:
-  - `python -m pre_commit run --files ciq/ingest.py skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py src/stage_00_data/market_data.py src/stage_02_valuation/story_drivers.py src/stage_03_judgment/chat_agent.py src/stage_04_pipeline/daily_refresh.py tests/test_market_data.py tests/test_valuation_pipeline.py --show-diff-on-failure --color always`
-- Result:
-  - `fix end of files` passed
-  - `trim trailing whitespace` passed
-  - `ruff check` passed
-  - `architecture boundary tests` passed
+- Current clean valuation spike branch:
+  - branch: `28-spike-review-valuation`
+  - worktree: `C:\Projects\03-Finance\ai-fund\.worktrees\28-spike-review-valuation`
+- The real source of truth for this spike is the code path:
+  - `src/stage_02_valuation/input_assembler.py`
+  - `src/stage_02_valuation/batch_runner.py`
+  - `src/stage_00_data/ciq_adapter.py`
+- Main documented current-state gaps:
+  - CIQ history is still thinner than the downstream API/JSON/Excel contract will want
+  - invested-capital support is partially heuristic
+  - `cogs_pct_of_revenue` remains weakly sourced
+  - non-equity claim coverage is only partially CIQ-backed
+  - QoE remains downstream/optional rather than part of the canonical deterministic contract
