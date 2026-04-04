@@ -45,4 +45,3 @@ The built site is written to `site/`.
 - Source docs live in `docs/`.
 - Navigation is configured in `mkdocs.yml`.
 - Keep operational references in `docs/reference/` and system behavior docs in `docs/design-docs/`.
-
