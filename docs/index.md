@@ -30,6 +30,7 @@ Start here when you need to understand how the repository is organized, where cu
 ## Planning
 
 - [Canonical Plan Registry](./plans/index.md)
+- [Alpha Pod Product Roadmap Dashboard](./plans/future/2026-04-02-alpha-pod-roadmap-dashboard.md)
 - [Internal Release Readiness And Mock Publish](./plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md)
 - [GitHub Hygiene And Repo Hardening](./plans/active/2026-03-31-github-hygiene-and-repo-hardening.md)
 - [Quote-Terminal Migration Plan](./plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)

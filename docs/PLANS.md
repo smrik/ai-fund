@@ -69,6 +69,27 @@ When creating or maintaining plans:
 
 Historical execution notes may remain under `docs/exec-plans/`, but they are supporting artifacts rather than the main source of truth.
 
+## Human-Friendly Plan Format
+
+Use a small set of planning document shapes so the docs stay easy to read in raw Markdown, GitHub, and MkDocs:
+
+- roadmap dashboard pages
+  - scan-first pages with tables for `Now`, `Next`, `Later`, releases, and linked epic pages
+- short epic pages
+  - one-screen summaries with status, priority, release target, scope, dependencies, and acceptance criteria
+- active implementation plans
+  - detailed execution documents only after work starts
+
+Do not let roadmap docs become execution journals. If a future plan starts reading like a work log, it belongs in `active/` or `completed/`, not in the future backlog.
+
+Recommended editing style:
+
+- start with a compact metadata table
+- prefer short sections, tables, and checklists
+- keep one idea per section
+- link outward instead of duplicating detail
+- reserve long narrative for design docs and completed implementation records
+
 Session continuity rules:
 
 - read `.agent/session-state.md` at the start of each session if it exists
@@ -101,6 +122,7 @@ These rules are mandatory:
 - [Reference Index](./reference/config-reference.md)
 - [Strategy Docs](./strategy/index.md)
 - [Plan Registry](./plans/index.md)
+- [Alpha Pod Product Roadmap Dashboard](./plans/future/2026-04-02-alpha-pod-roadmap-dashboard.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 - [General Archive](./archive/index.md)
 

@@ -34,7 +34,7 @@ python scripts/dev/run_local_quality_gate.py
 python scripts/release/prepare_mock_release.py --check-only
 ```
 
-6. If the repo is clean and checks pass, generate draft notes:
+1. If the repo is clean and checks pass, generate draft notes:
 
 ```bash
 python scripts/release/prepare_mock_release.py
