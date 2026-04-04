@@ -1,32 +1,25 @@
 # Session State
 
-**Updated:** 2026-04-02 23:09:01 +02:00
+**Updated:** 2026-04-04 18:26:30 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Reshape the repo planning docs into a more human-friendly roadmap dashboard plus short epic pages, while keeping the repo-native docs system canonical.
+Clean up the old roadmap-docs PR so the valuation-input review spike can continue as the only active branch.
 
 ## Recent Actions
-- Switched back to clean, up-to-date `main`, then created the new branch `codex/roadmap-docs-cleanup` for the documentation tranche.
-- Added a new future roadmap dashboard and five short epic pages under `docs/plans/future/` covering dossier integrity, research/RAG, PM web cockpit, solo PM state, and platform reliability/DevOps.
-- Updated `docs/PLANS.md`, `docs/index.md`, `docs/plans/index.md`, and `mkdocs.yml` so the new dashboard-plus-short-pages pattern is the visible default.
-- Moved the older future roadmap docs (`2026-03-18-dashboard-ai-investing-feature-roadmap.md` and `2026-03-15-xbrl-and-rag-chatbot.md`) into `docs/plans/archive/` because they are now superseded.
-- Fixed one stale historical link in `docs/plans/completed/2026-03-18-single-ticker-deep-dive-dossier.md` to point at the archived roadmap path.
-- Verified the docs with `python -m mkdocs build --strict`; the build passed, with only existing informational absolute-link notices in handbook pages.
+- Confirmed the CI failure on `codex/roadmap-docs-cleanup` was only `end-of-file-fixer` rewriting `docs/other/Valuation pseudo-code.md`.
+- Applied the smallest possible docs-only fix by adding the missing trailing newline and committed it locally as `5d6edeb` (`docs: fix valuation pseudo-code eof formatting`).
+- Closed GitHub PR `#29` (`Codex/roadmap docs cleanup`) so it no longer competes with the active valuation spike thread.
 
 ## Next Steps
-- Stage the docs changes and commit them on `codex/roadmap-docs-cleanup`.
-- Push the branch and open a PR if the user wants the planning-system cleanup reviewed/merged.
-- After merge, use the new roadmap dashboard as the single scan-first entry point for future product planning.
+- Continue work on the isolated spike branch/worktree `28-spike-review-valuation`.
+- If the roadmap-docs cleanup is still wanted later, either reopen from a fresh branch or cherry-pick the local EOF fix if needed.
 
 ## Known Issues
-- `mkdocs build --strict` still emits existing informational absolute-link notices in `docs/handbook/react-frontend-setup.md` and `docs/handbook/react-playwright-review-loop.md`, but the build succeeds.
-- The current branch has uncommitted docs changes until the cleanup tranche is committed.
+- Root workspace branch `codex/roadmap-docs-cleanup` is now intentionally ahead of origin by one local-only commit because the PR was closed instead of updated.
+- The active valuation spike work lives in the separate worktree at `.worktrees/28-spike-review-valuation`.
 
 ## Notes
-- Recommended human workflow for docs remains: edit in VS Code, read via `python -m mkdocs serve` in the browser.
-- The new planning model is intentionally simple:
-  - roadmap dashboard for scanning
-  - short epic pages for scope
-  - active plans only when implementation starts
+- The EOF/pre-commit failure was not a logic bug; it was a formatting-only issue in `docs/other/Valuation pseudo-code.md`.
+- The spike branch created earlier remains the clean execution path for valuation-input / CIQ-requirements documentation work.
