@@ -4,6 +4,13 @@ This is the canonical planning index for Alpha Pod.
 
 If you need to know what is being built, what shipped, and what is queued, use this file first.
 
+## Use This When
+
+- you want to see current active work
+- you want the medium-term roadmap
+- you want shipped implementation history
+- you want to find a canonical plan before changing code
+
 ## Rules
 
 - `active/` contains plans that are currently being executed

@@ -7,9 +7,9 @@
 Apply one coherent readability standard across dashboard tables, metrics, and metadata so the UI stops leaking raw floats and inconsistent alignment.
 
 ## Files
-- Modify: [dashboard/app.py](../../dashboard/app.py)
-- Modify: [src/stage_04_pipeline/presentation_formatting.py](../../src/stage_04_pipeline/presentation_formatting.py)
-- Create: [tests/test_dashboard_number_formatting.py](../../tests/test_dashboard_number_formatting.py)
+- Modify: [dashboard/app.py](../../../dashboard/app.py)
+- Modify: [src/stage_04_pipeline/presentation_formatting.py](../../../src/stage_04_pipeline/presentation_formatting.py)
+- Create: [tests/test_presentation_formatting.py](../../../tests/test_presentation_formatting.py)
 
 ## Display Rules
 - percentages render as `10.0%`
@@ -37,7 +37,7 @@ Apply one coherent readability standard across dashboard tables, metrics, and me
 - [ ] Confirm that no main user-facing surface shows raw decimal percentages or raw Python float artifacts.
 
 ## Verification
-- `python -m pytest tests/test_presentation_formatting.py tests/test_dashboard_number_formatting.py -q`
+- `python -m pytest tests/test_presentation_formatting.py -q`
 - `python -m py_compile dashboard/app.py src/stage_04_pipeline/presentation_formatting.py`
 - Live IBM dashboard sweep across key tabs
 - Playwright spot-check on tables and summary metrics

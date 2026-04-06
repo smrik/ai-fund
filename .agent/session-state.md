@@ -1,11 +1,11 @@
 # Session State
 
-**Updated:** 2026-04-05 01:18:00 +02:00
+**Updated:** 2026-04-06 21:05:00 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Deepen the full finance-first valuation section so every core valuation topic has a consistent methodology, artifact, and ownership model.
+Simplify the docs entrypoints and navigation, then verify the published docs build cleanly and that repo-local Markdown links resolve.
 
 ## Recent Actions
 - Created a new valuation doc tree under `docs/valuation/` with core pages for:
@@ -43,14 +43,22 @@ Deepen the full finance-first valuation section so every core valuation topic ha
   - `docs/handbook/wsl-playwright.md`
 - Pinned the docs toolchain in `requirements.txt` to `mkdocs<2` and `mkdocs-material<10`, and updated `docs/reference/local-wiki.md` to use the official `NO_MKDOCS_2_WARNING=1` suppression flag for local docs work.
 - Re-ran `python -m mkdocs build --strict`; the build passed, and `NO_MKDOCS_2_WARNING=1 python -m mkdocs build --strict` now runs without the Material warning banner.
+- Simplified the top-level docs surface:
+  - rewrote `docs/index.md` into a goal-based home page
+  - rewrote `docs/design-docs/index.md`, `docs/handbook/index.md`, and `docs/plans/index.md` into shorter task-based indexes
+  - clarified the doc-type model and authoring rules in `docs/PLANS.md`
+  - simplified `mkdocs.yml` so the top nav now favors section indexes over long page lists
+- Fixed stale relative links in archived execution-plan docs under `docs/exec-plans/completed/` so repo-local Markdown links resolve cleanly.
+- Re-ran `NO_MKDOCS_2_WARNING=1 python -m mkdocs build --strict`; the build passed cleanly.
+- Ran a full repo-local Markdown link sweep across `docs/`; there are now no missing local link targets under `docs/`.
 
 ## Next Steps
-- Absorb or remove remaining inline `smrik comments` from older valuation docs once their content is fully migrated into the new finance-first pages.
-- Reconcile older implementation-facing docs so they point into the new `docs/valuation/` section cleanly without duplicated finance-method prose.
-- Optionally create issue-ready follow-up sections or GitHub child issues from the gaps now documented across the valuation pages.
+- Optionally do a moderate consolidation pass on overlapping long docs, especially older implementation-facing valuation docs.
+- Review whether the top-level navigation should eventually reintroduce a small Strategy entry or keep strategy/archive reachable only through index pages.
+- Commit and push the docs simplification and link-cleanup pass if the user wants this tranche checkpointed.
 
 ## Known Issues
-- The branch has uncommitted docs changes from this valuation-structure tranche.
+- The branch has uncommitted docs changes from this docs simplification and link-cleanup tranche.
 
 ## Notes
 - Current branch: `28-spike-review-valuation`
@@ -58,3 +66,6 @@ Deepen the full finance-first valuation section so every core valuation topic ha
   - `docs/valuation/` = finance-first methodology
   - `docs/design-docs/` = architecture and implementation design
   - `docs/handbook/` = operator workflow and practical interpretation
+- Verification evidence:
+  - `NO_MKDOCS_2_WARNING=1 python -m mkdocs build --strict` passed
+  - repo-local Markdown link sweep returned `OK: no missing local markdown link targets under docs/`

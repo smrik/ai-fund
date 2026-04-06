@@ -1,45 +1,42 @@
 # Docs Home
 
-This is the documentation home for Alpha Pod.
+Alpha Pod docs are the repo's system of record for finance methodology, architecture, operations, and planning.
 
-`AGENTS.md` is the short repo map. This `docs/` tree is the full system of record.
+Use this page to get to the right section quickly. `AGENTS.md` is the short repo map; `docs/` is the full reference set.
 
-Start here when you need to understand how the repository is organized, where current truth lives, or where a new document should go.
+## Start Here By Goal
 
-## Start Here
+| Goal | Start here |
+| --- | --- |
+| Understand the product and valuation method | [Valuation](./valuation/index.md) |
+| Operate or review the system | [Handbook](./handbook/index.md) |
+| Modify the codebase safely | [Design Docs](./design-docs/index.md) |
+| Find current work and roadmap | [Plans](./plans/index.md) |
+| Understand repo rules and doc taxonomy | [Repository Guidance](./PLANS.md) |
 
-- [Repository Guidance And Planning System](./PLANS.md)
-- [Architecture Overview](./design-docs/architecture-overview.md)
-- [Core Beliefs](./design-docs/core-beliefs.md)
-- [Workflow End To End](./handbook/workflow-end-to-end.md)
-- [Local Dashboard Validation](./handbook/local-dashboard-validation.md)
-- [Quote-Terminal UI And API Dev Guide](./handbook/quote-terminal-ui.md)
-- [React Frontend Setup And Runtime Map](./handbook/react-frontend-setup.md)
-- [React Playwright Review Loop](./handbook/react-playwright-review-loop.md)
-
-## Current System
+## Docs Map
 
 - [Valuation](./valuation/index.md)
+  Finance methodology and investment-process explanation.
 - [Design Docs](./design-docs/index.md)
+  Architecture, boundaries, and implementation truth.
 - [Handbook](./handbook/index.md)
+  Operator and engineer how-to guidance.
 - [Reference](./reference/index.md)
+  Stable setup, config, glossary, and workflow references.
+- [Plans](./plans/index.md)
+  Current work, roadmap, and historical implementation plans.
+
+## Current Work
+
+- [Plan Registry](./plans/index.md)
+
+## Historical And Less Common
+
 - [Strategy](./strategy/index.md)
-- [Quote-Terminal UI And API Dev Guide](./handbook/quote-terminal-ui.md)
-- [React Frontend Setup And Runtime Map](./handbook/react-frontend-setup.md)
-- [React Playwright Review Loop](./handbook/react-playwright-review-loop.md)
-
-## Planning
-
-- [Canonical Plan Registry](./plans/index.md)
-- [Internal Release Readiness And Mock Publish](./plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md)
-- [GitHub Hygiene And Repo Hardening](./plans/active/2026-03-31-github-hygiene-and-repo-hardening.md)
-- [Quote-Terminal Migration Plan](./plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)
+- [Archive](./archive/index.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
-
-## Archive
-
-- [Archive Index](./archive/index.md)
 
 ## Local Docs Preview
 
-Run `python -m mkdocs serve` from the repository root.
+Run `NO_MKDOCS_2_WARNING=1 python -m mkdocs serve` from the repository root.
