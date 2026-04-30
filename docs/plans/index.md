@@ -29,8 +29,12 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Future
 
-- [Dashboard And AI Investing Feature Roadmap](./future/2026-03-18-dashboard-ai-investing-feature-roadmap.md)
-- [XBRL And RAG Chatbot](./future/2026-03-15-xbrl-and-rag-chatbot.md)
+- [Alpha Pod Product Roadmap Dashboard](./future/2026-04-02-alpha-pod-roadmap-dashboard.md)
+- [Epic: Canonical Ticker Dossier And Export Integrity](./future/2026-04-02-epic-canonical-ticker-dossier-and-export-integrity.md)
+- [Epic: Research Retrieval And RAG Intelligence](./future/2026-04-02-epic-research-retrieval-and-rag-intelligence.md)
+- [Epic: PM Web Cockpit](./future/2026-04-02-epic-pm-web-cockpit.md)
+- [Epic: Solo PM State And Preferences](./future/2026-04-02-epic-solo-pm-state-and-preferences.md)
+- [Epic: Platform Reliability And DevOps](./future/2026-04-02-epic-platform-reliability-and-devops.md)
 - [Tech Debt Tracker](./future/tech-debt-tracker.md)
 
 ## Completed
@@ -48,6 +52,8 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 - [2026-03-06 Config Consolidation](./archive/2026-03-06-config-consolidation.md)
 - [2026-03-06 DCF Pipeline](./archive/2026-03-06-dcf-pipeline.md)
+- [Dashboard And AI Investing Feature Roadmap](./archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md)
+- [XBRL And RAG Chatbot](./archive/2026-03-15-xbrl-and-rag-chatbot.md)
 
 ## Historical Execution Artifacts
 

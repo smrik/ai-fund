@@ -18,6 +18,20 @@ NO_MKDOCS_2_WARNING=1 python -m mkdocs serve
 
 3. Open the local URL shown in terminal (usually `http://127.0.0.1:8000`).
 
+## Recommended editing workflow
+
+- Edit docs in VS Code.
+- Read the rendered docs in the MkDocs browser view.
+- Keep the Explorer focused on `docs/`, `mkdocs.yml`, and the few source files you are actively changing.
+
+If you use the checked-in VS Code workspace files, the repo provides these tasks:
+
+- `Docs: MkDocs Serve`
+- `Docs: MkDocs Build Strict`
+- `Quality: Local Gate`
+
+Run them from `Terminal -> Run Task` or the command palette.
+
 ## Build static docs
 
 ```bash
