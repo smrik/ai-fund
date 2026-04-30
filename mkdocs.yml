@@ -25,9 +25,14 @@ not_in_nav: |
   archive/**
   design-docs/agent-feedback-loop-and-comps-gaps.md
   design-docs/archive/**
+  exec-plans/index.md
   plans/2026-03-30-react-ui-parity.md
+  plans/active/**
   plans/active/README.md
   plans/archive/**
+  plans/completed/**
+  plans/future/**
+  strategy/**
 
 markdown_extensions:
   - admonition
@@ -46,8 +51,21 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Guidance:
-      - Repository Guidance: PLANS.md
+  - Valuation:
+      - Index: valuation/index.md
+      - Company Analysis: valuation/01_company-analysis.md
+      - Industry Analysis: valuation/02_industry-analysis.md
+      - Historical Financial Analysis: valuation/03_historical-financial-analysis.md
+      - Financial Forecasting: valuation/04_financial-forecasting.md
+      - DCF Valuation: valuation/05_dcf-valuation.md
+      - WACC And Capital Structure: valuation/06_wacc-and-capital-structure.md
+      - Terminal Value: valuation/07_terminal-value.md
+      - Sensitivity, Scenarios, And Reverse DCF: valuation/08_sensitivity-scenarios-and-reverse-dcf.md
+      - Comparable Company Analysis: valuation/09_comps.md
+      - QoE And Normalization: valuation/10_qoe-and-normalization.md
+      - PM Review Framework: valuation/11_pm-review-framework.md
+      - Deterministic Vs LLM Boundary: valuation/12_deterministic-vs-llm-boundary.md
+      - PM Valuation Review Checklist: valuation/13_pm-valuation-review-checklist.md
   - Design Docs:
       - Index: design-docs/index.md
       - Architecture Overview: design-docs/architecture-overview.md
@@ -55,6 +73,9 @@ nav:
       - Hedge Fund Org Mapping: design-docs/hedge-fund-org-mapping.md
       - Deterministic Valuation Flow Spec: design-docs/deterministic-valuation-flow-spec.md
       - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
+      - Deterministic Valuation Inputs And CIQ Retrieval Spec: design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md
+      - Deterministic Valuation Benchmark And Gap Analysis: design-docs/deterministic-valuation-benchmark-and-gap-analysis.md
+      - Valuation Methodology Critical Review And Action Plan: design-docs/valuation-methodology-critical-review-and-action-plan.md
       - Accounting Recast Agent Spec: design-docs/accounting-recast-agent-spec.md
       - QoE Agent Spec: design-docs/qoe-agent-spec.md
       - Risk Impact Agent Spec: design-docs/risk-impact-agent-spec.md
@@ -79,6 +100,7 @@ nav:
       - Deep Dive Dossier: handbook/deep-dive-dossier.md
   - Reference:
       - Index: reference/index.md
+      - Repository Guidance: PLANS.md
       - Config Reference: reference/config-reference.md
       - Valuation Glossary: reference/valuation-glossary.md
       - GitHub Workflow: reference/github-workflow.md
@@ -86,37 +108,5 @@ nav:
       - Release Process: reference/release-process.md
       - CALM Workbook Inventory: reference/CALM-ticker-review2-workbook-inventory.md
       - Local Wiki Setup: reference/local-wiki.md
-  - Strategy:
-      - Index: strategy/index.md
-      - Product Sense: strategy/product-sense.md
-      - Quality Score: strategy/quality-score.md
   - Plans:
       - Index: plans/index.md
-      - Active:
-          - Dashboard Decomposition And Shell Normalization: plans/active/2026-03-26-dashboard-decomposition-and-shell-normalization.md
-          - Structured Logging First Tranche: plans/active/2026-03-27-structured-logging-first-tranche.md
-          - Quote-Terminal UI Redesign And Streamlit Migration: plans/active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md
-          - Internal Release Readiness And Mock Publish: plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md
-          - GitHub Hygiene And Repo Hardening: plans/active/2026-03-31-github-hygiene-and-repo-hardening.md
-      - Future:
-          - Alpha Pod Product Roadmap Dashboard: plans/future/2026-04-02-alpha-pod-roadmap-dashboard.md
-          - "Epic: Canonical Ticker Dossier And Export Integrity": plans/future/2026-04-02-epic-canonical-ticker-dossier-and-export-integrity.md
-          - "Epic: Research Retrieval And RAG Intelligence": plans/future/2026-04-02-epic-research-retrieval-and-rag-intelligence.md
-          - "Epic: PM Web Cockpit": plans/future/2026-04-02-epic-pm-web-cockpit.md
-          - "Epic: Solo PM State And Preferences": plans/future/2026-04-02-epic-solo-pm-state-and-preferences.md
-          - "Epic: Platform Reliability And DevOps": plans/future/2026-04-02-epic-platform-reliability-and-devops.md
-          - Tech Debt Tracker: plans/future/tech-debt-tracker.md
-      - Completed:
-          - Deep Dive Dashboard Refactor: plans/completed/2026-03-21-deep-dive-dashboard-refactor.md
-          - Single-Ticker Deep Dive Dossier System: plans/completed/2026-03-18-single-ticker-deep-dive-dossier.md
-          - Dashboard Shell And Dossier Companion Workspace: plans/completed/2026-03-23-dashboard-shell-and-dossier-companion.md
-          - "Thesis Tracker V2: PM Cockpit": plans/completed/2026-03-23-thesis-tracker-v2-pm-cockpit.md
-          - Dashboard Research Program: plans/completed/2026-03-15-dashboard-research-program.md
-          - Dashboard Override Workbench: plans/completed/2026-03-14-dashboard-override-workbench.md
-          - DCF Audit And Agent Cache: plans/completed/2026-03-14-dcf-audit-agent-cache.md
-          - Universe Watchlist Landing Page: plans/completed/2026-03-28-universe-watchlist-landing-page.md
-  - Archive:
-      - Index: archive/index.md
-      - Dashboard And AI Investing Feature Roadmap: plans/archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md
-      - XBRL And RAG Chatbot: plans/archive/2026-03-15-xbrl-and-rag-chatbot.md
-      - Execution Artifact Archive: exec-plans/index.md

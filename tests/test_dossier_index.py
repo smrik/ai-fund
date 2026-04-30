@@ -82,4 +82,3 @@ def test_dossier_schema_creates_foundation_tables(tmp_path):
 
     assert "dossier_profiles" in names
     assert "dossier_sections" in names
-

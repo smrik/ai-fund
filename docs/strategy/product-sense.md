@@ -46,4 +46,3 @@ QoE normalization → Comps calibration → Industry context → Scenario modeli
 
 **Phase 3** (later) — Execution and monitoring.
 IBKR API, daily risk reports, position monitoring, alerts.
-

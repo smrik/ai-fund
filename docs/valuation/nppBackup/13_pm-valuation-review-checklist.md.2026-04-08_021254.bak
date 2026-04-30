@@ -1,0 +1,247 @@
+# PM Valuation Review Checklist
+
+Use this companion while reading the valuation docs and challenging the current methodology.
+
+The goal is not to polish wording. The goal is to decide whether the valuation stack reflects sound investing logic, where the weakest assumptions live, and what should be improved next.
+
+## How To Use This Checklist
+
+Recommended first-pass review order:
+
+1. [`docs/design-docs/deterministic-valuation-benchmark-and-gap-analysis.md`](../design-docs/deterministic-valuation-benchmark-and-gap-analysis.md)
+2. [`01_company-analysis.md`](./01_company-analysis.md)
+3. [`03_historical-financial-analysis.md`](./03_historical-financial-analysis.md)
+4. [`04_financial-forecasting.md`](./04_financial-forecasting.md)
+5. [`06_wacc-and-capital-structure.md`](./06_wacc-and-capital-structure.md)
+6. [`07_terminal-value.md`](./07_terminal-value.md)
+7. [`08_sensitivity-scenarios-and-reverse-dcf.md`](./08_sensitivity-scenarios-and-reverse-dcf.md)
+8. [`09_comps.md`](./09_comps.md)
+9. [`10_qoe-and-normalization.md`](./10_qoe-and-normalization.md)
+
+Suggested annotation rule:
+
+- mark `[x]` when you agree the current framing is right
+- mark `[ ]` when the current framing feels weak, incomplete, or wrong
+- add short notes under each section
+- prefer concrete comments like "needs cyclicals handling" over vague comments like "unclear"
+
+## 1. Benchmark And Gap Map
+
+Primary doc:
+
+- [`docs/design-docs/deterministic-valuation-benchmark-and-gap-analysis.md`](../design-docs/deterministic-valuation-benchmark-and-gap-analysis.md)
+
+Questions to answer:
+
+- [x] The benchmark reflects how I would evaluate a public-equity valuation process in real life.
+- [x] The listed P0 gaps are actually the highest-impact gaps.
+- [x] The gap split between data / CIQ problems and model-design problems feels right.
+- [x] The recommended issue sequence matches how I would harden the stack.
+- [x] The current "what Alpha Pod already does well" section is fair and not overstated.
+
+Notes:
+
+- Strengths I agree with:
+  - keeping the main computations deterministic, instead of just using LLMs for the sake of using them
+  - strong financial logic compared to other competitors
+- Gaps I think are missing:
+- Gaps I would reprioritize:
+
+## 2. Company Analysis
+
+Primary doc:
+
+- [`01_company-analysis.md`](./01_company-analysis.md)
+
+Questions to answer:
+
+- [x] The business-framing step asks the right questions before modeling begins.
+- [x] The revenue-model section matches how I actually think about business drivers.
+- [x] The cost structure and operating leverage sections are decision-useful.
+- [x] Capital intensity and reinvestment needs are framed in a way that supports later forecasting.
+- [x] Customers, suppliers, and bargaining power are covered at the right level.
+- [x] Competitive position and business quality are defined clearly enough to support underwriting.
+- [x] Management and capital allocation are included in a useful way instead of as generic checklist filler.
+- [ ] The forecast-ready driver map is the right output of company analysis.
+
+Notes:
+
+- The main issue is with the output of this. Right now it looks like it's going to be a summary made by an LLM.
+I don't see how this will be passed into the next step of analysis, I think we should add some more quantitative inputs.
+We should translate the descriptions into actual numbered recommendations — this is the part where the PM should have to
+utilize their judgement most. That is the art of valuation — going from "The company has good bargaining power" -> +1.5% revenue
+growth in the next 5 years.
+
+## 3. Historical Financial Analysis
+
+Primary doc:
+
+- [`03_historical-financial-analysis.md`](./03_historical-financial-analysis.md)
+
+Questions to answer:
+
+- [ ] Clean multi-year statement assembly is treated as a first-class prerequisite.
+- [ ] The reclassification step is valuation-oriented and not just accounting housekeeping.
+- [ ] Rolling trend views are emphasized enough relative to simple CAGR snapshots.
+- [ ] Common-size statements are included at the right depth.
+- [ ] The ratio pack covers the metrics I actually trust.
+- [ ] Cash conversion and working-capital behavior are covered well enough.
+- [ ] Capital intensity and balance-sheet evolution are framed usefully.
+- [ ] Peer-relative historical benchmarking belongs here and is described well.
+- [ ] The historical driver map is a real bridge into forecasting.
+- [ ] The forecast handoff section is strong enough to support a professional model.
+
+Notes:
+
+- Historical metrics I care about most:
+  - I think that there should be a consideration made for the reasons behind certain changes (I think that
+  this is mostly disclosed in the Management Discussion section of the 10-Ks), for example: "In 2024 the Crisis in the
+  Middle East drastically impacted our transport costs" -> model places less emphasis on metrics from 2024 ...
+- Historical analyses that feel missing:
+- Years or period logic that should be handled more explicitly:
+
+## 4. Financial Forecasting
+
+Primary doc:
+
+- [`04_financial-forecasting.md`](./04_financial-forecasting.md)
+
+Questions to answer:
+
+- [ ] The forecast starts from explicit business drivers, not generic default lines.
+- [ ] The assumption register is defined well enough to support disciplined modeling.
+- [ ] Revenue forecasting is tied to identifiable drivers.
+- [ ] Margin forecasting reflects operating leverage and business economics.
+- [ ] Tax forecasting is good enough for the type of valuation work Alpha Pod is doing.
+- [ ] Reinvestment forecasting is tied to growth in a financially credible way.
+- [ ] The funding-path and balance-sheet implications of growth are handled seriously enough.
+- [ ] Scenario design is connected to the business and cycle, not just spreadsheet sensitivity habits.
+- [ ] The forecast validation step is strong enough to block weak models before valuation output is trusted.
+
+Notes:
+
+- Forecast assumptions I would want sourced more explicitly:
+- Places where the model still feels too generic:
+- Forecast outputs that should never be automated without review:
+
+## 5. WACC And Capital Structure
+
+Primary doc:
+
+- [`06_wacc-and-capital-structure.md`](./06_wacc-and-capital-structure.md)
+
+Questions to answer:
+
+- [ ] The doc starts from business risk, not just formula mechanics.
+- [ ] Current capital structure is treated accurately enough for equity valuation.
+- [ ] Cost of equity logic is economically credible.
+- [ ] Cost of debt logic is adequate for this stack.
+- [ ] Capital-structure evolution is considered seriously enough when growth needs funding.
+- [ ] The validation section would catch obviously weak discount-rate decisions.
+
+Notes:
+
+- WACC assumptions I distrust most:
+- Missing bridge items or financing details:
+- Where PM judgment should override formula outputs:
+
+## 6. Terminal Value
+
+Primary doc:
+
+- [`07_terminal-value.md`](./07_terminal-value.md)
+
+Questions to answer:
+
+- [ ] Stable-state thinking is defined clearly enough.
+- [ ] Stable-growth value is grounded in believable economics.
+- [ ] Exit-multiple value is used with enough caution.
+- [ ] The blend logic is disciplined rather than convenient.
+- [ ] Terminal concentration is treated as a serious risk signal.
+- [ ] The pressure-testing framework matches how I would challenge terminal assumptions in practice.
+
+Notes:
+
+- Situations where terminal value is most likely to mislead:
+- Terminal assumptions I would want surfaced more explicitly:
+- Where a more probabilistic approach would help:
+
+## 7. Sensitivity, Scenarios, And Reverse DCF
+
+Primary doc:
+
+- [`08_sensitivity-scenarios-and-reverse-dcf.md`](./08_sensitivity-scenarios-and-reverse-dcf.md)
+
+Questions to answer:
+
+- [ ] The docs identify the right high-impact assumptions to stress.
+- [ ] One-variable sensitivities are framed as useful diagnostics, not a full risk framework.
+- [ ] Multi-variable scenarios are described as coherent business states, not arbitrary math cases.
+- [ ] Reverse DCF is framed in a way that is truly decision-useful.
+- [ ] The PM review surface is focused on what would actually change the investment decision.
+
+Notes:
+
+- Assumptions I most want isolated:
+- Scenario dimensions I think are missing:
+- Reverse-DCF outputs I would find more useful:
+
+## 8. Comparable Company Analysis
+
+Primary doc:
+
+- [`09_comps.md`](./09_comps.md)
+
+Questions to answer:
+
+- [ ] The definition of "comparable" is strong enough.
+- [ ] Peer-set construction is described in a way I would trust.
+- [ ] The multiple-selection framework fits different business types well.
+- [ ] Forward vs LTM treatment is right.
+- [ ] Business-quality differences are normalized thoughtfully enough.
+- [ ] Outlier handling is disciplined.
+- [ ] The final comps narrative would help me challenge a DCF rather than just decorate it.
+
+Notes:
+
+- What makes a peer genuinely comparable for me:
+- Multiples I trust most by business type:
+- Where the current comps approach still feels weak:
+
+## 9. QoE And Normalization
+
+Primary doc:
+
+- [`10_qoe-and-normalization.md`](./10_qoe-and-normalization.md)
+
+Questions to answer:
+
+- [ ] Deterministic QoE signals are the right first layer.
+- [ ] Normalization candidates are described in a way that reflects real valuation work.
+- [ ] The recast of operating earnings is useful and disciplined.
+- [ ] Bridge items and accounting reclassification are taken seriously enough.
+- [ ] The control boundary for pushing normalization into the model is right.
+
+Notes:
+
+- Adjustments I think matter most:
+- Adjustments that should remain advisory only:
+- Areas where accounting noise could still distort valuation materially:
+
+## 10. Overall Judgment
+
+After reviewing the stack, try to answer these directly:
+
+- [ ] The valuation framework is economically coherent end to end.
+- [ ] The most important current weaknesses are now explicit in the docs.
+- [ ] I know which 3 to 5 follow-on issues matter most.
+- [ ] I can tell what should be deterministic, what should be LLM-augmented, and what should remain PM judgment.
+- [ ] I would be comfortable using this doc set as the canon for future valuation hardening.
+
+Final notes:
+
+- Top 3 priorities:
+- Biggest modeling risk:
+- Biggest data / CIQ risk:
+- Biggest docs / clarity risk:
+- What I would tackle next:

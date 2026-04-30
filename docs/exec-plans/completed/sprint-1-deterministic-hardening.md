@@ -24,4 +24,3 @@ See [`docs/plans/archive/2026-03-06-dcf-pipeline.md`](../../plans/archive/2026-0
 - 2026-03-06: Sector-specific defaults confirmed as the right approach (not uniform). See `batch_runner.SECTOR_ASSUMPTIONS`.
 - 2026-03-06: Margin trajectory (expansion modeling) deferred to Sprint 3 (QoE agent). Flat margin for now.
 - 2026-03-06: NWC change derived from balance sheet actuals (not hardcoded 1%) in Task 1.2.
-

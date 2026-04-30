@@ -7,12 +7,12 @@
 Verify that the 10-K and 10-Q corpus is complete enough for accounting analysis and expose diagnostics showing exactly what the agents actually see.
 
 ## Files
-- Modify: [src/stage_00_data/filing_retrieval.py](../../src/stage_00_data/filing_retrieval.py)
-- Modify: [src/stage_04_pipeline/filings_browser.py](../../src/stage_04_pipeline/filings_browser.py)
-- Modify: [dashboard/app.py](../../dashboard/app.py)
-- Optional Modify: [src/stage_00_data/edgar_client.py](../../src/stage_00_data/edgar_client.py)
-- Create: [tests/test_filing_retrieval_diagnostics.py](../../tests/test_filing_retrieval_diagnostics.py)
-- Create: [tests/test_filings_browser_diagnostics.py](../../tests/test_filings_browser_diagnostics.py)
+- Modify: [src/stage_00_data/filing_retrieval.py](../../../src/stage_00_data/filing_retrieval.py)
+- Modify: [src/stage_04_pipeline/filings_browser.py](../../../src/stage_04_pipeline/filings_browser.py)
+- Modify: [dashboard/app.py](../../../dashboard/app.py)
+- Optional Modify: [src/stage_00_data/edgar_client.py](../../../src/stage_00_data/edgar_client.py)
+- Create: [tests/test_filing_retrieval_diagnostics.py](../../../tests/test_filing_retrieval_diagnostics.py)
+- Create: [tests/test_filings_browser_diagnostics.py](../../../tests/test_filings_browser_diagnostics.py)
 
 ## Current Gaps
 - The notes-first retrieval layer exists, but the UI does not clearly surface statement completeness.

@@ -94,5 +94,3 @@ For each candidate in top bucket:
 2. Improve fallback logic only with explicit tests.
 3. Keep deterministic and judgment layers separated in implementation.
 4. Re-run `python -m pytest -q` before merge.
-
-

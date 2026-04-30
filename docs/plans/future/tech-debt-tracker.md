@@ -40,4 +40,3 @@ When fixed, move to the relevant sprint's completed log.
 | TD-21 | **DCF IV history in DB** — Added `dcf_valuations` table (PK: ticker, run_date) with iv_bear/base/bull/expected, wacc, exit_multiple, source flags. `persist_results_to_db()` returns 3-tuple. | Valuation pipeline deep gap fix | 2026-03-16 |
 | TD-22 | **Comps target EBIT/EPS** — `batch_runner.py` enriches target dict with `ebit_ltm_mm` and `eps_ltm` before calling comps; `build_comps_detail_from_yfinance()` reads them from `target_data`. | Valuation pipeline deep gap fix | 2026-03-16 |
 | TD-24 | Added GitHub Actions CI, pre-commit enforcement, branch-protection guidance for `main`, and expanded architecture-boundary tests to freeze current `print()`/`sqlite3.connect()` debt while blocking new spread. | Infrastructure hardening | 2026-03-27 |
-

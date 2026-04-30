@@ -4,6 +4,13 @@ This is the canonical planning index for Alpha Pod.
 
 If you need to know what is being built, what shipped, and what is queued, use this file first.
 
+## Use This When
+
+- you want to see current active work
+- you want the medium-term roadmap
+- you want shipped implementation history
+- you want to find a canonical plan before changing code
+
 ## Rules
 
 - `active/` contains plans that are currently being executed
@@ -13,6 +20,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Valuation Methodology Hardening And CIQ Retrieval Requirements](./active/2026-04-04-spike-review-valuation-inputs-and-ciq-requirements.md)
 - [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)
 - [Internal Release Readiness And Mock Publish](./active/2026-04-01-internal-release-readiness-and-mock-publish.md)
 - [GitHub Hygiene And Repo Hardening](./active/2026-03-31-github-hygiene-and-repo-hardening.md)

@@ -781,7 +781,7 @@ def query_filing_corpus(ticker: str, query_text: str, *, top_k: int = 5, include
     """
     ticker = ticker.upper().strip()
     corpus = build_filing_corpus(ticker, include_10k=include_10k, ten_q_limit=ten_q_limit)
-    
+
     if not corpus["chunks"]:
         return FilingContextBundle(
             ticker=ticker,
@@ -829,7 +829,7 @@ def query_filing_corpus(ticker: str, query_text: str, *, top_k: int = 5, include
                     chunk_embedding = _get_or_create_chunk_embedding(conn, chunk.chunk_hash, chunk.text, _EMBEDDING_MODEL)
                 except Exception:
                     continue
-            
+
             sim = _cosine_similarity(query_embedding, chunk_embedding)
             score = _normalise_similarity(sim)
             chunk.score = score

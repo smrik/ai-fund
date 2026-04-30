@@ -6,6 +6,11 @@ It explains what happens, in what order, why each step exists, and what you shou
 It is intentionally detailed.
 The target reader is the PM and system designer who wants to audit the logic rather than just run the scripts.
 
+Companion references:
+
+- `docs/design-docs/deterministic-valuation-flow-spec.md`
+- `docs/design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md`
+
 ---
 
 ## 1. The Core Rule
@@ -686,5 +691,3 @@ If you remember only one thing, remember this:
 
 The DCF is the numeric frame that keeps the thesis honest.
 The thesis is still the human job.
-
-

@@ -83,4 +83,3 @@ class PublishableMemoState(BaseModel):
     ticker: str
     title: str = ""
     summary: str = ""
-

@@ -111,5 +111,3 @@ A valuation change is only done when:
 - tests pass
 - acceptance gates pass
 - docs in handbook are updated
-
-

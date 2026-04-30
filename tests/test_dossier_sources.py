@@ -52,4 +52,3 @@ def test_dossier_sources_create_source_note_and_round_trip(monkeypatch, tmp_path
     assert sources[0]["title"] == "2025 10-K"
     assert source_note_path.exists()
     assert "source_id: S-001" in source_note_path.read_text(encoding="utf-8")
-

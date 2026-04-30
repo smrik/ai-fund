@@ -342,7 +342,7 @@ If you have more than 15 metrics, you're probably including noise. Edit ruthless
 
 ### Sanity Checks
 - **Margin test**: Gross margin > EBITDA margin > Net margin (always true by definition)
-- **Multiple reasonableness**: 
+- **Multiple reasonableness**:
   - EV/Revenue: typically 0.5-20x (varies widely by industry)
   - EV/EBITDA: typically 8-25x (fairly consistent across industries)
   - P/E: typically 10-50x (depends on growth rate)

@@ -172,5 +172,3 @@ Recommendation:
 - Add range checks near data ingress
 - Make all fallbacks explicit and test-covered
 - Keep CLI outputs friendly, but never as primary persistence
-
-

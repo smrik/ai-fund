@@ -364,4 +364,3 @@ The org chart mapping makes the build order obvious — **automate the roles wit
 5. **Dashboard / PM tooling** (Phase 3) — the interface you use daily to consume everything above.
 
 The junior analyst role is where your $50–150/month in API costs replaces what a real fund pays $150–300K/year in salary for. That's the economics of this project.
-
