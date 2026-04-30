@@ -421,7 +421,7 @@
    → get_stock_quarterly_gross_margin
    → get_industry_quarterly_gross_margin
    → Calculate spread (company - industry)
-   
+
    → get_stock_quarterly_net_margin
    → get_industry_quarterly_net_margin
    → Calculate spread

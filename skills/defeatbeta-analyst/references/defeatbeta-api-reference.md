@@ -804,7 +804,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
 {
     "symbol": "QCOM",
     "file_path": "/tmp/defeatbeta_tmp/QCOM.xlsx",  # Excel model for detailed review
-    
+
     # 1. Discount Rate (WACC) Estimates
     "discount_rate_estimates": {
         "report_date": "2026-02-06",
@@ -823,7 +823,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
         "tax_rate": 0.15,
         "wacc": 0.1343  # 13.43%
     },
-    
+
     # 2. Historical Growth Analysis (3-Year CAGR)
     "growth_estimates": {
         "revenue": {
@@ -859,7 +859,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
             "cagr_3y": -0.1247  # -12.47%
         }
     },
-    
+
     # 3. DCF Template (Growth Assumptions & Projections)
     "dcf_template": {
         # Growth Rate Framework
@@ -895,14 +895,14 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
             "components": {"risk_free_rate": 0.0422},
             "rationale": "Conservative assumption: mature companies cannot grow faster than the economy indefinitely"
         },
-        
+
         # Current Baseline
         "discount_rate": 0.1343,
         "ttm_revenue": 44867000000.0,
         "ttm_revenue_label": "TTM Revenue (USD | 2025-03-31 ~ 2025-12-31)",
         "future_revenue_growth_1_5y": 0.1119,
         "future_revenue_growth_6_10y": 0.0661,
-        
+
         # 10-Year Projections
         "projections": {
             "years": [
@@ -941,7 +941,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
                 0.3046   # Year 10: 30.46%
             ]
         },
-        
+
         # Historical FCF Margin (for validation)
         "historical_fcf_margin": {
             "2021/09/30": 0.2576,  # 25.76%
@@ -951,7 +951,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
             "2025/09/30": 0.2895   # 28.95%
         }
     },
-    
+
     # 4. DCF Valuation Output
     "dcf_value": {
         "report_date": "2026-02-06",
@@ -964,7 +964,7 @@ EV = Market Cap + Total Debt + Minority Interest + Preferred Stock Equity - Cash
         "current_price": 137.34,
         "margin_of_safety": 0.3326  # 33.26%
     },
-    
+
     # 5. Investment Recommendation
     "buy_sell": {
         "fair_price": 205.79,

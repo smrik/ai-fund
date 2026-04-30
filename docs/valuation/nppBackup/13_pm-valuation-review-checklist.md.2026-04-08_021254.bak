@@ -68,7 +68,7 @@ Notes:
 
 - The main issue is with the output of this. Right now it looks like it's going to be a summary made by an LLM.
 I don't see how this will be passed into the next step of analysis, I think we should add some more quantitative inputs.
-We should translate the descriptions into actual numbered recommendations — this is the part where the PM should have to 
+We should translate the descriptions into actual numbered recommendations — this is the part where the PM should have to
 utilize their judgement most. That is the art of valuation — going from "The company has good bargaining power" -> +1.5% revenue
 growth in the next 5 years.
 
@@ -94,7 +94,7 @@ Questions to answer:
 Notes:
 
 - Historical metrics I care about most:
-  - I think that there should be a consideration made for the reasons behind certain changes (I think that 
+  - I think that there should be a consideration made for the reasons behind certain changes (I think that
   this is mostly disclosed in the Management Discussion section of the 10-Ks), for example: "In 2024 the Crisis in the
   Middle East drastically impacted our transport costs" -> model places less emphasis on metrics from 2024 ...
 - Historical analyses that feel missing:
