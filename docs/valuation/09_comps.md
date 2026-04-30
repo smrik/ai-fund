@@ -24,6 +24,11 @@ Comps are especially useful when:
 But comps only help when the peer set and metric choice are credible.
 Bad comps are often worse than no comps because they import false precision.
 
+Comps should therefore be treated as two related artifacts:
+
+- a shared peer-universe artifact that informs history, beta, cyclicality framing, and valuation
+- a later market-valuation artifact that uses that peer universe to challenge the DCF
+
 ## Ownership Model
 
 ### Deterministic
@@ -100,12 +105,44 @@ Best practice:
 - distinguish core peers from peripheral peers
 - record why each peer is included
 - flag peers with incomplete metric coverage
+- allow the same peer-universe artifact to feed beta work, historical benchmarking, and later valuation comps
 
 Deterministic outputs:
 
 - peer table
 - inclusion / exclusion flags
 - metric availability flags
+- shared peer-universe artifact with risk and business-model tags
+
+Peer scoring rule:
+
+| Dimension | Default weight |
+| --- | ---: |
+| business-description similarity | 35% |
+| metric similarity across growth, margin, ROIC, leverage, and capital intensity | 35% |
+| industry / sector match | 15% |
+| size and maturity similarity | 15% |
+
+Default thresholds:
+
+- `>= 0.75`: core peer candidate
+- `0.55-0.75`: peripheral peer candidate
+- `< 0.55`: excluded unless PM-approved
+
+Floor guard before applying the composite:
+
+```text
+core_eligible = text_similarity >= 0.50 and metric_similarity >= 0.50
+peripheral_eligible = text_similarity >= 0.40 or metric_similarity >= 0.40
+```
+
+Conflict rule:
+
+- if not `peripheral_eligible`, exclude unless PM-approved
+- if not `core_eligible`, cap inclusion at peripheral even if the additive composite is above 0.55
+- a high text-similarity / low metric-similarity peer should be peripheral until reviewed
+- a high metric-similarity / low text-similarity peer can be a statistical benchmark, but not a core narrative peer without PM approval
+- every included peer needs an inclusion reason and data-coverage flag
 
 LLM augmentation:
 
@@ -127,6 +164,18 @@ Examples:
 - FCF-based metrics
 - revenue multiples where profitability is not yet meaningful
 
+Metric ladder:
+
+1. EV / Sales when profitability is not yet meaningful, with gross-margin context.
+2. EV / Gross Profit when gross margin is the cleaner economic anchor.
+3. EV / EBITDA when D&A and capital intensity differences are not the main story.
+4. EV / EBIT when depreciation, leases, or capital intensity matter.
+5. Unlevered FCF yield / UFCF multiple when cash conversion and reinvestment are central.
+6. FCFE yield and P / E when equity claims, leverage, and per-share economics are central and comparable.
+
+This ladder follows the market-based valuation principle in CFA / Pinto equity valuation materials: choose enterprise-value multiples for operating enterprise economics and equity-value multiples when capital structure and per-share claims are part of the comparison.
+Reference: https://www.wiley-vch.de/en/areas-interest/finance-economics-law/finance-investments-13fi/investments-securities-13fi3/equity-asset-valuation-978-1-119-62810-1
+
 Questions to answer:
 
 - Which metric best matches the target's economics?
@@ -138,6 +187,34 @@ Best practice:
 - use metrics that match the target's business quality and capital structure
 - avoid mechanically applying the same multiple across all sectors
 - document when a metric is weak or misleading
+
+Business-type multiple selection matrix:
+
+| Business type | Usually strongest starting metrics | Use with caution | Usually weak / misleading without context |
+| --- | --- | --- | --- |
+| mature industrial / asset-heavy | EV / EBIT, EV / EBITDA | P / E when capital structure differs a lot | revenue multiples alone |
+| cyclical industrial / materials | forward EV / EBIT, normalized EV / EBITDA | LTM multiples at cycle extremes | spot-year P / E |
+| profitable software / services | forward EV / EBIT, FCF-based views, selective revenue multiples | EV / EBITDA when stock comp and capitalization distort comparability | raw P / E without normalization |
+| early-stage or low-profit software | forward revenue, gross-profit-aware views where available | EBITDA multiples if profitability is not yet meaningful | P / E |
+| consumer / branded business | EV / EBIT, P / E, FCF views | EBITDA if lease treatment differs across peers | revenue multiples alone |
+| heavy financial-structure distortion | enterprise metrics with explicit bridge review | P / E if capital structure and one-offs are unstable | blind median use across mixed capital structures |
+
+Matching-principle rule:
+
+- choose the metric that best matches how investors value the business
+- choose enterprise metrics when enterprise claims dominate the story
+- choose equity metrics when per-share earnings and capital structure are central to the thesis
+- keep the metric-selection logic explicit enough that another reviewer could challenge it
+- do not label metrics simply as "FCF-based"; specify FCFF / UFCF versus FCFE because those answer different valuation questions
+
+SaaS and usage-based software checks:
+
+- Rule of 40
+- net revenue retention where available
+- gross margin and gross-profit multiple
+- Magic Number / CAC payback where available
+- stock-based compensation intensity
+- growth-adjusted revenue multiple context
 
 Deterministic outputs:
 
@@ -230,6 +307,7 @@ They should answer:
 
 | Artifact | Purpose | Owner |
 | --- | --- | --- |
+| Shared peer-universe artifact | reusable peer set for beta, historical benchmarking, and later comps | deterministic + PM |
 | Peer selection note | explains why the chosen peers are relevant | mixed |
 | Peer table | target and peer metrics | deterministic |
 | Metric suitability table | explains which multiples matter and why | mixed |

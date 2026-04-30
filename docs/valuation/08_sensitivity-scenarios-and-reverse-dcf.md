@@ -109,6 +109,26 @@ Deterministic outputs:
 - scenario valuation outputs
 - scenario assumption packs
 
+### Macro-Regime Overlay
+
+Alpha Pod already computes macro-regime scenario weights in `src/stage_02_valuation/regime_model.py`.
+The canonical policy is to show regime-adjusted weights as an alternative view, not to silently replace the unadjusted valuation.
+
+Current regime-weight sets:
+
+| Regime | Bear | Base | Bull |
+| --- | ---: | ---: | ---: |
+| Risk-On | 10% | 55% | 35% |
+| Neutral | 20% | 60% | 20% |
+| Risk-Off | 35% | 55% | 10% |
+
+Policy:
+
+- the unadjusted scenario-weighted intrinsic value remains the official base view unless PM-approved
+- the regime-adjusted view should be displayed beside it with source and timestamp
+- if regime weighting changes expected intrinsic value by more than 5%, the PM decision queue should flag it
+- PM approval is required before regime weights change official valuation outputs, sizing, or exported model assumptions
+
 LLM augmentation:
 
 - help articulate the operational meaning of each scenario

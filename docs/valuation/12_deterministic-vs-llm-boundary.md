@@ -120,6 +120,13 @@ Users should be able to tell whether a field is:
 - LLM-augmented advisory output
 - PM-approved override
 
+Worked example:
+
+- Beneish M-Score and Altman Z-Score are deterministic QoE signals.
+- They may reduce confidence, trigger PM review, or feed the normalization decision queue.
+- They must not automatically change EBIT, WACC, FCF, or valuation.
+- Any model mutation from a forensic concern still requires a separate PM-approved override.
+
 ## Recommended Ownership Map
 
 | Task | Default owner |

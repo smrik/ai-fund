@@ -27,6 +27,7 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 | [`deterministic-valuation-inputs-and-ciq-retrieval-spec.md`](./deterministic-valuation-inputs-and-ciq-retrieval-spec.md) | Field-level valuation input audit and CIQ retrieval requirements |
 | [`deterministic-valuation-workflow.md`](./deterministic-valuation-workflow.md) | Current valuation system behavior |
 | [`deterministic-valuation-benchmark-and-gap-analysis.md`](./deterministic-valuation-benchmark-and-gap-analysis.md) | Best-practice valuation benchmark, gap register, and issue map |
+| [`valuation-methodology-critical-review-and-action-plan.md`](./valuation-methodology-critical-review-and-action-plan.md) | Consolidated critique and issue-ready action plan for valuation methodology |
 
 ## Specialized Design Docs
 
@@ -40,4 +41,5 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 ## Less Common
 
 - [Agent Feedback Loop And Comps Gaps](./agent-feedback-loop-and-comps-gaps.md)
+- [Valuation Methodology Critical Review And Action Plan](./valuation-methodology-critical-review-and-action-plan.md)
 - [Archived Data Architecture Legacy Note](./archive/data-architecture-legacy.md)

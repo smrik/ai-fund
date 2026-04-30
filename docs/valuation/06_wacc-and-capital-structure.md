@@ -91,6 +91,14 @@ Best practice:
 - distinguish reported capital structure from sustainable capital structure
 - connect balance-sheet review to the forecast, not just the snapshot
 
+Capital-structure weighting policy:
+
+- use current market-value weights when the current structure is credible and likely to persist
+- use PM-approved target weights when the current structure is clearly temporary, distressed, or in transition
+- document whether leases are treated as debt in both the leverage view and the WACC weights
+- document whether excess cash is netted out before assessing leverage and equity risk
+- document how convertibles, preferreds, and minority interests are treated in both the bridge and the weighting view
+
 Deterministic outputs:
 
 - debt and equity weights
@@ -118,6 +126,22 @@ Best practice:
 - document the source for each component
 - review whether the resulting cost of equity passes a reasonableness test
 
+Beta methodology decision ladder:
+
+1. use bottom-up peer beta as the default institutional method
+2. unlever peer betas using a consistent debt and tax convention
+3. remove obvious outliers or weak peers before relevering
+4. relever the cleaned peer beta to the target or PM-approved capital structure
+5. use regression beta only as a secondary sense check, not the default anchor, unless the trading history is unusually clean and relevant
+
+Minimum rules:
+
+- use market-value weights for leverage calculations whenever possible
+- state whether leases are treated as debt in the beta and capital-structure view
+- state whether excess cash is netted out of leverage
+- state whether convertibles, preferreds, or minority interests are included in the bridge and risk view
+- record which peer set produced the beta so it can be reviewed alongside comps
+
 Deterministic outputs:
 
 - risk-free rate
@@ -139,6 +163,21 @@ Best practice:
 
 - use company-specific debt evidence where possible
 - review whether tax-adjusted debt cost is reasonable
+
+Cost-of-debt evidence hierarchy:
+
+1. traded debt yield or spread for the company's own debt
+2. recent issuance or disclosed borrowing-cost evidence
+3. implied interest-rate check from interest expense and average debt balance
+4. synthetic rating or interest-coverage-based spread
+5. peer-spread fallback only when company evidence is too weak
+
+Minimum rules:
+
+- record which rung of the hierarchy was used
+- distinguish current debt cost from target debt cost if refinancing is likely
+- use a documented tax rate for the debt shield instead of a hidden shortcut
+- surface when the evidence quality is weak enough that WACC confidence should drop
 
 Deterministic outputs:
 
@@ -177,6 +216,7 @@ LLM augmentation:
 PM judgment:
 
 - decide whether the valuation narrative needs a more dynamic funding path
+- decide whether current or target weights better represent the economics of the forecast period
 
 ## 6. Validate the discount-rate conclusion
 
@@ -189,6 +229,58 @@ Validation questions:
 - Is the capital structure sustainable?
 - Does the implied discount rate feel too low or too high relative to peers and business quality?
 
+Methodology policy controls:
+
+| Component | Default policy | Required flag |
+| --- | --- | --- |
+| Risk-free rate | match the cash-flow currency and approximate duration; use US 10-year only as the practical USD long-duration fallback | flag currency mismatch or non-USD exposure without matching local rate logic |
+| Equity risk premium | prefer current implied ERP when available; document any fixed or historical fallback | flag stale ERP or hard-coded ERP without source date |
+| Country risk premium | add explicit country-risk exposure for material non-US operating exposure, not only foreign listing domicile | flag missing country-risk logic for multinational or emerging-market exposure |
+| Beta | default to bottom-up peer beta with transparent unlever / relever assumptions | flag thin peer set, unstable regression beta, or unreconciled peer disagreement |
+| Size premium | use only if the methodology stance, data source, and refresh cadence are documented | flag because the empirical size-premium evidence is contested |
+| Cost of debt | prefer traded debt / recent issuance / disclosed borrowing cost before synthetic-rating fallback | flag when only generic peer spread is available |
+| Synthetic rating spread | record the interest-coverage mapping, spread curve source, and curve date | flag missing curve date or unsupported spread interpolation |
+| Method disagreement | compare peer bottom-up, industry proxy, and self-Hamada results | flag when approved methods differ beyond the configured tolerance |
+
+Accepted range rule:
+
+- base WACC should sit inside the approved method-set range unless PM-approved
+- the WACC register entry should preserve the full method set, not only the selected value
+- a PM override may select a value outside the deterministic range, but the override must record the reason and valuation impact
+
+WACC default parameters:
+
+| Parameter | Default |
+| --- | --- |
+| ERP source | Damodaran monthly implied ERP if dated within 60 days |
+| ERP fallback | 4.6% mature-market ERP, source-stamped and flagged as fallback |
+| Country-risk materiality | add country-risk review when non-US operating exposure is greater than 15% of revenue or operating income; use revenue when operating income by geography is unavailable |
+| Method disagreement flag | high-low spread greater than 100 bps across approved WACC methods = `review_required`; greater than 200 bps = `critical` |
+| Synthetic-rating source | Damodaran interest-coverage-to-rating table, source date recorded |
+| Risk-free fallback | US 10-year Treasury only for USD long-duration cash flows when duration-matched curve is unavailable |
+
+Damodaran synthetic-rating table for large non-financial firms, January 2026:
+
+| Interest coverage greater than | Interest coverage less than or equal to | Synthetic rating | Default spread |
+| ---: | ---: | --- | ---: |
+| -100000 | 0.199999 | D2/D | 19.00% |
+| 0.2 | 0.649999 | C2/C | 16.00% |
+| 0.65 | 0.799999 | Ca2/CC | 12.61% |
+| 0.8 | 1.249999 | Caa/CCC | 8.85% |
+| 1.25 | 1.499999 | B3/B- | 5.09% |
+| 1.5 | 1.749999 | B2/B | 3.21% |
+| 1.75 | 1.999999 | B1/B+ | 2.75% |
+| 2 | 2.249999 | Ba2/BB | 1.84% |
+| 2.25 | 2.499999 | Ba1/BB+ | 1.38% |
+| 2.5 | 2.999999 | Baa2/BBB | 1.11% |
+| 3 | 4.249999 | A3/A- | 0.89% |
+| 4.25 | 5.499999 | A2/A | 0.78% |
+| 5.5 | 6.499999 | A1/A+ | 0.70% |
+| 6.5 | 8.499999 | Aa2/AA | 0.55% |
+| 8.5 | 100000 | Aaa/AAA | 0.40% |
+
+Primary source: https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datafile/ratings.html
+
 ## Recommended Artifact Set
 
 | Artifact | Purpose | Owner |
@@ -196,6 +288,7 @@ Validation questions:
 | WACC audit table | shows full build-up of discount-rate components | deterministic |
 | Beta and peer-risk table | explains risk inputs and peer anchoring | deterministic |
 | Capital-structure review block | shows current and discussed target structure | deterministic + PM |
+| Cost-of-debt evidence ladder | records which evidence tier was used and why | deterministic |
 | Funding-path note | explains how the company finances the forecast path | mixed |
 | Discount-rate validation note | explains whether WACC feels credible enough to trust | PM-owned |
 
@@ -216,11 +309,14 @@ The following should stay advisory until approved:
 
 ## Current Implementation Notes
 
-Alpha Pod's WACC logic is already relatively strong.
-The main future improvement is tying capital structure more explicitly to the forecast path instead of treating it as mostly static.
+Alpha Pod's WACC logic is directionally strong, but this area still needs more explicit policy than the current docs provide.
+The biggest remaining gap is not only dynamic capital structure. It is the lack of a first-class methodology ladder for beta, debt cost, and bridge-item treatment.
 
 Main gaps:
 
+- beta method precedence is not yet explicit enough
+- lease, cash, convertible, and target-structure treatment should be documented more tightly
+- cost-of-debt evidence quality and fallback order are not yet first-class artifacts
 - limited formal dynamic capital-structure logic
 - limited explicit funding-path artifact in the valuation workflow
 - limited confidence scoring for discount-rate quality

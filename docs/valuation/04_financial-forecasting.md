@@ -164,6 +164,40 @@ Best practice:
 - do not build a highly detailed forecast for a business that is not forecastable with confidence
 - make the forecast fit the decision, not the other way around
 
+Forecast scoping matrix:
+
+| Business situation | Default detail level | Why |
+| --- | --- | --- |
+| stable, mature, disclosed business model | fuller driver model | history is more anchorable |
+| cyclical or commodity-like name | moderate detail plus cycle-aware scenarios | precision is lower, scenario framing matters more |
+| hyper-growth or negative-margin name | lighter operating detail plus stronger scenario discipline | false precision is a bigger risk |
+| acquisition-heavy or accounting-distorted name | reduced automation until normalization is approved | base year is not reliable enough |
+| weak disclosure / weak CIQ coverage | lighter model with explicit confidence haircut | the limit is data quality, not spreadsheet effort |
+
+Deterministic scoping score:
+
+Score each dimension from `0.0` to `1.0`, then compute the weighted average.
+
+| Dimension | Default signal | Weight |
+| --- | --- | ---: |
+| Disclosure quality | segment and KPI coverage versus peer median | 0.20 |
+| Historical stability | `1 - min(coefficient_of_variation, 1)` across growth, margins, working capital, and ROIC | 0.20 |
+| Profitability | normalized EBIT margin versus industry median, clipped to `[0, 1]` | 0.10 |
+| Capital intensity | availability and stability of capex / sales, D&A / sales, and invested-capital turnover | 0.10 |
+| Cyclicality | inverse of correlation with approved industry cycle indicators, capped for known cyclicals | 0.15 |
+| M&A / accounting distortion | `1 - share_of_last_5_years_tagged_distorted` | 0.15 |
+| Data coverage | populated required CIQ / filing fields divided by required fields | 0.10 |
+
+Default rule:
+
+- `>= 0.70` = fuller driver model
+- `0.40-0.70` = moderate model with explicit cycle scenarios
+- `< 0.40` = light model with stronger scenarios and confidence haircut
+- if data quality is weak, do not increase detail just because the company is important
+
+The deterministic layer should decide the default template from disclosed business type, data quality, and the scoping score.
+The PM should still be able to override it, but the override should be explicit and reviewable.
+
 Deterministic outputs:
 
 - forecast horizon
@@ -198,6 +232,10 @@ A clean assumption register should document:
 - source
 - rationale
 - sensitivity range
+- owner
+- hard bounds
+- approval state
+- affected forecast lines
 
 Examples:
 
@@ -216,6 +254,30 @@ Best practice:
 - avoid hidden assumptions inside formulas
 - make source and rationale visible
 - separate assumption selection from projection mechanics
+
+Canonical assumption-register schema:
+
+| Field | Meaning |
+| --- | --- |
+| `assumption_name` | concise identifier |
+| `category` | operating, valuation, capital structure, timing, or scenario |
+| `current_value` | latest anchor value |
+| `base_path` | approved base-case path |
+| `bear_path` | approved downside path |
+| `bull_path` | approved upside path |
+| `source_hierarchy` | primary and fallback source order |
+| `rationale` | why the assumption is set this way |
+| `owner` | deterministic, LLM-augmented, or PM-owned |
+| `approval_state` | advisory, PM-approved, blocked |
+| `hard_bounds` | minimum and maximum acceptable range |
+| `affected_forecast_lines` | which projected lines the assumption moves |
+| `last_reviewed_at` | review timestamp or cycle marker |
+
+The main control rule is simple:
+
+- assumptions may be suggested by text analysis
+- they may be anchored by deterministic history
+- they should only enter the official forecast once the approval state allows it
 
 ## 3. Forecast revenue from explicit drivers
 
@@ -309,6 +371,19 @@ Best practice:
 - bound extreme values
 - distinguish reported tax distortion from the normalized operating tax burden
 
+Tax evidence hierarchy:
+
+1. normalized cash-tax view where the filing evidence supports it
+2. multi-year effective-tax history adjusted for obvious one-offs
+3. jurisdiction and entity-structure considerations
+4. latest reported ETR only as a weak anchor when the history is thin
+
+Questions to control explicitly:
+
+- are NOLs or valuation allowances driving the current rate?
+- is a restructuring, geographic mix shift, or discrete item distorting the recent period?
+- should the model use operating tax for valuation while still displaying reported tax history separately?
+
 Deterministic outputs:
 
 - tax start rate
@@ -348,6 +423,7 @@ Best practice:
 - connect growth and reinvestment explicitly
 - use historical capital-intensity evidence as an anchor
 - do not let aggressive growth assumptions coexist with unrealistically light reinvestment
+- require schedules that reconcile the operating plan to the balance sheet and cash flow
 
 Deterministic outputs:
 
@@ -355,6 +431,16 @@ Deterministic outputs:
 - D&A path
 - working-capital day paths
 - reinvestment bridge
+- PP&E / intangible roll-forward
+- balance-sheet integrity checks
+
+Minimum reinvestment and schedule controls:
+
+- capex should update the asset base
+- D&A should follow from the asset base and useful-life logic
+- working-capital assumptions should reconcile with day-driver schedules where applicable
+- the forecast should expose whether growth is being funded by retained cash flow, debt, or dilution
+- if the schedules do not reconcile, the model should fail validation instead of quietly continuing
 
 LLM augmentation:
 
@@ -424,6 +510,20 @@ Best practice:
 - separate multi-variable scenarios from one-variable sensitivities
 - prioritize assumptions that matter most for PM decision-making
 
+Scenario-definition pack should record:
+
+- scenario name in business language
+- which assumptions move together
+- why they move together
+- which assumptions stay fixed
+- which assumptions are deterministic versus PM-set
+- which observable evidence would move the name from one scenario to another
+
+Auditable scenario rule:
+
+- no scenario should be only a percentage shock without an attached business explanation
+- no narrative-only scenario should enter the official valuation output without numeric parameterization
+
 Deterministic outputs:
 
 - scenario valuation outputs
@@ -466,9 +566,11 @@ The system should eventually produce these forecasting artifacts:
 | --- | --- | --- |
 | Assumption register | documents all model inputs with rationale and source | deterministic, PM-reviewed |
 | Revenue-driver map | links business drivers to forecast growth | mixed |
+| Analysis-to-forecast handoff table | records the approved driver-level inputs coming from earlier stages | deterministic + PM |
 | Historical-to-forecast bridge | shows how the forecast departs from history | deterministic |
 | Margin and profitability bridge | explains the path from current to target profitability | mixed |
 | Reinvestment bridge | links growth to capex and working capital | deterministic |
+| Schedule integrity block | proves PP&E, D&A, working capital, cash, debt, and share-count logic remain coherent | deterministic |
 | Funding-path review | explains how the company finances the plan | mixed |
 | Scenario definitions | documents what bear / base / bull mean operationally | PM-owned |
 | Sensitivity summary | highlights which assumptions matter most | deterministic |

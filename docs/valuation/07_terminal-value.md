@@ -84,6 +84,32 @@ Best practice:
 
 - prefer a stable-growth value when it reflects the economics more honestly
 - treat implausibly high long-run growth as a model-quality problem
+- use the value-driver identity so growth, reinvestment, and return on capital reconcile instead of floating independently
+
+Value-driver terminal identity:
+
+```text
+terminal_reinvestment_rate = terminal_growth / terminal_RONIC
+terminal_FCFF = terminal_NOPAT_next_year * (1 - terminal_reinvestment_rate)
+terminal_value = terminal_FCFF / (WACC - terminal_growth)
+```
+
+This follows the Koller / Goedhart / Wessels value-driver framing: growth, return on invested capital, reinvestment, and WACC must reconcile rather than being selected independently.
+Reference: https://www.mckinsey.com/featured-insights/mckinsey-explainers/how-are-companies-valued
+
+Required checks:
+
+- `terminal_RONIC > terminal_growth`
+- `terminal_growth < WACC`
+- `terminal_growth` stays below the approved long-run nominal growth cap
+- terminal margin and terminal RONIC sit inside mature peer / industry ranges unless PM-approved
+- value-driver terminal FCFF reconciles to the bridge terminal FCFF, with the variance shown
+
+Dual-track terminal FCFF:
+
+- `value_driver_FCFF` = `NOPAT_T+1 * (1 - terminal_growth / terminal_RONIC)`, used when `terminal_RONIC > terminal_growth + 50 bps`
+- `bridge_FCFF` = last explicit forecast-year FCFF projected one period forward, used as the fallback when the value-driver path fails its guards
+- the variance between the two should be reported; large variance is a terminal fragility flag
 
 Deterministic outputs:
 

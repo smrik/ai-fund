@@ -161,6 +161,22 @@ Best practice:
 - add a valuation-oriented reclassification layer rather than losing the original presentation
 - isolate items that affect normalized EBIT, invested capital, and the EV bridge
 
+Minimum reclassification rulebook:
+
+| Category | Typical contents | Notes |
+| --- | --- | --- |
+| Operating | revenue, COGS, operating opex, operating taxes, operating working capital, maintenance and growth reinvestment | default home for valuation operations |
+| Financing | interest expense, debt fees, refinancing items, financing cash flows, explicit debt balances | should not leak into operating return measures |
+| Non-operating | asset-sale gains, mark-to-market items, litigation recoveries, unusual investment income, non-core assets | keep visible, but separate from operating anchors |
+| EV-bridge items | leases, pensions, minority interest, preferred equity, convertibles, options, excess cash, non-operating assets | needed for enterprise-to-equity rigor |
+
+Classification rules should state:
+
+- what remains in reported presentation
+- what moves into the valuation presentation
+- which items are only flagged rather than auto-recast
+- which cases always require PM approval before they influence the model
+
 Deterministic outputs:
 
 - valuation-oriented statement views
@@ -202,6 +218,38 @@ Best practice:
 - use windows, not one anchor period
 - distinguish central tendency from volatility
 - surface the spread between strong and weak years
+- explicitly tag whether a period should anchor the forecast at all
+
+Representative-period tags:
+
+| Tag | Meaning | Default treatment |
+| --- | --- | --- |
+| `representative` | useful anchor for normal forecasting | can feed ranges directly |
+| `cyclical` | reflects part of the normal business cycle but not steady state | keep visible, use with weighting |
+| `exogenous_shock` | war, pandemic, supply shock, regulatory jump, etc. | exclude from naive averaging unless PM-approved |
+| `m&a_distorted` | acquisitions, divestitures, or reporting perimeter shifts reduce comparability | isolate and normalize before use |
+| `accounting_distorted` | restatement, one-off tax, lease/pension/accounting classification change | do not anchor without review |
+
+Weighting and exclusion guidance:
+
+- do not average all years equally by default
+- weight `representative` periods most heavily
+- use `cyclical` periods to define range, not automatic central tendency
+- treat `exogenous_shock`, `m&a_distorted`, and `accounting_distorted` periods as opt-in anchors that require explanation
+- record the reason whenever a tagged period still influences the forecast
+
+Default deterministic tag classifier:
+
+| Default signal | Default tag | Treatment |
+| --- | --- | --- |
+| absolute EBIT margin deviation from trailing 5-year median is greater than 2 standard deviations | `cyclical` | down-weight central tendency, keep in range view |
+| revenue growth exceeds 40% YoY and filings / CIQ indicate material acquisition or divestiture activity | `m&a_distorted` | exclude from naive range unless normalized |
+| capex / sales or D&A / sales moves by more than 2 standard deviations without matching revenue / asset-base change | `accounting_distorted` | require schedule review before anchoring |
+| year overlaps a documented macro shock window such as 2008-2009 or 2020, and peer dispersion also widens materially | `exogenous_shock` | exclude from central tendency unless PM-approved |
+| none of the above triggers and data coverage is complete | `representative` | may feed accepted ranges directly |
+
+PM judgment may override a tag, but the default tag should exist before PM review.
+That keeps accepted ranges deterministic by default rather than deterministic only after subjective period selection.
 
 Deterministic outputs:
 
@@ -330,6 +378,7 @@ Best practice:
 - connect growth to reinvestment and funding
 - look at balance-sheet evolution alongside margins and ROIC
 - separate true operating reinvestment from financing-driven changes
+- require schedules that make capex, D&A, working capital, and funding internally coherent
 
 Deterministic outputs:
 
@@ -337,6 +386,17 @@ Deterministic outputs:
 - leverage and liquidity trend views
 - share-count evolution
 - debt and cash summaries
+- PP&E / intangible roll-forward inputs where available
+- working-capital schedule inputs and day-driver history
+- funding-source summary showing retained cash flow, debt, and dilution mix
+
+Minimum control logic:
+
+- capex should feed an asset-base roll-forward instead of living only as a percent-of-sales assumption
+- D&A should tie back to the relevant asset base and useful-life assumptions
+- working-capital forecasts should reconcile with DSO / DIO / DPO logic where applicable
+- funding assumptions should explain how the company bridges from operating plan to balance-sheet reality
+- the historical layer should expose any place where current data is too weak to support these controls
 
 LLM augmentation:
 
@@ -428,6 +488,28 @@ Before a historical series is allowed to anchor the forecast, the system should 
 - whether coverage is complete
 - whether the period is representative
 
+Canonical historical-to-forecast handoff object:
+
+| Field | Meaning | Owner |
+| --- | --- | --- |
+| `metric_name` | historical series or anchor being handed forward | deterministic |
+| `calculation_method` | exact method used to derive it | deterministic |
+| `source_lineage` | CIQ, filing, market data, or derived series source | deterministic |
+| `period_selection` | years or windows considered relevant | deterministic |
+| `representativeness_tag` | representative, cyclical, exogenous shock, M&A-distorted, or accounting-distorted | deterministic + PM |
+| `preferred_anchor` | central tendency, range, or specific year that should inform forecasting | PM-owned |
+| `confidence` | high, medium, or low | PM-owned |
+| `forecast_lines_affected` | revenue, margin, capex, D&A, DSO, DIO, DPO, leverage, share count, tax, etc. | deterministic |
+| `notes` | concise explanation of why the anchor should or should not be used | mixed |
+
+Required validation checks before handoff:
+
+- every handed-forward metric has explicit source lineage
+- every metric has a calculation method that another reviewer could reproduce
+- every metric is tagged for representativeness
+- every balance-sheet-relevant anchor states whether it supports schedule-level modeling
+- every low-confidence anchor is visible as a model-risk issue, not hidden in the averages
+
 ## Recommended Artifact Set
 
 The system should eventually produce these artifacts from historical analysis:
@@ -443,6 +525,7 @@ The system should eventually produce these artifacts from historical analysis:
 | Balance-sheet and funding review block | summarizes leverage, liquidity, dilution, and funding path | deterministic |
 | Peer-relative historical benchmark pack | adds context against competitors | deterministic |
 | Historical driver summary | explains likely causes of the numbers | LLM-augmented, PM-reviewed |
+| Historical-to-forecast handoff table | records representative anchors, tags, and downstream forecast uses | deterministic + PM |
 | Forecast handoff block | identifies what should feed the model | PM-owned |
 
 ## What Should Feed Directly Into Forecasting

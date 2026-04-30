@@ -191,6 +191,8 @@ Best practice:
 Deterministic outputs:
 
 - cycle-aware benchmark ranges where structured history supports them
+- quantitative cycle indicators where relevant, including capacity utilization, inventory days versus trend, ISM / PMI, OECD CLI, commodity prices, credit spreads, yield-curve shape, and sector-specific demand indicators
+- FRED-backed macro context where Alpha Pod already has a structured source available
 
 LLM augmentation:
 
@@ -199,6 +201,13 @@ LLM augmentation:
 PM judgment:
 
 - decide whether the present period is representative or distorted by the cycle
+
+Cycle-indicator policy:
+
+- industry analysis should produce a forecast-constraint pack, not only prose
+- each relevant indicator should be tagged as structural, cyclical, or noise
+- the forecast should show whether revenue growth, margin, working capital, or capex assumptions are constrained by those indicators
+- macro-regime labels may inform scenario context, but official scenario weights need explicit methodology approval when they materially change expected intrinsic value
 
 ## 5. Analyze competitive intensity and moat conditions
 

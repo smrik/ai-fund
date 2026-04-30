@@ -19,6 +19,7 @@ The design docs and handbook remain important, but they should increasingly deri
 10. [QoE And Normalization](./10_qoe-and-normalization.md)
 11. [PM Review Framework](./11_pm-review-framework.md)
 12. [Deterministic Vs LLM Boundary](./12_deterministic-vs-llm-boundary.md)
+13. [PM Valuation Review Checklist](./13_pm-valuation-review-checklist.md)
 
 ## Mental Model
 
@@ -51,3 +52,5 @@ Every page in this section should make three things explicit:
 - what can be done deterministically
 - what can be augmented by LLMs
 - what still requires PM judgment
+
+If you want to review the whole valuation stack and annotate the weak points, use the companion [PM Valuation Review Checklist](./13_pm-valuation-review-checklist.md).

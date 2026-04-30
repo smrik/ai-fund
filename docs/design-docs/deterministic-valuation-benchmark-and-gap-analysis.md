@@ -2,6 +2,8 @@
 
 Methodology-first valuation docs now live in [`docs/valuation/`](../valuation/index.md).
 Use this document for benchmark analysis and implementation-oriented gap mapping.
+Use [`valuation-methodology-critical-review-and-action-plan.md`](./valuation-methodology-critical-review-and-action-plan.md) for the current consolidated action memo.
+This file remains the benchmark/gap register; the critical review memo is the live sequencing layer for the docs PR and next coding PR.
 
 ## 1. Purpose
 

@@ -65,6 +65,7 @@ nav:
       - QoE And Normalization: valuation/10_qoe-and-normalization.md
       - PM Review Framework: valuation/11_pm-review-framework.md
       - Deterministic Vs LLM Boundary: valuation/12_deterministic-vs-llm-boundary.md
+      - PM Valuation Review Checklist: valuation/13_pm-valuation-review-checklist.md
   - Design Docs:
       - Index: design-docs/index.md
       - Architecture Overview: design-docs/architecture-overview.md
@@ -74,6 +75,7 @@ nav:
       - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
       - Deterministic Valuation Inputs And CIQ Retrieval Spec: design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md
       - Deterministic Valuation Benchmark And Gap Analysis: design-docs/deterministic-valuation-benchmark-and-gap-analysis.md
+      - Valuation Methodology Critical Review And Action Plan: design-docs/valuation-methodology-critical-review-and-action-plan.md
       - Accounting Recast Agent Spec: design-docs/accounting-recast-agent-spec.md
       - QoE Agent Spec: design-docs/qoe-agent-spec.md
       - Risk Impact Agent Spec: design-docs/risk-impact-agent-spec.md

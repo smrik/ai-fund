@@ -69,6 +69,7 @@ Useful signal categories:
 
 - accruals
 - cash conversion
+- forensic scores such as Beneish M-Score and Altman Z-Score
 - DSO / DIO / DPO drift
 - capex versus D&A
 - leverage and bridge-item completeness
@@ -82,8 +83,16 @@ Best practice:
 Deterministic outputs:
 
 - QoE signal pack
+- forensic score pack
 - traffic-light or severity flags
 - bridge-item completeness flags
+
+Forensic-score policy:
+
+- Beneish M-Score and Altman Z-Score are deterministic risk signals, not automatic valuation adjustments
+- red or amber forensic flags should reduce confidence and enter the PM decision queue
+- severe forensic flags should require approval before normalized EBIT, EBITDA, or FCF is used as the official anchor
+- score inputs, missing-data fallbacks, and year coverage should be visible in the QoE artifact
 
 ## 2. Identify normalization candidates
 
@@ -202,6 +211,7 @@ Deterministic outputs:
 | Artifact | Purpose | Owner |
 | --- | --- | --- |
 | Deterministic QoE signal pack | identifies where accounting quality needs review | deterministic |
+| Forensic score pack | records Beneish, Altman, and related deterministic accounting-risk signals | deterministic |
 | Normalization candidate list | records proposed adjustments | mixed |
 | Accounting recast note | explains classification and valuation-use treatment | mixed |
 | Bridge-item completeness table | shows which claims are captured and how well | deterministic |

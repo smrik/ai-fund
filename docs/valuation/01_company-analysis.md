@@ -360,6 +360,50 @@ That driver map should answer:
 - Which assumptions need LLM support?
 - Which assumptions require explicit PM judgment?
 
+The output should not stop at prose.
+It should produce a machine-usable handoff object that later stages can read, challenge, and approve.
+
+## Canonical Analysis-To-Forecast Handoff Object
+
+Company analysis should eventually emit one row per candidate driver using a shared contract.
+
+Required fields:
+
+| Field | Meaning | Owner |
+| --- | --- | --- |
+| `driver_name` | concise name such as `pricing_power`, `unit_growth`, `utilization`, or `maintenance_capex_burden` | deterministic |
+| `business_interpretation` | analyst-language explanation of what the driver means | LLM-augmented, PM-reviewed |
+| `evidence_type` | filing text, disclosed KPI, historical metric, peer context, or macro context | deterministic |
+| `evidence_reference` | filing section, metric source, or peer reference that supports the claim | deterministic |
+| `metric_anchor` | the numeric series most closely linked to the driver | deterministic |
+| `driver_class` | company-specific, industry, or macro | deterministic |
+| `affected_forecast_lines` | revenue, gross margin, EBIT margin, capex, DSO, DIO, DPO, share count, etc. | deterministic |
+| `base_case_range` | PM-approved numeric range or target path | PM-owned |
+| `bear_case_range` | downside range if the driver weakens | PM-owned |
+| `bull_case_range` | upside range if the driver strengthens | PM-owned |
+| `confidence` | high, medium, or low confidence in the driver mapping | PM-owned |
+| `approval_status` | advisory, PM-approved, or blocked pending more work | PM-owned |
+
+Translation rule:
+
+- qualitative interpretation may propose a driver
+- deterministic evidence should anchor it numerically where possible
+- only PM-approved ranges should be allowed to flow into the forecast layer
+
+This is the main "narrative to numbers" seam. Damodaran's *Narrative and Numbers* is the anchor mental model here: qualitative business stories are useful only when translated into numeric assumptions that can be tested, rejected, or approved.
+Reference: https://cup.columbia.edu/book/narrative-and-numbers/9780231180481/
+
+Example:
+
+| Field | Example |
+| --- | --- |
+| `driver_name` | pricing_power |
+| `business_interpretation` | the company appears able to raise price ahead of inflation without major volume loss |
+| `metric_anchor` | gross margin trend, price realization commentary, and peer-relative margin stability |
+| `affected_forecast_lines` | revenue growth, gross margin, EBIT margin |
+| `base_case_range` | +1.0% to +1.5% annual price-led growth for years 1 to 3 |
+| `approval_status` | PM-approved |
+
 ## Recommended Artifact Set
 
 The system should eventually produce these artifacts from company analysis:
@@ -375,6 +419,7 @@ The system should eventually produce these artifacts from company analysis:
 | Competitive-position summary | explains moat, rivalry, and advantage durability | LLM-augmented, PM-reviewed |
 | Management capital-allocation notes | captures dilution, leverage, and reinvestment behavior | mixed |
 | Forecast driver shortlist | identifies the key assumptions that must carry into the model | PM-owned |
+| Analysis-to-forecast handoff table | turns business conclusions into explicit driver records and approved numeric ranges | deterministic + PM |
 
 ## Forecast Handoff And Validation Block
 
@@ -398,6 +443,15 @@ It should also document modeling confidence:
 
 This follows a simple professional modeling rule: do not pass vague narrative into a forecast.
 Pass a small, explicit assumption framework with evidence attached.
+
+Minimum validation checks:
+
+- every forecast-relevant driver has a named owner
+- every driver has at least one numeric anchor or an explicit reason why it is still narrative-only
+- every driver is tagged as company-specific, industry, or macro
+- every driver states which forecast lines it may influence
+- every driver is either PM-approved, explicitly blocked, or still advisory
+- every driver has a confidence level that later review surfaces can sort and filter
 
 ## What Should Feed Directly Into Valuation
 
