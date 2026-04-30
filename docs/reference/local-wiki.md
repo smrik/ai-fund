@@ -32,4 +32,3 @@ The built site is written to `site/`.
 - Navigation is configured in `mkdocs.yml`.
 - Keep operational references in `docs/reference/` and system behavior docs in `docs/design-docs/`.
 - Material for MkDocs 9.x emits a warning banner about a hypothetical MkDocs 2.0 upgrade. This repo is pinned to MkDocs 1.x and Material 9.x, and `NO_MKDOCS_2_WARNING=1` is the official way to suppress that banner during local docs work.
-

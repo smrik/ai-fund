@@ -77,4 +77,3 @@ LLM agents may explain or contextualize numbers, but they must not write numbers
 3. Finance deep dive (how to interpret and challenge outputs)
 4. Engineering deep dive (where to change code safely)
 5. Runbook and verification (how to operate and release changes)
-

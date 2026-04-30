@@ -1287,5 +1287,3 @@ Sprint 6 (Scenario agent)              ← unblocked, runs parallel to Sprint 2
 | 4 | Comps agent selects 5-10 peers, WACC changes vs self-beta on 5 test tickers |
 | 5 | Industry cache populated for all 8 sectors, growth rates within published ranges |
 | 6 | Scenario agent names match actual business risks, probabilities sum to ~1.0 |
-
-

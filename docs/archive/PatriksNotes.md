@@ -40,4 +40,3 @@ does init
 - maybe explain why do we have screening_rules.yaml, settings.py and **init**.py all with dome some central settings?
   - being improved rn - one yaml + one .env
 - why do we have some info in .json, .csv, .db files? I feel like this should be simpler - what would be the fastest option / easiest to implement?
-

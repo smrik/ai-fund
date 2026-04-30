@@ -691,5 +691,3 @@ If you remember only one thing, remember this:
 
 The DCF is the numeric frame that keeps the thesis honest.
 The thesis is still the human job.
-
-

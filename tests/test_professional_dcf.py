@@ -210,5 +210,3 @@ def test_run_fcfe_valuation_matches_dcf_fcfe_branch():
     assert dcf.fcfe_equity_value is not None
     assert fcfe.intrinsic_value_per_share == pytest.approx(dcf.fcfe_intrinsic_value_per_share, rel=1e-9)
     assert fcfe.equity_value == pytest.approx(dcf.fcfe_equity_value, rel=1e-9)
-
-

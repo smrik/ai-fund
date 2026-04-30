@@ -58,4 +58,3 @@ def test_thesis_agent_synthesize_emits_structured_pillars_and_catalysts(monkeypa
     assert memo.thesis_pillars[0].title == "Software mix shift"
     assert memo.structured_catalysts[0].title == "Mainframe cycle"
     assert memo.key_catalysts == ["Consulting margin recovery"]
-

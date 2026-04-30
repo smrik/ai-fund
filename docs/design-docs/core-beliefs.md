@@ -111,4 +111,3 @@ If the CIQ record is > 7 days old or missing, it falls back to yfinance with a q
 
 **Why:** yfinance has TTM-only data and no peer lists. The quality of the valuation is directly
 proportional to the quality of the input data.
-

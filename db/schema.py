@@ -834,4 +834,3 @@ def create_tables(conn: sqlite3.Connection | None = None):
 
 if __name__ == "__main__":
     create_tables()
-
