@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
 
@@ -11,9 +11,11 @@ from db.schema import create_tables
 
 
 def _workspace_tempdir(name: str) -> Path:
-    root = Path.home() / ".codex" / "memories" / "ai-fund-test-temp"
-    root.mkdir(exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f"{name}-", dir=root))
+    root = Path.cwd() / ".tmp-tests" / "export-service"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{name}-{uuid4().hex}"
+    path.mkdir(parents=True)
+    return path
 
 
 def _temp_conn_factory(db_path: Path):
@@ -235,3 +237,82 @@ def test_register_export_bundle_persists_export_and_artifacts(monkeypatch):
     assert loaded["artifacts"][0]["artifact_key"] == "html_report"
     assert Path(export_service.resolve_export_artifact_path(export_row["export_id"])).name == "report.html"
     assert Path(export_service.resolve_export_artifact_path(export_row["export_id"], "context_json")).name == "context.json"
+
+
+def test_ticker_exports_persist_current_and_snapshot_dossiers(monkeypatch):
+    from src.stage_04_pipeline import export_service
+    from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload, ticker_dossier_to_payload
+
+    tmp_path = _workspace_tempdir("export-dossier")
+    db_path = tmp_path / "exports.db"
+    monkeypatch.setattr(export_service, "get_connection", _temp_conn_factory(db_path))
+    monkeypatch.setattr(export_service, "_ticker_bundle_dir", lambda ticker, export_format: tmp_path / f"{ticker}-{export_format}")
+
+    def _payload(source_mode: str, snapshot_id: int | None = None) -> dict:
+        payload = {
+            "ticker": "IBM",
+            "company_name": "International Business Machines",
+            "generated_at": "2026-04-30T12:00:00+00:00",
+            "market": {"price": 260.0},
+            "valuation": {"iv_base": 202.0, "expected_iv": 205.0},
+            "ciq_lineage": {"snapshot_as_of_date": "2026-04-30"},
+        }
+        dossier = build_ticker_dossier_from_export_payload(payload, source_mode=source_mode, snapshot_id=snapshot_id)
+        payload["ticker_dossier"] = ticker_dossier_to_payload(dossier)
+        return payload
+
+    def _stage_workbook(ticker, payload, bundle_dir):
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        primary = bundle_dir / "workbook.xlsx"
+        primary.write_bytes(b"xlsx")
+        return {
+            "artifacts": [
+                {
+                    "artifact_key": "excel_workbook",
+                    "artifact_role": "primary",
+                    "title": "Workbook",
+                    "path": primary,
+                    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "is_primary": True,
+                }
+            ]
+        }
+
+    def _stage_html(ticker, context, bundle_dir):
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        primary = bundle_dir / "report.html"
+        primary.write_text("<html>ok</html>", encoding="utf-8")
+        return {
+            "artifacts": [
+                {
+                    "artifact_key": "html_report",
+                    "artifact_role": "primary",
+                    "title": "Report",
+                    "path": primary,
+                    "mime_type": "text/html",
+                    "is_primary": True,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(export_service, "_build_snapshot_ticker_payload", lambda ticker: (_payload("latest_snapshot", 7), 7))
+    monkeypatch.setattr(export_service, "_build_html_context", lambda ticker, source_mode: (_payload("loaded_backend_state"), None))
+    monkeypatch.setattr(export_service, "stage_power_query_workbook", _stage_workbook)
+    monkeypatch.setattr(export_service, "build_html_export_bundle", _stage_html)
+
+    export_service.run_ticker_export(ticker="IBM", export_format="xlsx", source_mode="latest_snapshot")
+    export_service.run_ticker_export(ticker="IBM", export_format="html", source_mode="loaded_backend_state")
+
+    conn = _temp_conn_factory(db_path)()
+    rows = conn.execute(
+        """
+        SELECT source_mode, source_key
+        FROM ticker_dossier_snapshots
+        ORDER BY source_mode
+        """
+    ).fetchall()
+
+    assert [(row["source_mode"], row["source_key"]) for row in rows] == [
+        ("latest_snapshot", "snapshot:7"),
+        ("loaded_backend_state", "asof:2026-04-30"),
+    ]

@@ -633,6 +633,22 @@ def create_tables(conn: sqlite3.Connection | None = None):
         UNIQUE (export_id, artifact_key),
         FOREIGN KEY (export_id) REFERENCES generated_exports(export_id)
     );
+
+    CREATE TABLE IF NOT EXISTS ticker_dossier_snapshots (
+        id                INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker            TEXT NOT NULL,
+        as_of_date        TEXT NOT NULL,
+        contract_version  TEXT NOT NULL,
+        source_mode       TEXT NOT NULL,
+        source_key        TEXT NOT NULL,
+        snapshot_id       INTEGER,
+        generated_at      TEXT,
+        display_name      TEXT NOT NULL,
+        payload_json      TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        UNIQUE (ticker, source_mode, source_key, contract_version)
+    );
     -- CIQ ingest run tracking and contract audit
     CREATE TABLE IF NOT EXISTS ciq_ingest_runs (
         id                      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -754,6 +770,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_wacc_methodology_audit_ticker_ts ON wacc_methodology_audit(ticker, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_generated_exports_scope_ts ON generated_exports(scope, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_generated_exports_ticker_ts ON generated_exports(ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ticker_dossier_snapshots_ticker_mode_asof ON ticker_dossier_snapshots(ticker, source_mode, as_of_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_ticker_dossier_snapshots_ticker_updated ON ticker_dossier_snapshots(ticker, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);

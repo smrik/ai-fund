@@ -4,6 +4,8 @@
 
 The Python pipeline writes a structured JSON per ticker. The staged Excel workbook (`templates/ticker_review.xlsx`) carries that JSON as a sidecar export payload and uses it to populate the review tabs. The DCF, WACC, and summary sheets remain workbook-native; the comps appendix is now written directly from the richer JSON payload during export staging.
 
+The canonical payload target is the [TickerDossier contract](../design-docs/ticker-dossier-contract.md). This guide describes how the workbook consumes that contract, not how the runtime schema is implemented.
+
 This Power Query path is separate from CIQ workbook ingestion. CIQ data enters SQLite through the deterministic workbook refresh + ingest flow under `ciq/`; Power Query here is only for loading Alpha Pod valuation JSON into Excel review templates.
 
 ---
@@ -27,9 +29,11 @@ Outputs:
 
 ---
 
-## 2. JSON Schema (`$schema_version: "1.0"`)
+## 2. Current JSON Shape And Contract Target
 
-Top-level sections and their Power Query navigation targets:
+The workbook currently consumes the staged JSON roots emitted by the valuation exporter and `export_service`. The canonical `TickerDossier` envelope is the target documented in [docs/design-docs/ticker-dossier-contract.md](../design-docs/ticker-dossier-contract.md), but runtime adapters are intentionally deferred to child issues.
+
+Current top-level sections and their Power Query navigation targets:
 
 | Section | Key contents |
 |---------|-------------|
@@ -40,7 +44,7 @@ Top-level sections and their Power Query navigation targets:
 | `scenarios` | probability, IV, upside per scenario |
 | `terminal` | TV breakdown (Gordon / exit / blended), PV of TV |
 | `health_flags` | boolean diagnostics (tv_high, tv_extreme, guardrails, etc.) |
-| `forecast_bridge` | array[10] — year-by-year FCFF projection |
+| `forecast_bridge` | array[10] year-by-year FCFF projection |
 | `comps_detail` | target + per-peer metrics + medians |
 | `comps_analysis` | workbook-ready comps appendix rows, diagnostics, and history |
 | `source_lineage` | data source tag for every assumption |
@@ -124,7 +128,7 @@ in
     Expand
 ```
 
-Repeat the pattern for `market`, `wacc`, `valuation`, `scenarios`, `terminal`, `health_flags`, `qoe`.
+Repeat the pattern for `market`, `wacc`, `valuation`, `scenarios`, `terminal`, `health_flags`, `qoe`, `source_lineage`, and `ciq_lineage`.
 
 ---
 
@@ -145,7 +149,7 @@ Repeat the pattern for `market`, `wacc`, `valuation`, `scenarios`, `terminal`, `
 Path cell (`B1`) + named range `json_path`. Can be hidden.
 
 ### Sheet 2 — Summary
-Pull `market`, `valuation`, `scenarios`, `health_flags`. Single-record layout: field names col A, values col B. Add conditional formatting on upside and health flags (red/amber/green).
+Pull `market`, `valuation`, `scenarios`, and `health_flags`. Single-record layout: field names col A, values col B. Add conditional formatting on upside and health flags (red/amber/green).
 
 ### Sheet 3 — Assumptions
 - Power Query loads `assumptions` + `source_lineage`

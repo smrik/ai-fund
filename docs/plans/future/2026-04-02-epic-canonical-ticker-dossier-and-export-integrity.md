@@ -14,7 +14,7 @@ Alpha Pod already has useful API, React, and export surfaces, but the underlying
 
 ## Smallest Valuable Outcome
 
-One canonical ticker dossier contract can feed API responses, React pages, and Excel/HTML exports without ad hoc reshaping or missing core fields.
+One canonical ticker dossier contract can feed API responses, React pages, and Excel/HTML exports without ad hoc reshaping or missing core fields. The contract is documented in [docs/design-docs/ticker-dossier-contract.md](../../design-docs/ticker-dossier-contract.md) and is the target for future adapters and drift tests.
 
 ## In Scope
 
@@ -38,6 +38,7 @@ One canonical ticker dossier contract can feed API responses, React pages, and E
 - Stable deterministic valuation outputs
 - Clear export-service ownership
 - Agreement that the dossier contract is canonical across product surfaces
+- The canonical contract doc at [docs/design-docs/ticker-dossier-contract.md](../../design-docs/ticker-dossier-contract.md)
 
 ## Acceptance Criteria
 
@@ -45,6 +46,7 @@ One canonical ticker dossier contract can feed API responses, React pages, and E
 - JSON export includes full name, sector/industry, as-of date, QoE, and historical series needed by the product
 - Sensitivity and comps payloads are complete enough for dashboard and workbook use without custom patch-up logic
 - Export surfaces consume canonical fields rather than bespoke per-surface reshaping
+- Child issues can implement adapters against the contract without changing the contract definition first
 
 ## Notes
 
