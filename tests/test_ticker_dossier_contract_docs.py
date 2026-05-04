@@ -37,6 +37,8 @@ def test_ticker_dossier_contract_doc_and_plan_link_are_pinned():
     assert "Required Top-Level Envelope Fields" in contract_doc
     assert "Required Sections" in contract_doc
     assert "Current Runtime Compatibility Roots" in contract_doc
+    assert "V1 Adapter Enrichment" in contract_doc
+    assert "not a new data collection path" in contract_doc
     assert "[docs/design-docs/ticker-dossier-contract.md](../../design-docs/ticker-dossier-contract.md)" in epic_doc
 
     for root in CURRENT_EXPORT_COMMON_ROOTS:

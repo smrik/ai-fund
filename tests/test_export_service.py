@@ -252,10 +252,24 @@ def test_ticker_exports_persist_current_and_snapshot_dossiers(monkeypatch):
         payload = {
             "ticker": "IBM",
             "company_name": "International Business Machines",
+            "industry": "IT Services",
+            "exchange": "NYSE",
             "generated_at": "2026-04-30T12:00:00+00:00",
             "market": {"price": 260.0},
             "valuation": {"iv_base": 202.0, "expected_iv": 205.0},
             "ciq_lineage": {"snapshot_as_of_date": "2026-04-30"},
+            "forecast_bridge": [{"year": 2027, "fcff": 100.0}],
+            "historical_series": {"revenue": [{"period": "2025", "value": 1000.0}]},
+            "qoe": {
+                "qoe_score": 2.0,
+                "qoe_flag": "red",
+                "deterministic": {"signal_scores": {"dso": "amber"}},
+                "llm": {
+                    "dcf_ebit_override_pending": True,
+                    "revenue_recognition_flags": ["Channel stuffing risk"],
+                    "auditor_flags": [],
+                },
+            },
         }
         dossier = build_ticker_dossier_from_export_payload(payload, source_mode=source_mode, snapshot_id=snapshot_id)
         payload["ticker_dossier"] = ticker_dossier_to_payload(dossier)
@@ -316,3 +330,21 @@ def test_ticker_exports_persist_current_and_snapshot_dossiers(monkeypatch):
         ("latest_snapshot", "snapshot:7"),
         ("loaded_backend_state", "asof:2026-04-30"),
     ]
+
+    payloads = [
+        json.loads(row["payload_json"])
+        for row in conn.execute(
+            """
+            SELECT payload_json
+            FROM ticker_dossier_snapshots
+            ORDER BY source_mode
+            """
+        ).fetchall()
+    ]
+    for dossier_payload in payloads:
+        latest = dossier_payload["latest_snapshot"]
+        assert latest["company_identity"]["industry"] == "IT Services"
+        assert latest["company_identity"]["exchange"] == "NYSE"
+        assert latest["qoe_snapshot"]["present"] is True
+        assert latest["qoe_snapshot"]["flags"] == ["red", "dso:amber", "Channel stuffing risk", "dcf_ebit_override_pending"]
+        assert latest["historical_series"]["revenue"] == [{"period": "2025", "value": 1000.0}]

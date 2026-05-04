@@ -92,6 +92,17 @@ Before starting a new branch or ending a major work session:
 5. If the user says they want to “start fresh” or “branch properly”, pause and verify Git hygiene before doing anything else
 6. When in doubt, babysit the workflow: explain whether `main` is clean, whether GitHub matches local, and what the next safe git step is
 
+## Pre-Commit On This Machine
+
+The default user pre-commit cache can be readonly in Codex/Windows sandbox sessions. If `pre-commit` fails with `attempt to write a readonly database` or cannot write `C:\Users\patri\.cache\pre-commit\pre-commit.log`, rerun it with a workspace-local cache:
+
+```powershell
+$env:PRE_COMMIT_HOME = "$PWD\.pre-commit-cache-run-codex"
+rtk pre-commit run --all-files
+```
+
+`.pre-commit-cache-run*/` is ignored by Git, so the local hook cache should not pollute commits.
+
 ## Project Structure
 
 ```text
