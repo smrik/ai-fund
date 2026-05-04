@@ -113,4 +113,3 @@ class TickerDossier(ContractModel):
     source_lineage: dict[str, Any] = Field(default_factory=dict)
     export_metadata: ExportMetadata
     optional_overlays: dict[str, Any] = Field(default_factory=dict)
-
