@@ -17,6 +17,7 @@ CURRENT_EXPORT_COMMON_ROOTS = {
     "wacc",
     "valuation",
     "scenarios",
+    "sensitivity",
     "terminal",
     "health_flags",
     "forecast_bridge",
