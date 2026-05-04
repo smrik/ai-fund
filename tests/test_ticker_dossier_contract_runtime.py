@@ -8,6 +8,9 @@ def _legacy_payload() -> dict:
         "ticker": "IBM",
         "company_name": "International Business Machines",
         "sector": "Technology",
+        "industry": "IT Services",
+        "exchange": "NYSE",
+        "country": "United States",
         "market": {"price": 260.0, "analyst_target": 275.0, "analyst_recommendation": "Hold"},
         "assumptions": {},
         "wacc": {},
@@ -45,6 +48,9 @@ def test_ticker_dossier_model_validates_required_envelope_and_round_trips_json()
     assert payload["ticker"] == "IBM"
     assert payload["display_name"] == "International Business Machines"
     assert payload["latest_snapshot"]["company_identity"]["ticker"] == "IBM"
+    assert payload["latest_snapshot"]["company_identity"]["industry"] == "IT Services"
+    assert payload["latest_snapshot"]["company_identity"]["exchange"] == "NYSE"
+    assert payload["latest_snapshot"]["company_identity"]["country"] == "United States"
     assert payload["latest_snapshot"]["market_snapshot"]["price"] == 260.0
     assert payload["latest_snapshot"]["valuation_snapshot"]["base_iv"] == 202.0
     assert payload["latest_snapshot"]["historical_series"]["fcff"][0]["year"] == 2027
@@ -61,6 +67,73 @@ def test_ticker_dossier_model_validates_required_envelope_and_round_trips_json()
         "drift_test_view",
     }
     assert restored == dossier
+
+
+def test_qoe_snapshot_maps_score_flags_and_additive_details():
+    from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload
+
+    payload = _legacy_payload()
+    payload["qoe"] = {
+        "qoe_score": 2.5,
+        "qoe_flag": "amber",
+        "deterministic": {"signal_scores": {"accruals": "red", "cash_conversion": "green"}},
+        "llm": {
+            "normalized_ebit": 92.0,
+            "reported_ebit": 100.0,
+            "ebit_haircut_pct": -8.0,
+            "dcf_ebit_override_pending": True,
+            "revenue_recognition_flags": ["Bill-and-hold disclosure"],
+            "auditor_flags": ["Auditor change"],
+            "llm_confidence": "medium",
+        },
+        "pm_summary": "QoE needs review.",
+    }
+
+    dossier = build_ticker_dossier_from_export_payload(payload, source_mode="loaded_backend_state")
+    qoe = dossier.model_dump(mode="json")["latest_snapshot"]["qoe_snapshot"]
+
+    assert qoe["present"] is True
+    assert qoe["score"] == 2.5
+    assert qoe["flags"] == [
+        "amber",
+        "accruals:red",
+        "Bill-and-hold disclosure",
+        "Auditor change",
+        "dcf_ebit_override_pending",
+    ]
+    assert qoe["deterministic"]["signal_scores"]["accruals"] == "red"
+    assert qoe["normalized_ebit"] == 92.0
+    assert qoe["pm_summary"] == "QoE needs review."
+
+
+def test_historical_series_maps_existing_payload_sources_and_stays_empty_when_absent():
+    from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload
+
+    payload = _legacy_payload()
+    payload["historical_series"] = {
+        "revenue": [{"period": "2025", "value": 1000.0}],
+        "ebit": [{"period": "2025", "value": 180.0}],
+    }
+    payload["drivers_raw"] = {
+        "ebit_margin_series": [{"period": "2025", "value": 0.18}],
+    }
+
+    dossier = build_ticker_dossier_from_export_payload(payload, source_mode="loaded_backend_state")
+    series = dossier.model_dump(mode="json")["latest_snapshot"]["historical_series"]
+
+    assert series["revenue"] == [{"period": "2025", "value": 1000.0}]
+    assert series["ebit"] == [{"period": "2025", "value": 180.0}]
+    assert series["margin"] == [{"period": "2025", "value": 0.18}]
+    assert series["fcff"] == [{"year": 2027, "fcff_mm": 100.0}]
+
+    empty_payload = _legacy_payload()
+    empty_payload.pop("forecast_bridge")
+    empty_series = build_ticker_dossier_from_export_payload(
+        empty_payload,
+        source_mode="loaded_backend_state",
+    ).model_dump(mode="json")["latest_snapshot"]["historical_series"]
+
+    assert empty_series == {"revenue": [], "ebit": [], "fcff": [], "margin": []}
 
 
 def test_legacy_workspace_and_summary_payloads_can_be_derived_from_dossier():

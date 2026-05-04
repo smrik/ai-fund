@@ -33,6 +33,17 @@ def _legacy_payload(company_name: str = "International Business Machines") -> di
         "ciq_lineage": {"snapshot_as_of_date": "2026-04-30"},
         "comps_analysis": {"primary_metric": "tev_ebitda_ltm", "peer_counts": {"raw": 4, "clean": 3}},
         "forecast_bridge": [{"year": 2027, "fcff": 100.0}],
+        "qoe": {
+            "qoe_score": 3.0,
+            "qoe_flag": "green",
+            "deterministic": {"signal_scores": {"accruals": "green"}},
+            "llm": {"revenue_recognition_flags": [], "auditor_flags": []},
+        },
+        "historical_series": {
+            "revenue": [{"period": "2025", "value": 1000.0}],
+            "ebit": [{"period": "2025", "value": 180.0}],
+            "margin": [{"period": "2025", "value": 0.18}],
+        },
     }
 
 
@@ -89,6 +100,9 @@ def test_ticker_dossier_persistence_round_trips_validated_payload():
 
     assert loaded is not None
     assert loaded.model_dump(mode="json") == payload
+    assert loaded.latest_snapshot.qoe_snapshot.present is True
+    assert loaded.latest_snapshot.qoe_snapshot.score == 3.0
+    assert loaded.latest_snapshot.historical_series.revenue == [{"period": "2025", "value": 1000.0}]
 
 
 def test_ticker_dossier_upsert_updates_same_source_key_without_duplicates():

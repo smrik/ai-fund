@@ -288,6 +288,12 @@ It is the target for:
 
 The current runtime path is intentionally additive: API and export callers can consume `ticker_dossier` while the legacy fields remain stable.
 
+## V1 Adapter Enrichment
+
+The v1 enrichment path is adapter-level mapping of fields that already exist in export or archive payloads. It may lift company identity metadata such as `industry`, `exchange`, `description`, and `country`; QoE context from an existing `qoe` block; and historical revenue, EBIT, margin, and FCFF series from existing payload sections.
+
+This is not a new data collection path. Building or reading a `TickerDossier` must not call yfinance, CIQ refresh, EDGAR, QoE LLMs, or batch valuation just to fill enrichment fields. Missing QoE or history remains a valid payload state: QoE uses `present=false`, and missing historical series stay as empty lists.
+
 ## Persistence
 
 Canonical dossier payloads are persisted additively in `ticker_dossier_snapshots`.

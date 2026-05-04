@@ -36,6 +36,10 @@ def _first_present(*values: Any) -> Any:
     return None
 
 
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
 def _as_float(value: Any) -> float | None:
     if isinstance(value, bool):
         return None
@@ -72,6 +76,132 @@ def _scenario_probability_map(scenarios: dict[str, Any]) -> dict[str, float | No
     }
 
 
+def _as_series(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [dict(item) if isinstance(item, dict) else {"value": item} for item in value]
+    if isinstance(value, dict):
+        nested = value.get("series")
+        if isinstance(nested, list):
+            return _as_series(nested)
+        return [{"period": key, "value": item} for key, item in value.items()]
+    return []
+
+
+def _first_series(*values: Any) -> list[dict[str, Any]]:
+    for value in values:
+        series = _as_series(value)
+        if series:
+            return series
+    return []
+
+
+def _historical_metric_series(comps_analysis: dict[str, Any], *metric_keys: str) -> list[dict[str, Any]]:
+    historical = _as_dict(comps_analysis.get("historical_multiples_summary"))
+    metrics = _as_dict(historical.get("metrics"))
+    for key in metric_keys:
+        series = _as_series(_as_dict(metrics.get(key)).get("series") if isinstance(metrics.get(key), dict) else metrics.get(key))
+        if series:
+            return series
+    return []
+
+
+def _extract_historical_series(payload: dict[str, Any], qoe: dict[str, Any], comps_analysis: dict[str, Any]) -> HistoricalSeries:
+    historical = _as_dict(payload.get("historical_series"))
+    drivers_raw = _as_dict(payload.get("drivers_raw"))
+    deterministic_qoe = _as_dict(qoe.get("deterministic"))
+
+    return HistoricalSeries(
+        revenue=_first_series(
+            historical.get("revenue"),
+            historical.get("revenue_series"),
+            drivers_raw.get("revenue_series"),
+            drivers_raw.get("revenue_history"),
+            deterministic_qoe.get("revenue_series"),
+            deterministic_qoe.get("revenue"),
+            _historical_metric_series(comps_analysis, "revenue", "revenue_growth"),
+        ),
+        ebit=_first_series(
+            historical.get("ebit"),
+            historical.get("ebit_series"),
+            historical.get("operating_income"),
+            historical.get("operating_income_series"),
+            drivers_raw.get("ebit_series"),
+            drivers_raw.get("operating_income_series"),
+            deterministic_qoe.get("ebit_series"),
+            deterministic_qoe.get("operating_income_series"),
+            _historical_metric_series(comps_analysis, "ebit", "operating_income"),
+        ),
+        fcff=list(payload.get("forecast_bridge") or []),
+        margin=_first_series(
+            historical.get("margin"),
+            historical.get("margin_series"),
+            historical.get("ebit_margin"),
+            historical.get("ebit_margin_series"),
+            historical.get("operating_margin"),
+            drivers_raw.get("margin_series"),
+            drivers_raw.get("ebit_margin_series"),
+            deterministic_qoe.get("margin_series"),
+            deterministic_qoe.get("ebit_margin_series"),
+            _historical_metric_series(comps_analysis, "margin", "ebit_margin", "operating_margin"),
+        ),
+    )
+
+
+def _append_unique_flags(flags: list[str], values: Any) -> None:
+    raw_values = values if isinstance(values, list) else [values]
+    seen = set(flags)
+    for value in raw_values:
+        if value in (None, False, ""):
+            continue
+        flag = str(value)
+        if flag not in seen:
+            flags.append(flag)
+            seen.add(flag)
+
+
+def _qoe_flags(qoe: dict[str, Any]) -> list[str]:
+    flags: list[str] = []
+    _append_unique_flags(flags, qoe.get("qoe_flag"))
+
+    deterministic = _as_dict(qoe.get("deterministic"))
+    signal_scores = _as_dict(deterministic.get("signal_scores"))
+    for signal, status in signal_scores.items():
+        if status in (None, "", "green", "unavailable"):
+            continue
+        _append_unique_flags(flags, f"{signal}:{status}")
+
+    llm = _as_dict(qoe.get("llm"))
+    _append_unique_flags(flags, llm.get("revenue_recognition_flags"))
+    _append_unique_flags(flags, llm.get("auditor_flags"))
+
+    if llm.get("dcf_ebit_override_pending") or qoe.get("dcf_ebit_override_pending") or qoe.get("override_warranted"):
+        _append_unique_flags(flags, "dcf_ebit_override_pending")
+    return flags
+
+
+def _qoe_snapshot(qoe: dict[str, Any]) -> QoeSnapshot:
+    if not qoe:
+        return QoeSnapshot()
+
+    llm = _as_dict(qoe.get("llm"))
+    return QoeSnapshot(
+        present=True,
+        score=_as_float(qoe.get("qoe_score")),
+        flags=_qoe_flags(qoe),
+        qoe_flag=qoe.get("qoe_flag"),
+        deterministic=qoe.get("deterministic") or {},
+        llm=llm,
+        pm_summary=qoe.get("pm_summary"),
+        normalized_ebit=llm.get("normalized_ebit"),
+        reported_ebit=llm.get("reported_ebit"),
+        ebit_haircut_pct=llm.get("ebit_haircut_pct"),
+        llm_confidence=llm.get("llm_confidence"),
+        narrative_credibility=llm.get("narrative_credibility"),
+    )
+
+
 def _default_overlays(payload: dict[str, Any]) -> dict[str, Any]:
     legacy_payload_keys = sorted(key for key in payload if key != "ticker_dossier")
     return {
@@ -105,8 +235,7 @@ def build_ticker_dossier_from_export_payload(
     ciq_lineage = payload.get("ciq_lineage") if isinstance(payload.get("ciq_lineage"), dict) else {}
     comps_analysis = payload.get("comps_analysis") if isinstance(payload.get("comps_analysis"), dict) else {}
     peer_counts = comps_analysis.get("peer_counts") if isinstance(comps_analysis.get("peer_counts"), dict) else {}
-    historical_multiples = comps_analysis.get("historical_multiples_summary")
-    historical_metrics = (historical_multiples or {}).get("metrics") if isinstance(historical_multiples, dict) else {}
+    qoe = _as_dict(payload.get("qoe"))
     display_name = str(_first_present(payload.get("company_name"), snapshot.get("company_name"), ticker) or ticker)
     generated_at = payload.get("generated_at")
     as_of_date = str(
@@ -129,9 +258,11 @@ def build_ticker_dossier_from_export_payload(
         company_identity=CompanyIdentity(
             ticker=ticker,
             display_name=display_name,
-            sector=payload.get("sector") or snapshot.get("sector"),
-            industry=payload.get("industry") or snapshot.get("industry"),
-            exchange=payload.get("exchange") or snapshot.get("exchange"),
+            sector=_first_present(payload.get("sector"), snapshot.get("sector"), market.get("sector")),
+            industry=_first_present(payload.get("industry"), snapshot.get("industry"), market.get("industry")),
+            exchange=_first_present(payload.get("exchange"), snapshot.get("exchange"), market.get("exchange")),
+            description=_first_present(payload.get("description"), snapshot.get("description"), market.get("description")),
+            country=_first_present(payload.get("country"), snapshot.get("country"), market.get("country")),
         ),
         market_snapshot=MarketSnapshot(
             as_of_date=as_of_date,
@@ -152,13 +283,8 @@ def build_ticker_dossier_from_export_payload(
             upside_pct=_as_float(_first_present(valuation.get("upside_pct"), valuation.get("upside_pct_base"))),
             scenario_probabilities=_scenario_probability_map(scenarios),
         ),
-        historical_series=HistoricalSeries(
-            fcff=list(payload.get("forecast_bridge") or []),
-            margin=list((historical_metrics or {}).get("margin", {}).get("series") or [])
-            if isinstance((historical_metrics or {}).get("margin"), dict)
-            else [],
-        ),
-        qoe_snapshot=QoeSnapshot(),
+        historical_series=_extract_historical_series(payload, qoe, comps_analysis),
+        qoe_snapshot=_qoe_snapshot(qoe),
         comps_snapshot=CompsSnapshot(
             peer_count=_as_int(_first_present(ciq_lineage.get("peer_count"), peer_counts.get("clean"), peer_counts.get("raw"))),
             primary_metric=comps_analysis.get("primary_metric"),
@@ -187,7 +313,8 @@ def build_ticker_dossier_from_export_payload(
                 "company_identity": "company_name/sector",
                 "market_snapshot": "market",
                 "valuation_snapshot": "valuation/scenarios",
-                "historical_series": "forecast_bridge",
+                "historical_series": "historical_series/drivers_raw/qoe/comps_analysis/forecast_bridge",
+                "qoe_snapshot": "qoe",
                 "comps_snapshot": "comps_analysis/ciq_lineage",
             },
             adapter_state={
