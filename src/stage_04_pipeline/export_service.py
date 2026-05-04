@@ -146,6 +146,51 @@ def _persist_attached_ticker_dossier(payload: dict[str, Any]) -> None:
     upsert_ticker_dossier_snapshot(dossier_payload, connection_factory=get_connection)
 
 
+def _html_context_scalars_from_dossier(payload: dict[str, Any]) -> dict[str, Any]:
+    dossier = payload.get("ticker_dossier")
+    if not isinstance(dossier, dict):
+        return {}
+    latest = dossier.get("latest_snapshot") if isinstance(dossier.get("latest_snapshot"), dict) else {}
+    identity = latest.get("company_identity") if isinstance(latest.get("company_identity"), dict) else {}
+    market = latest.get("market_snapshot") if isinstance(latest.get("market_snapshot"), dict) else {}
+    valuation = latest.get("valuation_snapshot") if isinstance(latest.get("valuation_snapshot"), dict) else {}
+    metadata = dossier.get("export_metadata") if isinstance(dossier.get("export_metadata"), dict) else {}
+    current_price = market.get("price")
+    if current_price is None:
+        current_price = valuation.get("current_price")
+    return {
+        "ticker": dossier.get("ticker"),
+        "company_name": dossier.get("display_name") or identity.get("display_name"),
+        "source_mode": metadata.get("source_mode"),
+        "current_price": current_price,
+        "base_iv": valuation.get("base_iv"),
+        "expected_iv": valuation.get("expected_iv"),
+        "as_of_date": dossier.get("as_of_date"),
+        "snapshot_id": metadata.get("snapshot_id"),
+        "ticker_dossier_contract_version": dossier.get("contract_version"),
+        "ticker_dossier": dossier,
+    }
+
+
+def _apply_html_context_scalars(context: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    scalars = _html_context_scalars_from_dossier(payload)
+    for key, value in scalars.items():
+        if value is not None:
+            context[key] = value
+
+    valuation = dict(context.get("valuation") or {})
+    for context_key, valuation_key in (
+        ("current_price", "current_price"),
+        ("base_iv", "iv_base"),
+        ("expected_iv", "expected_iv"),
+    ):
+        value = scalars.get(context_key)
+        if value is not None:
+            valuation[valuation_key] = value
+    context["valuation"] = valuation
+    return context
+
+
 def _clear_sheet(ws) -> None:
     for merged_range in list(ws.merged_cells.ranges):
         ws.unmerge_cells(str(merged_range))
@@ -914,7 +959,7 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
         payload, snapshot_id = _build_snapshot_ticker_payload(ticker)
         memo = payload.get("snapshot", {}).get("memo") or {}
         publishable = build_publishable_memo_context(ticker)
-        return (
+        context = _apply_html_context_scalars(
             {
                 "ticker": ticker,
                 "company_name": payload.get("company_name"),
@@ -927,12 +972,13 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
                 "artifacts": publishable.get("artifacts") or [],
                 "ticker_dossier": payload.get("ticker_dossier"),
             },
-            snapshot_id,
+            payload,
         )
+        return (context, snapshot_id)
     payload = _build_current_ticker_payload(ticker)
     publishable = build_publishable_memo_context(ticker)
     research = payload.get("research") or {}
-    return (
+    context = _apply_html_context_scalars(
         {
             "ticker": ticker,
             "company_name": payload.get("company_name"),
@@ -945,8 +991,9 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
             "artifacts": publishable.get("artifacts") or [],
             "ticker_dossier": payload.get("ticker_dossier"),
         },
-        None,
+        payload,
     )
+    return (context, None)
 
 
 def _ticker_bundle_dir(ticker: str, export_format: str) -> Path:

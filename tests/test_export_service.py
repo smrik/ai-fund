@@ -28,6 +28,39 @@ def _temp_conn_factory(db_path: Path):
     return _factory
 
 
+def _payload_with_attached_dossier(source_mode: str, snapshot_id: int | None = None) -> dict:
+    return {
+        "ticker": "IBM",
+        "company_name": "Legacy Export Name",
+        "source_mode": source_mode,
+        "generated_at": "2026-04-01T00:00:00+00:00",
+        "valuation": {"current_price": 10.0, "iv_base": 20.0, "expected_iv": 30.0},
+        "research": {"publishable_memo_preview": "Legacy research memo."},
+        "snapshot": {"memo": {"one_liner": "Legacy snapshot memo."}},
+        "ticker_dossier": {
+            "contract_name": "TickerDossier",
+            "contract_version": "1.0.0",
+            "ticker": "IBM",
+            "as_of_date": "2026-04-30",
+            "display_name": "Canonical Machines",
+            "currency": "USD",
+            "latest_snapshot": {
+                "company_identity": {"ticker": "IBM", "display_name": "Canonical Machines", "sector": "Canonical Sector"},
+                "market_snapshot": {"as_of_date": "2026-04-30", "price": 111.0},
+                "valuation_snapshot": {"base_iv": 155.0, "expected_iv": 166.0, "current_price": 112.0},
+                "historical_series": {},
+                "qoe_snapshot": {"present": False, "score": None, "flags": []},
+                "comps_snapshot": {},
+                "source_lineage": {},
+            },
+            "loaded_backend_state": {"backend_name": "test", "source_mode": source_mode},
+            "source_lineage": {},
+            "export_metadata": {"source_mode": source_mode, "snapshot_id": snapshot_id},
+            "optional_overlays": {},
+        },
+    }
+
+
 def test_stage_power_query_workbook_copies_template_and_points_json_path(monkeypatch):
     from src.stage_04_pipeline import export_service
 
@@ -199,6 +232,40 @@ def test_build_html_export_bundle_writes_primary_and_sidecar_assets():
     assert context_path.exists()
     assert copied_asset.exists()
     assert {artifact["artifact_key"] for artifact in result["artifacts"]} == {"html_report", "context_json", "public_chart"}
+
+
+def test_build_html_context_prefers_attached_canonical_dossier_for_current_and_snapshot(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    monkeypatch.setattr(export_service, "_build_snapshot_ticker_payload", lambda ticker: (_payload_with_attached_dossier("latest_snapshot", 7), 7))
+    monkeypatch.setattr(export_service, "_build_current_ticker_payload", lambda ticker: _payload_with_attached_dossier("loaded_backend_state"))
+    monkeypatch.setattr(
+        export_service,
+        "build_publishable_memo_context",
+        lambda ticker: {"memo_content": "Canonical memo content.", "artifacts": [{"artifact_key": "chart"}]},
+    )
+
+    snapshot_context, snapshot_id = export_service._build_html_context("IBM", "latest_snapshot")
+    current_context, current_snapshot_id = export_service._build_html_context("IBM", "loaded_backend_state")
+
+    for context in (snapshot_context, current_context):
+        assert context["company_name"] == "Canonical Machines"
+        assert context["current_price"] == 111.0
+        assert context["base_iv"] == 155.0
+        assert context["expected_iv"] == 166.0
+        assert context["as_of_date"] == "2026-04-30"
+        assert context["ticker_dossier_contract_version"] == "1.0.0"
+        assert context["valuation"]["current_price"] == 111.0
+        assert context["valuation"]["iv_base"] == 155.0
+        assert context["valuation"]["expected_iv"] == 166.0
+        assert context["summary"] == "Canonical memo content."
+        assert context["ticker_dossier"]["display_name"] == "Canonical Machines"
+
+    assert snapshot_context["source_mode"] == "latest_snapshot"
+    assert snapshot_context["snapshot_id"] == 7
+    assert snapshot_id == 7
+    assert current_context["source_mode"] == "loaded_backend_state"
+    assert current_snapshot_id is None
 
 
 def test_register_export_bundle_persists_export_and_artifacts(monkeypatch):

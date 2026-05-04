@@ -40,6 +40,7 @@ export interface TickerWorkspace {
   upside_pct_base: number | null;
   latest_snapshot_date: string | null;
   snapshot_available: boolean;
+  snapshot_id?: number | null;
   last_snapshot_id?: number | null;
   latest_action?: string | null;
   latest_conviction?: string | null;
@@ -56,6 +57,7 @@ export interface OverviewPayload {
   valuation_pulse?: string | null;
   thesis_changes?: string[];
   next_catalyst?: string | null;
+  workspace?: TickerWorkspace;
   ticker_dossier_contract_version?: string | null;
   ticker_dossier?: TickerDossierPayload;
 }
@@ -154,6 +156,8 @@ export interface ValuationSummaryPayload {
   why_it_matters?: string | null;
   readiness?: Record<string, unknown> | null;
   summary?: Record<string, unknown> | null;
+  ticker_dossier_contract_version?: string | null;
+  ticker_dossier?: TickerDossierPayload;
 }
 
 export interface AssumptionsPayload {

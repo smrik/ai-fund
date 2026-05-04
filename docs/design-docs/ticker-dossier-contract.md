@@ -104,6 +104,8 @@ This mapping describes the current surfaces that should point at the contract.
 
 API, React, and export flows should point at this contract, not at ad hoc per-surface reshaping. Runtime migrations should keep legacy response fields stable and add or derive from the canonical envelope until downstream callers have fully moved over.
 
+The issue #22 consumer-alignment tranche keeps that additive migration model. API workspace, overview, valuation summary, React preload normalization, and HTML export context now read canonical-owned company, market, valuation, source-mode, and snapshot metadata from `ticker_dossier.latest_snapshot` through adapter-level helpers. Legacy roots remain compatibility shims for PM action, conviction, human memo text, tracker lines, market narrative, readiness, full DCF audit summaries, workbook JSON roots, and existing export templates.
+
 ## Current Runtime Compatibility Roots
 
 The first runtime adapter keeps the existing Excel/HTML export roots for compatibility and adds the canonical `ticker_dossier` envelope beside them. Until downstream templates and clients fully migrate, the legacy-compatible staged JSON roots below remain part of the export payload.
@@ -163,7 +165,7 @@ Rules for producers:
 ```json
 {
   "latest_snapshot": {
-    "identity": {
+    "company_identity": {
       "ticker": "IBM",
       "display_name": "International Business Machines",
       "sector": "Technology",

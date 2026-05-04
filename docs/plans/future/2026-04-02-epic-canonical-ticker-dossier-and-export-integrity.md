@@ -6,7 +6,7 @@
 | Priority | P0 |
 | Target release | v0.2.0 Dossier Integrity |
 | GitHub | [#14](https://github.com/smrik/ai-fund/issues/14) |
-| Last updated | 2026-05-04 |
+| Last updated | 2026-05-05 |
 
 ## Problem
 
@@ -51,3 +51,5 @@ One canonical ticker dossier contract can feed API responses, React pages, and E
 ## Notes
 
 This is the first roadmap epic because every later product surface becomes easier once the ticker dossier is reliable.
+
+Issue #22 aligns API, React preload, and HTML export consumers through canonical `ticker_dossier` adapter reads while keeping legacy API fields, workbook JSON roots, and export templates stable as compatibility shims.

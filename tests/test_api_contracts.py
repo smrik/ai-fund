@@ -7,6 +7,130 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 
+def _canonical_dossier_payload() -> dict:
+    return {
+        "contract_name": "TickerDossier",
+        "contract_version": "1.0.0",
+        "ticker": "IBM",
+        "as_of_date": "2026-04-30",
+        "display_name": "Canonical Machines",
+        "currency": "USD",
+        "latest_snapshot": {
+            "company_identity": {
+                "ticker": "IBM",
+                "display_name": "Canonical Machines",
+                "sector": "Canonical Sector",
+                "industry": "Canonical Industry",
+                "exchange": "NYSE",
+            },
+            "market_snapshot": {
+                "as_of_date": "2026-04-30",
+                "price": 111.0,
+                "analyst_target": 222.0,
+                "analyst_recommendation": "canonical-rating",
+            },
+            "valuation_snapshot": {
+                "bear_iv": 120.0,
+                "base_iv": 155.0,
+                "bull_iv": 210.0,
+                "expected_iv": 166.0,
+                "current_price": 112.0,
+                "upside_pct": 0.35,
+            },
+            "historical_series": {},
+            "qoe_snapshot": {"present": False, "score": None, "flags": []},
+            "comps_snapshot": {},
+            "source_lineage": {},
+        },
+        "loaded_backend_state": {"backend_name": "test", "source_mode": "latest_snapshot"},
+        "source_lineage": {},
+        "export_metadata": {"source_mode": "latest_snapshot", "snapshot_id": 44},
+        "optional_overlays": {},
+    }
+
+
+def _install_legacy_ticker_mocks(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "api.main.load_saved_watchlist",
+        lambda shortlist_size=10: {
+            "rows": [
+                {
+                    "ticker": "IBM",
+                    "company_name": "Legacy Watchlist",
+                    "sector": "Legacy Watchlist Sector",
+                    "price": 10.0,
+                    "iv_bear": 11.0,
+                    "iv_base": 20.0,
+                    "iv_bull": 30.0,
+                    "expected_iv": 22.0,
+                    "upside_base_pct": 100.0,
+                    "latest_action": "BUY",
+                    "latest_conviction": "high",
+                    "latest_snapshot_date": "2026-01-01",
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.load_latest_snapshot_for_ticker",
+        lambda ticker: {
+            "id": 7,
+            "ticker": ticker,
+            "company_name": "Legacy Snapshot",
+            "sector": "Legacy Snapshot Sector",
+            "action": "REVIEW",
+            "conviction": "medium",
+            "current_price": 12.0,
+            "base_iv": 24.0,
+            "created_at": "2026-02-02",
+            "memo": {
+                "company_name": "Legacy Memo",
+                "sector": "Legacy Memo Sector",
+                "action": "WATCH",
+                "conviction": "low",
+                "one_liner": "Legacy one-liner.",
+                "variant_thesis_prompt": "Legacy thesis prompt.",
+                "date": "2026-02-03",
+                "valuation": {
+                    "current_price": 13.0,
+                    "base": 25.0,
+                    "bear": 15.0,
+                    "bull": 35.0,
+                    "upside_pct_base": 0.1,
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.get_market_data",
+        lambda ticker, use_cache=True: {
+            "name": "Legacy Market",
+            "sector": "Legacy Market Sector",
+            "current_price": 14.0,
+            "analyst_target_mean": 40.0,
+        },
+    )
+    monkeypatch.setattr("api.main.get_analyst_ratings", lambda ticker: {"target_mean": 41.0, "recommendation": "legacy-rating"})
+    monkeypatch.setattr(
+        "api.main.build_thesis_tracker_view",
+        lambda ticker: {
+            "stance": {"next_catalyst": {"title": "Legacy catalyst"}},
+            "what_changed": {"summary_lines": ["Legacy tracker line"]},
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.build_news_materiality_view",
+        lambda ticker: {"historical_brief": {"summary": "Legacy market pulse."}},
+    )
+    monkeypatch.setattr(
+        "api.main.build_dcf_audit_view",
+        lambda ticker: {
+            "model_integrity": {"tv_high_flag": False, "revenue_data_quality_flag": "legacy"},
+            "scenario_summary": [{"scenario": "base", "intrinsic_value": 25.0}],
+        },
+    )
+
+
 def test_api_allows_local_frontend_cors_requests(monkeypatch):
     from api.main import app
 
@@ -278,6 +402,81 @@ def test_ticker_dossier_payload_falls_back_from_snapshot_builder_to_backend_stat
 
     assert payload["export_metadata"]["source_mode"] == "loaded_backend_state"
     assert build_calls == [("IBM", "latest_snapshot"), ("IBM", "loaded_backend_state")]
+
+
+def test_ticker_api_consumers_prefer_canonical_dossier_facts_and_preserve_legacy_fields(monkeypatch):
+    from api.main import build_overview_payload, build_ticker_workspace_payload, build_valuation_summary_payload
+
+    dossier = _canonical_dossier_payload()
+    build_calls: list[tuple[str, str | None]] = []
+
+    def _build_dossier(ticker: str, source_mode: str | None = None) -> dict:
+        build_calls.append((ticker, source_mode))
+        return dossier
+
+    _install_legacy_ticker_mocks(monkeypatch)
+    monkeypatch.setattr("api.main.build_ticker_dossier_payload", _build_dossier)
+
+    workspace = build_ticker_workspace_payload("ibm")
+    overview = build_overview_payload("ibm")
+    summary = build_valuation_summary_payload("ibm")
+
+    assert workspace["company_name"] == "Canonical Machines"
+    assert workspace["sector"] == "Canonical Sector"
+    assert workspace["current_price"] == 111.0
+    assert workspace["base_iv"] == 155.0
+    assert workspace["bear_iv"] == 120.0
+    assert workspace["bull_iv"] == 210.0
+    assert workspace["weighted_iv"] == 166.0
+    assert workspace["upside_pct_base"] == 0.35
+    assert workspace["analyst_target"] == 222.0
+    assert workspace["latest_snapshot_date"] == "2026-04-30"
+    assert workspace["snapshot_id"] == 44
+    assert workspace["action"] == "REVIEW"
+    assert workspace["conviction"] == "medium"
+    assert workspace["ticker_dossier"] is dossier
+    assert workspace["ticker_dossier_contract_version"] == "1.0.0"
+
+    assert overview["company_name"] == "Canonical Machines"
+    assert overview["one_liner"] == "Legacy one-liner."
+    assert overview["variant_thesis_prompt"] == "Legacy thesis prompt."
+    assert overview["market_pulse"] == "Legacy market pulse."
+    assert overview["thesis_changes"] == ["Legacy tracker line"]
+    assert overview["next_catalyst"] == "Legacy catalyst"
+    assert overview["valuation_pulse"] == "Base IV $155.00 versus current price $111.00."
+    assert overview["workspace"]["company_name"] == "Canonical Machines"
+    assert overview["ticker_dossier"] is dossier
+
+    assert summary["current_price"] == 111.0
+    assert summary["base_iv"] == 155.0
+    assert summary["weighted_iv"] == 166.0
+    assert summary["upside_pct_base"] == 35.0
+    assert summary["analyst_target"] == 222.0
+    assert summary["memo_date"] == "2026-04-30"
+    assert summary["why_it_matters"] == "Base IV $155.00 versus current price $111.00."
+    assert summary["conviction"] == "medium"
+    assert summary["readiness"] == {"tv_high_flag": False, "revenue_data_quality_flag": "legacy"}
+    assert summary["summary"]["scenario_summary"][0]["intrinsic_value"] == 25.0
+    assert summary["ticker_dossier"] is dossier
+
+    assert build_calls == [("IBM", None), ("IBM", None), ("IBM", None)]
+
+
+def test_ticker_api_consumers_fall_back_to_legacy_payloads_when_dossier_fails(monkeypatch):
+    from api.main import build_ticker_workspace_payload
+
+    _install_legacy_ticker_mocks(monkeypatch)
+    monkeypatch.setattr("api.main.build_ticker_dossier_payload", lambda ticker, source_mode=None: (_ for _ in ()).throw(RuntimeError("boom")))
+
+    payload = build_ticker_workspace_payload("IBM")
+
+    assert payload["company_name"] == "Legacy Snapshot"
+    assert payload["sector"] == "Legacy Snapshot Sector"
+    assert payload["current_price"] == 12.0
+    assert payload["base_iv"] == 24.0
+    assert payload["action"] == "REVIEW"
+    assert payload["conviction"] == "medium"
+    assert "ticker_dossier" not in payload
 
 
 def test_market_research_audit_and_valuation_action_endpoints_return_existing_helpers(monkeypatch):

@@ -68,6 +68,15 @@ def _as_int(value: Any) -> int | None:
     return None
 
 
+def _as_percent_points(value: Any) -> float | None:
+    value = _as_float(value)
+    if value is None:
+        return None
+    if -1.0 <= value <= 1.0:
+        return value * 100.0
+    return value
+
+
 def _scenario_probability_map(scenarios: dict[str, Any]) -> dict[str, float | None]:
     return {
         key: _as_float((value or {}).get("probability"))
@@ -379,7 +388,7 @@ def workspace_payload_from_dossier(dossier: TickerDossier | dict[str, Any]) -> d
         "ticker": dossier.ticker,
         "company_name": dossier.display_name,
         "sector": snapshot.company_identity.sector,
-        "action": market.analyst_recommendation,
+        "action": None,
         "conviction": None,
         "current_price": current_price,
         "base_iv": valuation.base_iv,
@@ -394,7 +403,7 @@ def workspace_payload_from_dossier(dossier: TickerDossier | dict[str, Any]) -> d
         "last_snapshot_id": dossier.export_metadata.snapshot_id,
         "snapshot_id": dossier.export_metadata.snapshot_id,
         "last_snapshot_date": dossier.as_of_date,
-        "latest_action": market.analyst_recommendation,
+        "latest_action": None,
         "latest_conviction": None,
         "ticker_dossier_contract_version": TICKER_DOSSIER_CONTRACT_VERSION,
     }
@@ -405,7 +414,7 @@ def overview_payload_from_dossier(dossier: TickerDossier | dict[str, Any]) -> di
     workspace = workspace_payload_from_dossier(dossier)
     valuation = dossier.latest_snapshot.valuation_snapshot
     valuation_pulse = None
-    current_price = _first_present(valuation.current_price, dossier.latest_snapshot.market_snapshot.price)
+    current_price = _first_present(dossier.latest_snapshot.market_snapshot.price, valuation.current_price)
     if valuation.base_iv is not None and current_price is not None:
         valuation_pulse = f"Base IV ${valuation.base_iv:,.2f} versus current price ${current_price:,.2f}."
     return {
@@ -426,7 +435,7 @@ def valuation_summary_payload_from_dossier(dossier: TickerDossier | dict[str, An
     dossier = TickerDossier.model_validate(dossier)
     valuation = dossier.latest_snapshot.valuation_snapshot
     market = dossier.latest_snapshot.market_snapshot
-    current_price = _first_present(valuation.current_price, market.price)
+    current_price = _first_present(market.price, valuation.current_price)
     why_it_matters = None
     if valuation.base_iv is not None and current_price is not None:
         why_it_matters = f"Base IV ${valuation.base_iv:,.2f} versus current price ${current_price:,.2f}."
@@ -437,7 +446,7 @@ def valuation_summary_payload_from_dossier(dossier: TickerDossier | dict[str, An
         "bear_iv": valuation.bear_iv,
         "bull_iv": valuation.bull_iv,
         "weighted_iv": valuation.expected_iv,
-        "upside_pct_base": valuation.upside_pct,
+        "upside_pct_base": _as_percent_points(valuation.upside_pct),
         "analyst_target": market.analyst_target,
         "conviction": None,
         "memo_date": dossier.as_of_date,
