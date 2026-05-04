@@ -189,6 +189,97 @@ def test_ticker_overview_and_valuation_endpoints_return_helper_payloads(monkeypa
     assert recommendations.json()["recommendations"][0]["field"] == "wacc"
 
 
+def test_ticker_dossier_endpoint_exposes_canonical_contract(monkeypatch):
+    from api.main import app
+
+    monkeypatch.setattr(
+        "api.main.build_ticker_dossier_payload",
+        lambda ticker, source_mode=None: {
+            "contract_name": "TickerDossier",
+            "contract_version": "1.0.0",
+            "ticker": ticker,
+            "as_of_date": "2026-04-30T00:00:00+00:00",
+            "display_name": "International Business Machines",
+            "currency": "USD",
+            "latest_snapshot": {
+                "company_identity": {"ticker": ticker, "display_name": "International Business Machines"},
+                "market_snapshot": {"as_of_date": "2026-04-30T00:00:00+00:00"},
+                "valuation_snapshot": {"base_iv": 202.0},
+            },
+            "loaded_backend_state": {"source_mode": source_mode or "latest_snapshot"},
+            "source_lineage": {},
+            "export_metadata": {"source_mode": source_mode or "latest_snapshot"},
+            "optional_overlays": {},
+        },
+    )
+
+    client = TestClient(app)
+    response = client.get("/api/tickers/IBM/dossier?source_mode=loaded_backend_state")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["contract_name"] == "TickerDossier"
+    assert payload["contract_version"] == "1.0.0"
+    assert payload["export_metadata"]["source_mode"] == "loaded_backend_state"
+
+
+def test_ticker_dossier_payload_reads_persisted_latest_snapshot_before_builder(monkeypatch):
+    from api.main import build_ticker_dossier_payload
+
+    calls: list[tuple[str, str | None]] = []
+    persisted = {
+        "contract_name": "TickerDossier",
+        "contract_version": "1.0.0",
+        "ticker": "IBM",
+        "as_of_date": "2026-04-30",
+        "display_name": "International Business Machines",
+        "export_metadata": {"source_mode": "latest_snapshot"},
+    }
+
+    def _load(ticker: str, source_mode: str | None = None):
+        calls.append((ticker, source_mode))
+        return persisted
+
+    def _build(_ticker: str, _source_mode: str):  # pragma: no cover - should not be reached
+        raise AssertionError("builder fallback should not run when persisted dossier exists")
+
+    monkeypatch.setattr("api.main.load_latest_ticker_dossier_payload", _load)
+    monkeypatch.setattr("api.main.build_ticker_dossier_from_source", _build)
+
+    payload = build_ticker_dossier_payload("IBM")
+
+    assert payload is persisted
+    assert calls == [("IBM", "latest_snapshot")]
+
+
+def test_ticker_dossier_payload_falls_back_from_snapshot_builder_to_backend_state(monkeypatch):
+    from api.main import build_ticker_dossier_payload
+
+    build_calls: list[tuple[str, str]] = []
+
+    monkeypatch.setattr("api.main.load_latest_ticker_dossier_payload", lambda ticker, source_mode=None: None)
+
+    def _build(ticker: str, source_mode: str):
+        build_calls.append((ticker, source_mode))
+        if source_mode == "latest_snapshot":
+            raise FileNotFoundError("no archived snapshot")
+        return {
+            "contract_name": "TickerDossier",
+            "contract_version": "1.0.0",
+            "ticker": ticker,
+            "as_of_date": "2026-04-30",
+            "display_name": "International Business Machines",
+            "export_metadata": {"source_mode": source_mode},
+        }
+
+    monkeypatch.setattr("api.main.build_ticker_dossier_from_source", _build)
+
+    payload = build_ticker_dossier_payload("IBM")
+
+    assert payload["export_metadata"]["source_mode"] == "loaded_backend_state"
+    assert build_calls == [("IBM", "latest_snapshot"), ("IBM", "loaded_backend_state")]
+
+
 def test_market_research_audit_and_valuation_action_endpoints_return_existing_helpers(monkeypatch):
     from api.main import app
 

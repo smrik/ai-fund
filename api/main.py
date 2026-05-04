@@ -159,6 +159,52 @@ def run_watchlist_export(
     )
 
 
+def load_latest_ticker_dossier_payload(ticker: str, source_mode: str | None = None) -> dict[str, Any] | None:
+    from db.ticker_dossier import load_latest_ticker_dossier
+    from src.stage_04_pipeline.ticker_dossier import ticker_dossier_to_payload
+
+    dossier = load_latest_ticker_dossier(ticker, source_mode=source_mode)
+    if dossier is None:
+        return None
+    return ticker_dossier_to_payload(dossier)
+
+
+def build_ticker_dossier_from_source(ticker: str, source_mode: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier, ticker_dossier_to_payload
+
+    return ticker_dossier_to_payload(build_ticker_dossier(ticker, source_mode))
+
+
+def build_ticker_dossier_payload(ticker: str, source_mode: str | None = None) -> dict[str, Any]:
+    from src.stage_04_pipeline.ticker_dossier import (
+        SOURCE_MODE_LATEST_SNAPSHOT,
+        SOURCE_MODE_LOADED_BACKEND_STATE,
+    )
+
+    preferred_source_mode = source_mode or SOURCE_MODE_LATEST_SNAPSHOT
+    persisted = load_latest_ticker_dossier_payload(ticker, source_mode=preferred_source_mode)
+    if persisted is not None:
+        return persisted
+
+    if source_mode:
+        return build_ticker_dossier_from_source(ticker, source_mode)
+
+    try:
+        return build_ticker_dossier_from_source(ticker, SOURCE_MODE_LATEST_SNAPSHOT)
+    except FileNotFoundError:
+        return build_ticker_dossier_from_source(ticker, SOURCE_MODE_LOADED_BACKEND_STATE)
+
+
+def _attach_api_ticker_dossier(payload: dict[str, Any], ticker: str, source_mode: str | None = None) -> dict[str, Any]:
+    try:
+        dossier = build_ticker_dossier_payload(ticker, source_mode=source_mode)
+    except Exception:  # pragma: no cover - compatibility shim must not hide legacy endpoints
+        return payload
+    payload["ticker_dossier"] = dossier
+    payload["ticker_dossier_contract_version"] = dossier.get("contract_version")
+    return payload
+
+
 def list_saved_exports(*, ticker: str | None = None, scope: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
     from src.stage_04_pipeline.export_service import list_saved_exports as _impl
 
@@ -466,7 +512,7 @@ def build_ticker_workspace_payload(ticker: str) -> dict[str, Any]:
         _percent_points_to_fraction(watchlist_row.get("upside_base_pct")),
     )
 
-    return {
+    payload = {
         "ticker": ticker,
         "company_name": _pick_value(
             (snapshot or {}).get("company_name"),
@@ -508,6 +554,7 @@ def build_ticker_workspace_payload(ticker: str) -> dict[str, Any]:
             watchlist_row.get("latest_conviction"),
         ),
     }
+    return _attach_api_ticker_dossier(payload, ticker)
 
 
 def build_overview_payload(ticker: str) -> dict[str, Any]:
@@ -527,7 +574,7 @@ def build_overview_payload(ticker: str) -> dict[str, Any]:
 
     market_pulse = ((market.get("historical_brief") or {}).get("summary")) or market.get("summary")
 
-    return {
+    payload = {
         "ticker": ticker,
         "company_name": workspace.get("company_name"),
         "one_liner": memo.get("one_liner"),
@@ -538,6 +585,7 @@ def build_overview_payload(ticker: str) -> dict[str, Any]:
         "next_catalyst": next_catalyst,
         "workspace": workspace,
     }
+    return _attach_api_ticker_dossier(payload, ticker)
 
 
 build_ticker_overview_payload = build_overview_payload
@@ -558,7 +606,7 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
         except Exception:
             analyst_target = None
 
-    return {
+    payload = {
         "ticker": ticker,
         "current_price": _safe_float(
             _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
@@ -583,6 +631,7 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
         "readiness": summary.get("model_integrity") or {},
         "summary": summary,
     }
+    return _attach_api_ticker_dossier(payload, ticker)
 
 
 def build_valuation_dcf_payload(ticker: str) -> dict[str, Any]:
@@ -866,6 +915,16 @@ def create_app() -> FastAPI:
     def get_ticker_overview(ticker: str) -> dict[str, Any]:
         return build_ticker_overview_payload(ticker)
 
+    @app.get("/api/tickers/{ticker}/dossier")
+    def get_ticker_dossier(ticker: str, source_mode: str | None = None) -> dict[str, Any]:
+        ticker = _coerce_ticker(ticker)
+        try:
+            return build_ticker_dossier_payload(ticker, source_mode=source_mode)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.get("/api/tickers/{ticker}/valuation/summary")
     def get_ticker_valuation_summary(ticker: str) -> dict[str, Any]:
         return build_valuation_summary_payload(ticker)
@@ -1078,7 +1137,7 @@ def create_app() -> FastAPI:
         payload = load_latest_snapshot_for_ticker(ticker)
         if payload is None:
             raise HTTPException(status_code=404, detail="no archived snapshot found")
-        return payload
+        return _attach_api_ticker_dossier(dict(payload), ticker, source_mode="latest_snapshot")
 
     return app
 

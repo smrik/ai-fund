@@ -43,6 +43,8 @@ export interface TickerWorkspace {
   last_snapshot_id?: number | null;
   latest_action?: string | null;
   latest_conviction?: string | null;
+  ticker_dossier_contract_version?: string | null;
+  ticker_dossier?: TickerDossierPayload;
 }
 
 export interface OverviewPayload {
@@ -54,6 +56,8 @@ export interface OverviewPayload {
   valuation_pulse?: string | null;
   thesis_changes?: string[];
   next_catalyst?: string | null;
+  ticker_dossier_contract_version?: string | null;
+  ticker_dossier?: TickerDossierPayload;
 }
 
 export interface ArchivedSnapshotPayload {
@@ -81,6 +85,59 @@ export interface ArchivedSnapshotPayload {
       upside_pct_base?: number | null;
     } | null;
   } | null;
+  ticker_dossier?: TickerDossierPayload;
+}
+
+export interface TickerDossierPayload {
+  contract_name: "TickerDossier";
+  contract_version: string;
+  ticker: string;
+  as_of_date: string;
+  display_name: string;
+  currency: string;
+  latest_snapshot: {
+    company_identity: {
+      ticker: string;
+      display_name: string;
+      sector?: string | null;
+      industry?: string | null;
+      exchange?: string | null;
+    };
+    market_snapshot: {
+      as_of_date: string;
+      price?: number | null;
+      market_cap?: number | null;
+      enterprise_value?: number | null;
+      beta?: number | null;
+      analyst_target?: number | null;
+      analyst_recommendation?: string | null;
+      num_analysts?: number | null;
+    };
+    valuation_snapshot: {
+      bear_iv?: number | null;
+      base_iv?: number | null;
+      bull_iv?: number | null;
+      expected_iv?: number | null;
+      current_price?: number | null;
+      upside_pct?: number | null;
+      scenario_probabilities?: Record<string, number | null>;
+    };
+    historical_series?: Record<string, Array<Record<string, unknown>>>;
+    qoe_snapshot?: Record<string, unknown>;
+    comps_snapshot?: Record<string, unknown>;
+    source_lineage?: Record<string, unknown>;
+  };
+  loaded_backend_state: Record<string, unknown>;
+  source_lineage: Record<string, unknown>;
+  export_metadata: {
+    source_mode: string;
+    generated_at?: string | null;
+    schema_version?: string | null;
+    snapshot_id?: number | null;
+    source_label?: string | null;
+    template_strategy?: string | null;
+  };
+  optional_overlays: Record<string, unknown>;
 }
 
 export interface ValuationSummaryPayload {

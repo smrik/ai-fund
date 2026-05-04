@@ -12,12 +12,14 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from db.schema import create_tables, get_connection
+from db.ticker_dossier import upsert_ticker_dossier_snapshot
 from src.stage_04_pipeline.batch_funnel import load_saved_watchlist
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 from src.stage_04_pipeline.dossier_view import build_publishable_memo_context, build_research_board_view
 from src.stage_04_pipeline.override_workbench import build_override_workbench
 from src.stage_04_pipeline.report_archive import list_report_snapshots, load_report_snapshot
+from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload, ticker_dossier_to_payload
 from src.stage_04_pipeline.wacc_workbench import build_wacc_workbench
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +114,28 @@ def _normalise_comps_analysis(comps: dict[str, Any] | None) -> dict[str, Any]:
         "similarity_model": comps.get("similarity_model"),
         "weighting_formula": comps.get("weighting_formula"),
     }
+
+
+def _attach_ticker_dossier(
+    payload: dict[str, Any],
+    *,
+    source_mode: str,
+    snapshot_id: int | None = None,
+) -> dict[str, Any]:
+    dossier = build_ticker_dossier_from_export_payload(
+        payload,
+        source_mode=source_mode,
+        snapshot_id=snapshot_id,
+    )
+    payload["ticker_dossier"] = ticker_dossier_to_payload(dossier)
+    return payload
+
+
+def _persist_attached_ticker_dossier(payload: dict[str, Any]) -> None:
+    dossier_payload = payload.get("ticker_dossier")
+    if not isinstance(dossier_payload, dict):
+        return
+    upsert_ticker_dossier_snapshot(dossier_payload, connection_factory=get_connection)
 
 
 def _clear_sheet(ws) -> None:
@@ -735,7 +759,7 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
     }
     comps_target = (comps.get("target_vs_peers") or {}).get("target") or {}
     peer_medians = (comps.get("target_vs_peers") or {}).get("peer_medians") or {}
-    return {
+    payload = {
         "$schema_version": "1.0",
         "generated_at": _now(),
         "ticker": ticker,
@@ -800,6 +824,7 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "comps_analysis": _normalise_comps_analysis(comps),
         "research": research,
     }
+    return _attach_ticker_dossier(payload, source_mode="loaded_backend_state")
 
 
 def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
@@ -813,8 +838,7 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
     dashboard_snapshot = snapshot.get("dashboard_snapshot") or {}
     dcf = dashboard_snapshot.get("dcf_audit") or {}
     comps = dashboard_snapshot.get("comps_view") or {}
-    return (
-        {
+    payload = {
             "$schema_version": "1.0",
             "generated_at": _now(),
             "ticker": ticker,
@@ -861,7 +885,9 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
             },
             "comps_analysis": _normalise_comps_analysis(comps),
             "snapshot": snapshot,
-        },
+        }
+    return (
+        _attach_ticker_dossier(payload, source_mode="latest_snapshot", snapshot_id=snapshot_id),
         snapshot_id,
     )
 
@@ -883,6 +909,7 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
                 "summary": publishable.get("memo_content") or memo.get("one_liner") or memo.get("variant_thesis_prompt") or "",
                 "valuation": payload.get("valuation") or {},
                 "artifacts": publishable.get("artifacts") or [],
+                "ticker_dossier": payload.get("ticker_dossier"),
             },
             snapshot_id,
         )
@@ -900,6 +927,7 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
             "summary": publishable.get("memo_content") or research.get("publishable_memo_preview") or "",
             "valuation": payload.get("valuation") or {},
             "artifacts": publishable.get("artifacts") or [],
+            "ticker_dossier": payload.get("ticker_dossier"),
         },
         None,
     )
@@ -930,6 +958,7 @@ def run_ticker_export(
             payload, snapshot_id = _build_snapshot_ticker_payload(ticker)
         else:
             payload = _build_current_ticker_payload(ticker)
+        _persist_attached_ticker_dossier(payload)
         bundle_dir = _ticker_bundle_dir(ticker, export_format)
         staged = stage_power_query_workbook(ticker, payload, bundle_dir)
         return register_export_bundle(
@@ -949,6 +978,7 @@ def run_ticker_export(
 
     if export_format == "html":
         context, snapshot_id = _build_html_context(ticker, source_mode)
+        _persist_attached_ticker_dossier(context)
         bundle_dir = _ticker_bundle_dir(ticker, export_format)
         staged = build_html_export_bundle(ticker, context, bundle_dir)
         return register_export_bundle(
