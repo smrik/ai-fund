@@ -195,14 +195,45 @@ def build_ticker_dossier_payload(ticker: str, source_mode: str | None = None) ->
         return build_ticker_dossier_from_source(ticker, SOURCE_MODE_LOADED_BACKEND_STATE)
 
 
-def _attach_api_ticker_dossier(payload: dict[str, Any], ticker: str, source_mode: str | None = None) -> dict[str, Any]:
-    try:
-        dossier = build_ticker_dossier_payload(ticker, source_mode=source_mode)
-    except Exception:  # pragma: no cover - compatibility shim must not hide legacy endpoints
+_DOSSIER_NOT_PROVIDED = object()
+
+
+def _attach_api_ticker_dossier(
+    payload: dict[str, Any],
+    ticker: str,
+    source_mode: str | None = None,
+    dossier_payload: dict[str, Any] | None | object = _DOSSIER_NOT_PROVIDED,
+) -> dict[str, Any]:
+    if dossier_payload is _DOSSIER_NOT_PROVIDED:
+        try:
+            dossier_payload = build_ticker_dossier_payload(ticker, source_mode=source_mode)
+        except Exception:  # pragma: no cover - compatibility shim must not hide legacy endpoints
+            return payload
+    if not isinstance(dossier_payload, dict):
         return payload
-    payload["ticker_dossier"] = dossier
-    payload["ticker_dossier_contract_version"] = dossier.get("contract_version")
+    payload["ticker_dossier"] = dossier_payload
+    payload["ticker_dossier_contract_version"] = dossier_payload.get("contract_version")
     return payload
+
+
+def _load_api_ticker_dossier_payload(ticker: str, source_mode: str | None = None) -> dict[str, Any] | None:
+    try:
+        return build_ticker_dossier_payload(ticker, source_mode=source_mode)
+    except Exception:  # pragma: no cover - legacy endpoints should survive missing dossier state
+        return None
+
+
+def _canonical_payload_from_dossier(dossier_payload: dict[str, Any], adapter_name: str) -> dict[str, Any]:
+    from src.stage_04_pipeline import ticker_dossier as dossier_adapters
+
+    adapter = getattr(dossier_adapters, adapter_name)
+    return dict(adapter(dossier_payload))
+
+
+def _prefer_keys_from(source: dict[str, Any], target: dict[str, Any], keys: list[str]) -> None:
+    for key in keys:
+        if key in source:
+            target[key] = source.get(key)
 
 
 def list_saved_exports(*, ticker: str | None = None, scope: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
@@ -480,8 +511,10 @@ def _valuation_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
     return dict(valuation) if isinstance(valuation, dict) else {}
 
 
-def build_ticker_workspace_payload(ticker: str) -> dict[str, Any]:
+def build_ticker_workspace_payload(ticker: str, dossier_payload: dict[str, Any] | None | object = _DOSSIER_NOT_PROVIDED) -> dict[str, Any]:
     ticker = _coerce_ticker(ticker)
+    if dossier_payload is _DOSSIER_NOT_PROVIDED:
+        dossier_payload = _load_api_ticker_dossier_payload(ticker)
     watchlist_row = _watchlist_row_for_ticker(ticker)
     snapshot = _snapshot_payload(ticker)
     memo = _memo_payload(snapshot)
@@ -554,12 +587,41 @@ def build_ticker_workspace_payload(ticker: str) -> dict[str, Any]:
             watchlist_row.get("latest_conviction"),
         ),
     }
-    return _attach_api_ticker_dossier(payload, ticker)
+    if isinstance(dossier_payload, dict):
+        try:
+            canonical = _canonical_payload_from_dossier(dossier_payload, "workspace_payload_from_dossier")
+        except Exception:
+            canonical = {}
+        _prefer_keys_from(
+            canonical,
+            payload,
+            [
+                "ticker",
+                "company_name",
+                "sector",
+                "current_price",
+                "base_iv",
+                "bear_iv",
+                "bull_iv",
+                "weighted_iv",
+                "upside_pct_base",
+                "analyst_target",
+                "analyst_recommendation",
+                "latest_snapshot_date",
+                "snapshot_available",
+                "last_snapshot_id",
+                "snapshot_id",
+                "last_snapshot_date",
+                "ticker_dossier_contract_version",
+            ],
+        )
+    return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
 
 
 def build_overview_payload(ticker: str) -> dict[str, Any]:
     ticker = _coerce_ticker(ticker)
-    workspace = build_ticker_workspace_payload(ticker)
+    dossier_payload = _load_api_ticker_dossier_payload(ticker)
+    workspace = build_ticker_workspace_payload(ticker, dossier_payload=dossier_payload)
     snapshot = _snapshot_payload(ticker)
     memo = _memo_payload(snapshot)
     tracker = build_thesis_tracker_view(ticker)
@@ -585,7 +647,14 @@ def build_overview_payload(ticker: str) -> dict[str, Any]:
         "next_catalyst": next_catalyst,
         "workspace": workspace,
     }
-    return _attach_api_ticker_dossier(payload, ticker)
+    if isinstance(dossier_payload, dict):
+        try:
+            canonical = _canonical_payload_from_dossier(dossier_payload, "overview_payload_from_dossier")
+        except Exception:
+            canonical = {}
+        _prefer_keys_from(canonical, payload, ["ticker", "company_name", "valuation_pulse", "ticker_dossier_contract_version"])
+        payload["workspace"] = workspace
+    return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
 
 
 build_ticker_overview_payload = build_overview_payload
@@ -593,6 +662,7 @@ build_ticker_overview_payload = build_overview_payload
 
 def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
     ticker = _coerce_ticker(ticker)
+    dossier_payload = _load_api_ticker_dossier_payload(ticker)
     watchlist_row = _watchlist_row_for_ticker(ticker)
     snapshot = _snapshot_payload(ticker)
     memo = _memo_payload(snapshot)
@@ -631,7 +701,29 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
         "readiness": summary.get("model_integrity") or {},
         "summary": summary,
     }
-    return _attach_api_ticker_dossier(payload, ticker)
+    if isinstance(dossier_payload, dict):
+        try:
+            canonical = _canonical_payload_from_dossier(dossier_payload, "valuation_summary_payload_from_dossier")
+        except Exception:
+            canonical = {}
+        _prefer_keys_from(
+            canonical,
+            payload,
+            [
+                "ticker",
+                "current_price",
+                "base_iv",
+                "bear_iv",
+                "bull_iv",
+                "weighted_iv",
+                "upside_pct_base",
+                "analyst_target",
+                "memo_date",
+                "why_it_matters",
+                "ticker_dossier_contract_version",
+            ],
+        )
+    return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
 
 
 def build_valuation_dcf_payload(ticker: str) -> dict[str, Any]:

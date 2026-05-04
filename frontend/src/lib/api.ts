@@ -23,6 +23,11 @@ import type {
   WaccPayload,
   WaccPreviewPayload,
 } from "@/lib/types";
+import {
+  normalizeOverviewPayload,
+  normalizeTickerWorkspace,
+  normalizeValuationSummaryPayload,
+} from "@/lib/canonical";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
@@ -63,15 +68,17 @@ export function getRunStatus(runId: string): Promise<RunPayload> {
 }
 
 export function getTickerWorkspace(ticker: string): Promise<TickerWorkspace> {
-  return requestJSON<TickerWorkspace>(`/tickers/${encodeURIComponent(ticker)}/workspace`);
+  return requestJSON<TickerWorkspace>(`/tickers/${encodeURIComponent(ticker)}/workspace`).then(normalizeTickerWorkspace);
 }
 
 export function getOverview(ticker: string): Promise<OverviewPayload> {
-  return requestJSON<OverviewPayload>(`/tickers/${encodeURIComponent(ticker)}/overview`);
+  return requestJSON<OverviewPayload>(`/tickers/${encodeURIComponent(ticker)}/overview`).then(normalizeOverviewPayload);
 }
 
 export function getValuationSummary(ticker: string): Promise<ValuationSummaryPayload> {
-  return requestJSON<ValuationSummaryPayload>(`/tickers/${encodeURIComponent(ticker)}/valuation/summary`);
+  return requestJSON<ValuationSummaryPayload>(`/tickers/${encodeURIComponent(ticker)}/valuation/summary`).then(
+    normalizeValuationSummaryPayload,
+  );
 }
 
 export function getValuationDcf(ticker: string): Promise<ValuationDcfPayload> {
