@@ -18,6 +18,7 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
                 "tev_ebitda_fwd": 9.9,
                 "tev_ebit_ltm": 14.2,
                 "pe_ltm": 18.1,
+                "revenue_ltm_mm": 60000.0,
                 "ebitda_ltm_mm": 11428.6,
                 "ebit_ltm_mm": 8450.0,
                 "source_file": "ibm_snapshot.xlsx",
@@ -26,6 +27,9 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
             "peers": [
                 {
                     "ticker": "ORCL",
+                    "revenue_ltm_mm": 53000.0,
+                    "ebitda_ltm_mm": 21000.0,
+                    "ebit_ltm_mm": 14500.0,
                     "tev_ebitda_ltm": 11.0,
                     "tev_ebit_ltm": 16.0,
                     "pe_ltm": 20.0,
@@ -35,6 +39,9 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
                 },
                 {
                     "ticker": "ACN",
+                    "revenue_ltm_mm": 70000.0,
+                    "ebitda_ltm_mm": 13000.0,
+                    "ebit_ltm_mm": 10500.0,
                     "tev_ebitda_ltm": 13.0,
                     "tev_ebit_ltm": 18.0,
                     "pe_ltm": 24.0,
@@ -130,6 +137,7 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     assert view["valuation_range_by_metric"]["pe_ltm"]["bull"] == 129.0
     assert view["target_vs_peers"]["peer_medians"]["tev_ebitda_ltm"] == 12.0
     assert view["target_vs_peers"]["target"]["revenue_growth"] == 0.03
+    assert view["target_vs_peers"]["target"]["ebit_margin"] == 0.1408
     assert round(view["target_vs_peers"]["deltas"]["tev_ebitda_ltm"], 2) == -1.5
     assert round(view["target_vs_peers"]["deltas"]["net_debt_to_ebitda"], 2) == 0.55
     assert view["football_field"]["range_min"] == 95.0
@@ -149,6 +157,10 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     assert view["valuation_by_metric_rows"][0]["metric"] == "tev_ebitda_ltm"
     assert view["valuation_by_metric_rows"][0]["is_primary"] is True
     assert view["comparison_summary"][0]["metric"] == "tev_ebitda_ltm"
+    assert view["operating_context"]["target"]["revenue_ltm_mm"] == 60000.0
+    assert view["operating_context"]["target"]["ebit_margin"] == 0.1408
+    assert view["support_data_quality"]["peer_coverage"]["ebitda_ltm_mm"]["present"] == 2
+    assert view["support_data_quality"]["common_patchups_needed"] == []
     status_rows = {(row["ticker"], row["metric"]): row["status"] for row in view["metric_status_rows"]}
     assert status_rows[("ORCL", "tev_ebitda_ltm")] == "outlier_removed"
     assert status_rows[("ACN", "tev_ebitda_ltm")] == "included"

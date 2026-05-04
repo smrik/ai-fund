@@ -189,6 +189,84 @@ def _sensitivity_matrix(
     return rows
 
 
+def _sensitivity_grid_contract(drivers: ForecastDrivers, *, grid: str) -> dict:
+    base = ScenarioSpec(name="base", probability=1.0)
+    wacc_values = [max(0.03, min(0.20, drivers.wacc + delta)) for delta in (-0.01, 0.0, 0.01)]
+    if grid == "wacc_x_terminal_growth":
+        column_key = "terminal_growth"
+        column_label = "Terminal Growth"
+        column_unit = "pct"
+        column_values = [
+            max(0.0, min(0.05, drivers.revenue_growth_terminal + delta))
+            for delta in (-0.005, 0.0, 0.005)
+        ]
+    else:
+        column_key = "exit_multiple"
+        column_label = "Exit Multiple"
+        column_unit = "multiple"
+        column_values = [max(2.0, min(40.0, drivers.exit_multiple * mult)) for mult in (0.9, 1.0, 1.1)]
+
+    cells: list[dict] = []
+    iv_values: list[float] = []
+    base_case_iv = None
+    for wacc in wacc_values:
+        for column_value in column_values:
+            driver_overrides = {"wacc": wacc}
+            if column_key == "terminal_growth":
+                driver_overrides["revenue_growth_terminal"] = column_value
+            else:
+                driver_overrides["exit_multiple"] = column_value
+            adjusted = ForecastDrivers(**{**asdict(drivers), **driver_overrides})
+            result = run_dcf_professional(adjusted, base)
+            iv = round(result.intrinsic_value_per_share, 2)
+            iv_values.append(iv)
+            is_base_case = wacc == drivers.wacc and column_value in {
+                drivers.revenue_growth_terminal,
+                drivers.exit_multiple,
+            }
+            if is_base_case:
+                base_case_iv = iv
+            cells.append(
+                {
+                    "grid": grid,
+                    "row_axis": "wacc",
+                    "row_value": round(wacc, 6),
+                    "row_value_pct": round(wacc * 100.0, 2),
+                    "column_axis": column_key,
+                    "column_value": round(column_value, 6),
+                    "column_value_display": round(column_value * 100.0, 2)
+                    if column_unit == "pct"
+                    else round(column_value, 2),
+                    "intrinsic_value": iv,
+                    "is_base_case": is_base_case,
+                }
+            )
+    return {
+        "grid": grid,
+        "label": "WACC x Terminal Growth" if grid == "wacc_x_terminal_growth" else "WACC x Exit Multiple",
+        "value_key": "intrinsic_value",
+        "row_axis": {"key": "wacc", "label": "WACC", "unit": "pct", "values": [round(v, 6) for v in wacc_values]},
+        "column_axis": {
+            "key": column_key,
+            "label": column_label,
+            "unit": column_unit,
+            "values": [round(v, 6) for v in column_values],
+        },
+        "base_case": {
+            "wacc": round(drivers.wacc, 6),
+            column_key: round(drivers.revenue_growth_terminal if column_key == "terminal_growth" else drivers.exit_multiple, 6),
+            "intrinsic_value": base_case_iv,
+        },
+        "summary": {
+            "min_iv": min(iv_values) if iv_values else None,
+            "max_iv": max(iv_values) if iv_values else None,
+            "spread": round(max(iv_values) - min(iv_values), 2) if iv_values else None,
+            "cell_count": len(cells),
+        },
+        "cells": cells,
+    }
+
+
 def _chart_series(audit: dict, risk_impact_view: dict | None) -> dict:
     projection_curve = [
         {
@@ -268,6 +346,10 @@ def build_dcf_audit_view(
             as_of_date=as_of_date,
             apply_overrides=apply_overrides,
         )
+    sensitivity_contracts = {
+        "wacc_x_terminal_growth": _sensitivity_grid_contract(inputs.drivers, grid="wacc_x_terminal_growth"),
+        "wacc_x_exit_multiple": _sensitivity_grid_contract(inputs.drivers, grid="wacc_x_exit_multiple"),
+    }
 
     audit = {
         "ticker": ticker,
@@ -292,6 +374,26 @@ def build_dcf_audit_view(
         "sensitivity": {
             "wacc_x_terminal_growth": _sensitivity_matrix(inputs.drivers, grid="wacc_x_terminal_growth"),
             "wacc_x_exit_multiple": _sensitivity_matrix(inputs.drivers, grid="wacc_x_exit_multiple"),
+            "metadata": {
+                grid: {
+                    "label": payload["label"],
+                    "value_key": payload["value_key"],
+                    "row_axis": payload["row_axis"],
+                    "column_axis": payload["column_axis"],
+                    "base_case": payload["base_case"],
+                    "summary": payload["summary"],
+                }
+                for grid, payload in sensitivity_contracts.items()
+            },
+            "long_form": [
+                cell
+                for payload in sensitivity_contracts.values()
+                for cell in payload["cells"]
+            ],
+            "summary": [
+                {"grid": grid, **payload["summary"]}
+                for grid, payload in sensitivity_contracts.items()
+            ],
         },
         "risk_impact": risk_impact_view,
     }

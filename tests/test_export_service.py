@@ -111,7 +111,16 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
                 {"metric": "revenue_growth", "label": "Revenue Growth", "target": 0.03, "peer_median": 0.05, "delta": -0.02}
             ],
             "peer_table": [
-                {"ticker": "ACN", "display_name": "Accenture", "similarity_score": 0.8, "model_weight": 0.4, "tev_ebitda_ltm": 17.0}
+                {
+                    "ticker": "ACN",
+                    "display_name": "Accenture",
+                    "similarity_score": 0.8,
+                    "model_weight": 0.4,
+                    "revenue_ltm_mm": 70000.0,
+                    "ebitda_ltm_mm": 13000.0,
+                    "ebit_ltm_mm": 10500.0,
+                    "tev_ebitda_ltm": 17.0,
+                }
             ],
             "metric_status_rows": [
                 {"ticker": "ACN", "metric": "tev_ebitda_ltm", "label": "TEV / EBITDA LTM", "raw_multiple": 17.0, "status": "included"}
@@ -122,6 +131,17 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
             },
             "historical_multiples_summary": {
                 "metrics": {"pe_trailing": {"current": 20.0, "summary": {"median": 18.0, "current_percentile": 0.65}}}
+            },
+            "operating_context": {
+                "target": {"revenue_ltm_mm": 60000.0, "ebitda_ltm_mm": 11428.6, "ebit_ltm_mm": 8450.0},
+                "peer_medians": {"ebit_margin": 0.18, "net_debt_to_ebitda": 0.6},
+                "peer_count": 1,
+            },
+            "support_data_quality": {
+                "target_missing_fields": [],
+                "peer_coverage": {"ebitda_ltm_mm": {"present": 1, "total": 1, "ratio": 1.0}},
+                "valuation_metric_count": 1,
+                "common_patchups_needed": [],
             },
             "audit_flags": ["Outliers removed from tev_ebitda_ltm: MSFT"],
             "notes": "primary=tev_ebitda_ltm",
@@ -136,6 +156,7 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
     assert "IBM" in str(staged["Comps"]["A1"].value)
     assert staged["Comps"]["B5"].value == "tev_ebitda_ltm"
     assert staged["Comps"]["A20"].value == "Peer Table"
+    assert staged["Comps"]["E21"].value == "Revenue LTM"
     assert staged["Comps Diagnostics"]["A4"].value == "Audit Flags"
     assert staged["Comps Diagnostics"]["A10"].value == "Ticker"
 

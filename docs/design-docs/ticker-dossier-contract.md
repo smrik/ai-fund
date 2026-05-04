@@ -120,6 +120,7 @@ Current and archived snapshot export payloads must continue to share these roots
 - `wacc`
 - `valuation`
 - `scenarios`
+- `sensitivity`
 - `terminal`
 - `health_flags`
 - `forecast_bridge`
@@ -293,6 +294,8 @@ The current runtime path is intentionally additive: API and export callers can c
 The v1 enrichment path is adapter-level mapping of fields that already exist in export or archive payloads. It may lift company identity metadata such as `industry`, `exchange`, `description`, and `country`; QoE context from an existing `qoe` block; and historical revenue, EBIT, margin, and FCFF series from existing payload sections.
 
 This is not a new data collection path. Building or reading a `TickerDossier` must not call yfinance, CIQ refresh, EDGAR, QoE LLMs, or batch valuation just to fill enrichment fields. Missing QoE or history remains a valid payload state: QoE uses `present=false`, and missing historical series stay as empty lists.
+
+Sensitivity and comps support data stay in the existing `dcf_audit` and `comps_analysis` payload roots for v1 compatibility. Producers should include both legacy table-shaped views and canonical support metadata: sensitivity grids expose axis metadata, long-form cells, and summaries; comps payloads expose operating context, peer coverage, valuation-by-metric rows, benchmark rows, peer tables, and diagnostics.
 
 ## Persistence
 

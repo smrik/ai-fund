@@ -5,8 +5,8 @@
 | Status | Planned |
 | Priority | P0 |
 | Target release | v0.2.0 Dossier Integrity |
-| GitHub | Epic issue to be created |
-| Last updated | 2026-04-02 |
+| GitHub | [#14](https://github.com/smrik/ai-fund/issues/14) |
+| Last updated | 2026-05-04 |
 
 ## Problem
 
