@@ -21,7 +21,6 @@ def _score_row(row: dict[str, Any]) -> tuple[int, int, float, float, str]:
     margin_of_safety = safe_float(row.get("margin_of_safety")) or float("-inf")
     ranking_metric = "expected_upside_pct" if expected_upside is not None else "upside_base_pct"
     score = expected_upside if expected_upside is not None else fallback_upside
-    raw_upside = safe_float(row.get(ranking_metric)) or float("-inf")
     return (
         1 if score is not None else 0,
         1 if expected_upside is not None else 0,
