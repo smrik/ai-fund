@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.utils import coerce_ticker
 
 from typing import Any
 
@@ -17,11 +18,8 @@ from db.loader import (
 from db.schema import create_tables, get_connection
 
 
-def _coerce_ticker(ticker: str) -> str:
-    value = (ticker or "").strip().upper()
-    if not value:
-        raise ValueError("ticker is required")
-    return value
+
+
 
 
 def _ensure_schema(conn) -> None:
@@ -35,7 +33,7 @@ def upsert_dossier_profile(row: dict[str, Any]) -> None:
 
 
 def load_dossier_profile(ticker: str) -> dict[str, Any] | None:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         row = conn.execute(
@@ -57,7 +55,7 @@ def upsert_dossier_section_index(row: dict[str, Any]) -> None:
 
 
 def list_dossier_sections(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -79,7 +77,7 @@ def upsert_dossier_source(row: dict[str, Any]) -> None:
 
 
 def list_dossier_sources(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -101,7 +99,7 @@ def upsert_dossier_artifact(row: dict[str, Any]) -> None:
 
 
 def list_dossier_artifacts(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -123,7 +121,7 @@ def insert_model_checkpoint(row: dict[str, Any]) -> int:
 
 
 def list_model_checkpoints(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -145,7 +143,7 @@ def upsert_tracker_state(row: dict[str, Any]) -> None:
 
 
 def load_tracker_state(ticker: str) -> dict[str, Any] | None:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         row = conn.execute(
@@ -167,7 +165,7 @@ def upsert_tracked_catalyst(row: dict[str, Any]) -> None:
 
 
 def list_tracked_catalysts(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -189,7 +187,7 @@ def insert_decision_log_entry(row: dict[str, Any]) -> int:
 
 
 def list_decision_log(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -211,7 +209,7 @@ def insert_review_log_entry(row: dict[str, Any]) -> int:
 
 
 def list_review_log(ticker: str) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -233,7 +231,7 @@ def insert_dossier_note_block(row: dict[str, Any]) -> int:
 
 
 def list_dossier_note_blocks(ticker: str, *, block_type: str | None = None) -> list[dict[str, Any]]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     query = """
         SELECT *
         FROM dossier_note_blocks
@@ -248,3 +246,4 @@ def list_dossier_note_blocks(ticker: str, *, block_type: str | None = None) -> l
         _ensure_schema(conn)
         rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
+

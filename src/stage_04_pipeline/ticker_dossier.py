@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.utils import coerce_ticker
 
 from typing import Any
 
@@ -20,13 +21,6 @@ from src.contracts.ticker_dossier import (
 
 SOURCE_MODE_LATEST_SNAPSHOT = "latest_snapshot"
 SOURCE_MODE_LOADED_BACKEND_STATE = "loaded_backend_state"
-
-
-def _coerce_ticker(value: str) -> str:
-    ticker = str(value or "").strip().upper()
-    if not ticker:
-        raise ValueError("ticker is required")
-    return ticker
 
 
 def _first_present(*values: Any) -> Any:
@@ -236,7 +230,7 @@ def build_ticker_dossier_from_export_payload(
     snapshot_id: int | None = None,
 ) -> TickerDossier:
     payload = _payload_without_dossier(dict(payload or {}))
-    ticker = _coerce_ticker(str(payload.get("ticker") or ""))
+    ticker = coerce_ticker(str(payload.get("ticker") or ""))
     snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else {}
     market = payload.get("market") if isinstance(payload.get("market"), dict) else {}
     valuation = payload.get("valuation") if isinstance(payload.get("valuation"), dict) else {}
@@ -355,7 +349,7 @@ def ticker_dossier_to_payload(dossier: TickerDossier | dict[str, Any]) -> dict[s
 
 
 def build_ticker_dossier(ticker: str, source_mode: str = SOURCE_MODE_LATEST_SNAPSHOT) -> TickerDossier:
-    ticker = _coerce_ticker(ticker)
+    ticker = coerce_ticker(ticker)
     from src.stage_04_pipeline import export_service
 
     if source_mode == SOURCE_MODE_LATEST_SNAPSHOT:
@@ -455,3 +449,4 @@ def valuation_summary_payload_from_dossier(dossier: TickerDossier | dict[str, An
         "summary": {},
         "ticker_dossier_contract_version": TICKER_DOSSIER_CONTRACT_VERSION,
     }
+

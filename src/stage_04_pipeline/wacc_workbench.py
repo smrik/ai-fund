@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 import yaml
@@ -17,6 +16,7 @@ from src.stage_02_valuation.input_assembler import (
 )
 from src.stage_02_valuation.professional_dcf import default_scenario_specs, run_probabilistic_valuation
 from src.stage_02_valuation.wacc import WACCResult, blend_wacc_results, compute_wacc_methodology_set_for_ticker
+from src.utils import utc_now_iso
 
 
 @dataclass(slots=True)
@@ -37,8 +37,7 @@ METHOD_LABELS = {
 }
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 
 def _load_overrides_data() -> dict[str, Any]:
@@ -353,7 +352,7 @@ def apply_wacc_methodology_selection(
         _insert_wacc_methodology_audit(
             conn,
             {
-                "event_ts": _now(),
+                "event_ts": utc_now_iso(),
                 "ticker": ticker,
                 "actor": actor,
                 "mode": selection["mode"],

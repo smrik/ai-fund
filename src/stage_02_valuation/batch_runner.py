@@ -43,21 +43,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
-
-
-def _safe_float(value):
-    if value is None:
-        return None
-    try:
-        if pd.isna(value):
-            return None
-    except TypeError:
-        pass
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
+from src.utils import safe_float
 
 def _mm(value: float | None) -> float | None:
     if value is None:
@@ -811,11 +797,11 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
                 (
                     row.get("ticker"),
                     snapshot_date,
-                    _safe_float(row.get("market_cap_mm")),
-                    _safe_float(row.get("ev_mm")),
-                    _safe_float(row.get("pe_trailing")),
-                    _safe_float(row.get("pe_forward")),
-                    _safe_float(row.get("ev_ebitda")),
+                    safe_float(row.get("market_cap_mm")),
+                    safe_float(row.get("ev_mm")),
+                    safe_float(row.get("pe_trailing")),
+                    safe_float(row.get("pe_forward")),
+                    safe_float(row.get("ev_ebitda")),
                     None,
                     None,
                     None,
@@ -844,14 +830,14 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
                     (
                         row.get("ticker"),
                         snapshot_date,
-                        _safe_float(row.get("iv_bear")),
-                        _safe_float(row.get("iv_base")),
-                        _safe_float(row.get("iv_bull")),
-                        _safe_float(row.get("expected_iv")),
-                        _safe_float(row.get("price")),
-                        _safe_float(row.get("expected_upside_pct")),
-                        _safe_float(row.get("wacc")),
-                        _safe_float(row.get("exit_multiple_used")),
+                        safe_float(row.get("iv_bear")),
+                        safe_float(row.get("iv_base")),
+                        safe_float(row.get("iv_bull")),
+                        safe_float(row.get("expected_iv")),
+                        safe_float(row.get("price")),
+                        safe_float(row.get("expected_upside_pct")),
+                        safe_float(row.get("wacc")),
+                        safe_float(row.get("exit_multiple_used")),
                         row.get("net_debt_source"),
                         row.get("revenue_source"),
                     )

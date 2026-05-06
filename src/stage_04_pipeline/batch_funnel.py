@@ -13,17 +13,16 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SHORTLIST_SIZE = 10
 
-
-def _safe_float(value: Any) -> float | None:
-    return float(value) if isinstance(value, (int, float)) else None
+from src.utils import safe_float
 
 
 def _score_row(row: dict[str, Any]) -> tuple[int, int, float, float, str]:
-    expected_upside = _safe_float(row.get("expected_upside_pct"))
-    fallback_upside = _safe_float(row.get("upside_base_pct"))
-    margin_of_safety = _safe_float(row.get("margin_of_safety")) or float("-inf")
+    expected_upside = safe_float(row.get("expected_upside_pct"))
+    fallback_upside = safe_float(row.get("upside_base_pct"))
+    margin_of_safety = safe_float(row.get("margin_of_safety")) or float("-inf")
     ranking_metric = "expected_upside_pct" if expected_upside is not None else "upside_base_pct"
     score = expected_upside if expected_upside is not None else fallback_upside
+    raw_upside = safe_float(row.get(ranking_metric)) or float("-inf")
     return (
         1 if score is not None else 0,
         1 if expected_upside is not None else 0,

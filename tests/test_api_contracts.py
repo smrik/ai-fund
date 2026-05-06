@@ -50,8 +50,13 @@ def _canonical_dossier_payload() -> dict:
 
 
 def _install_legacy_ticker_mocks(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "api.main.load_saved_watchlist",
+    def _mock_both(name, func):
+        monkeypatch.setattr(f"api.main.{name}", func)
+        if hasattr(__import__("src.stage_04_pipeline.workspace_views", fromlist=[""]), name):
+            monkeypatch.setattr(f"src.stage_04_pipeline.workspace_views.{name}", func)
+
+    _mock_both(
+        "load_saved_watchlist",
         lambda shortlist_size=10: {
             "rows": [
                 {
@@ -71,8 +76,8 @@ def _install_legacy_ticker_mocks(monkeypatch) -> None:
             ]
         },
     )
-    monkeypatch.setattr(
-        "api.main.load_latest_snapshot_for_ticker",
+    _mock_both(
+        "load_latest_snapshot_for_ticker",
         lambda ticker: {
             "id": 7,
             "ticker": ticker,
@@ -101,8 +106,8 @@ def _install_legacy_ticker_mocks(monkeypatch) -> None:
             },
         },
     )
-    monkeypatch.setattr(
-        "api.main.get_market_data",
+    _mock_both(
+        "get_market_data",
         lambda ticker, use_cache=True: {
             "name": "Legacy Market",
             "sector": "Legacy Market Sector",
@@ -110,20 +115,20 @@ def _install_legacy_ticker_mocks(monkeypatch) -> None:
             "analyst_target_mean": 40.0,
         },
     )
-    monkeypatch.setattr("api.main.get_analyst_ratings", lambda ticker: {"target_mean": 41.0, "recommendation": "legacy-rating"})
-    monkeypatch.setattr(
-        "api.main.build_thesis_tracker_view",
+    _mock_both("get_analyst_ratings", lambda ticker: {"target_mean": 41.0, "recommendation": "legacy-rating"})
+    _mock_both(
+        "build_thesis_tracker_view",
         lambda ticker: {
             "stance": {"next_catalyst": {"title": "Legacy catalyst"}},
             "what_changed": {"summary_lines": ["Legacy tracker line"]},
         },
     )
-    monkeypatch.setattr(
-        "api.main.build_news_materiality_view",
+    _mock_both(
+        "build_news_materiality_view",
         lambda ticker: {"historical_brief": {"summary": "Legacy market pulse."}},
     )
-    monkeypatch.setattr(
-        "api.main.build_dcf_audit_view",
+    _mock_both(
+        "build_dcf_audit_view",
         lambda ticker: {
             "model_integrity": {"tv_high_flag": False, "revenue_data_quality_flag": "legacy"},
             "scenario_summary": [{"scenario": "base", "intrinsic_value": 25.0}],
@@ -367,6 +372,8 @@ def test_ticker_dossier_payload_reads_persisted_latest_snapshot_before_builder(m
     def _build(_ticker: str, _source_mode: str):  # pragma: no cover - should not be reached
         raise AssertionError("builder fallback should not run when persisted dossier exists")
 
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.load_latest_ticker_dossier_payload", _load)
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.build_ticker_dossier_from_source", _build)
     monkeypatch.setattr("api.main.load_latest_ticker_dossier_payload", _load)
     monkeypatch.setattr("api.main.build_ticker_dossier_from_source", _build)
 
@@ -381,6 +388,7 @@ def test_ticker_dossier_payload_falls_back_from_snapshot_builder_to_backend_stat
 
     build_calls: list[tuple[str, str]] = []
 
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.load_latest_ticker_dossier_payload", lambda ticker, source_mode=None: None)
     monkeypatch.setattr("api.main.load_latest_ticker_dossier_payload", lambda ticker, source_mode=None: None)
 
     def _build(ticker: str, source_mode: str):
@@ -396,6 +404,7 @@ def test_ticker_dossier_payload_falls_back_from_snapshot_builder_to_backend_stat
             "export_metadata": {"source_mode": source_mode},
         }
 
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.build_ticker_dossier_from_source", _build)
     monkeypatch.setattr("api.main.build_ticker_dossier_from_source", _build)
 
     payload = build_ticker_dossier_payload("IBM")
@@ -415,6 +424,7 @@ def test_ticker_api_consumers_prefer_canonical_dossier_facts_and_preserve_legacy
         return dossier
 
     _install_legacy_ticker_mocks(monkeypatch)
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.build_ticker_dossier_payload", _build_dossier)
     monkeypatch.setattr("api.main.build_ticker_dossier_payload", _build_dossier)
 
     workspace = build_ticker_workspace_payload("ibm")
@@ -466,6 +476,7 @@ def test_ticker_api_consumers_fall_back_to_legacy_payloads_when_dossier_fails(mo
     from api.main import build_ticker_workspace_payload
 
     _install_legacy_ticker_mocks(monkeypatch)
+    monkeypatch.setattr("src.stage_04_pipeline.workspace_views.build_ticker_dossier_payload", lambda ticker, source_mode=None: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr("api.main.build_ticker_dossier_payload", lambda ticker, source_mode=None: (_ for _ in ()).throw(RuntimeError("boom")))
 
     payload = build_ticker_workspace_payload("IBM")

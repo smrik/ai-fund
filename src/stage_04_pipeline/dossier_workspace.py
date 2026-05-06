@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.utils import coerce_ticker
 
 import re
 from pathlib import Path
@@ -25,11 +26,8 @@ NOTE_TEMPLATES: dict[str, dict[str, str | int]] = {
 WORKSPACE_DIRS = ("Notes", "Notes/Sources", "Model", "Exports", "Filings", "Decks", "Transcripts", "Private")
 
 
-def _coerce_ticker(ticker: str) -> str:
-    value = (ticker or "").strip().upper()
-    if not value:
-        raise ValueError("ticker is required")
-    return value
+
+
 
 
 def _sanitize_path_component(value: str) -> str:
@@ -38,7 +36,7 @@ def _sanitize_path_component(value: str) -> str:
 
 
 def build_dossier_path(ticker: str, company_name: str | None) -> Path:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     clean_company_name = _sanitize_path_component(company_name or "")
     if USE_COMPANY_NAME_IN_FOLDER and clean_company_name:
         folder_name = f"{dossier_ticker} {clean_company_name}"
@@ -62,7 +60,7 @@ def _default_note_body(ticker: str, company_name: str | None, note_slug: str) ->
     title = str(note_meta["title"])
     lines = [
         "---",
-        f"ticker: {_coerce_ticker(ticker)}",
+        f"ticker: {coerce_ticker(ticker)}",
         f"company_name: {company_name or ''}",
         f"note_slug: {note_slug}",
         f"section_kind: {note_meta['section_kind']}",
@@ -143,7 +141,7 @@ def ensure_dossier_workspace(ticker: str, company_name: str | None) -> dict[str,
         (root_path / relative_dir).mkdir(parents=True, exist_ok=True)
     note_paths = ensure_dossier_note_templates(ticker, company_name)
     return {
-        "ticker": _coerce_ticker(ticker),
+        "ticker": coerce_ticker(ticker),
         "company_name": company_name,
         "root_path": str(root_path),
         "notes_root_path": str(root_path / "Notes"),
@@ -155,7 +153,7 @@ def ensure_dossier_workspace(ticker: str, company_name: str | None) -> dict[str,
 
 
 def _locate_dossier_root(ticker: str) -> Path:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     ticker_only = DOSSIER_ROOT / dossier_ticker
     if ticker_only.exists():
         return ticker_only
@@ -185,7 +183,7 @@ def ensure_dossier_source_note(ticker: str, source_id: str, title: str) -> Path:
     if not path.exists():
         lines = [
             "---",
-            f"ticker: {_coerce_ticker(ticker)}",
+            f"ticker: {coerce_ticker(ticker)}",
             f"source_id: {source_id}",
             f"title: {title}",
             "---",
@@ -223,3 +221,4 @@ def normalize_linked_artifact_path(path_value: str | Path, *, path_mode: str = "
     else:
         path_text = str(raw_value).replace("\\", "/")
     return {"path_mode": path_mode, "path_value": path_text}
+

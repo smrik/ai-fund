@@ -11,10 +11,10 @@ from typing import Any, Callable
 from pydantic import BaseModel
 
 from db.schema import create_tables, get_connection
+from src.utils import utc_now_iso
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 
 def _normalize(value: Any) -> Any:
@@ -142,7 +142,7 @@ class AgentRunCache:
                     serialized["output_class"],
                     serialized["output_payload"],
                     serialized["output_hash"],
-                    _now(),
+                    utc_now_iso(),
                 ],
             )
             conn.commit()
@@ -176,7 +176,7 @@ class AgentRunCache:
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
-                    _now(),
+                    utc_now_iso(),
                     ticker,
                     agent_name,
                     status,
@@ -231,7 +231,7 @@ class AgentRunCache:
                     artifact.get("prompt_tokens"),
                     artifact.get("completion_tokens"),
                     artifact.get("total_tokens"),
-                    _now(),
+                    utc_now_iso(),
                 ],
             )
             conn.commit()
@@ -290,7 +290,7 @@ class AgentRunCache:
         prompt_version = self._prompt_version(agent)
         prompt_hash = self._prompt_hash(agent)
         input_hash = _hash_payload(input_payload)
-        started = _now()
+        started = utc_now_iso()
         started_perf = time.perf_counter()
 
         if use_cache and not force_refresh:
@@ -353,7 +353,7 @@ class AgentRunCache:
                 prompt_hash=prompt_hash,
                 serialized=serialized,
             )
-            finished = _now()
+            finished = utc_now_iso()
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
             run_log_id = self._insert_log(
                 ticker=ticker,
