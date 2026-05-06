@@ -8,12 +8,11 @@ from collections.abc import Iterable
 from typing import Any
 
 from db.schema import create_tables, get_connection
+from src.utils import safe_float
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_SHORTLIST_SIZE = 10
-
-from src.utils import safe_float
 
 
 def _score_row(row: dict[str, Any]) -> tuple[int, int, float, float, str]:

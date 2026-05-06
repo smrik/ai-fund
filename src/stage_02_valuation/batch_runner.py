@@ -38,13 +38,13 @@ from src.stage_02_valuation.professional_dcf import (
     run_probabilistic_valuation,
 )
 from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.utils import safe_float
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
-from src.utils import safe_float
 
 def _mm(value: float | None) -> float | None:
     if value is None:

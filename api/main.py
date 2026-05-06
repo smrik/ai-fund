@@ -24,6 +24,7 @@ from src.stage_04_pipeline.workspace_views import (
     build_audit_payload,
     build_ticker_dossier_payload,
     load_latest_ticker_dossier_payload,  # noqa: F401 — patched by tests
+    build_ticker_dossier_from_source,  # noqa: F401 — patched by tests
     _attach_api_ticker_dossier,
     _normalize_assumptions_preview_payload,
     _normalize_wacc_preview_payload,
