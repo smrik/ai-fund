@@ -3,8 +3,9 @@ from __future__ import annotations
 from dataclasses import asdict, replace
 
 from src.stage_02_valuation.input_assembler import build_valuation_inputs
-from src.stage_02_valuation.professional_dcf import ForecastDrivers, ScenarioSpec, run_dcf_professional
 from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
+from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.stage_02_valuation.professional_dcf import run_dcf_professional
 
 
 _SHIFT_BOUNDS = {

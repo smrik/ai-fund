@@ -15,10 +15,10 @@ from src.stage_02_valuation.input_assembler import (
     clear_valuation_overrides_cache,
 )
 from src.stage_02_valuation.professional_dcf import (
-    ForecastDrivers,
     default_scenario_specs,
     run_probabilistic_valuation,
 )
+from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.stage_04_pipeline.recommendations import load_recommendations
 from src.utils import utc_now_iso
 
