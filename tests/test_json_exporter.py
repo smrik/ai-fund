@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -103,6 +104,48 @@ MINIMAL_RESULT: dict = {
     "scenario_prob_bear": 0.20,
     "scenario_prob_base": 0.60,
     "scenario_prob_bull": 0.20,
+    "context_expected_iv": 248.0,
+    "context_expected_upside_pct": -4.6,
+    "context_scenario_policy_json": json.dumps({
+        "policy": "context_advisory_v1",
+        "official_policy": "fixed_default",
+        "ticker": "IBM",
+        "probability_source": "fixed_default",
+        "context_inputs": {
+            "cyclicality": "medium",
+            "capital_intensity": "medium",
+            "governance_risk": "low",
+            "moat_strength": 4,
+            "pricing_power": 4,
+            "maturity": "middle",
+            "driver_disagreement_width": 1.0,
+            "shock_width": 1.0,
+        },
+        "official_specs": [
+            {"name": "bear", "probability": 0.2, "growth_multiplier": 0.8},
+            {"name": "base", "probability": 0.6, "growth_multiplier": 1.0},
+            {"name": "bull", "probability": 0.2, "growth_multiplier": 1.2},
+        ],
+        "context_specs": [
+            {"name": "bear", "probability": 0.2, "growth_multiplier": 0.82},
+            {"name": "base", "probability": 0.6, "growth_multiplier": 1.0},
+            {"name": "bull", "probability": 0.2, "growth_multiplier": 1.24},
+        ],
+    }),
+    "driver_consensus_json": json.dumps([
+        {
+            "field": "revenue_growth_near",
+            "current_value": 0.065,
+            "suggested_value": 0.07,
+            "suggested_range_low": 0.06,
+            "suggested_range_high": 0.08,
+            "source_count": 2,
+            "agreement_level": "medium",
+            "disagreement_flag": False,
+            "official_action": "none",
+            "sources": ["company", "industry"],
+        }
+    ]),
     "revenue_source": "ciq_snapshot",
     "growth_source": "ciq_consensus",
     "growth_source_detail": "CIQ FY1 consensus",
@@ -352,7 +395,8 @@ class TestBuildNestedStructure:
         out = build_nested_structure(MINIMAL_RESULT)
         for key in ("$schema_version", "generated_at", "ticker", "company_name",
                     "sector", "market", "assumptions", "wacc", "valuation",
-                    "scenarios", "terminal", "health_flags", "forecast_bridge",
+                    "scenarios", "scenario_policy", "context_scenarios",
+                    "driver_consensus", "terminal", "health_flags", "forecast_bridge",
                     "source_lineage", "ciq_lineage", "story_profile", "story_adjustments",
                     "drivers_raw"):
             assert key in out, f"Missing top-level key: {key}"
@@ -402,6 +446,16 @@ class TestBuildNestedStructure:
             assert "probability" in out["scenarios"][sc]
             assert "iv" in out["scenarios"][sc]
             assert "upside_pct" in out["scenarios"][sc]
+
+    def test_context_policy_is_advisory_and_separate(self):
+        out = build_nested_structure(MINIMAL_RESULT)
+
+        assert out["valuation"]["expected_iv"] == 250.0
+        assert out["valuation"]["context_expected_iv"] == 248.0
+        assert out["scenarios"]["bear"]["probability"] == pytest.approx(0.20)
+        assert out["scenario_policy"]["official_policy"] == "fixed_default"
+        assert out["context_scenarios"]["bear"]["growth_multiplier"] == pytest.approx(0.82)
+        assert out["driver_consensus"][0]["official_action"] == "none"
 
     def test_health_flags_section(self):
         out = build_nested_structure(MINIMAL_RESULT)
@@ -463,28 +517,34 @@ class TestBuildNestedStructure:
 
 # ── Tests: export_ticker_json ─────────────────────────────────────────────────
 
+@pytest.fixture()
+def tmp_dir():
+    with tempfile.TemporaryDirectory() as d:
+        yield Path(d)
+
+
 class TestExportTickerJson:
-    def test_creates_dated_and_latest(self, tmp_path):
+    def test_creates_dated_and_latest(self, tmp_dir):
         dated = export_ticker_json(
-            MINIMAL_RESULT, output_dir=tmp_path, date_str="2026-03-09"
+            MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-03-09"
         )
         assert dated.exists()
         assert dated.name == "IBM_2026-03-09.json"
-        latest = tmp_path / "IBM_latest.json"
+        latest = tmp_dir / "IBM_latest.json"
         assert latest.exists()
 
-    def test_json_parseable(self, tmp_path):
-        dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_path, date_str="2026-01-01")
+    def test_json_parseable(self, tmp_dir):
+        dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")
         content = json.loads(dated.read_text())
         assert content["ticker"] == "IBM"
 
-    def test_json_contains_all_sections(self, tmp_path):
+    def test_json_contains_all_sections(self, tmp_dir):
         dated = export_ticker_json(
             MINIMAL_RESULT,
             qoe=MINIMAL_QOE,
             comps_detail=MINIMAL_COMPS,
             comps_analysis=MINIMAL_COMPS_ANALYSIS,
-            output_dir=tmp_path, date_str="2026-01-01",
+            output_dir=tmp_dir, date_str="2026-01-01",
         )
         content = json.loads(dated.read_text())
         for sec in ("market", "assumptions", "wacc", "valuation", "scenarios",
@@ -492,18 +552,18 @@ class TestExportTickerJson:
                     "source_lineage", "ciq_lineage", "comps_detail", "comps_analysis", "qoe"):
             assert sec in content, f"Section {sec!r} missing from JSON"
 
-    def test_dated_and_latest_identical(self, tmp_path):
-        dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_path, date_str="2026-01-01")
-        latest = tmp_path / "IBM_latest.json"
+    def test_dated_and_latest_identical(self, tmp_dir):
+        dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")
+        latest = tmp_dir / "IBM_latest.json"
         assert dated.read_text() == latest.read_text()
 
-    def test_output_dir_created_if_missing(self, tmp_path):
-        nested_dir = tmp_path / "a" / "b" / "c"
+    def test_output_dir_created_if_missing(self, tmp_dir):
+        nested_dir = tmp_dir / "a" / "b" / "c"
         export_ticker_json(MINIMAL_RESULT, output_dir=nested_dir, date_str="2026-01-01")
         assert nested_dir.exists()
 
-    def test_returns_path_object(self, tmp_path):
-        result_path = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_path, date_str="2026-01-01")
+    def test_returns_path_object(self, tmp_dir):
+        result_path = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")
         assert isinstance(result_path, Path)
 
 
