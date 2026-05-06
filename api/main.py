@@ -5,9 +5,30 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from api.run_tracker import submit_background_run, update_run, get_run
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from api.run_tracker import submit_background_run, update_run, get_run
+from src.utils import coerce_ticker
+from src.stage_04_pipeline.workspace_views import (
+    build_ticker_workspace_payload,
+    build_overview_payload,
+    build_valuation_summary_payload,
+    build_valuation_dcf_payload,
+    build_valuation_comps_payload,
+    build_valuation_assumptions_payload,
+    build_wacc_payload,
+    build_valuation_recommendations_payload,
+    build_market_payload,
+    build_research_payload,
+    build_audit_payload,
+    build_ticker_dossier_payload,
+    load_latest_ticker_dossier_payload,  # noqa: F401 — patched by tests
+    _attach_api_ticker_dossier,
+    _normalize_assumptions_preview_payload,
+    _normalize_wacc_preview_payload,
+    _normalize_recommendations_preview_payload,
+)
 
 
 class WatchlistRefreshRequest(BaseModel):
@@ -50,27 +71,6 @@ class WatchlistExportRequest(BaseModel):
     format: str = Field(default="xlsx")
     source_mode: str = Field(default="saved_watchlist")
     shortlist_size: int = Field(default=10, ge=1, le=25)
-
-
-from src.utils import coerce_ticker
-from src.stage_04_pipeline.workspace_views import (
-    build_ticker_workspace_payload,
-    build_overview_payload,
-    build_valuation_summary_payload,
-    build_valuation_dcf_payload,
-    build_valuation_comps_payload,
-    build_valuation_assumptions_payload,
-    build_wacc_payload,
-    build_valuation_recommendations_payload,
-    build_market_payload,
-    build_research_payload,
-    build_audit_payload,
-    build_ticker_dossier_payload,
-    _attach_api_ticker_dossier,
-    _normalize_assumptions_preview_payload,
-    _normalize_wacc_preview_payload,
-    _normalize_recommendations_preview_payload
-)
 
 
 def api_coerce_ticker(value: str) -> str:

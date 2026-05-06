@@ -2,16 +2,24 @@
 
 from typing import Any
 
+from fastapi import HTTPException
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 
-from src.utils import safe_float
+from src.utils import coerce_ticker, safe_float
 
 
 class WaccSelectionRequest(BaseModel):
     mode: str = "single_method"
     selected_method: str | None = None
     weights: dict[str, float] = Field(default_factory=dict)
+
+
+def api_coerce_ticker(value: str) -> str:
+    try:
+        return coerce_ticker(value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def _pick_value(*values: Any) -> Any:

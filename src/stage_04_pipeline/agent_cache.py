@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 import hashlib
 import importlib
 import json
@@ -302,7 +301,7 @@ class AgentRunCache:
                 prompt_hash=prompt_hash,
             )
             if row is not None:
-                finished = _now()
+                finished = utc_now_iso()
                 duration_ms = int((time.perf_counter() - started_perf) * 1000)
                 output = _deserialize_output(row)
                 run_log_id = self._insert_log(
@@ -387,7 +386,7 @@ class AgentRunCache:
                 "duration_ms": duration_ms,
             }
         except Exception as exc:
-            finished = _now()
+            finished = utc_now_iso()
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
             run_log_id = self._insert_log(
                 ticker=ticker,
