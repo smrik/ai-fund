@@ -449,4 +449,3 @@ def valuation_summary_payload_from_dossier(dossier: TickerDossier | dict[str, An
         "summary": {},
         "ticker_dossier_contract_version": TICKER_DOSSIER_CONTRACT_VERSION,
     }
-

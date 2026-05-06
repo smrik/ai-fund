@@ -221,4 +221,3 @@ def normalize_linked_artifact_path(path_value: str | Path, *, path_mode: str = "
     else:
         path_text = str(raw_value).replace("\\", "/")
     return {"path_mode": path_mode, "path_value": path_text}
-

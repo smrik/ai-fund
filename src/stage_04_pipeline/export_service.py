@@ -1158,4 +1158,3 @@ def load_saved_export(export_id: str) -> dict[str, Any] | None:
 
 def resolve_export_download_path(export_id: str, artifact_key: str | None = None) -> Path:
     return resolve_export_artifact_path(export_id, artifact_key=artifact_key)
-

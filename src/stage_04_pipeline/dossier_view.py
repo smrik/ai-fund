@@ -671,4 +671,3 @@ def build_deep_dive_dossier_view(ticker: str) -> dict[str, Any]:
         "thesis_diff": build_thesis_diff_view(ticker),
         "publishable_memo": build_publishable_memo_context(ticker),
     }
-

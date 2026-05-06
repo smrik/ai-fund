@@ -246,4 +246,3 @@ def list_dossier_note_blocks(ticker: str, *, block_type: str | None = None) -> l
         _ensure_schema(conn)
         rows = conn.execute(query, params).fetchall()
     return [dict(row) for row in rows]
-
