@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from threading import Lock
-from typing import Any, Callable
-from uuid import uuid4
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from api.run_tracker import submit_background_run, update_run, get_run
 from fastapi.responses import FileResponse
@@ -57,7 +52,7 @@ class WatchlistExportRequest(BaseModel):
     shortlist_size: int = Field(default=10, ge=1, le=25)
 
 
-from src.utils import coerce_ticker, safe_float, utc_now_iso
+from src.utils import coerce_ticker
 from src.stage_04_pipeline.workspace_views import (
     build_ticker_workspace_payload,
     build_overview_payload,
@@ -70,11 +65,8 @@ from src.stage_04_pipeline.workspace_views import (
     build_market_payload,
     build_research_payload,
     build_audit_payload,
-    load_latest_ticker_dossier_payload,
-    build_ticker_dossier_from_source,
     build_ticker_dossier_payload,
     _attach_api_ticker_dossier,
-    _load_api_ticker_dossier_payload,
     _normalize_assumptions_preview_payload,
     _normalize_wacc_preview_payload,
     _normalize_recommendations_preview_payload
@@ -684,4 +676,3 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
-

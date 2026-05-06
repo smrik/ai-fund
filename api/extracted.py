@@ -1,4 +1,20 @@
-﻿def _pick_value(*values: Any) -> Any:
+﻿from __future__ import annotations
+
+from typing import Any
+
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
+
+from src.utils import safe_float
+
+
+class WaccSelectionRequest(BaseModel):
+    mode: str = "single_method"
+    selected_method: str | None = None
+    weights: dict[str, float] = Field(default_factory=dict)
+
+
+def _pick_value(*values: Any) -> Any:
     for value in values:
         if value is not None:
             return value
@@ -779,6 +795,3 @@ def build_audit_payload(ticker: str) -> dict[str, Any]:
         "filings_browser": build_filings_browser_view(ticker),
         "comps": build_comps_dashboard_view(ticker),
     }
-
-
-
