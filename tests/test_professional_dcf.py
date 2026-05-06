@@ -5,6 +5,7 @@ import pytest
 from src.stage_02_valuation.professional_dcf import (
     ForecastDrivers,
     ScenarioSpec,
+    _transition_path,
     reverse_dcf_professional,
     run_dcf_professional,
     run_fcfe_valuation,
@@ -41,6 +42,30 @@ def _drivers(**overrides) -> ForecastDrivers:
     for key, value in overrides.items():
         setattr(base, key, value)
     return base
+
+
+def test_transition_path_supports_hold_periods_and_curves():
+    assert _transition_path(0.18, 0.20, 1, hold_years=1, total_years=10) == pytest.approx(
+        0.18
+    )
+    assert _transition_path(0.18, 0.20, 10, hold_years=1, total_years=10) == pytest.approx(
+        0.20
+    )
+    assert _transition_path(0.08, 0.04, 3, hold_years=3, total_years=10) == pytest.approx(
+        0.08
+    )
+    assert _transition_path(0.08, 0.04, 4, hold_years=3, total_years=10) == pytest.approx(
+        0.08 + (0.04 - 0.08) / 7.0
+    )
+
+    linear = _transition_path(0.0, 1.0, 5, hold_years=1, total_years=10)
+    ease_in = _transition_path(
+        0.0, 1.0, 5, hold_years=1, total_years=10, curve="ease_in"
+    )
+    ease_out = _transition_path(
+        0.0, 1.0, 5, hold_years=1, total_years=10, curve="ease_out"
+    )
+    assert ease_in < linear < ease_out
 
 
 def test_terminal_blend_fallback_when_gordon_invalid():

@@ -9,22 +9,18 @@ from __future__ import annotations
 
 import argparse
 import sqlite3
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
 from config import DB_PATH
 from db.schema import create_tables
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+from src.utils import utc_now_iso
 
 
 def _log(conn: sqlite3.Connection, pipeline: str, status: str, details: str = "", duration_sec: float = 0.0) -> None:
     conn.execute(
         "INSERT INTO pipeline_log (timestamp, pipeline, status, details, duration_sec) VALUES (?, ?, ?, ?, ?)",
-        [_now(), pipeline, status, details, duration_sec],
+        [utc_now_iso(), pipeline, status, details, duration_sec],
     )
     conn.commit()
 

@@ -16,6 +16,9 @@ In scope modules:
 - `src/stage_00_data/ciq_adapter.py`
 - `src/stage_02_valuation/input_assembler.py`
 - `src/stage_02_valuation/wacc.py`
+- `src/stage_02_valuation/valuation_types.py`
+- `src/stage_02_valuation/scenario_policy.py`
+- `src/stage_02_valuation/driver_assessments.py`
 - `src/stage_02_valuation/professional_dcf.py`
 - `src/stage_02_valuation/batch_runner.py`
 
@@ -63,13 +66,29 @@ Core equations:
 
 ### Step D: Scenario valuation
 
+Shared dataclass contracts live in `valuation_types.py` so valuation assembly, policy logic, DCF math, audits, and downstream exports all reference the same schema.
+
 `run_probabilistic_valuation(drivers, scenario_specs, current_price)`:
 - normalizes probabilities
 - runs `run_dcf_professional` per scenario
 - computes `expected_iv = sum(p_i * iv_i)`
 
-Default policy:
+Official default policy:
 - bear/base/bull = `20% / 60% / 20%`
+- fixed shocks from `scenario_policy.fixed_scenario_specs()`
+- emitted as `scenarios`, `expected_iv`, and `expected_upside_pct`
+
+Advisory context policy:
+- `scenario_policy.build_context_scenario_policy(...)` creates a separate context-aware scenario pack
+- context inputs include company maturity, industry/story profile, macro-regime weights, and driver-consensus disagreement
+- emitted as `scenario_policy`, `context_expected_iv`, `context_expected_upside_pct`, and exported `context_scenarios`
+- must not mutate `ForecastDrivers` or replace the official valuation without PM approval
+
+Advisory driver consensus:
+- `driver_assessments.build_driver_consensus(...)` merges multiple proposed driver assessments by field
+- blocked assessments are ignored
+- PM-approved assessments are flagged as `override_required` instead of being applied directly
+- any official driver mutation still goes through the explicit override path
 
 ### Step E: Reverse DCF
 
@@ -80,6 +99,8 @@ Default policy:
 `value_single_ticker` emits:
 - assumptions + source lineage
 - scenario IVs and expected IV/upside
+- advisory context scenario IV/upside and policy metadata
+- advisory driver consensus/disagreement metadata
 - EV bridge, EP cross-check, FCFE branch outputs
 - terminal-method decomposition and health flags
 - serialized artifacts: `drivers_json`, `forecast_bridge_json`
@@ -171,6 +192,8 @@ Blend/fallback:
 
 Batch output includes:
 - scenario IVs and expected IV
+- advisory context scenario expected IV and policy metadata
+- advisory driver consensus metadata
 - EV bridge columns
 - EP reconciliation columns
 - FCFE branch columns
@@ -181,6 +204,8 @@ Batch output includes:
 Artifacts for reproducibility:
 - `drivers_json`
 - `forecast_bridge_json`
+- `context_scenario_policy_json`
+- `driver_consensus_json`
 
 ## 7. Determinism Guarantees
 
@@ -190,3 +215,4 @@ Determinism is guaranteed by:
 - explicit scenario probabilities
 - no randomization
 - no LLM call in data/computation path
+- advisory LLM or multi-source driver opinions are recorded as metadata until PM-approved overrides are applied

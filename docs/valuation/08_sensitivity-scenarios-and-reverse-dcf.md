@@ -109,6 +109,28 @@ Deterministic outputs:
 - scenario valuation outputs
 - scenario assumption packs
 
+### Official Versus Advisory Scenario Policy
+
+The official valuation keeps the fixed bear/base/bull scenario policy unless a PM-approved override explicitly changes it.
+The current official default remains:
+
+| Scenario | Probability | Growth | Margin | WACC | Exit multiple |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Bear | 20% | 0.8x | -2.0 pts | +1.0 pt | 0.9x |
+| Base | 60% | 1.0x | 0.0 pts | 0.0 pts | 1.0x |
+| Bull | 20% | 1.2x | +2.0 pts | -1.0 pt | 1.1x |
+
+`src/stage_02_valuation/scenario_policy.py` also builds an advisory context scenario pack.
+That pack can widen, narrow, or reweight the scenario shocks based on company maturity, industry cyclicality, capital intensity, governance risk, moat strength, pricing power, macro regime, and driver-consensus disagreement.
+
+Policy:
+
+- official scenario outputs remain in `scenarios`, `expected_iv`, and `expected_upside_pct`
+- context-aware scenario outputs remain advisory in `context_scenarios`, `context_expected_iv`, and `context_expected_upside_pct`
+- `scenario_policy` metadata records which inputs drove the context adjustment
+- advisory context scenarios must not mutate `ForecastDrivers` or official scenario specs
+- PM approval is required before an advisory view changes official valuation outputs, sizing, or exported assumptions
+
 ### Macro-Regime Overlay
 
 Alpha Pod already computes macro-regime scenario weights in `src/stage_02_valuation/regime_model.py`.
@@ -125,7 +147,7 @@ Current regime-weight sets:
 Policy:
 
 - the unadjusted scenario-weighted intrinsic value remains the official base view unless PM-approved
-- the regime-adjusted view should be displayed beside it with source and timestamp
+- the regime-adjusted view should be displayed beside it with source and timestamp through the advisory context policy
 - if regime weighting changes expected intrinsic value by more than 5%, the PM decision queue should flag it
 - PM approval is required before regime weights change official valuation outputs, sizing, or exported model assumptions
 
@@ -207,18 +229,19 @@ The following should stay advisory until reviewed:
 
 - LLM-generated views on what scenarios feel most plausible
 - suggested scenario narratives that imply assumption changes without approval
+- multi-source driver consensus suggestions that have not been routed through the override approval path
 
 ## Current Implementation Notes
 
 Alpha Pod already has deterministic scenarios and reverse DCF.
-The next step is to make them more company-aware and more decision-oriented.
+It now also exposes advisory context-aware scenarios and driver-consensus metadata without changing the official valuation.
 
 Main gaps:
 
-- scenario framing is still more generic than company-specific
 - sensitivity dimensions are still narrower than the full driver set
 - reverse DCF is still too one-dimensional
 - PM-facing driver-priority output is still thin
+- driver assessments are not yet populated by every judgment-stage agent
 
 ## Practical Review Questions For The PM
 

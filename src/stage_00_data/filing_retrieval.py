@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
@@ -18,6 +17,7 @@ from db.loader import (
 )
 from db.schema import create_tables
 from src.stage_00_data import edgar_client
+from src.utils import utc_now_iso
 
 _SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v1"
 _CHUNK_VERSION = "v1"
@@ -196,8 +196,7 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 
 def _hash_text(text: str) -> str:
@@ -498,7 +497,7 @@ def _get_or_create_chunk_embedding(conn: sqlite3.Connection, chunk_hash: str, te
             "embedding_model": model_name,
             "embedding_dim": len(embedding),
             "embedding_blob": json.dumps(embedding, separators=(",", ":")),
-            "created_at": _now(),
+            "created_at": utc_now_iso(),
         },
     )
     return embedding
@@ -566,7 +565,7 @@ def _store_context_cache(conn: sqlite3.Connection, bundle: FilingContextBundle, 
             "query_version": _QUERY_VERSION,
             "embedding_model": model_name,
             "context_json": json.dumps(_context_to_dict(bundle), separators=(",", ":"), default=str),
-            "created_at": _now(),
+            "created_at": utc_now_iso(),
         },
     )
 
@@ -645,7 +644,7 @@ def _build_sections_and_chunks(conn: sqlite3.Connection, filing: dict[str, Any])
                 "section_text": section_text,
                 "section_hash": section.text_hash,
                 "parser_version": _SECTION_PARSER_VERSION,
-                "extracted_at": _now(),
+                "extracted_at": utc_now_iso(),
             }
         )
     upsert_edgar_section_cache(conn, section_rows)
@@ -679,7 +678,7 @@ def _build_sections_and_chunks(conn: sqlite3.Connection, filing: dict[str, Any])
                     "start_char": start_char,
                     "end_char": end_char,
                     "chunk_version": _CHUNK_VERSION,
-                    "created_at": _now(),
+                    "created_at": utc_now_iso(),
                 }
             )
     upsert_edgar_chunk_cache(conn, chunk_rows)

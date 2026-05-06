@@ -18,6 +18,7 @@ import requests
 
 from db.schema import create_tables, get_connection
 from src.stage_03_judgment.base_agent import BaseAgent
+from src.utils import utc_now_iso
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 _SKILL_DIR = ROOT_DIR / "skills" / "industries"
@@ -131,7 +132,7 @@ class IndustryAgent(BaseAgent):
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return utc_now_iso()
 
     @staticmethod
     def _extract_json(raw: str) -> dict[str, Any]:

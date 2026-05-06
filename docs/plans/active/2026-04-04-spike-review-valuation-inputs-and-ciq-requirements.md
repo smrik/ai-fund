@@ -35,6 +35,8 @@ The CIQ retrieval audit remains part of this work, but it now sits inside a broa
 - `docs/design-docs/deterministic-valuation-benchmark-and-gap-analysis.md`
 - `docs/design-docs/valuation-methodology-critical-review-and-action-plan.md`
 - updates to the design-doc index and plan registry
+- shared valuation contracts in `src/stage_02_valuation/valuation_types.py`
+- advisory scenario/driver policy modules that do not change official valuation outputs without PM approval
 
 ## Verification
 
@@ -66,6 +68,8 @@ The CIQ retrieval audit remains part of this work, but it now sits inside a broa
   - multi-method WACC triangulation
   - multi-source peer-universe construction
   - impact / confidence PM decision queue
+- connect judgment-stage agents to `driver_assessments.py` so each agent can contribute advisory driver views with source, confidence, and approval status
+- expand scenario context inputs beyond the current story profile/regime/consensus fields as industry-specific rules mature
 - continue adjusting the canonical valuation docs where the action memo identifies concrete finance gaps
 - decide which CIQ gaps should be solved first in the retrieval layer versus deferred to downstream API/JSON contract work
 - translate the approved recommendation set into implementation issues
