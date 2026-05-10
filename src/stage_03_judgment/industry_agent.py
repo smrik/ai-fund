@@ -248,6 +248,20 @@ def _as_text(value: Any, default: str) -> str:
     return text or default
 
 
+_VALID_CONFIDENCE = {"low", "medium", "high"}
+
+
+def _normalize_confidence(value: Any, default: str = "medium") -> str:
+    text = str(value).strip().lower() if value else ""
+    if text in _VALID_CONFIDENCE:
+        return text
+    if "high" in text:
+        return "high"
+    if "low" in text:
+        return "low"
+    return default
+
+
 def _context_from_any(context: IndustryResearchContext | dict[str, Any]) -> IndustryResearchContext:
     if isinstance(context, IndustryResearchContext):
         return context
@@ -349,7 +363,7 @@ class IndustryAgent(BaseAgent):
                     "proposed_value": _as_decimal(item.get("proposed_value"), None),  # type: ignore[arg-type]
                     "range_low": _as_decimal(item.get("range_low"), None),  # type: ignore[arg-type]
                     "range_high": _as_decimal(item.get("range_high"), None),  # type: ignore[arg-type]
-                    "confidence": _as_text(item.get("confidence"), "medium"),
+                    "confidence": _normalize_confidence(item.get("confidence"), "medium"),
                     "rationale": _as_text(item.get("rationale"), ""),
                     "evidence_reference": _as_text(item.get("evidence_reference"), ""),
                     "approval_status": "advisory",
@@ -375,7 +389,7 @@ class IndustryAgent(BaseAgent):
             "key_catalyst_watch": _as_text(parsed.get("key_catalyst_watch"), ""),
             "driver_assessments": clean_assessments,
             "source_notes": parsed.get("source_notes") if isinstance(parsed.get("source_notes"), list) else [],
-            "confidence": _as_text(parsed.get("confidence"), "low"),
+            "confidence": _normalize_confidence(parsed.get("confidence"), "low"),
         }
 
     @staticmethod
@@ -483,22 +497,35 @@ class IndustryAgent(BaseAgent):
             return refreshed if refreshed is not None else payload
 
     def get_recent_events(self, ticker: str, sector: str) -> dict[str, Any]:
-        report = self.research_company(
-            {
-                "ticker": ticker,
-                "sector": sector,
-                "industry": sector,
-                "macro_context": _load_macro_context(),
-            }
-        )
-        return {
+        _empty: dict[str, Any] = {
             "ticker": ticker.upper(),
             "sector": sector,
+            "recent_events": [],
+            "sector_tailwinds": [],
+            "sector_headwinds": [],
+            "macro_relevance": "",
+            "key_catalyst_watch": "",
+            "confidence": "low",
+            "search_available": False,
+        }
+        try:
+            report = self.research_company(
+                {
+                    "ticker": ticker,
+                    "sector": sector,
+                    "industry": sector,
+                    "macro_context": _load_macro_context(),
+                }
+            )
+        except Exception:
+            return _empty
+        return {
+            **_empty,
             "recent_events": report.get("recent_events") or [],
             "sector_tailwinds": report.get("sector_tailwinds") or [],
             "sector_headwinds": report.get("sector_headwinds") or [],
             "macro_relevance": report.get("macro_relevance") or "",
             "key_catalyst_watch": report.get("key_catalyst_watch") or "",
-            "confidence": report.get("confidence") or "low",
+            "confidence": _normalize_confidence(report.get("confidence"), "low"),
             "search_available": bool((report.get("grounding") or {}).get("sources")),
         }
