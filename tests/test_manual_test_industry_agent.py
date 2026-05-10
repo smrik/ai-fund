@@ -41,7 +41,7 @@ print("\n=== Testing research() (force_refresh=True) ===")
 try:
     # Add debug: check raw LLM output first
     from src.stage_03_judgment.base_agent import BaseAgent  # noqa: E402
-    
+
     # Test LLM directly
     print("\n=== Direct LLM test ===")
     test_agent = BaseAgent()
@@ -49,7 +49,7 @@ try:
     test_prompt = "Return JSON with exactly these fields: {\"sector\": \"Technology\", \"industry\": \"Semiconductors\", \"week_key\": \"2026-19\", \"consensus_growth_near\": 0.05}"
     raw_result = test_agent.run(test_prompt)
     print(f"Raw LLM response:\n{raw_result[:500]}...")
-    
+
     result = agent.research("Technology", "Semiconductors", force_refresh=True)
     print(f"\nResult: {result}")
 except Exception as e:
