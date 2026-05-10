@@ -109,5 +109,6 @@ nav:
       - Release Process: reference/release-process.md
       - CALM Workbook Inventory: reference/CALM-ticker-review2-workbook-inventory.md
       - Local Wiki Setup: reference/local-wiki.md
+      - Storage and Runtime Map: reference/storage-runtime-map.md
   - Plans:
       - Index: plans/index.md

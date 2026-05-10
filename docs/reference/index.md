@@ -9,3 +9,4 @@ Stable reference documents live here.
 - [Valuation Glossary](./valuation-glossary.md)
 - [CALM Workbook Inventory](./CALM-ticker-review2-workbook-inventory.md)
 - [Local Wiki Setup](./local-wiki.md)
+- [Storage and Runtime Map](./storage-runtime-map.md)
