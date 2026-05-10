@@ -2,7 +2,7 @@
 
 This ExecPlan is a living document. The sections `Progress`, `Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must be kept up to date as work proceeds.
 
-The repository's checked-in planning guide is [docs/PLANS.md](../../PLANS.md). This plan was derived from the future roadmap in [../future/2026-03-18-dashboard-ai-investing-feature-roadmap.md](../future/2026-03-18-dashboard-ai-investing-feature-roadmap.md), served as the sole canonical active plan for this tranche during execution, and is now the completed implementation record.
+The repository's checked-in planning guide is [docs/PLANS.md](../../PLANS.md). This plan was derived from the archived future roadmap in [../archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md](../archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md), served as the sole canonical active plan for this tranche during execution, and is now the completed implementation record.
 
 ## Purpose / Big Picture
 

@@ -6,6 +6,8 @@ The dossier is the research control plane for one company. It is where the PM ke
 
 The dossier does not replace Excel. Excel remains the model engine. The dossier also does not replace the deterministic valuation pipeline. The dossier records context, evidence, and PM judgment around the model.
 
+The canonical payload for ticker-facing API, React, and export surfaces is the [TickerDossier contract](../design-docs/ticker-dossier-contract.md). This handbook describes how the dossier workspace uses that contract, not how the adapters are implemented.
+
 ## What The Dossier Contains
 
 Each dossier is created under `data/dossiers/` and uses one company folder as the unit of work.
@@ -294,6 +296,8 @@ This remains true even when:
 - reviews conclude that the PM was wrong
 
 Those records are context for the PM. They do not bypass the repo’s main invariant that deterministic valuation logic remains explicit and reviewable.
+
+The ticker dossier contract is the shape those surrounding surfaces should point at. API, React, and export adapters will be added in child issues, but this handbook assumes they all converge on the same documented contract.
 
 ## Maintenance Standard
 

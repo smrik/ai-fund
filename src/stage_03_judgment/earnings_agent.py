@@ -4,7 +4,10 @@ Extracts guidance vs actuals, management tone, and key themes.
 Returns an EarningsSummary.
 """
 
+from __future__ import annotations
+
 import json
+import os
 
 from src.stage_00_data import edgar_client, filing_retrieval, market_data
 from src.stage_02_valuation.templates.ic_memo import EarningsSummary
@@ -33,11 +36,14 @@ Focus on:
 
 Be direct. Identify tone shifts even if subtle. A management team that suddenly talks more about macro headwinds
 and less about specific product KPIs is usually sending a signal."""
+DEFAULT_EARNINGS_MODEL = "gemini-3-flash-preview"
 
 
 class EarningsAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            model=os.getenv("EARNINGS_AGENT_MODEL", DEFAULT_EARNINGS_MODEL)
+        )
         self.name = "EarningsAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -47,7 +53,10 @@ class EarningsAgent(BaseAgent):
                 description="Fetch the full text of recent 8-K earnings press releases for a ticker from SEC EDGAR.",
                 properties={
                     "ticker": {"type": "string"},
-                    "limit": {"type": "integer", "description": "Number of 8-Ks to fetch, default 3"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of 8-Ks to fetch, default 3",
+                    },
                 },
                 required=["ticker"],
             ),
@@ -70,7 +79,9 @@ class EarningsAgent(BaseAgent):
         try:
             filings = edgar_client.get_8k_texts(ticker, limit=limit)
             if not filings:
-                return json.dumps({"error": "No 8-K filings found", "ticker": ticker, "filings": []})
+                return json.dumps(
+                    {"error": "No 8-K filings found", "ticker": ticker, "filings": []}
+                )
             return json.dumps(filings)
         except Exception as e:
             return json.dumps({"error": str(e), "ticker": ticker, "filings": []})
@@ -79,13 +90,15 @@ class EarningsAgent(BaseAgent):
         ticker = inp["ticker"]
         try:
             md = market_data.get_market_data(ticker)
-            return json.dumps({
-                "earnings_growth": md.get("earnings_growth"),
-                "pe_trailing": md.get("pe_trailing"),
-                "pe_forward": md.get("pe_forward"),
-                "analyst_recommendation": md.get("analyst_recommendation"),
-                "num_analysts": md.get("number_of_analysts"),
-            })
+            return json.dumps(
+                {
+                    "earnings_growth": md.get("earnings_growth"),
+                    "pe_trailing": md.get("pe_trailing"),
+                    "pe_forward": md.get("pe_forward"),
+                    "analyst_recommendation": md.get("analyst_recommendation"),
+                    "num_analysts": md.get("number_of_analysts"),
+                }
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "ticker": ticker})
 
@@ -105,7 +118,9 @@ class EarningsAgent(BaseAgent):
                     include_10k=True,
                     ten_q_limit=2,
                 )
-                filing_context = filing_retrieval.render_filing_context(bundle, max_chars=24_000)
+                filing_context = filing_retrieval.render_filing_context(
+                    bundle, max_chars=24_000
+                )
             except Exception:
                 filing_context = filings_context or ""
 
@@ -113,7 +128,9 @@ class EarningsAgent(BaseAgent):
             earnings_8k_payload = self._handle_8k_text({"ticker": ticker, "limit": 3})
             earnings_8k_context = earnings_8k_payload
 
-        legacy_context_block = f"\nLegacy filings summary:\n{filings_context}" if filings_context else ""
+        legacy_context_block = (
+            f"\nLegacy filings summary:\n{filings_context}" if filings_context else ""
+        )
 
         prompt = f"""Analyze the earnings quality and management communication for {ticker.upper()}.
 

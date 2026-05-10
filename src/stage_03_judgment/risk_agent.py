@@ -3,10 +3,17 @@ RiskAgent — calculates position sizing based on conviction, volatility, and po
 Returns a RiskOutput with dollar position size, portfolio %, and stop loss.
 """
 
+from __future__ import annotations
+
 import json
+import os
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
-from src.stage_02_valuation.templates.ic_memo import RiskOutput, ValuationRange, SentimentOutput
+from src.stage_02_valuation.templates.ic_memo import (
+    RiskOutput,
+    ValuationRange,
+    SentimentOutput,
+)
 from config import PORTFOLIO_SIZE_USD, CONVICTION_SIZING
 
 
@@ -29,11 +36,12 @@ Stop loss logic:
 - Higher volatility stocks warrant tighter stops or smaller size
 
 Be conservative. It is better to start small and add on confirmation."""
+DEFAULT_RISK_MODEL = "gemini-3-flash-preview"
 
 
 class RiskAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(model=os.getenv("RISK_AGENT_MODEL", DEFAULT_RISK_MODEL))
         self.name = "RiskAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -62,23 +70,40 @@ class RiskAgent(BaseAgent):
         try:
             vol = md_client.get_volatility(ticker)
             mkt = md_client.get_market_data(ticker)
-            return json.dumps({
-                "annualized_volatility": vol,
-                "beta": mkt.get("beta"),
-                "short_ratio": mkt.get("short_ratio"),
-            })
+            return json.dumps(
+                {
+                    "annualized_volatility": vol,
+                    "beta": mkt.get("beta"),
+                    "short_ratio": mkt.get("short_ratio"),
+                }
+            )
         except Exception as e:
-            return json.dumps({"error": str(e), "ticker": ticker, "annualized_volatility": None, "beta": None})
+            return json.dumps(
+                {
+                    "error": str(e),
+                    "ticker": ticker,
+                    "annualized_volatility": None,
+                    "beta": None,
+                }
+            )
 
     def _handle_portfolio_config(self, inp: dict) -> str:
         try:
-            return json.dumps({
-                "portfolio_size_usd": PORTFOLIO_SIZE_USD,
-                "conviction_sizing": CONVICTION_SIZING,
-                "max_position_pct": max(CONVICTION_SIZING.values()),
-            })
+            return json.dumps(
+                {
+                    "portfolio_size_usd": PORTFOLIO_SIZE_USD,
+                    "conviction_sizing": CONVICTION_SIZING,
+                    "max_position_pct": max(CONVICTION_SIZING.values()),
+                }
+            )
         except Exception as e:
-            return json.dumps({"error": str(e), "portfolio_size_usd": 100000, "conviction_sizing": {"high": 0.08, "medium": 0.04, "low": 0.02}})
+            return json.dumps(
+                {
+                    "error": str(e),
+                    "portfolio_size_usd": 100000,
+                    "conviction_sizing": {"high": 0.08, "medium": 0.04, "low": 0.02},
+                }
+            )
 
     def analyze(
         self,

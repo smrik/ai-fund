@@ -3,7 +3,10 @@ SentimentAgent — scores recent news and analyst positioning.
 Returns a SentimentOutput with direction, score, and key themes.
 """
 
+from __future__ import annotations
+
 import json
+import os
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
 from src.stage_02_valuation.templates.ic_memo import SentimentOutput
@@ -25,11 +28,14 @@ Key patterns to watch:
 - Rapid sentiment shift from bullish to cautious = potential turning point
 - Analyst upgrades/downgrades clustering = herd behavior, fades quickly
 - Macro blame for company-specific problems = red flag for management credibility"""
+DEFAULT_SENTIMENT_MODEL = "gemini-3-flash-preview"
 
 
 class SentimentAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            model=os.getenv("SENTIMENT_AGENT_MODEL", DEFAULT_SENTIMENT_MODEL)
+        )
         self.name = "SentimentAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -39,7 +45,10 @@ class SentimentAgent(BaseAgent):
                 description="Fetch recent news headlines and summaries for a ticker.",
                 properties={
                     "ticker": {"type": "string"},
-                    "limit": {"type": "integer", "description": "Number of headlines, default 15"},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of headlines, default 15",
+                    },
                 },
                 required=["ticker"],
             ),
@@ -69,7 +78,9 @@ class SentimentAgent(BaseAgent):
         try:
             return json.dumps(md_client.get_analyst_ratings(inp["ticker"]))
         except Exception as e:
-            return json.dumps({"error": str(e), "ticker": inp.get("ticker", ""), "ratings": []})
+            return json.dumps(
+                {"error": str(e), "ticker": inp.get("ticker", ""), "ratings": []}
+            )
 
     def analyze(self, ticker: str) -> SentimentOutput:
         """Run sentiment analysis for ticker. Returns SentimentOutput."""

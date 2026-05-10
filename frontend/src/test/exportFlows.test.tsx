@@ -31,6 +31,39 @@ const watchlistPayload = {
   default_focus_ticker: "IBM",
 };
 
+const canonicalDossier = {
+  contract_name: "TickerDossier",
+  contract_version: "1.0.0",
+  ticker: "IBM",
+  as_of_date: "2026-04-30",
+  display_name: "Canonical Machines",
+  currency: "USD",
+  latest_snapshot: {
+    company_identity: {
+      ticker: "IBM",
+      display_name: "Canonical Machines",
+      sector: "Canonical Sector",
+    },
+    market_snapshot: {
+      as_of_date: "2026-04-30",
+      price: 111,
+      analyst_target: 222,
+    },
+    valuation_snapshot: {
+      bear_iv: 120,
+      base_iv: 155,
+      bull_iv: 210,
+      expected_iv: 166,
+      current_price: 112,
+      upside_pct: 0.35,
+    },
+  },
+  loaded_backend_state: { backend_name: "test", source_mode: "latest_snapshot" },
+  source_lineage: {},
+  export_metadata: { source_mode: "latest_snapshot", snapshot_id: 44 },
+  optional_overlays: {},
+} as const;
+
 const workspacePayload = {
   ticker: "IBM",
   company_name: "IBM",
@@ -42,6 +75,8 @@ const workspacePayload = {
   upside_pct_base: 0.2,
   latest_snapshot_date: "2026-03-28",
   snapshot_available: true,
+  ticker_dossier: canonicalDossier,
+  ticker_dossier_contract_version: "1.0.0",
 };
 
 function renderRoute(path: string) {
@@ -134,7 +169,7 @@ describe("export flows", () => {
 
     renderRoute("/ticker/IBM/audit");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Exports" }));
     expect(await screen.findByText("Recent Exports")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Export HTML Memo" }));
@@ -167,7 +202,15 @@ describe("export flows", () => {
           return buildResponse(workspacePayload);
         }
         if (url.endsWith("/api/tickers/IBM/valuation/summary")) {
-          return buildResponse({ ticker: "IBM", current_price: 100, base_iv: 120, upside_pct_base: 20, analyst_target: 140 });
+          return buildResponse({
+            ticker: "IBM",
+            current_price: 100,
+            base_iv: 120,
+            upside_pct_base: 20,
+            analyst_target: 140,
+            ticker_dossier: canonicalDossier,
+            ticker_dossier_contract_version: "1.0.0",
+          });
         }
         if (url.endsWith("/api/tickers/IBM/research")) {
           return buildResponse({
@@ -198,7 +241,8 @@ describe("export flows", () => {
     );
 
     renderRoute("/ticker/IBM/valuation");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
+    expect(screen.getAllByText("$155.00").length).toBeGreaterThan(0);
     fireEvent.click(screen.getByRole("button", { name: "Export Excel" }));
 
     await waitFor(() =>
@@ -216,7 +260,7 @@ describe("export flows", () => {
     queryClient.clear();
 
     renderRoute("/ticker/IBM/research");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Export HTML Memo" }));
 
     await waitFor(() =>

@@ -19,10 +19,10 @@ import yaml
 from config import ROOT_DIR
 from src.stage_00_data.sec_filing_metrics import SecFilingMetrics
 from src.stage_02_valuation.professional_dcf import (
-    ForecastDrivers,
     default_scenario_specs,
     run_dcf_professional,
 )
+from src.stage_02_valuation.valuation_types import ForecastDrivers
 
 RECS_DIR = ROOT_DIR / "config"
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"

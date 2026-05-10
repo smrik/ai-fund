@@ -52,13 +52,13 @@ def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[d
         facts = Company(ticker).get_facts()
     except Exception:
         return []
-        
+
     for metric_name in metric_names:
         try:
             q = facts.query().by_concept(metric_name).latest_periods(5, annual=True).to_dataframe()
             if q.empty:
                 continue
-                
+
             annual: list[dict[str, float | str]] = []
             for _, row in q.iterrows():
                 val = _to_float(row.get("numeric_value"))
@@ -66,7 +66,7 @@ def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[d
                 if not period or val is None:
                     continue
                 annual.append({"period": str(period)[:10], "value": val})
-                
+
             annual.sort(key=lambda x: str(x["period"]))
             if annual:
                 return annual

@@ -50,7 +50,7 @@ Existing Python helpers
 
 ## Route Model
 
-Client routes live in [`frontend/src/app/router.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/app/router.tsx).
+Client routes live in `frontend/src/app/router.tsx`.
 
 Current primary routes:
 
@@ -72,64 +72,64 @@ Routing rules:
 
 ### Frontend shell
 
-- [`frontend/src/components/RootLayout.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/components/RootLayout.tsx)
+- `frontend/src/components/RootLayout.tsx`
   - top-level shell
   - app header
   - top nav
-- [`frontend/src/components/TickerLayout.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/components/TickerLayout.tsx)
+- `frontend/src/components/TickerLayout.tsx`
   - compact ticker strip for non-valuation ticker routes
   - snapshot/deep-analysis actions
   - outlet context for child routes
-- [`frontend/src/components/TickerTabs.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/components/TickerTabs.tsx)
+- `frontend/src/components/TickerTabs.tsx`
   - ticker-level tab navigation
   - must always use absolute `/ticker/:ticker/...` links
 
 ### Frontend pages
 
-- [`frontend/src/pages/WatchlistPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/WatchlistPage.tsx)
+- `frontend/src/pages/WatchlistPage.tsx`
   - saved deterministic universe landing page
   - focus pane
   - refresh/deep-analysis actions
-- [`frontend/src/pages/OverviewPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/OverviewPage.tsx)
+- `frontend/src/pages/OverviewPage.tsx`
   - expanded narrative hero
-- [`frontend/src/pages/ValuationPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/ValuationPage.tsx)
+- `frontend/src/pages/ValuationPage.tsx`
   - `Summary`, `DCF`, `Comparables`, `Multiples`, `Assumptions`, `WACC`, `Recommendations`
   - route-specific query loading
   - assumptions apply mutation
-- [`frontend/src/pages/MarketPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/MarketPage.tsx)
-- [`frontend/src/pages/ResearchPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/ResearchPage.tsx)
-- [`frontend/src/pages/AuditPage.tsx`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/pages/AuditPage.tsx)
+- `frontend/src/pages/MarketPage.tsx`
+- `frontend/src/pages/ResearchPage.tsx`
+- `frontend/src/pages/AuditPage.tsx`
 
 ### Transport and data shaping
 
-- [`frontend/src/lib/api.ts`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/lib/api.ts)
+- `frontend/src/lib/api.ts`
   - all frontend HTTP calls
   - uses `VITE_API_BASE` when set, otherwise `/api`
-- [`frontend/src/lib/types.ts`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/lib/types.ts)
+- `frontend/src/lib/types.ts`
   - frontend payload contracts
-- [`frontend/src/lib/format.ts`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/lib/format.ts)
+- `frontend/src/lib/format.ts`
   - currency, percent, text, and date formatting
-- [`frontend/src/lib/snapshot.ts`](/mnt/c/Projects/03-Finance/ai-fund/frontend/src/lib/snapshot.ts)
+- `frontend/src/lib/snapshot.ts`
   - snapshot-open cache hydration helpers
 
 ### Backend transport
 
-- [`api/main.py`](/mnt/c/Projects/03-Finance/ai-fund/api/main.py)
+- `api/main.py`
   - FastAPI app
   - run-status handling
   - endpoint-to-helper wiring
-- [`api/README.md`](/mnt/c/Projects/03-Finance/ai-fund/api/README.md)
+- `api/README.md`
   - endpoint inventory
 
 ### Local runtime scripts
 
-- [`scripts/manual/launch-react-wsl.sh`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/launch-react-wsl.sh)
+- `scripts/manual/launch-react-wsl.sh`
   - canonical one-command WSL review launcher
   - creates `.venv-wsl`
   - installs `requirements-api.txt`
   - builds the frontend bundle
   - starts FastAPI and the lightweight SPA server
-- [`scripts/manual/serve_frontend_dist.py`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/serve_frontend_dist.py)
+- `scripts/manual/serve_frontend_dist.py`
   - serves `frontend/dist`
   - SPA fallback to `index.html`
   - proxies `/api/*` to FastAPI
@@ -172,9 +172,9 @@ bash scripts/manual/launch-react-wsl.sh
 This mode:
 
 - creates or reuses `.venv-wsl/`
-- installs only the lighter API review dependencies from [`requirements-api.txt`](/mnt/c/Projects/03-Finance/ai-fund/requirements-api.txt)
+- installs only the lighter API review dependencies from `requirements-api.txt`
 - builds the frontend with `VITE_API_BASE=http://127.0.0.1:8000/api`
-- serves the built bundle through [`serve_frontend_dist.py`](/mnt/c/Projects/03-Finance/ai-fund/scripts/manual/serve_frontend_dist.py)
+- serves the built bundle through `scripts/manual/serve_frontend_dist.py`
 
 Useful variants:
 

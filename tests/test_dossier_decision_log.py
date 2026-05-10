@@ -48,4 +48,3 @@ def test_dossier_decision_log_round_trip(monkeypatch, tmp_path):
     assert entries[0]["decision_title"] == "Initial long thesis"
     assert entries[0]["action"] == "BUY"
     assert entries[0]["review_due_date"] == "2026-05-01"
-

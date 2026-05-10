@@ -3,13 +3,13 @@ Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
 import sqlite3
-from datetime import datetime, timezone
 from typing import Any
 
+from src.utils import utc_now_iso
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return utc_now_iso()
 
 
 def upsert_universe(conn: sqlite3.Connection, rows: list[dict]):

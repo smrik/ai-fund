@@ -661,4 +661,3 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         comps_snapshot=comps_snapshot,
         rows_parsed=len(long_records),
     )
-

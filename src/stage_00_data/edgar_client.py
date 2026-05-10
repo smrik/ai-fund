@@ -86,7 +86,7 @@ def get_10k_text(ticker: str, max_chars: Optional[int] = None) -> Optional[str]:
         filings = Company(ticker).get_filings(form="10-K")
         if filings.empty:
             return None
-            
+
         filing = filings.latest()
         text = filing.text()
         if max_chars is not None:
@@ -143,7 +143,7 @@ def extract_financial_facts(ticker_or_facts: Union[str, dict]) -> list[dict]:
     """
     if isinstance(ticker_or_facts, dict):
         return []
-        
+
     ticker = ticker_or_facts
     try:
         company = Company(ticker)
@@ -172,21 +172,21 @@ def extract_financial_facts(ticker_or_facts: Union[str, dict]) -> list[dict]:
     }
 
     results = []
-    
+
     for concept, friendly_name in metrics.items():
         try:
             # High quality only filters out weird overlapping proxy facts
             query_df = facts.query().by_concept(concept).high_quality_only().to_dataframe()
             if query_df.empty:
                 continue
-                
+
             for _, row in query_df.iterrows():
                 val = row.get("numeric_value")
                 if val is None:
                     continue
-                    
+
                 form_val = row.get("form_type", "Unknown")
-                
+
                 results.append({
                     "metric": friendly_name,
                     "form": form_val,
@@ -197,7 +197,7 @@ def extract_financial_facts(ticker_or_facts: Union[str, dict]) -> list[dict]:
                 })
         except Exception:
             continue
-            
+
     # Sort chronologically
     results.sort(key=lambda x: (x["metric"], x["end"], x["frame"] or ""))
     return results

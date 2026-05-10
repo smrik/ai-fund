@@ -152,7 +152,7 @@ Canonical React references:
 - [React Frontend Setup And Runtime Map](./react-frontend-setup.md)
 - [React Playwright Review Loop](./react-playwright-review-loop.md)
 
-This path uses [`requirements-api.txt`](/mnt/c/Projects/03-Finance/ai-fund/requirements-api.txt) instead of the full `requirements.txt`, while still including the lightweight API dependencies the React routes actually need during browser review, including the EDGAR client chain used by overview, valuation, market, and audit endpoints.
+This path uses `requirements-api.txt` instead of the full `requirements.txt`, while still including the lightweight API dependencies the React routes actually need during browser review, including the EDGAR client chain used by overview, valuation, market, and audit endpoints.
 
 Launcher:
 

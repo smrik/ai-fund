@@ -30,7 +30,7 @@ def test_get_recent_10q_texts_returns_list_of_texts(monkeypatch):
     mock_filings_list[0].text.return_value = "Quarterly update 1"
     mock_filings_list[0].filing_date = "2026-06-30"
     mock_filings_list[0].accession_no = "acc-1"
-    
+
     mock_filings_list[1].text.return_value = "Quarterly update 2"
     mock_filings_list[1].filing_date = "2026-03-31"
     mock_filings_list[1].accession_no = "acc-2"
@@ -67,17 +67,17 @@ def test_get_8k_texts_returns_list_of_texts(monkeypatch):
 
 def test_extract_financial_facts_returns_structured_metrics(monkeypatch):
     import pandas as pd
-    
+
     mock_company = MagicMock()
     mock_facts = MagicMock()
     mock_company.get_facts.return_value = mock_facts
 
     mock_query_builder = MagicMock()
     mock_facts.query.return_value = mock_query_builder
-    
+
     mock_query_concept = MagicMock()
     mock_query_builder.by_concept.return_value = mock_query_concept
-    
+
     mock_query_quality = MagicMock()
     mock_query_concept.high_quality_only.return_value = mock_query_quality
 
@@ -85,10 +85,10 @@ def test_extract_financial_facts_returns_structured_metrics(monkeypatch):
     df = pd.DataFrame([
         {"numeric_value": 1000.0, "form_type": "10-K", "fiscal_period": "FY", "period_end": "2023-12-31", "unit": "USD"}
     ])
-    
+
     # We want it to be empty for everything except "Revenues" to limit the test scope
     def fake_to_dataframe():
-        # Using sys._getframe to hack checking what concept was passed, 
+        # Using sys._getframe to hack checking what concept was passed,
         # but simpler: just return the df and let it map to multiple
         return df
 
@@ -97,13 +97,13 @@ def test_extract_financial_facts_returns_structured_metrics(monkeypatch):
     monkeypatch.setattr(edgar_client, "Company", lambda ticker: mock_company)
 
     extracted = edgar_client.extract_financial_facts("IBM")
-    
+
     assert isinstance(extracted, list)
     assert len(extracted) > 0
     # Items are sorted alphabetically by metric name ("Capex", "EarningsPerShareBasic", ...)
     metrics_returned = [x["metric"] for x in extracted]
     assert "Revenues" in metrics_returned
-    
+
     rev_item = next(x for x in extracted if x["metric"] == "Revenues")
     assert rev_item["value"] == 1000.0
     assert rev_item["form"] == "10-K"

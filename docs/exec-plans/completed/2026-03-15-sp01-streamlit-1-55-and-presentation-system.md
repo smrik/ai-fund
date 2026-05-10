@@ -7,10 +7,10 @@
 Finish the Streamlit 1.55 migration cleanly and establish one shared formatting contract for metrics, tables, and charts.
 
 ## Files
-- Modify: [dashboard/app.py](../../dashboard/app.py)
-- Create: [src/stage_04_pipeline/presentation_formatting.py](../../src/stage_04_pipeline/presentation_formatting.py)
-- Create: [tests/test_presentation_formatting.py](../../tests/test_presentation_formatting.py)
-- Create: [tests/test_dashboard_render_contracts.py](../../tests/test_dashboard_render_contracts.py)
+- Modify: [dashboard/app.py](../../../dashboard/app.py)
+- Create: [src/stage_04_pipeline/presentation_formatting.py](../../../src/stage_04_pipeline/presentation_formatting.py)
+- Create: [tests/test_presentation_formatting.py](../../../tests/test_presentation_formatting.py)
+- Create: [tests/test_dashboard_render_contracts.py](../../../tests/test_dashboard_render_contracts.py)
 
 ## Current Gaps
 - `use_container_width` still appears across the dashboard and continues to emit Streamlit 1.55 deprecation warnings.

@@ -236,5 +236,3 @@ Caution:
 4. Verify required output columns and coverage
 5. Review highest-upside names with `tv_high_flag`, implied growth, and WACC reasonableness
 6. Optionally overlay QoE/industry context for final PM judgment
-
-

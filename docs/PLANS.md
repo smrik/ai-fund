@@ -14,6 +14,33 @@ The repository follows a harness-style structure:
 
 If code changes and the docs no longer describe reality, the docs are wrong and must be updated in the same change.
 
+## Documentation Model
+
+Use these doc types consistently:
+
+- `docs/valuation/`
+  - finance methodology and explanation
+  - answers: how should Alpha Pod think about valuation?
+- `docs/handbook/`
+  - how-to and operator / engineer workflow guidance
+  - answers: how do I run, review, or use this safely?
+- `docs/design-docs/`
+  - architecture, boundaries, data flow, implementation truth
+  - answers: how is the system designed and where should logic live?
+- `docs/reference/`
+  - stable setup, config, glossary, and workflow references
+  - answers: what are the durable facts?
+- `docs/plans/`
+  - current work, future work, shipped plans, and archived plan history
+  - answers: what are we building and what already shipped?
+
+This is intentionally close to a Diataxis-style split:
+
+- methodology / explanation -> `docs/valuation/`
+- how-to -> `docs/handbook/`
+- reference -> `docs/reference/`
+- implementation design -> `docs/design-docs/`
+
 ## What Lives Where
 
 Use these buckets consistently:
@@ -42,6 +69,18 @@ Use these buckets consistently:
 - `frontend/`
   - React + TypeScript + Vite quote-terminal client and its test/build config
 
+## Authoring Rules
+
+Keep docs simpler by default:
+
+- one page, one job
+- front-load purpose and audience
+- keep index and landing pages short
+- prefer links over repeated prose
+- do not duplicate valuation-method explanation in handbook or design docs when `docs/valuation/` already owns it
+- do not put detailed plan lists on the docs home page; link to `docs/plans/index.md` instead
+- move stale or superseded material to archive locations instead of leaving it next to canonical pages
+
 ## Canonical Entry Points
 
 Read these first:
@@ -68,6 +107,27 @@ When creating or maintaining plans:
 - do not create a second live planning index elsewhere
 
 Historical execution notes may remain under `docs/exec-plans/`, but they are supporting artifacts rather than the main source of truth.
+
+## Human-Friendly Plan Format
+
+Use a small set of planning document shapes so the docs stay easy to read in raw Markdown, GitHub, and MkDocs:
+
+- roadmap dashboard pages
+  - scan-first pages with tables for `Now`, `Next`, `Later`, releases, and linked epic pages
+- short epic pages
+  - one-screen summaries with status, priority, release target, scope, dependencies, and acceptance criteria
+- active implementation plans
+  - detailed execution documents only after work starts
+
+Do not let roadmap docs become execution journals. If a future plan starts reading like a work log, it belongs in `active/` or `completed/`, not in the future backlog.
+
+Recommended editing style:
+
+- start with a compact metadata table
+- prefer short sections, tables, and checklists
+- keep one idea per section
+- link outward instead of duplicating detail
+- reserve long narrative for design docs and completed implementation records
 
 Session continuity rules:
 
@@ -98,9 +158,10 @@ These rules are mandatory:
 
 - [Design Docs Index](./design-docs/index.md)
 - [Handbook Index](./handbook/index.md)
-- [Reference Index](./reference/config-reference.md)
+- [Reference Index](./reference/index.md)
 - [Strategy Docs](./strategy/index.md)
 - [Plan Registry](./plans/index.md)
+- [Alpha Pod Product Roadmap Dashboard](./plans/future/2026-04-02-alpha-pod-roadmap-dashboard.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 - [General Archive](./archive/index.md)
 

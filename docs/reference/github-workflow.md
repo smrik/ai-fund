@@ -13,7 +13,7 @@ Configure `main` with these rules:
 1. Require a pull request before merging.
 2. Require branches to be up to date before merging.
 3. Require status checks to pass before merging.
-4. Require the GitHub Actions checks `pre-commit`, `frontend-build`, `backend-api-tests`, `docs-build`, and `release-readiness`.
+4. Require the GitHub Actions checks `pre-commit`, `frontend-build`, `frontend-tests`, `backend-api-tests`, `docs-build`, and `release-readiness`.
 5. Restrict direct pushes to `main`.
 6. Disable force pushes to `main`.
 

@@ -1,5 +1,8 @@
 # Valuation and DCF Logic
 
+Finance-first methodology now lives in [`docs/valuation/`](../valuation/index.md).
+Use this handbook page for the current implementation explanation of how intrinsic value is computed in code.
+
 This document is the source-of-truth explanation for how intrinsic value is computed in code.
 
 Key modules:
@@ -29,6 +32,10 @@ Mid-term growth = near-term × `growth_fade_ratio` (sector-specific; see §1.6).
 
 Terminal growth is set per sector from `SECTOR_DEFAULTS[sector]["terminal_growth"]` (e.g., Technology 3.5%, Utilities 2.5%).
 
+Future hardening:
+- the deterministic assembler currently uses one CIQ/yfinance/default precedence chain
+- over time, the preferred anchor should come from the dedicated historical-analysis layer, including rolling growth windows such as `t-5 to t-2`, `t-4 to t-1`, and `t-3 to t`, rather than relying mainly on a single 3-year view
+
 ### 1.2 EBIT Margin
 
 Priority chain:
@@ -37,6 +44,10 @@ Priority chain:
 3. Sector default
 
 Margin converges from `ebit_margin_start` to `ebit_margin_target` over years 1–10 using a linear path that allows both expansion and compression.
+
+Known limitation:
+- today the model gives strong weight to CIQ or yfinance snapshot / average values
+- the intended direction is for a broader historical-analysis layer to calculate multi-period margin evidence directly, with CIQ acting more as a control and validation source than as the only preferred anchor
 
 ### 1.3 Exit Multiple
 
@@ -191,6 +202,16 @@ Large divergence between DCF and EP values flags aggressive margin or reinvestme
 | Exit multiple | × 0.7 | × 1.0 | × 1.3 |
 
 Outputs: `iv_bear`, `iv_base`, `iv_bull` per share.
+
+Future hardening:
+- the current scenario engine is intentionally simple and deterministic
+- it should eventually become more company-aware by reflecting:
+  - size and maturity
+  - past growth profile
+  - business-cycle position
+  - industry analysis
+  - historical-analysis context
+  - operating leverage and funding constraints
 
 ---
 

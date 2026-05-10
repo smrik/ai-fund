@@ -7,11 +7,11 @@
 Upgrade Market Intel from a short-horizon headline surface into a two-layer view: a multi-year company-event brief on top and a recent-quarter materiality table underneath.
 
 ## Files
-- Modify: [src/stage_04_pipeline/news_materiality.py](../../src/stage_04_pipeline/news_materiality.py)
-- Modify: [dashboard/app.py](../../dashboard/app.py)
-- Modify: [src/stage_00_data/market_data.py](../../src/stage_00_data/market_data.py)
-- Optional Modify: [src/stage_04_pipeline/report_archive.py](../../src/stage_04_pipeline/report_archive.py)
-- Create: [tests/test_market_intel_history.py](../../tests/test_market_intel_history.py)
+- Modify: [src/stage_04_pipeline/news_materiality.py](../../../src/stage_04_pipeline/news_materiality.py)
+- Modify: [dashboard/app.py](../../../dashboard/app.py)
+- Modify: [src/stage_00_data/market_data.py](../../../src/stage_00_data/market_data.py)
+- Optional Modify: [src/stage_04_pipeline/report_archive.py](../../../src/stage_04_pipeline/report_archive.py)
+- Create: [tests/test_market_intel_history.py](../../../tests/test_market_intel_history.py)
 
 ## Chosen Source Strategy
 `Hybrid Local`

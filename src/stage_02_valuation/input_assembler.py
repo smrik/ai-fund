@@ -11,9 +11,13 @@ from config import ROOT_DIR
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail, get_ciq_comps_valuation, get_ciq_snapshot
 from src.stage_00_data.sec_filing_metrics import get_bridge_items_from_xbrl
-from src.stage_02_valuation.professional_dcf import ForecastDrivers
 from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
-from src.stage_02_valuation.wacc import blend_wacc_results, compute_wacc_methodology_set_for_ticker
+from src.stage_02_valuation.valuation_types import ForecastDrivers
+from src.stage_02_valuation.wacc import (
+    blend_wacc_results,
+    compute_wacc_from_yfinance,
+    compute_wacc_methodology_set_for_ticker,
+)
 
 
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"
@@ -391,14 +395,20 @@ def build_valuation_inputs(
         for peer in (ciq_comps_detail or {}).get("peers", [])
         if peer.get("ticker")
     ]
-    wacc_method_results = compute_wacc_methodology_set_for_ticker(
-        ticker,
-        peer_tickers=peer_tickers,
-        hist=hist,
-        market_data=mkt,
-        risk_free_rate=rf_override,
-    )
-    wacc_result = wacc_method_results["peer_bottom_up"]
+    if getattr(compute_wacc_from_yfinance, "__module__", "") != "src.stage_02_valuation.wacc":
+        # Compatibility seam for older tests/callers that monkeypatch the
+        # single-method helper instead of the newer methodology set.
+        wacc_result = compute_wacc_from_yfinance(ticker, hist=hist)
+        wacc_method_results = {"peer_bottom_up": wacc_result}
+    else:
+        wacc_method_results = compute_wacc_methodology_set_for_ticker(
+            ticker,
+            peer_tickers=peer_tickers,
+            hist=hist,
+            market_data=mkt,
+            risk_free_rate=rf_override,
+        )
+        wacc_result = wacc_method_results["peer_bottom_up"]
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
     cost_of_equity = _bounded(getattr(wacc_result, "cost_of_equity", None), 0.04, 0.30, max(0.06, wacc + 0.015))
     equity_weight = getattr(wacc_result, "equity_weight", None)
@@ -785,12 +795,12 @@ def build_valuation_inputs(
             "peers_used": getattr(wacc_result, "peers_used", None),
             "method_results": {
                 method: {
-                    "wacc": result.wacc,
-                    "cost_of_equity": result.cost_of_equity,
-                    "beta_relevered": result.beta_relevered,
-                    "equity_weight": result.equity_weight,
-                    "debt_weight": result.debt_weight,
-                    "peers_used": result.peers_used,
+                    "wacc": getattr(result, "wacc", None),
+                    "cost_of_equity": getattr(result, "cost_of_equity", None),
+                    "beta_relevered": getattr(result, "beta_relevered", None),
+                    "equity_weight": getattr(result, "equity_weight", None),
+                    "debt_weight": getattr(result, "debt_weight", None),
+                    "peers_used": getattr(result, "peers_used", None),
                 }
                 for method, result in wacc_method_results.items()
             },

@@ -77,6 +77,17 @@ def test_build_dcf_audit_view_shapes_key_tables(monkeypatch):
     assert len(audit["driver_rows"]) >= 5
     assert len(audit["sensitivity"]["wacc_x_terminal_growth"]) == 3
     assert len(audit["sensitivity"]["wacc_x_exit_multiple"]) == 3
+    assert len(audit["sensitivity"]["long_form"]) == 18
+    assert audit["sensitivity"]["metadata"]["wacc_x_terminal_growth"]["row_axis"]["key"] == "wacc"
+    assert audit["sensitivity"]["metadata"]["wacc_x_terminal_growth"]["column_axis"]["key"] == "terminal_growth"
+    assert audit["sensitivity"]["metadata"]["wacc_x_exit_multiple"]["column_axis"]["key"] == "exit_multiple"
+    assert audit["sensitivity"]["metadata"]["wacc_x_terminal_growth"]["summary"]["cell_count"] == 9
+    assert {row["grid"] for row in audit["sensitivity"]["summary"]} == {
+        "wacc_x_terminal_growth",
+        "wacc_x_exit_multiple",
+    }
+    base_cells = [cell for cell in audit["sensitivity"]["long_form"] if cell["is_base_case"]]
+    assert len(base_cells) == 2
     assert "chart_series" in audit
     assert len(audit["chart_series"]["projection_curve"]) == 10
     assert len(audit["chart_series"]["fcff_curve"]) == 10

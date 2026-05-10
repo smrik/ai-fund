@@ -2,26 +2,39 @@
 
 This handbook is the practical wiki for operating and extending Alpha Pod.
 
-It is written for two audiences:
+Use it for workflow guidance, local run paths, review loops, and implementation-adjacent usage notes. Finance-first valuation methodology lives in [`docs/valuation/`](../valuation/index.md).
 
-1. **Finance operators**: how numbers are produced, what assumptions mean, and where human judgment belongs.
-2. **Software engineers**: how data flows through the codebase, where to modify logic, and how to verify changes safely.
+## Use This When
 
-## Read This First
+- you want to run, review, or operate the system
+- you need the practical workflow for a surface or subsystem
+- you need an engineer-facing how-to instead of an architecture spec
+
+## Read First
 
 - [End-to-End Workflow](./workflow-end-to-end.md)
-- [Finance Deep Dive](./finance-deep-dive.md)
-- [Valuation And DCF Logic](./valuation-dcf-logic.md)
-- [Valuation Task Breakdown](./valuation-task-breakdown.md)
-- [Engineering Deep Dive](./engineering-deep-dive.md)
 - [Operations Runbook](./operations-runbook.md)
+- [Quality And Verification](./quality-and-verification.md)
+- [Valuation And DCF Logic](./valuation-dcf-logic.md)
+
+## For PMs And Operators
+
+- [Finance Deep Dive](./finance-deep-dive.md)
+- [Valuation Task Breakdown](./valuation-task-breakdown.md)
+- [QoE Agent](./qoe-agent.md)
+- [Deep Dive Dossier](./deep-dive-dossier.md)
+
+## For Engineers And Contributors
+
+- [Engineering Deep Dive](./engineering-deep-dive.md)
 - [Local Dashboard Validation](./local-dashboard-validation.md)
 - [Quote-Terminal UI And API Dev Guide](./quote-terminal-ui.md)
 - [React Frontend Setup And Runtime Map](./react-frontend-setup.md)
 - [React Playwright Review Loop](./react-playwright-review-loop.md)
 - [WSL Playwright Fallback](./wsl-playwright.md)
-- [Quality And Verification](./quality-and-verification.md)
-- [Deep Dive Dossier](./deep-dive-dossier.md)
+- [Excel Template Guide](./excel-template-guide.md)
+- [Accounting Recast](./accounting-recast.md)
+- [Power Query M](./power-query-m.md)
 
 ## Mental Model
 
@@ -64,5 +77,3 @@ LLM agents may explain or contextualize numbers, but they must not write numbers
 3. Finance deep dive (how to interpret and challenge outputs)
 4. Engineering deep dive (where to change code safely)
 5. Runbook and verification (how to operate and release changes)
-
-

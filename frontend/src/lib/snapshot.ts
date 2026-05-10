@@ -1,4 +1,5 @@
 import type { ArchivedSnapshotPayload, OverviewPayload, TickerWorkspace } from "@/lib/types";
+import { normalizeOverviewPayload, normalizeTickerWorkspace, snapshotDossier } from "@/lib/canonical";
 
 export function snapshotToWorkspace(
   snapshot: ArchivedSnapshotPayload,
@@ -6,8 +7,9 @@ export function snapshotToWorkspace(
 ): TickerWorkspace {
   const memo = snapshot.memo ?? {};
   const valuation = memo.valuation ?? {};
+  const dossier = snapshotDossier(snapshot);
 
-  return {
+  return normalizeTickerWorkspace({
     ticker: snapshot.ticker,
     company_name: snapshot.company_name ?? memo.company_name ?? previous?.company_name ?? snapshot.ticker,
     sector: snapshot.sector ?? memo.sector ?? previous?.sector ?? null,
@@ -23,9 +25,12 @@ export function snapshotToWorkspace(
     latest_snapshot_date: snapshot.created_at ?? previous?.latest_snapshot_date ?? null,
     snapshot_available: true,
     last_snapshot_id: snapshot.id,
+    snapshot_id: snapshot.id,
     latest_action: snapshot.action ?? memo.action ?? previous?.latest_action ?? null,
     latest_conviction: snapshot.conviction ?? memo.conviction ?? previous?.latest_conviction ?? null,
-  };
+    ticker_dossier_contract_version: previous?.ticker_dossier_contract_version ?? null,
+    ticker_dossier: dossier ?? previous?.ticker_dossier,
+  });
 }
 
 export function snapshotToOverview(
@@ -33,8 +38,9 @@ export function snapshotToOverview(
   previous?: OverviewPayload,
 ): OverviewPayload {
   const memo = snapshot.memo ?? {};
+  const dossier = snapshotDossier(snapshot);
 
-  return {
+  return normalizeOverviewPayload({
     ticker: snapshot.ticker,
     company_name: snapshot.company_name ?? memo.company_name ?? previous?.company_name ?? snapshot.ticker,
     one_liner: memo.one_liner ?? previous?.one_liner ?? null,
@@ -43,5 +49,7 @@ export function snapshotToOverview(
     valuation_pulse: previous?.valuation_pulse ?? null,
     thesis_changes: previous?.thesis_changes ?? [],
     next_catalyst: previous?.next_catalyst ?? null,
-  };
+    ticker_dossier_contract_version: previous?.ticker_dossier_contract_version ?? null,
+    ticker_dossier: dossier ?? previous?.ticker_dossier,
+  });
 }
