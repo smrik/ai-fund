@@ -318,6 +318,35 @@ def test_ticker_overview_and_valuation_endpoints_return_helper_payloads(monkeypa
     assert recommendations.json()["recommendations"][0]["field"] == "wacc"
 
 
+def test_valuation_assumptions_helper_separates_audit_families(monkeypatch):
+    from api.extracted import build_valuation_assumptions_payload
+
+    monkeypatch.setattr(
+        "api.extracted.build_override_workbench",
+        lambda ticker: {
+            "ticker": ticker,
+            "available": True,
+            "fields": [],
+            "assumption_register": {"ticker": ticker, "entries": []},
+        },
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.override_workbench.load_override_audit_history",
+        lambda ticker, limit=50: [{"field": "wacc"}],
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.override_workbench.load_assumption_register_audit_history",
+        lambda ticker, limit=50: [{"assumption_name": "wacc"}],
+    )
+
+    payload = build_valuation_assumptions_payload("ibm")
+
+    assert payload["ticker"] == "IBM"
+    assert payload["override_audit_rows"] == [{"field": "wacc"}]
+    assert payload["audit_rows"] == payload["override_audit_rows"]
+    assert payload["assumption_register_audit_rows"] == [{"assumption_name": "wacc"}]
+
+
 def test_ticker_dossier_endpoint_exposes_canonical_contract(monkeypatch):
     from api.main import app
 

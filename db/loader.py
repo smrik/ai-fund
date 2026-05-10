@@ -3,6 +3,7 @@ Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
 import sqlite3
+import json
 from typing import Any
 
 from src.utils import utc_now_iso
@@ -584,6 +585,92 @@ def insert_valuation_override_audit(conn: sqlite3.Connection, rows: list[dict[st
         rows,
     )
     conn.commit()
+
+
+def _split_assumption_register_diff(row: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    prior: dict[str, Any] = {}
+    new: dict[str, Any] = {}
+    for field, change in (row.get("changed_fields") or {}).items():
+        if not isinstance(change, dict):
+            continue
+        prior[field] = change.get("prior")
+        new[field] = change.get("new")
+    return prior, new
+
+
+def insert_assumption_register_audit(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
+    """Append review-relevant Assumption Register audit events."""
+    if not rows:
+        return
+
+    payload: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        prior, new = _split_assumption_register_diff(item)
+        item["ticker"] = str(item["ticker"]).upper()
+        item["entity_type"] = (
+            item["entity_type"].value
+            if hasattr(item.get("entity_type"), "value")
+            else str(item.get("entity_type"))
+        )
+        item["prior_diff_json"] = json.dumps(prior, separators=(",", ":"))
+        item["new_diff_json"] = json.dumps(new, separators=(",", ":"))
+        item["changed_fields_json"] = json.dumps(item.get("changed_fields") or {}, separators=(",", ":"))
+        item["valuation_impact_json"] = (
+            json.dumps(item.get("valuation_impact"), separators=(",", ":"))
+            if item.get("valuation_impact") is not None
+            else None
+        )
+        payload.append(item)
+
+    conn.executemany(
+        """
+        INSERT INTO assumption_register_audit (
+            event_ts, actor, actor_type, entity_type, entity_id, ticker,
+            assumption_name, scope, event_type, prior_diff_json, new_diff_json,
+            changed_fields_json, valuation_impact_json, reason
+        ) VALUES (
+            :event_ts, :actor, :actor_type, :entity_type, :entity_id, :ticker,
+            :assumption_name, :scope, :event_type, :prior_diff_json, :new_diff_json,
+            :changed_fields_json, :valuation_impact_json, :reason
+        )
+        """,
+        payload,
+    )
+    conn.commit()
+
+
+def load_assumption_register_audit_history(
+    conn: sqlite3.Connection,
+    ticker: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Load Assumption Register audit history separately from PM override audit."""
+    rows = conn.execute(
+        """
+        SELECT event_ts, actor, actor_type, entity_type, entity_id, ticker,
+               assumption_name, scope, event_type, prior_diff_json, new_diff_json,
+               changed_fields_json, valuation_impact_json, reason
+        FROM assumption_register_audit
+        WHERE ticker = ?
+        ORDER BY event_ts DESC, id DESC
+        LIMIT ?
+        """,
+        [str(ticker).upper(), max(1, int(limit))],
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["prior_diff"] = json.loads(item["prior_diff_json"] or "{}")
+        item["new_diff"] = json.loads(item["new_diff_json"] or "{}")
+        item["changed_fields"] = json.loads(item["changed_fields_json"] or "{}")
+        item["valuation_impact"] = (
+            json.loads(item["valuation_impact_json"])
+            if item.get("valuation_impact_json")
+            else None
+        )
+        out.append(item)
+    return out
 
 
 def insert_pipeline_report_archive(conn: sqlite3.Connection, row: dict[str, Any]) -> int:

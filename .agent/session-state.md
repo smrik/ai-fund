@@ -1,34 +1,36 @@
 # Session State
 
-**Updated:** 2026-05-11 01:01:32 +02:00
+**Updated:** 2026-05-11 01:26:51 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Finalize Assumption Register Contract planning/PRD on branch `53-assumption-register-contract`.
+Implemented deterministic V1 Assumption Register on branch `53-assumption-register-contract`.
 
 ## Recent Actions
-- Used `grill-with-docs` to resolve high-impact Assumption Register contract choices.
-- Created root `CONTEXT.md` with the valuation glossary and resolved ambiguities.
-- Updated `docs/plans/2026-05-06-assumption-register-contract.md` with the resolved V1/V2 contract decisions.
-- Used `to-prd` to synthesize the current context into a PRD.
-- Updated GitHub issue `#53`: https://github.com/smrik/ai-fund/issues/53
-- Added local PRD body artifact at `.agent/issue-53-prd.md`.
+- Committed the planning baseline first: `CONTEXT.md`, `.agent/issue-53-prd.md`, `.agent/session-state.md`, and `docs/plans/2026-05-06-assumption-register-contract.md`.
+- Added strict Pydantic V2 contract models in `src/contracts/assumption_register.py`.
+- Added Stage 02 builder, static range rules, materiality rules, compact summary, and audit diff logic in `src/stage_02_valuation/assumption_register.py`.
+- Added separate append-only `assumption_register_audit` schema plus insert/list helpers in `db/schema.py` and `db/loader.py`.
+- Wired `value_single_ticker()` to emit `assumption_register_json`, compact summary JSON, trust state, max flag, and flag counts.
+- Wired JSON export, override workbench, valuation assumptions API, and ticker dossier adapters to expose full register or compact summary as planned.
+- Updated the valuation methodology critical-review memo with V1 implementation status and V2 leftovers.
+- Used `requesting-code-review` as a local review pass; no blocking issues found.
 
 ## Next Steps
-- Commit `CONTEXT.md`, `.agent/issue-53-prd.md`, `.agent/session-state.md`, and `docs/plans/2026-05-06-assumption-register-contract.md` if the decision baseline should be preserved before implementation.
-- If implementing, use `executing-plans` first and work against `docs/plans/2026-05-06-assumption-register-contract.md`.
-- Use `requesting-code-review` before final review or PR handoff.
+- Review the diff and commit implementation changes when ready.
+- Optional: broaden tests beyond the focused bundle if you want extra regression confidence before PR.
+- Optional: decide whether automatic persistence of assumption-register audit diffs should be called by a specific scheduled workflow, or stay helper/API-ready in V1.
 
 ## Known Issues
-- Working tree has modified `.agent/session-state.md` and `docs/plans/2026-05-06-assumption-register-contract.md`.
-- Untracked `CONTEXT.md` and `.agent/issue-53-prd.md` are intentional planning artifacts.
-- Untracked `course/` exists and should be left alone unless the user explicitly says otherwise.
-- A safety stash still exists: `stash@{0}: On 45-periodic-audit-routine: assumption-register-plan-refine`; it has been applied to the feature branch but not dropped.
-- Git index-writing commands may need escalation on this Windows checkout.
-- `bash` routes to WSL, but WSL has no installed distro; use Git for Windows tools directly when needed.
+- Untracked `course/` still exists and was intentionally left untouched.
+- `.pytest_cache` is permission-restricted on this Windows checkout, so pytest emits cache warnings. Tests still pass.
+- A stale ignored `.tmp-tests/diag` folder initially blocked the repo default pytest basetemp; it was removed and the exact focused pytest command now passes.
+- A safety stash from the planning session may still exist: `stash@{0}: On 45-periodic-audit-routine: assumption-register-plan-refine`.
 
 ## Notes
-- Core V1 direction: deterministic-only, numeric effective ticker assumptions, WACC components and terminal drivers first-class, model trust state, compact summaries, review-relevant audit diffs, separate audit families.
-- V2 backlog: source quality state, advisory population through `driver_assessments.py`, scenario assumption packs, sector/global policy entries, Damodaran/history/industry ranges, automatic sensitivity-driven impact scoring, raw/pre-clamp diagnostics.
-- Use `rtk` for Git, test, and repo-inspection commands where available.
+- Verification passed:
+  - `rtk python -m pytest tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_ticker_dossier_contract_runtime.py -q`
+  - `rtk python -m mkdocs build --strict`
+  - `rtk git diff --check`
+- Focused pytest result: 75 passed, with third-party deprecation warnings and the existing `.pytest_cache` permission warning.

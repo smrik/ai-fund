@@ -79,6 +79,8 @@ def build_nested_structure(
     story_adjustments = _parse_json_field("story_adjustments_json", {})
     scenario_policy = _parse_json_field("context_scenario_policy_json", {})
     driver_consensus = _parse_json_field("driver_consensus_json", [])
+    assumption_register = _parse_json_field("assumption_register_json", {})
+    assumption_register_summary = _parse_json_field("assumption_register_summary_json", {})
 
     ticker = str(r.get("ticker") or "").upper()
     price = r.get("price")
@@ -334,6 +336,8 @@ def build_nested_structure(
         "scenario_policy": scenario_policy,
         "context_scenarios": context_scenarios,
         "driver_consensus": driver_consensus,
+        "assumption_register": assumption_register,
+        "assumption_register_summary": assumption_register_summary,
         "drivers_raw": drivers_raw,
     }
 

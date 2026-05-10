@@ -14,6 +14,7 @@ from src.stage_02_valuation.input_assembler import (
     build_valuation_inputs,
     clear_valuation_overrides_cache,
 )
+from src.stage_02_valuation.assumption_register import build_assumption_register, summarize_assumption_register
 from src.stage_02_valuation.professional_dcf import (
     default_scenario_specs,
     run_probabilistic_valuation,
@@ -148,6 +149,7 @@ def build_override_workbench(ticker: str) -> dict[str, Any]:
         default_scenario_specs(),
         current_price=effective_inputs.current_price,
     )
+    assumption_register = build_assumption_register(ticker, effective_inputs)
     return {
         "ticker": ticker,
         "available": True,
@@ -158,6 +160,8 @@ def build_override_workbench(ticker: str) -> dict[str, Any]:
         "current_iv_base": round(current_result.scenario_results["base"].intrinsic_value_per_share, 2),
         "current_expected_iv": round(current_result.expected_iv, 2),
         "fields": _field_rows(ticker, baseline_inputs, effective_inputs),
+        "assumption_register": assumption_register.model_dump(mode="json"),
+        "assumption_register_summary": summarize_assumption_register(assumption_register),
     }
 
 
@@ -387,3 +391,15 @@ def load_override_audit_history(ticker: str, limit: int = 50) -> list[dict[str, 
         conn.close()
 
     return [dict(row) for row in rows]
+
+
+def load_assumption_register_audit_history(ticker: str, limit: int = 50) -> list[dict[str, Any]]:
+    from db.loader import load_assumption_register_audit_history as _impl
+
+    ticker = ticker.upper().strip()
+    conn = get_connection()
+    try:
+        create_tables(conn)
+        return _impl(conn, ticker, limit=limit)
+    finally:
+        conn.close()

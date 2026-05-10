@@ -349,6 +349,24 @@ def create_tables(conn: sqlite3.Connection | None = None):
         proposed_expected_iv         REAL
     );
 
+    CREATE TABLE IF NOT EXISTS assumption_register_audit (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_ts              TEXT NOT NULL,
+        actor                 TEXT NOT NULL,
+        actor_type            TEXT NOT NULL,
+        entity_type           TEXT NOT NULL,
+        entity_id             TEXT NOT NULL,
+        ticker                TEXT NOT NULL,
+        assumption_name       TEXT NOT NULL,
+        scope                 TEXT NOT NULL,
+        event_type            TEXT NOT NULL,
+        prior_diff_json       TEXT NOT NULL,
+        new_diff_json         TEXT NOT NULL,
+        changed_fields_json   TEXT NOT NULL,
+        valuation_impact_json TEXT,
+        reason                TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS agent_run_cache (
         ticker          TEXT NOT NULL,
         agent_name      TEXT NOT NULL,
@@ -752,6 +770,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_company_text_lookup ON company_text_cache(ticker, text_type, updated_at);
     CREATE INDEX IF NOT EXISTS idx_peer_similarity_lookup ON peer_similarity_cache(target_ticker, peer_ticker, embedding_model);
     CREATE INDEX IF NOT EXISTS idx_override_audit_ticker_ts ON valuation_override_audit(ticker, event_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_assumption_register_audit_ticker_ts ON assumption_register_audit(ticker, event_ts DESC);
+    CREATE INDEX IF NOT EXISTS idx_assumption_register_audit_field_ts ON assumption_register_audit(ticker, assumption_name, event_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_log_ticker_ts ON agent_run_log(ticker, run_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);

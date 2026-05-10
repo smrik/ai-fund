@@ -136,6 +136,8 @@ def test_build_override_workbench_includes_default_effective_and_agent_values(mo
     assert row["agent_value"] == pytest.approx(0.12)
     assert row["effective_source"] == "override_ticker"
     assert row["initial_mode"] == "custom"
+    assert workbench["assumption_register"]["ticker"] == "IBM"
+    assert workbench["assumption_register_summary"]["model_trust_state"] in {"clean", "watch"}
 
 
 def test_preview_override_selections_resolves_agent_and_custom(monkeypatch):
@@ -259,3 +261,38 @@ def test_apply_override_selections_updates_yaml_and_writes_sql_audit(monkeypatch
     assert fields == {"revenue_growth_near", "ebit_margin_start"}
     assert all(row["actor"] == "dashboard" for row in history)
     assert all(row["proposed_iv_base"] is not None for row in history)
+
+
+def test_load_assumption_register_audit_history_is_separate_from_override_history(monkeypatch, tmp_path):
+    from db.loader import insert_assumption_register_audit
+    from src.stage_04_pipeline.override_workbench import load_assumption_register_audit_history
+
+    db_path = tmp_path / "audit.db"
+    conn = _temp_conn_factory(db_path)()
+    insert_assumption_register_audit(
+        conn,
+        [
+            {
+                "event_ts": "2026-05-11T00:00:00+00:00",
+                "actor": "system",
+                "actor_type": "system",
+                "entity_type": "ticker",
+                "entity_id": "IBM",
+                "ticker": "IBM",
+                "assumption_name": "wacc",
+                "scope": "wacc",
+                "event_type": "value_changed",
+                "changed_fields": {"current_value": {"prior": 0.09, "new": 0.095}},
+                "valuation_impact": None,
+                "reason": None,
+            }
+        ],
+    )
+    conn.close()
+    monkeypatch.setattr("src.stage_04_pipeline.override_workbench.get_connection", _temp_conn_factory(db_path))
+
+    history = load_assumption_register_audit_history("ibm")
+
+    assert len(history) == 1
+    assert history[0]["assumption_name"] == "wacc"
+    assert history[0]["prior_diff"]["current_value"] == pytest.approx(0.09)

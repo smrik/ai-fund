@@ -557,6 +557,7 @@ def build_ticker_workspace_payload(ticker: str, dossier_payload: dict[str, Any] 
                 "snapshot_id",
                 "last_snapshot_date",
                 "ticker_dossier_contract_version",
+                "assumption_register_summary",
             ],
         )
     return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
@@ -665,6 +666,7 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
                 "memo_date",
                 "why_it_matters",
                 "ticker_dossier_contract_version",
+                "assumption_register_summary",
             ],
         )
     return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
@@ -689,8 +691,12 @@ def build_valuation_assumptions_payload(ticker: str) -> dict[str, Any]:
         **workbench,
     }
     from src.stage_04_pipeline.override_workbench import load_override_audit_history
+    from src.stage_04_pipeline.override_workbench import load_assumption_register_audit_history
 
-    payload["audit_rows"] = load_override_audit_history(ticker, limit=50)
+    override_audit_rows = load_override_audit_history(ticker, limit=50)
+    payload["override_audit_rows"] = override_audit_rows
+    payload["assumption_register_audit_rows"] = load_assumption_register_audit_history(ticker, limit=50)
+    payload["audit_rows"] = override_audit_rows
     return payload
 
 

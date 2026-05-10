@@ -152,6 +152,12 @@ def test_value_single_ticker_returns_prob_weighted_fields(monkeypatch):
     assert out["scenario_prob_bull"] == 0.2
     assert out["context_expected_iv"] == 100.0
     assert out["context_expected_upside_pct"] == 0.0
+    assert "assumption_register_json" in out
+    assumption_register = json.loads(out["assumption_register_json"])
+    assert assumption_register["model_trust_state"] in {"clean", "watch"}
+    assert any(entry["assumption_name"] == "wacc" for entry in assumption_register["entries"])
+    assert any(entry["assumption_name"] == "terminal_blend_gordon_weight" for entry in assumption_register["entries"])
+    assert json.loads(out["assumption_register_summary_json"])["flagged_entries"] == []
 
     scenario_policy = json.loads(out["context_scenario_policy_json"])
     assert scenario_policy["official_policy"] == "fixed_default"
