@@ -23,11 +23,11 @@ from config.settings import (
 from db.schema import get_connection
 from db.loader import upsert_prices, upsert_positions, insert_risk_snapshot, log_pipeline_run
 from db.queries import get_tickers, get_positions
-logger = logging.getLogger(__name__)
-
 from ibkr.connection import IBKRConnection
 from ibkr.price_feed import get_batch_prices
 from ibkr.account import get_account_summary, get_portfolio_positions, compute_risk_snapshot
+
+logger = logging.getLogger(__name__)
 
 
 def check_risk_alerts(risk: dict, positions_df) -> list[str]:
