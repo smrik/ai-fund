@@ -14,6 +14,7 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 
 - [Architecture Overview](./architecture-overview.md)
 - [Core Beliefs](./core-beliefs.md)
+- [TickerDossier Contract](./ticker-dossier-contract.md)
 - [Deterministic Valuation Flow Spec](./deterministic-valuation-flow-spec.md)
 - [Deterministic Valuation Inputs And CIQ Retrieval Spec](./deterministic-valuation-inputs-and-ciq-retrieval-spec.md)
 
@@ -23,6 +24,7 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 | --- | --- |
 | [`architecture-overview.md`](./architecture-overview.md) | Repository-wide layered architecture and boundaries |
 | [`core-beliefs.md`](./core-beliefs.md) | Non-negotiable design principles |
+| [`ticker-dossier-contract.md`](./ticker-dossier-contract.md) | Canonical ticker dossier contract for API, React, export, and drift tests |
 | [`deterministic-valuation-flow-spec.md`](./deterministic-valuation-flow-spec.md) | Deterministic valuation flow and boundaries |
 | [`deterministic-valuation-inputs-and-ciq-retrieval-spec.md`](./deterministic-valuation-inputs-and-ciq-retrieval-spec.md) | Field-level valuation input audit and CIQ retrieval requirements |
 | [`deterministic-valuation-workflow.md`](./deterministic-valuation-workflow.md) | Current valuation system behavior |

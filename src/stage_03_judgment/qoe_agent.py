@@ -11,8 +11,10 @@ Output contract: see _build_full_output() for the canonical return structure.
 The DCF valuation is NEVER updated automatically — normalized EBIT requires PM approval
 via valuation_overrides.yaml when the haircut exceeds 10%.
 """
+
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -76,11 +78,12 @@ If no 10-K text is provided, still return the schema with null signal_explanatio
 empty flags, narrative_credibility "low", confidence "low", and a pm_summary noting
 that only deterministic signals are available.
 """
+DEFAULT_QOE_MODEL = "gemini-3-flash-preview"
 
 
 class QoEAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(model=os.getenv("QOE_AGENT_MODEL", DEFAULT_QOE_MODEL))
         self.name = "QoEAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -101,12 +104,14 @@ class QoEAgent(BaseAgent):
             direction = adj.get("direction", "+")
             if direction not in {"+", "-"}:
                 direction = "+" if amount >= 0 else "-"
-            parsed.append({
-                "item": str(adj.get("item", "")),
-                "amount": float(abs(amount)),
-                "direction": direction,
-                "rationale": str(adj.get("rationale", "")),
-            })
+            parsed.append(
+                {
+                    "item": str(adj.get("item", "")),
+                    "amount": float(abs(amount)),
+                    "direction": direction,
+                    "rationale": str(adj.get("rationale", "")),
+                }
+            )
         return parsed
 
     @staticmethod
@@ -136,9 +141,15 @@ class QoEAgent(BaseAgent):
         return {
             "normalized_ebit": normalized_ebit,
             "reported_ebit": float(reported_ebit),
-            "ebit_adjustments": self._parse_adjustments(parsed.get("ebit_adjustments", [])),
-            "signal_explanations": self._parse_signal_explanations(parsed.get("signal_explanations")),
-            "revenue_recognition_flags": [str(f) for f in (parsed.get("revenue_recognition_flags") or []) if f],
+            "ebit_adjustments": self._parse_adjustments(
+                parsed.get("ebit_adjustments", [])
+            ),
+            "signal_explanations": self._parse_signal_explanations(
+                parsed.get("signal_explanations")
+            ),
+            "revenue_recognition_flags": [
+                str(f) for f in (parsed.get("revenue_recognition_flags") or []) if f
+            ],
             "auditor_flags": [str(f) for f in (parsed.get("auditor_flags") or []) if f],
             "narrative_credibility": credibility,
             "confidence": confidence,
@@ -171,7 +182,17 @@ class QoEAgent(BaseAgent):
             "normalized_ebit": float(reported_ebit),
             "reported_ebit": float(reported_ebit),
             "ebit_adjustments": [],
-            "signal_explanations": {k: None for k in {"accruals", "cash_conversion", "dso", "dio", "dpo", "capex_da"}},
+            "signal_explanations": {
+                k: None
+                for k in {
+                    "accruals",
+                    "cash_conversion",
+                    "dso",
+                    "dio",
+                    "dpo",
+                    "capex_da",
+                }
+            },
             "revenue_recognition_flags": [],
             "auditor_flags": [],
             "narrative_credibility": None,
@@ -190,15 +211,26 @@ class QoEAgent(BaseAgent):
     ) -> dict:
         """Build prompt, call LLM, parse result. Returns fallback on any failure."""
         # Summarise flagged signals for the prompt
-        flagged = {k: v for k, v in det.get("signal_scores", {}).items() if v in {"amber", "red"}}
-        signals_block = "\n".join(
-            f"  {k}: {v.upper()} "
-            f"(raw: {det.get(k.replace('dso', 'dso_drift').replace('dio', 'dio_drift').replace('dpo', 'dpo_drift').replace('accruals', 'sloan_accruals_ratio').replace('cash_conversion', 'cash_conversion').replace('capex_da', 'capex_da_ratio'))})"
-            for k, v in flagged.items()
-        ) or "  No signals flagged (all green or unavailable)."
+        flagged = {
+            k: v
+            for k, v in det.get("signal_scores", {}).items()
+            if v in {"amber", "red"}
+        }
+        signals_block = (
+            "\n".join(
+                f"  {k}: {v.upper()} "
+                f"(raw: {det.get(k.replace('dso', 'dso_drift').replace('dio', 'dio_drift').replace('dpo', 'dpo_drift').replace('accruals', 'sloan_accruals_ratio').replace('cash_conversion', 'cash_conversion').replace('capex_da', 'capex_da_ratio'))})"
+                for k, v in flagged.items()
+            )
+            or "  No signals flagged (all green or unavailable)."
+        )
 
-        filing_block = filing_text if filing_text else (
-            "No 10-K text available. Return conservative assumptions with low confidence."
+        filing_block = (
+            filing_text
+            if filing_text
+            else (
+                "No 10-K text available. Return conservative assumptions with low confidence."
+            )
         )
 
         prompt = (
@@ -223,7 +255,9 @@ class QoEAgent(BaseAgent):
 
         try:
             raw = self.run(prompt)
-            return self._parse_llm_response(raw, reported_ebit=reported_ebit, source=source)
+            return self._parse_llm_response(
+                raw, reported_ebit=reported_ebit, source=source
+            )
         except Exception:
             return self._llm_fallback(
                 reported_ebit=reported_ebit,
@@ -245,12 +279,18 @@ class QoEAgent(BaseAgent):
         normalized_ebit = llm.get("normalized_ebit") or reported_ebit
         ebit_haircut_pct: float | None = None
         if reported_ebit and abs(reported_ebit) > 0:
-            ebit_haircut_pct = round((normalized_ebit - reported_ebit) / abs(reported_ebit) * 100, 1)
+            ebit_haircut_pct = round(
+                (normalized_ebit - reported_ebit) / abs(reported_ebit) * 100, 1
+            )
 
-        dcf_override_pending = ebit_haircut_pct is not None and abs(ebit_haircut_pct) > 10.0
+        dcf_override_pending = (
+            ebit_haircut_pct is not None and abs(ebit_haircut_pct) > 10.0
+        )
 
         # Separate det keys that belong at the top level vs the nested deterministic block
-        det_block = {k: v for k, v in det.items() if k not in {"ticker", "qoe_score", "qoe_flag"}}
+        det_block = {
+            k: v for k, v in det.items() if k not in {"ticker", "qoe_score", "qoe_flag"}
+        }
 
         return {
             "ticker": ticker.upper(),
@@ -327,7 +367,9 @@ class QoEAgent(BaseAgent):
                     include_10k=True,
                     ten_q_limit=2,
                 )
-                filing_text = filing_retrieval.render_filing_context(bundle, max_chars=40_000)
+                filing_text = filing_retrieval.render_filing_context(
+                    bundle, max_chars=40_000
+                )
             except Exception:
                 filing_text = edgar_client.get_10k_text(ticker)
                 source = "sec_edgar_10k"
@@ -387,9 +429,13 @@ def write_qoe_pending_override(
     prev_status = (existing.get(ticker) or {}).get("status", "pending")
     if prev_status in {"approved", "rejected"}:
         # Preserve the PM decision; just refresh metadata
-        existing.setdefault(ticker, {})["last_refreshed_at"] = datetime.utcnow().isoformat(timespec="seconds")
+        existing.setdefault(ticker, {})["last_refreshed_at"] = (
+            datetime.utcnow().isoformat(timespec="seconds")
+        )
         QOE_PENDING_PATH.write_text(
-            yaml.dump(existing, default_flow_style=False, allow_unicode=True, sort_keys=False),
+            yaml.dump(
+                existing, default_flow_style=False, allow_unicode=True, sort_keys=False
+            ),
             encoding="utf-8",
         )
         return QOE_PENDING_PATH
@@ -399,16 +445,22 @@ def write_qoe_pending_override(
         "qoe_score": qoe_result.get("qoe_score"),
         "qoe_flag": qoe_result.get("qoe_flag"),
         "confidence": llm.get("llm_confidence", "low"),
-        "reported_ebit_mm": round(reported_ebit / 1_000_000, 2) if reported_ebit else None,
+        "reported_ebit_mm": round(reported_ebit / 1_000_000, 2)
+        if reported_ebit
+        else None,
         "reported_ebit_margin": reported_margin,
-        "normalized_ebit_mm": round(normalized_ebit / 1_000_000, 2) if normalized_ebit else None,
+        "normalized_ebit_mm": round(normalized_ebit / 1_000_000, 2)
+        if normalized_ebit
+        else None,
         "normalized_ebit_margin": normalized_margin,
         "ebit_haircut_pct": haircut_pct,
         "override_warranted": pending_flag,
         "adjustments": [
             {
                 "item": a["item"],
-                "amount_mm": round(a["amount"] / 1_000_000, 2) if a["amount"] > 1_000 else a["amount"],
+                "amount_mm": round(a["amount"] / 1_000_000, 2)
+                if a["amount"] > 1_000
+                else a["amount"],
                 "direction": a["direction"],
                 "rationale": a["rationale"],
             }
@@ -423,13 +475,17 @@ def write_qoe_pending_override(
         # To reject without applying: set status → 'rejected'
         "suggested_override": {
             "ebit_margin_start": normalized_margin,
-        } if normalized_margin is not None else {},
-        "status": "pending",   # pending | approved | rejected
+        }
+        if normalized_margin is not None
+        else {},
+        "status": "pending",  # pending | approved | rejected
     }
 
     existing[ticker] = entry
     QOE_PENDING_PATH.write_text(
-        yaml.dump(existing, default_flow_style=False, allow_unicode=True, sort_keys=False),
+        yaml.dump(
+            existing, default_flow_style=False, allow_unicode=True, sort_keys=False
+        ),
         encoding="utf-8",
     )
     return QOE_PENDING_PATH

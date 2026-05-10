@@ -71,6 +71,7 @@ nav:
       - Architecture Overview: design-docs/architecture-overview.md
       - Core Beliefs: design-docs/core-beliefs.md
       - Hedge Fund Org Mapping: design-docs/hedge-fund-org-mapping.md
+      - TickerDossier Contract: design-docs/ticker-dossier-contract.md
       - Deterministic Valuation Flow Spec: design-docs/deterministic-valuation-flow-spec.md
       - Deterministic Valuation Workflow: design-docs/deterministic-valuation-workflow.md
       - Deterministic Valuation Inputs And CIQ Retrieval Spec: design-docs/deterministic-valuation-inputs-and-ciq-retrieval-spec.md

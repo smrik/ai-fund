@@ -1,195 +1,33 @@
 """Professional deterministic DCF engine with explicit driver paths and terminal decomposition."""
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import Literal
+
+from src.stage_02_valuation.valuation_types import (
+    DCFComputationResult,
+    FCFEComputationResult,
+    ForecastDrivers,
+    ProbabilisticValuationResult,
+    ProjectionYear,
+    ScenarioSpec,
+    TerminalBreakdown,
+)
+from src.stage_02_valuation.scenario_policy import fixed_scenario_specs
+
+FORECAST_YEARS = 10
+DRIVER_HOLD_YEARS = 1
+GROWTH_NEAR_YEARS = 3
+
+TransitionCurve = Literal["linear", "ease_in", "ease_out", "exponential"]
 
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-@dataclass(slots=True)
-class ForecastDrivers:
-    revenue_base: float
-    revenue_growth_near: float
-    revenue_growth_mid: float
-    revenue_growth_terminal: float
-
-    ebit_margin_start: float
-    ebit_margin_target: float
-
-    tax_rate_start: float
-    tax_rate_target: float
-
-    capex_pct_start: float
-    capex_pct_target: float
-    da_pct_start: float
-    da_pct_target: float
-
-    dso_start: float
-    dso_target: float
-    dio_start: float
-    dio_target: float
-    dpo_start: float
-    dpo_target: float
-
-    wacc: float
-    exit_multiple: float
-    exit_metric: Literal["ev_ebitda", "ev_ebit"]
-
-    net_debt: float
-    shares_outstanding: float
-
-    terminal_blend_gordon_weight: float = 0.60
-    terminal_blend_exit_weight: float = 0.40
-
-    # Institutional hardening extensions.
-    invested_capital_start: float | None = None
-    ronic_terminal: float = 0.12
-
-    non_operating_assets: float = 0.0
-    minority_interest: float = 0.0
-    preferred_equity: float = 0.0
-    pension_deficit: float = 0.0
-    lease_liabilities: float = 0.0
-    options_value: float = 0.0
-    convertibles_value: float = 0.0
-
-    cost_of_equity: float | None = None
-    debt_weight: float = 0.20
-
-    # NWC accuracy: use COGS (not revenue) as denominator for DIO and DPO
-    cogs_pct_of_revenue: float = 0.60
-
-    # Share dilution / buyback projection (Phase A — applied at terminal value)
-    annual_dilution_pct: float = 0.0
-
-
-@dataclass(slots=True)
-class ScenarioSpec:
-    name: str
-    probability: float
-    growth_multiplier: float = 1.0
-    margin_shift: float = 0.0
-    wacc_shift: float = 0.0
-    terminal_growth_shift: float = 0.0
-    exit_multiple_multiplier: float = 1.0
-
-
-@dataclass(slots=True)
-class ProjectionYear:
-    year: int
-    revenue: float
-    growth_rate: float
-    ebit_margin: float
-    tax_rate: float
-    capex_pct: float
-    da_pct: float
-    dso: float
-    dio: float
-    dpo: float
-    ebit: float
-    nopat: float
-    da: float
-    capex: float
-    ar: float
-    inventory: float
-    ap: float
-    nwc: float
-    delta_nwc: float
-    fcff: float
-    discount_factor: float
-    pv_fcff: float
-
-    reinvestment: float = 0.0
-    invested_capital_start: float = 0.0
-    invested_capital_end: float = 0.0
-    roic: float | None = None
-    economic_profit: float | None = None
-    pv_economic_profit: float | None = None
-    fcfe: float | None = None
-    pv_fcfe: float | None = None
-
-
-@dataclass(slots=True)
-class TerminalBreakdown:
-    method_used: str
-    gordon_valid: bool
-    exit_valid: bool
-    tv_gordon: float | None
-    tv_exit: float | None
-    tv_blended: float
-    pv_tv_gordon: float | None
-    pv_tv_exit: float | None
-    pv_tv_blended: float
-
-    terminal_growth: float = 0.0
-    ronic_terminal: float | None = None
-    fcff_11_bridge: float | None = None
-    fcff_11_value_driver: float | None = None
-    gordon_formula_mode: str = "legacy"
-
-
-@dataclass(slots=True)
-class DCFComputationResult:
-    scenario: str
-    intrinsic_value_per_share: float
-    enterprise_value: float
-    equity_value: float
-    pv_fcff_sum: float
-    iv_gordon: float | None
-    iv_exit: float | None
-    iv_blended: float
-    terminal_breakdown: TerminalBreakdown
-    projections: list[ProjectionYear]
-    tv_method_fallback_flag: bool
-    tv_pct_of_ev: float | None
-    roic_consistency_flag: bool
-    nwc_driver_quality_flag: bool
-
-    enterprise_value_operations: float | None = None
-    enterprise_value_total: float | None = None
-    non_operating_assets: float = 0.0
-    non_equity_claims: float = 0.0
-
-    ep_enterprise_value: float | None = None
-    ep_intrinsic_value_per_share: float | None = None
-    dcf_ep_gap_pct: float | None = None
-    ep_reconcile_flag: bool | None = None
-
-    fcfe_intrinsic_value_per_share: float | None = None
-    fcfe_equity_value: float | None = None
-    fcfe_pv_sum: float | None = None
-    fcfe_terminal_value: float | None = None
-    cost_of_equity_used: float | None = None
-
-    health_flags: dict[str, bool] | None = None
-
-
-@dataclass(slots=True)
-class FCFEComputationResult:
-    scenario: str
-    intrinsic_value_per_share: float
-    equity_value: float
-    pv_fcfe_sum: float
-    terminal_value: float
-    cost_of_equity: float
-
-
-@dataclass(slots=True)
-class ProbabilisticValuationResult:
-    scenario_results: dict[str, DCFComputationResult]
-    expected_iv: float
-    expected_upside_pct: float | None
-
-
 def default_scenario_specs() -> list[ScenarioSpec]:
-    return [
-        ScenarioSpec(name="bear", probability=0.20, growth_multiplier=0.8, margin_shift=-0.02, wacc_shift=0.01, exit_multiple_multiplier=0.9),
-        ScenarioSpec(name="base", probability=0.60),
-        ScenarioSpec(name="bull", probability=0.20, growth_multiplier=1.2, margin_shift=0.02, wacc_shift=-0.01, exit_multiple_multiplier=1.1),
-    ]
+    return fixed_scenario_specs()
 
 
 def _validate_drivers(drivers: ForecastDrivers) -> None:
@@ -228,21 +66,39 @@ def _validate_drivers(drivers: ForecastDrivers) -> None:
         raise ValueError("exit_metric must be ev_ebitda or ev_ebit")
 
 
-def _linear_path(start: float, end: float, year: int) -> float:
-    if year <= 1:
-        return start
-    if year >= 10:
+def _transition_path(
+    start: float,
+    end: float,
+    year: int,
+    *,
+    hold_years: int,
+    total_years: int,
+    curve: TransitionCurve = "linear",
+    power: float = 2.0,
+) -> float:
+    if total_years < 1:
+        raise ValueError("total_years must be >= 1")
+    if hold_years < 1:
+        raise ValueError("hold_years must be >= 1")
+    if power <= 0:
+        raise ValueError("power must be > 0")
+
+    if year >= total_years:
         return end
-    alpha = (year - 1) / 9.0
+    if year <= hold_years:
+        return start
+
+    alpha = (year - hold_years) / (total_years - hold_years)
+    if curve == "linear":
+        pass
+    elif curve in {"ease_in", "exponential"}:
+        alpha = alpha**power
+    elif curve == "ease_out":
+        alpha = 1.0 - (1.0 - alpha) ** power
+    else:
+        raise ValueError(f"unknown transition curve: {curve}")
+
     return start + (end - start) * alpha
-
-
-def _growth_for_year(near: float, mid: float, year: int) -> float:
-    if year <= 3:
-        return near
-    # Fade from near to mid during years 4-10.
-    alpha = (year - 3) / 7.0
-    return near + (mid - near) * alpha
 
 
 def _nwc_components(
@@ -360,7 +216,7 @@ def _compute_fcfe(
     fcfe_11 = fcff_11_for_gordon + terminal_reinvestment * d.debt_weight
     denominator_ke = ke - terminal_growth
     terminal_value = fcfe_11 / denominator_ke if denominator_ke > 0.002 and fcfe_11 > 0 else None
-    pv_terminal = terminal_value / ((1.0 + ke) ** 10) if terminal_value is not None else 0.0
+    pv_terminal = terminal_value / ((1.0 + ke) ** FORECAST_YEARS) if terminal_value is not None else 0.0
 
     # FCFE already flows to equity; do not subtract net debt again.
     non_debt_claims = non_equity_claims - d.net_debt
@@ -387,17 +243,66 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     pv_fcff_sum = 0.0
     pv_ep_sum = 0.0
 
-    for year in range(1, 11):
-        growth_rate = _growth_for_year(d.revenue_growth_near, d.revenue_growth_mid, year)
+	# loop through all the years in forecast
+    for year in range(1, FORECAST_YEARS + 1):
+        growth_rate = _transition_path(
+            d.revenue_growth_near,
+            d.revenue_growth_mid,
+            year,
+            hold_years=GROWTH_NEAR_YEARS,
+            total_years=FORECAST_YEARS,
+        )
         revenue *= 1.0 + growth_rate
 
-        margin = _linear_path(d.ebit_margin_start, d.ebit_margin_target, year)
-        tax_rate = _linear_path(d.tax_rate_start, d.tax_rate_target, year)
-        capex_pct = _linear_path(d.capex_pct_start, d.capex_pct_target, year)
-        da_pct = _linear_path(d.da_pct_start, d.da_pct_target, year)
-        dso = _linear_path(d.dso_start, d.dso_target, year)
-        dio = _linear_path(d.dio_start, d.dio_target, year)
-        dpo = _linear_path(d.dpo_start, d.dpo_target, year)
+        margin = _transition_path(
+            d.ebit_margin_start,
+            d.ebit_margin_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        tax_rate = _transition_path(
+            d.tax_rate_start,
+            d.tax_rate_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        capex_pct = _transition_path(
+            d.capex_pct_start,
+            d.capex_pct_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        da_pct = _transition_path(
+            d.da_pct_start,
+            d.da_pct_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        dso = _transition_path(
+            d.dso_start,
+            d.dso_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        dio = _transition_path(
+            d.dio_start,
+            d.dio_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
+        dpo = _transition_path(
+            d.dpo_start,
+            d.dpo_target,
+            year,
+            hold_years=DRIVER_HOLD_YEARS,
+            total_years=FORECAST_YEARS,
+        )
 
         ebit = revenue * margin
         nopat = ebit * (1.0 - tax_rate)
@@ -457,14 +362,20 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
 
         ic_prev = ic_end
 
-    y10 = projections[-1]
-    revenue_11 = y10.revenue * (1.0 + d.revenue_growth_terminal)
-    ebit_11 = revenue_11 * y10.ebit_margin
-    nopat_11 = ebit_11 * (1.0 - y10.tax_rate)
-    da_11 = revenue_11 * y10.da_pct
-    capex_11 = revenue_11 * y10.capex_pct
-    _, _, _, nwc_11 = _nwc_components(revenue_11, y10.dso, y10.dio, y10.dpo, cogs_pct=d.cogs_pct_of_revenue)
-    delta_nwc_11 = nwc_11 - y10.nwc
+    terminal_year = projections[-1]
+    revenue_11 = terminal_year.revenue * (1.0 + d.revenue_growth_terminal)
+    ebit_11 = revenue_11 * terminal_year.ebit_margin
+    nopat_11 = ebit_11 * (1.0 - terminal_year.tax_rate)
+    da_11 = revenue_11 * terminal_year.da_pct
+    capex_11 = revenue_11 * terminal_year.capex_pct
+    _, _, _, nwc_11 = _nwc_components(
+        revenue_11,
+        terminal_year.dso,
+        terminal_year.dio,
+        terminal_year.dpo,
+        cogs_pct=d.cogs_pct_of_revenue,
+    )
+    delta_nwc_11 = nwc_11 - terminal_year.nwc
     fcff_11_bridge = nopat_11 + da_11 - capex_11 - delta_nwc_11
 
     terminal_growth = d.revenue_growth_terminal
@@ -481,14 +392,14 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     denominator = d.wacc - terminal_growth
     tv_gordon = fcff_11_for_gordon / denominator if denominator > 0.002 and fcff_11_for_gordon > 0 else None
 
-    terminal_metric_10 = y10.ebit + y10.da if d.exit_metric == "ev_ebitda" else y10.ebit
-    tv_exit = terminal_metric_10 * d.exit_multiple if terminal_metric_10 > 0 and d.exit_multiple > 0 else None
+    terminal_metric = terminal_year.ebit + terminal_year.da if d.exit_metric == "ev_ebitda" else terminal_year.ebit
+    tv_exit = terminal_metric * d.exit_multiple if terminal_metric > 0 and d.exit_multiple > 0 else None
 
     gordon_valid = tv_gordon is not None
     exit_valid = tv_exit is not None
 
-    pv_tv_gordon = tv_gordon / ((1.0 + d.wacc) ** 10) if gordon_valid else None
-    pv_tv_exit = tv_exit / ((1.0 + d.wacc) ** 10) if exit_valid else None
+    pv_tv_gordon = tv_gordon / ((1.0 + d.wacc) ** FORECAST_YEARS) if gordon_valid else None
+    pv_tv_exit = tv_exit / ((1.0 + d.wacc) ** FORECAST_YEARS) if exit_valid else None
 
     if gordon_valid and exit_valid:
         wg = d.terminal_blend_gordon_weight
@@ -521,25 +432,25 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
 
     equity_value = enterprise_value_total - non_equity_claims
 
-    # Gap 3 (Phase A): project shares to Year 10 to capture dilution/buyback effect
-    shares_y10 = d.shares_outstanding * (1.0 + d.annual_dilution_pct) ** 10
-    shares_y10 = max(shares_y10, 1.0)
+    # Gap 3 (Phase A): project shares through the forecast horizon for dilution/buybacks.
+    terminal_shares = d.shares_outstanding * (1.0 + d.annual_dilution_pct) ** FORECAST_YEARS
+    terminal_shares = max(terminal_shares, 1.0)
 
-    iv_blended = equity_value / shares_y10
+    iv_blended = equity_value / terminal_shares
 
     iv_gordon = None
     if gordon_valid and pv_tv_gordon is not None:
-        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / shares_y10
+        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / terminal_shares
 
     iv_exit = None
     if exit_valid and pv_tv_exit is not None:
-        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / shares_y10
+        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / terminal_shares
 
-    reinvestment_10 = y10.reinvestment
-    reinvestment_rate_10 = reinvestment_10 / y10.nopat if y10.nopat > 0 else None
+    terminal_reinvestment = terminal_year.reinvestment
+    terminal_reinvestment_rate = terminal_reinvestment / terminal_year.nopat if terminal_year.nopat > 0 else None
     implied_roic = None
-    if reinvestment_rate_10 is not None and reinvestment_rate_10 > 0:
-        implied_roic = terminal_growth / reinvestment_rate_10
+    if terminal_reinvestment_rate is not None and terminal_reinvestment_rate > 0:
+        implied_roic = terminal_growth / terminal_reinvestment_rate
 
     roic_consistency_flag = bool(
         implied_roic is not None and (implied_roic < 0.02 or implied_roic > 0.35)
@@ -553,14 +464,14 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         tv_pct_of_ev = pv_tv_blended / enterprise_value_operations
 
     ic0 = projections[0].invested_capital_start if projections else None
-    ic10 = projections[-1].invested_capital_end if projections else None
+    terminal_invested_capital = projections[-1].invested_capital_end if projections else None
     terminal_ep = None
     pv_terminal_ep = None
-    if ic10 is not None:
-        ep_11 = nopat_11 - d.wacc * ic10
+    if terminal_invested_capital is not None:
+        ep_11 = nopat_11 - d.wacc * terminal_invested_capital
         if denominator > 0.002:
             terminal_ep = ep_11 / denominator
-            pv_terminal_ep = terminal_ep / ((1.0 + d.wacc) ** 10)
+            pv_terminal_ep = terminal_ep / ((1.0 + d.wacc) ** FORECAST_YEARS)
 
     ep_enterprise_value = None
     ep_intrinsic_value_per_share = None
@@ -572,7 +483,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
             dcf_ep_gap_pct = (ep_enterprise_value - enterprise_value_operations) / enterprise_value_operations
             ep_reconcile_flag = abs(dcf_ep_gap_pct) <= 0.15
         ep_equity = ep_enterprise_value + d.non_operating_assets - non_equity_claims
-        ep_intrinsic_value_per_share = ep_equity / shares_y10
+        ep_intrinsic_value_per_share = ep_equity / terminal_shares
 
     fcfe_iv, fcfe_equity_value, fcfe_terminal_value, cost_of_equity_used = _compute_fcfe(
         d=d,
@@ -580,7 +491,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         fcff_11_for_gordon=fcff_11_for_gordon,
         nopat_11=nopat_11,
         non_equity_claims=non_equity_claims,
-        shares_out=shares_y10,
+        shares_out=terminal_shares,
     )
 
     health_flags = {

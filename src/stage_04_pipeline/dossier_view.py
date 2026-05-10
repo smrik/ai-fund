@@ -1,4 +1,5 @@
 from __future__ import annotations
+from src.utils import coerce_ticker
 
 import json
 import re
@@ -16,11 +17,8 @@ from src.stage_04_pipeline.dossier_index import (
 from src.stage_04_pipeline.dossier_workspace import read_dossier_note
 
 
-def _coerce_ticker(ticker: str) -> str:
-    value = (ticker or "").strip().upper()
-    if not value:
-        raise ValueError("ticker is required")
-    return value
+
+
 
 
 def _ensure_schema(conn) -> None:
@@ -356,7 +354,7 @@ def _review_due_bucket(review_due_date: str | None) -> str | None:
 
 
 def build_model_checkpoint_view(ticker: str) -> dict[str, Any]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         rows = conn.execute(
@@ -409,7 +407,7 @@ _NOTEBOOK_TYPES = [
 
 
 def build_dossier_notebook_view(ticker: str) -> dict[str, Any]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     rows = list_dossier_note_blocks(dossier_ticker)
     blocks_by_type: dict[str, list[dict[str, Any]]] = {key: [] for key in _NOTEBOOK_TYPES}
     counts: dict[str, int] = {key: 0 for key in _NOTEBOOK_TYPES}
@@ -437,7 +435,7 @@ def build_dossier_notebook_view(ticker: str) -> dict[str, Any]:
 
 
 def build_research_board_view(ticker: str) -> dict[str, Any]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     tracker = build_thesis_tracker_view(dossier_ticker)
     notebook = build_dossier_notebook_view(dossier_ticker)
     publishable_note = ""
@@ -454,7 +452,7 @@ def build_research_board_view(ticker: str) -> dict[str, Any]:
 
 
 def build_thesis_tracker_view(ticker: str) -> dict[str, Any]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         snapshots = _load_archive_snapshots(conn, dossier_ticker, limit=2)
@@ -614,7 +612,7 @@ def build_thesis_diff_view(ticker: str) -> dict[str, Any]:
 
 
 def build_publishable_memo_context(ticker: str) -> dict[str, Any]:
-    dossier_ticker = _coerce_ticker(ticker)
+    dossier_ticker = coerce_ticker(ticker)
     with get_connection() as conn:
         _ensure_schema(conn)
         profile_row = conn.execute(
@@ -667,7 +665,7 @@ def build_publishable_memo_context(ticker: str) -> dict[str, Any]:
 
 def build_deep_dive_dossier_view(ticker: str) -> dict[str, Any]:
     return {
-        "ticker": _coerce_ticker(ticker),
+        "ticker": coerce_ticker(ticker),
         "model_checkpoints": build_model_checkpoint_view(ticker),
         "thesis_tracker": build_thesis_tracker_view(ticker),
         "thesis_diff": build_thesis_diff_view(ticker),

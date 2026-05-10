@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 import yfinance as yf
 
 from db.schema import get_connection
+from src.utils import safe_float
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +86,12 @@ def snapshot_estimates(ticker: str) -> dict:
                 cols = list(ee.columns)
                 # Prefer "+1y" column; fall back to last available
                 if "+1y" in cols:
-                    fy1_eps = _safe_float(ee["+1y"].get("avg"))
-                    eps_high = _safe_float(ee["+1y"].get("high"))
-                    eps_low = _safe_float(ee["+1y"].get("low"))
+                    fy1_eps = safe_float(ee["+1y"].get("avg"))
+                    eps_high = safe_float(ee["+1y"].get("high"))
+                    eps_low = safe_float(ee["+1y"].get("low"))
                     num_analysts = _safe_int(ee["+1y"].get("numberOfAnalysts"))
                 if "+2y" in cols:
-                    fy2_eps = _safe_float(ee["+2y"].get("avg"))
+                    fy2_eps = safe_float(ee["+2y"].get("avg"))
         except Exception as exc:
             logger.debug("earnings_estimate fetch failed for %s: %s", ticker, exc)
 
@@ -101,7 +102,7 @@ def snapshot_estimates(ticker: str) -> dict:
             if re is not None and not re.empty:
                 cols = list(re.columns)
                 if "+1y" in cols:
-                    raw_rev = _safe_float(re["+1y"].get("avg"))
+                    raw_rev = safe_float(re["+1y"].get("avg"))
                     if raw_rev is not None:
                         # Convert to millions if value looks like raw dollars
                         fy1_revenue = raw_rev / 1e6 if raw_rev > 1e7 else raw_rev
@@ -315,16 +316,7 @@ def run_estimate_snapshot_job(tickers: list[str]) -> dict:
 
 # ── Internal helpers ───────────────────────────────────────────────────────────
 
-def _safe_float(value) -> float | None:
-    """Convert value to float, returning None on failure."""
-    if value is None:
-        return None
-    try:
-        f = float(value)
-        import math
-        return None if math.isnan(f) or math.isinf(f) else f
-    except (TypeError, ValueError):
-        return None
+
 
 
 def _safe_int(value) -> int | None:

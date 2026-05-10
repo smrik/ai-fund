@@ -73,6 +73,93 @@ def _derive_target_net_debt_to_ebitda(target: dict) -> float | None:
     return round((float(tev_mm) - float(market_cap_mm)) / float(ebitda_ltm_mm), 4)
 
 
+def _derive_ebit_margin(row: dict) -> float | None:
+    revenue = row.get("revenue_ltm_mm")
+    ebit = row.get("ebit_ltm_mm")
+    if revenue in (None, 0) or ebit is None:
+        return row.get("ebit_margin")
+    return round(float(ebit) / float(revenue), 4)
+
+
+def _derive_net_debt_mm(row: dict) -> float | None:
+    tev_mm = row.get("tev_mm")
+    market_cap_mm = row.get("market_cap_mm")
+    if tev_mm is None or market_cap_mm is None:
+        return row.get("net_debt_mm")
+    return round(float(tev_mm) - float(market_cap_mm), 4)
+
+
+def _enrich_operating_context(row: dict) -> dict:
+    enriched = dict(row or {})
+    if enriched.get("ebit_margin") is None:
+        enriched["ebit_margin"] = _derive_ebit_margin(enriched)
+    if enriched.get("net_debt_mm") is None:
+        enriched["net_debt_mm"] = _derive_net_debt_mm(enriched)
+    if enriched.get("net_debt_to_ebitda") is None:
+        ebitda = enriched.get("ebitda_ltm_mm")
+        net_debt = enriched.get("net_debt_mm")
+        if ebitda not in (None, 0) and net_debt is not None:
+            enriched["net_debt_to_ebitda"] = round(float(net_debt) / float(ebitda), 4)
+    return enriched
+
+
+def _support_data_quality(target: dict, peers: list[dict], valuation_by_metric: dict[str, dict]) -> dict:
+    peer_count = len(peers)
+
+    def _coverage(field: str) -> dict:
+        present = sum(1 for row in peers if row.get(field) is not None)
+        return {
+            "present": present,
+            "total": peer_count,
+            "ratio": round(present / peer_count, 4) if peer_count else None,
+        }
+
+    required_target_fields = ("revenue_ltm_mm", "ebitda_ltm_mm", "ebit_ltm_mm", "ebit_margin", "net_debt_to_ebitda")
+    return {
+        "target_missing_fields": [field for field in required_target_fields if target.get(field) is None],
+        "peer_coverage": {
+            field: _coverage(field)
+            for field in (
+                "revenue_ltm_mm",
+                "ebitda_ltm_mm",
+                "ebit_ltm_mm",
+                "ebit_margin",
+                "net_debt_to_ebitda",
+                "tev_ebitda_ltm",
+                "tev_ebit_ltm",
+                "pe_ltm",
+            )
+        },
+        "valuation_metric_count": len(valuation_by_metric),
+        "common_patchups_needed": [],
+    }
+
+
+def _operating_context(target: dict, target_vs_peers: dict, peers: list[dict]) -> dict:
+    peer_medians = (target_vs_peers or {}).get("peer_medians") or {}
+    return {
+        "target": {
+            key: target.get(key)
+            for key in (
+                "revenue_ltm_mm",
+                "ebitda_ltm_mm",
+                "ebit_ltm_mm",
+                "eps_ltm",
+                "ebit_margin",
+                "net_debt_mm",
+                "net_debt_to_ebitda",
+            )
+            if target.get(key) is not None
+        },
+        "peer_medians": {
+            key: peer_medians.get(key)
+            for key in ("revenue_growth", "ebit_margin", "net_debt_to_ebitda")
+            if peer_medians.get(key) is not None
+        },
+        "peer_count": len(peers),
+    }
+
+
 def _target_vs_peers_payload(target: dict, market: dict, medians: dict, peers: list[dict]) -> dict:
     target_payload = {
         "tev_ebitda_ltm": target.get("tev_ebitda_ltm") or market.get("ev_ebitda"),
@@ -320,6 +407,13 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             "metric_status_rows": [],
             "football_field": {"ranges": [], "markers": [], "range_min": None, "range_max": None},
             "historical_multiples_summary": {"available": False, "metrics": {}, "audit_flags": []},
+            "operating_context": {"target": {}, "peer_medians": {}, "peer_count": 0},
+            "support_data_quality": {
+                "target_missing_fields": [],
+                "peer_coverage": {},
+                "valuation_metric_count": 0,
+                "common_patchups_needed": [],
+            },
             "audit_flags": ["No CIQ comps detail available"],
         }
 
@@ -340,7 +434,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     if market.get("shares_outstanding"):
         shares_mm = float(market["shares_outstanding"]) / 1_000_000.0
 
-    target = comps_detail.get("target") or {}
+    target = _enrich_operating_context(comps_detail.get("target") or {})
     tev_mm = target.get("tev_mm")
     market_cap_mm = target.get("market_cap_mm")
     net_debt_mm = (tev_mm - market_cap_mm) if tev_mm is not None and market_cap_mm is not None else None
@@ -354,7 +448,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     model_weights = _normalise_similarity_weights(similarity_scores)
     peer_rows = []
     for row in comps_detail.get("peers", []):
-        peer_row = dict(row)
+        peer_row = _enrich_operating_context(row)
         peer_row["similarity_score"] = similarity_scores.get(row["ticker"])
         peer_row["model_weight"] = model_weights.get(row["ticker"])
         peer_rows.append(peer_row)
@@ -409,6 +503,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     )
     comparison_summary = _comparison_summary(target_vs_peers)
     metric_status_rows = _metric_status_rows(peer_table, valuation_by_metric, comps_result)
+    support_data_quality = _support_data_quality(target, peer_table, valuation_by_metric)
 
     return {
         "ticker": ticker,
@@ -440,6 +535,8 @@ def build_comps_dashboard_view(ticker: str) -> dict:
         "target_vs_peers": target_vs_peers,
         "comparison_summary": comparison_summary,
         "metric_status_rows": metric_status_rows,
+        "operating_context": _operating_context(target, target_vs_peers, peer_table),
+        "support_data_quality": support_data_quality,
         "football_field": _football_field(
             market.get("current_price"),
             valuation_by_metric,

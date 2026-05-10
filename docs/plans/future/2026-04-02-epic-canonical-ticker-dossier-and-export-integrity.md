@@ -5,8 +5,8 @@
 | Status | Planned |
 | Priority | P0 |
 | Target release | v0.2.0 Dossier Integrity |
-| GitHub | Epic issue to be created |
-| Last updated | 2026-04-02 |
+| GitHub | [#14](https://github.com/smrik/ai-fund/issues/14) |
+| Last updated | 2026-05-05 |
 
 ## Problem
 
@@ -14,7 +14,7 @@ Alpha Pod already has useful API, React, and export surfaces, but the underlying
 
 ## Smallest Valuable Outcome
 
-One canonical ticker dossier contract can feed API responses, React pages, and Excel/HTML exports without ad hoc reshaping or missing core fields.
+One canonical ticker dossier contract can feed API responses, React pages, and Excel/HTML exports without ad hoc reshaping or missing core fields. The contract is documented in [docs/design-docs/ticker-dossier-contract.md](../../design-docs/ticker-dossier-contract.md) and is the target for future adapters and drift tests.
 
 ## In Scope
 
@@ -38,6 +38,7 @@ One canonical ticker dossier contract can feed API responses, React pages, and E
 - Stable deterministic valuation outputs
 - Clear export-service ownership
 - Agreement that the dossier contract is canonical across product surfaces
+- The canonical contract doc at [docs/design-docs/ticker-dossier-contract.md](../../design-docs/ticker-dossier-contract.md)
 
 ## Acceptance Criteria
 
@@ -45,7 +46,10 @@ One canonical ticker dossier contract can feed API responses, React pages, and E
 - JSON export includes full name, sector/industry, as-of date, QoE, and historical series needed by the product
 - Sensitivity and comps payloads are complete enough for dashboard and workbook use without custom patch-up logic
 - Export surfaces consume canonical fields rather than bespoke per-surface reshaping
+- Child issues can implement adapters against the contract without changing the contract definition first
 
 ## Notes
 
 This is the first roadmap epic because every later product surface becomes easier once the ticker dossier is reliable.
+
+Issue #22 aligns API, React preload, and HTML export consumers through canonical `ticker_dossier` adapter reads while keeping legacy API fields, workbook JSON roots, and export templates stable as compatibility shims.

@@ -40,14 +40,39 @@ EQUITY_RISK_PREMIUM = float(_wacc_cfg.get("equity_risk_premium", 0.05))  # Damod
 DEFAULT_TAX_RATE = 0.21      # US corporate
 DEFAULT_COST_OF_DEBT = 0.06  # BBB-ish spread
 
-# Size premia (Duff & Phelps / Kroll)
+# Size premia (CRSP Deciles Size Study - Data as of 12/31/2023)
+# https://www.crsp.com/investing-research/
 SIZE_PREMIA = {
-    "mega":  0.000,   # > $50B
-    "large": 0.005,   # $10B - $50B
-    "mid":   0.010,   # $2B - $10B
-    "small": 0.015,   # $500M - $2B
-    "micro": 0.025,   # < $500M
+    # CRSP Deciles 1-10 (market cap in $mm, premium in %)
+    # Decile 1 (mega): $36,942.98M - $2,662,326.05M
+    "mega": -0.0006,    # -0.06%
+    # Decile 2 (large): $14,910.72M - $36,391.11M
+    "large": 0.0046,    # 0.46%
+    # Decile 3 (upper mid): $7,493.61M - $14,820.05M
+    "upper_mid": 0.0061,  # 0.61%
+    # Decile 4 (mid): $4,622.26M - $7,461.28M
+    "mid": 0.0064,     # 0.64%
+    # Decile 5 (lower mid): $3,011.22M - $4,621.79M
+    "lower_mid": 0.0095,  # 0.95%
+    # Decile 6: $1,864.29M - $3,010.81M
+    "decile_6": 0.0121,   # 1.21%
+    # Decile 7: $1,050.08M - $1,862.49M
+    "decile_7": 0.0139,   # 1.39%
+    # Decile 8: $555.88M - $1,046.04M
+    "decile_8": 0.0114,   # 1.14%
+    # Decile 9: $213.04M - $554.52M
+    "micro": 0.0199,     # 1.99%
+    # Decile 10: $1.58M - $212.64M
+    "nano": 0.0470,      # 4.70%
 }
+
+# CRSP Decile breakpoints (high end of each decile in $mm)
+CRSP_DECILE_BREAKPOINTS = [
+    36.94,       # Decile 1 lower bound (~$37M)
+    555.88,       # Decile 8 lower bound
+    213.04,       # Decile 9 lower bound
+    1.58,         # Decile 10 lower bound
+]
 
 SECTOR_BETA_PROXIES = {
     "Technology": 1.05,
@@ -127,33 +152,47 @@ WACC_METHODS = ("peer_bottom_up", "industry_proxy", "self_hamada")
 
 
 def _get_size_premium(market_cap: float) -> float:
-    """Determine size premium via linear interpolation between Duff & Phelps breakpoints.
+    """Determine size premium using CRSP Deciles Size Study (as of 12/31/2023).
 
-    Smooth interpolation eliminates the step-function discontinuity at bucket boundaries
-    (e.g. a company at $1.99B vs $2.01B no longer gets a 50bp cliff jump).
-    Breakpoints are midpoints of the original D&P size buckets in $mm.
+    Uses linear interpolation between CRSP decile breakpoints to eliminate
+    step-function discontinuities at bucket boundaries.
     """
     if market_cap is None or market_cap <= 0:
         return SIZE_PREMIA["mid"]
+
     mcap_mm = market_cap / 1e6
-    # (market_cap_mm_midpoint, premium) — linear interpolation between adjacent points
+
+    # CRSP Deciles: (high end of decile in $mm, premium)
+    # Ordered by market cap (largest to smallest)
     breakpoints = [
-        (250.0, 0.025),    # micro cap centre
-        (1250.0, 0.015),   # small cap centre
-        (6000.0, 0.010),   # mid cap centre
-        (30000.0, 0.005),  # large cap centre
-        (75000.0, 0.000),  # mega cap
+        (2662326.05, -0.0006),   # Decile 1: > $36,942.98M -> -0.06%
+        (36391.11, 0.0046),     # Decile 2: $14,910.72M - $36,391.11M -> 0.46%
+        (14820.05, 0.0061),     # Decile 3: $7,493.61M - $14,820.05M -> 0.61%
+        (7461.28, 0.0064),      # Decile 4: $4,622.26M - $7,461.28M -> 0.64%
+        (4621.79, 0.0095),     # Decile 5: $3,011.22M - $4,621.79M -> 0.95%
+        (3010.81, 0.0121),     # Decile 6: $1,864.29M - $3,010.81M -> 1.21%
+        (1862.49, 0.0139),     # Decile 7: $1,050.08M - $1,862.49M -> 1.39%
+        (1046.04, 0.0114),     # Decile 8: $555.88M - $1,046.04M -> 1.14%
+        (554.52, 0.0199),      # Decile 9: $213.04M - $554.52M -> 1.99%
+        (212.64, 0.0470),      # Decile 10: $1.58M - $212.64M -> 4.70%
     ]
-    if mcap_mm <= breakpoints[0][0]:
-        return breakpoints[0][1]
-    if mcap_mm >= breakpoints[-1][0]:
+
+    # Below smallest decile (nano cap)
+    if mcap_mm <= breakpoints[-1][0]:
         return breakpoints[-1][1]
+
+    # Above largest decile (mega cap)
+    if mcap_mm >= breakpoints[0][0]:
+        return breakpoints[0][1]
+
+    # Linear interpolation between adjacent deciles
     for i in range(len(breakpoints) - 1):
         x0, y0 = breakpoints[i]
         x1, y1 = breakpoints[i + 1]
-        if x0 <= mcap_mm <= x1:
-            alpha = (mcap_mm - x0) / (x1 - x0)
+        if x1 <= mcap_mm <= x0:
+            alpha = (x0 - mcap_mm) / (x0 - x1)
             return y0 + alpha * (y1 - y0)
+
     return SIZE_PREMIA["mid"]
 
 

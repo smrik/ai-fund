@@ -1,17 +1,35 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
-from threading import Lock
-from typing import Any, Callable
-from uuid import uuid4
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
+
+from api.run_tracker import submit_background_run, update_run, get_run
+from src.utils import coerce_ticker
+from src.stage_04_pipeline.workspace_views import (
+    build_ticker_workspace_payload,
+    build_overview_payload,
+    build_valuation_summary_payload,
+    build_valuation_dcf_payload,
+    build_valuation_comps_payload,
+    build_valuation_assumptions_payload,
+    build_wacc_payload,
+    build_valuation_recommendations_payload,
+    build_market_payload,
+    build_research_payload,
+    build_audit_payload,
+    build_ticker_dossier_payload,
+    load_latest_ticker_dossier_payload,  # noqa: F401 — patched by tests
+    build_ticker_dossier_from_source,  # noqa: F401 — patched by tests
+    _attach_api_ticker_dossier,
+    _normalize_assumptions_preview_payload,
+    _normalize_wacc_preview_payload,
+    _normalize_recommendations_preview_payload,
+)
 
 
 class WatchlistRefreshRequest(BaseModel):
@@ -56,47 +74,11 @@ class WatchlistExportRequest(BaseModel):
     shortlist_size: int = Field(default=10, ge=1, le=25)
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _coerce_ticker(value: str) -> str:
-    ticker = str(value or "").strip().upper()
-    if not ticker:
-        raise HTTPException(status_code=400, detail="ticker is required")
-    return ticker
-
-
-def _safe_float(value: Any) -> float | None:
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        try:
-            return float(value.strip())
-        except ValueError:
-            return None
-    return None
-
-
-def _pick_value(*values: Any) -> Any:
-    for value in values:
-        if value is not None:
-            return value
-    return None
-
-
-def _percent_points_to_fraction(value: Any) -> float | None:
-    amount = _safe_float(value)
-    if amount is None:
-        return None
-    return amount / 100.0
-
-
-def _fraction_to_percent_points(value: Any) -> float | None:
-    amount = _safe_float(value)
-    if amount is None:
-        return None
-    return amount * 100.0
+def api_coerce_ticker(value: str) -> str:
+    try:
+        return coerce_ticker(value)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def load_saved_watchlist(shortlist_size: int = 10) -> dict[str, Any]:
@@ -157,6 +139,9 @@ def run_watchlist_export(
         shortlist_size=shortlist_size,
         created_by=created_by,
     )
+
+
+
 
 
 def list_saved_exports(*, ticker: str | None = None, scope: str | None = None, limit: int = 25) -> list[dict[str, Any]]:
@@ -359,413 +344,10 @@ def apply_recommendations_to_overrides(
     return _impl(ticker, approved_fields=approved_fields, actor=actor)
 
 
-def _normalize_assumptions_preview_payload(ticker: str, payload: dict[str, Any] | None) -> dict[str, Any]:
-    preview = payload or {}
-    return {
-        "ticker": ticker,
-        "resolved_values": preview.get("resolved_values") or {},
-        "current_iv": preview.get("current_iv") or {},
-        "proposed_iv": preview.get("proposed_iv") or {},
-        "current_expected_iv": preview.get("current_expected_iv"),
-        "proposed_expected_iv": preview.get("proposed_expected_iv"),
-        "delta_pct": preview.get("delta_pct") or {},
-    }
-
-
-def _normalize_wacc_preview_payload(
-    ticker: str,
-    payload: dict[str, Any] | None,
-    request_payload: WaccSelectionRequest,
-) -> dict[str, Any]:
-    preview = payload or {}
-    selection = preview.get("selection")
-    if not isinstance(selection, dict):
-        selection = {
-            "mode": request_payload.mode,
-            "selected_method": request_payload.selected_method,
-            "weights": request_payload.weights,
-        }
-    return {
-        "ticker": ticker,
-        "selection": selection,
-        "effective_wacc": preview.get("effective_wacc"),
-        "current_wacc": preview.get("current_wacc"),
-        "current_iv": preview.get("current_iv") or {},
-        "proposed_iv": preview.get("proposed_iv") or {},
-        "current_expected_iv": preview.get("current_expected_iv"),
-        "proposed_expected_iv": preview.get("proposed_expected_iv"),
-        "method_result": preview.get("method_result"),
-    }
-
-
-def _normalize_recommendations_preview_payload(ticker: str, payload: dict[str, Any] | None) -> dict[str, Any]:
-    preview = payload or {}
-    return {
-        "ticker": ticker,
-        "current_iv": preview.get("current_iv") or {},
-        "proposed_iv": preview.get("proposed_iv") or {},
-        "delta_pct": preview.get("delta_pct") or {},
-    }
-
-
-def _watchlist_row_for_ticker(ticker: str) -> dict[str, Any]:
-    payload = load_saved_watchlist(shortlist_size=10) or {}
-    for row in payload.get("rows") or []:
-        row_ticker = str((row or {}).get("ticker") or "").upper()
-        if row_ticker == ticker:
-            return dict(row)
-    return {}
-
-
-def _snapshot_payload(ticker: str) -> dict[str, Any] | None:
-    try:
-        return load_latest_snapshot_for_ticker(ticker)
-    except Exception:  # pragma: no cover - defensive guard
-        return None
-
-
-def _memo_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
-    memo = (snapshot or {}).get("memo") or {}
-    return dict(memo) if isinstance(memo, dict) else {}
-
-
-def _valuation_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
-    valuation = _memo_payload(snapshot).get("valuation") or {}
-    return dict(valuation) if isinstance(valuation, dict) else {}
-
-
-def build_ticker_workspace_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    watchlist_row = _watchlist_row_for_ticker(ticker)
-    snapshot = _snapshot_payload(ticker)
-    memo = _memo_payload(snapshot)
-    valuation = _valuation_payload(snapshot)
-
-    market = {}
-    analyst = {}
-    try:
-        market = get_market_data(ticker, use_cache=True)
-        analyst = get_analyst_ratings(ticker)
-    except Exception:  # pragma: no cover - thin scaffold should still render
-        market = {}
-        analyst = {}
-
-    current_price = _pick_value(
-        (snapshot or {}).get("current_price"),
-        valuation.get("current_price"),
-        watchlist_row.get("price"),
-        market.get("current_price"),
-    )
-    base_iv = _pick_value(
-        (snapshot or {}).get("base_iv"),
-        valuation.get("base"),
-        watchlist_row.get("iv_base"),
-    )
-    upside_pct_base = _pick_value(
-        valuation.get("upside_pct_base"),
-        _percent_points_to_fraction(watchlist_row.get("upside_base_pct")),
-    )
-
-    return {
-        "ticker": ticker,
-        "company_name": _pick_value(
-            (snapshot or {}).get("company_name"),
-            memo.get("company_name"),
-            watchlist_row.get("company_name"),
-            market.get("name"),
-            ticker,
-        ),
-        "sector": _pick_value((snapshot or {}).get("sector"), memo.get("sector"), watchlist_row.get("sector"), market.get("sector")),
-        "action": _pick_value((snapshot or {}).get("action"), memo.get("action"), watchlist_row.get("latest_action")),
-        "conviction": _pick_value(
-            (snapshot or {}).get("conviction"),
-            memo.get("conviction"),
-            watchlist_row.get("latest_conviction"),
-        ),
-        "current_price": _safe_float(current_price),
-        "base_iv": _safe_float(base_iv),
-        "bear_iv": _safe_float(_pick_value(valuation.get("bear"), watchlist_row.get("iv_bear"))),
-        "bull_iv": _safe_float(_pick_value(valuation.get("bull"), watchlist_row.get("iv_bull"))),
-        "weighted_iv": _safe_float(_pick_value(watchlist_row.get("expected_iv"), watchlist_row.get("weighted_iv"))),
-        "upside_pct_base": _safe_float(upside_pct_base),
-        "analyst_target": _safe_float(_pick_value(analyst.get("target_mean"), market.get("analyst_target_mean"))),
-        "analyst_recommendation": _pick_value(analyst.get("recommendation"), market.get("analyst_recommendation")),
-        "latest_snapshot_date": _pick_value(
-            (snapshot or {}).get("created_at"),
-            watchlist_row.get("latest_snapshot_date"),
-        ),
-        "snapshot_available": snapshot is not None,
-        "last_snapshot_id": (snapshot or {}).get("id"),
-        "snapshot_id": (snapshot or {}).get("id"),
-        "last_snapshot_date": _pick_value(
-            (snapshot or {}).get("created_at"),
-            watchlist_row.get("latest_snapshot_date"),
-        ),
-        "latest_action": _pick_value((snapshot or {}).get("action"), memo.get("action"), watchlist_row.get("latest_action")),
-        "latest_conviction": _pick_value(
-            (snapshot or {}).get("conviction"),
-            memo.get("conviction"),
-            watchlist_row.get("latest_conviction"),
-        ),
-    }
-
-
-def build_overview_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    workspace = build_ticker_workspace_payload(ticker)
-    snapshot = _snapshot_payload(ticker)
-    memo = _memo_payload(snapshot)
-    tracker = build_thesis_tracker_view(ticker)
-    market = build_news_materiality_view(ticker)
-
-    next_catalyst = ((tracker.get("stance") or {}).get("next_catalyst") or {}).get("title")
-    valuation_pulse = None
-    if workspace.get("current_price") is not None and workspace.get("base_iv") is not None:
-        valuation_pulse = (
-            f"Base IV ${workspace['base_iv']:,.2f} versus current price ${workspace['current_price']:,.2f}."
-        )
-
-    market_pulse = ((market.get("historical_brief") or {}).get("summary")) or market.get("summary")
-
-    return {
-        "ticker": ticker,
-        "company_name": workspace.get("company_name"),
-        "one_liner": memo.get("one_liner"),
-        "variant_thesis_prompt": memo.get("variant_thesis_prompt"),
-        "market_pulse": market_pulse,
-        "valuation_pulse": valuation_pulse,
-        "thesis_changes": ((tracker.get("what_changed") or {}).get("summary_lines")) or [],
-        "next_catalyst": next_catalyst,
-        "workspace": workspace,
-    }
-
-
 build_ticker_overview_payload = build_overview_payload
 
 
-def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    watchlist_row = _watchlist_row_for_ticker(ticker)
-    snapshot = _snapshot_payload(ticker)
-    memo = _memo_payload(snapshot)
-    valuation = _valuation_payload(snapshot)
-    summary = build_dcf_audit_view(ticker)
-
-    analyst_target = watchlist_row.get("analyst_target")
-    if analyst_target is None:
-        try:
-            analyst_target = get_market_data(ticker, use_cache=True).get("analyst_target_mean")
-        except Exception:
-            analyst_target = None
-
-    return {
-        "ticker": ticker,
-        "current_price": _safe_float(
-            _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
-        ),
-        "base_iv": _safe_float(_pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base"))),
-        "bear_iv": _safe_float(_pick_value(valuation.get("bear"), watchlist_row.get("iv_bear"))),
-        "bull_iv": _safe_float(_pick_value(valuation.get("bull"), watchlist_row.get("iv_bull"))),
-        "weighted_iv": _safe_float(_pick_value(watchlist_row.get("expected_iv"), watchlist_row.get("weighted_iv"))),
-        "upside_pct_base": _safe_float(
-            _pick_value(_fraction_to_percent_points(valuation.get("upside_pct_base")), watchlist_row.get("upside_base_pct"))
-        ),
-        "analyst_target": _safe_float(analyst_target),
-        "conviction": _pick_value((snapshot or {}).get("conviction"), memo.get("conviction"), watchlist_row.get("latest_conviction")),
-        "memo_date": _pick_value((snapshot or {}).get("created_at"), memo.get("date"), watchlist_row.get("latest_snapshot_date")),
-        "why_it_matters": (
-            f"Base IV ${_safe_float(_pick_value((snapshot or {}).get('base_iv'), valuation.get('base'), watchlist_row.get('iv_base'))) or 0:,.2f}"
-            f" versus current price ${_safe_float(_pick_value((snapshot or {}).get('current_price'), valuation.get('current_price'), watchlist_row.get('price'))) or 0:,.2f}."
-            if _pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base")) is not None
-            and _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price")) is not None
-            else None
-        ),
-        "readiness": summary.get("model_integrity") or {},
-        "summary": summary,
-    }
-
-
-def build_valuation_dcf_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    return build_dcf_audit_view(ticker)
-
-
-def build_valuation_comps_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    return build_comps_dashboard_view(ticker)
-
-
-def build_valuation_assumptions_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    workbench = build_override_workbench(ticker)
-    payload = {
-        "ticker": ticker,
-        "available": bool(workbench.get("available")),
-        **workbench,
-    }
-    from src.stage_04_pipeline.override_workbench import load_override_audit_history
-
-    payload["audit_rows"] = load_override_audit_history(ticker, limit=50)
-    return payload
-
-
-def build_wacc_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    workbench = build_wacc_workbench(ticker, apply_overrides=True)
-    selection = workbench.get("current_selection") or {}
-    effective_preview = workbench.get("effective_preview") or {}
-    return {
-        "ticker": ticker,
-        "available": bool(workbench.get("available")),
-        "current_wacc": effective_preview.get("wacc"),
-        "proposed_wacc": effective_preview.get("expected_method_wacc"),
-        "method": selection.get("selected_method") or selection.get("mode"),
-        "audit_rows": load_wacc_methodology_audit_history(ticker, limit=25),
-        "current_selection": selection,
-        "effective_preview": effective_preview,
-        "methods": workbench.get("methods") or [],
-    }
-
-
 build_valuation_wacc_payload = build_wacc_payload
-
-
-def build_valuation_recommendations_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    recs = load_recommendations(ticker)
-    if recs is None:
-        return {
-            "ticker": ticker,
-            "available": False,
-            "generated_at": None,
-            "current_iv_base": None,
-            "recommendations": [],
-        }
-    return {
-        "ticker": ticker,
-        "available": True,
-        "generated_at": recs.generated_at,
-        "current_iv_base": recs.current_iv_base,
-        "recommendations": jsonable_encoder(recs.recommendations),
-    }
-
-
-def build_market_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    market = build_news_materiality_view(ticker)
-    market["ticker"] = ticker
-
-    try:
-        revisions = get_revision_signals(ticker)
-        market["revisions"] = jsonable_encoder(revisions)
-    except Exception:
-        market["revisions"] = {
-            "ticker": ticker,
-            "available": False,
-            "revision_momentum": "unavailable",
-            "error": "Revision signals unavailable",
-        }
-
-    try:
-        regime = detect_current_regime()
-        scenario_weights = get_scenario_weights(regime)
-        macro_snapshot = get_macro_snapshot(lookback_days=5)
-        yield_curve = get_yield_curve()
-        market["macro"] = {
-            "regime": jsonable_encoder(regime),
-            "scenario_weights": jsonable_encoder(scenario_weights),
-            "snapshot": macro_snapshot,
-            "yield_curve": yield_curve,
-        }
-    except Exception:
-        market["macro"] = {
-            "regime": {"label": "Neutral", "available": False, "error": "Macro unavailable"},
-            "scenario_weights": {"bear": 0.2, "base": 0.6, "bull": 0.2, "regime": "Neutral"},
-            "snapshot": {"available": False, "series": {}, "error": "Macro unavailable"},
-            "yield_curve": {"available": False, "maturities": [], "error": "Macro unavailable"},
-        }
-
-    try:
-        factor_exposure = decompose_factor_exposure(ticker)
-        market["factor_exposure"] = {
-            **jsonable_encoder(factor_exposure),
-            "summary_text": get_factor_summary_text(factor_exposure),
-        }
-    except Exception:
-        market["factor_exposure"] = {
-            "ticker": ticker,
-            "available": False,
-            "error": "Factor exposure unavailable",
-            "summary_text": "Factor exposure unavailable.",
-        }
-
-    market["audit_flags"] = list(market.get("audit_flags") or [])
-    return market
-
-
-def build_research_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    payload = build_research_board_view(ticker)
-    payload["ticker"] = ticker
-    return payload
-
-
-def build_audit_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
-    return {
-        "ticker": ticker,
-        "dcf_audit": build_dcf_audit_view(ticker),
-        "filings_browser": build_filings_browser_view(ticker),
-        "comps": build_comps_dashboard_view(ticker),
-    }
-
-
-def _initialize_run(kind: str, *, ticker: str | None = None, metadata: dict[str, Any] | None = None) -> str:
-    run_id = uuid4().hex
-    with _RUN_LOCK:
-        _RUNS[run_id] = {
-            "run_id": run_id,
-            "kind": kind,
-            "ticker": ticker,
-            "status": "queued",
-            "progress": 0.0,
-            "message": None,
-            "result": None,
-            "error": None,
-            "created_at": _now(),
-            "updated_at": _now(),
-            "metadata": metadata or {},
-        }
-    return run_id
-
-
-def _update_run(run_id: str, **updates: Any) -> dict[str, Any]:
-    with _RUN_LOCK:
-        run = _RUNS[run_id]
-        run.update(updates)
-        run["updated_at"] = _now()
-        return dict(run)
-
-
-def _submit_background_run(
-    kind: str,
-    runner: Callable[[str], Any],
-    *,
-    ticker: str | None = None,
-    metadata: dict[str, Any] | None = None,
-) -> str:
-    run_id = _initialize_run(kind, ticker=ticker, metadata=metadata)
-
-    def _wrapped() -> None:
-        _update_run(run_id, status="running", progress=0.0)
-        try:
-            result = runner(run_id)
-            _update_run(run_id, status="completed", progress=1.0, result=jsonable_encoder(result), error=None)
-        except Exception as exc:  # pragma: no cover - defensive guard
-            _update_run(run_id, status="failed", error=str(exc), message=str(exc))
-
-    _EXECUTOR.submit(_wrapped)
-    return run_id
 
 
 def create_app() -> FastAPI:
@@ -797,7 +379,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/watchlist/refresh", status_code=202)
     def refresh_watchlist(payload: WatchlistRefreshRequest) -> dict[str, Any]:
-        tickers = [_coerce_ticker(value) for value in (payload.tickers or [])]
+        tickers = [api_coerce_ticker(value) for value in (payload.tickers or [])]
 
         def _runner(run_id: str) -> dict[str, Any]:
             def _on_progress(event: dict[str, Any]) -> None:
@@ -806,7 +388,7 @@ def create_app() -> FastAPI:
                 progress = completed / total
                 message = event.get("ticker")
                 status = event.get("status")
-                _update_run(
+                update_run(
                     run_id,
                     status="running",
                     progress=progress,
@@ -820,7 +402,7 @@ def create_app() -> FastAPI:
                 progress_callback=_on_progress,
             )
 
-        run_id = _submit_background_run(
+        run_id = submit_background_run(
             "watchlist_refresh",
             _runner,
             metadata={"shortlist_size": payload.shortlist_size, "ticker_count": len(tickers)},
@@ -843,7 +425,7 @@ def create_app() -> FastAPI:
                 created_by="api",
             )
 
-        run_id = _submit_background_run(
+        run_id = submit_background_run(
             "watchlist_export",
             _runner,
             metadata=request_payload.model_dump(),
@@ -852,11 +434,10 @@ def create_app() -> FastAPI:
 
     @app.get("/api/runs/{run_id}")
     def get_run_status(run_id: str) -> dict[str, Any]:
-        with _RUN_LOCK:
-            run = _RUNS.get(run_id)
-            if run is None:
-                raise HTTPException(status_code=404, detail="run not found")
-            return dict(run)
+        run = get_run(run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="run not found")
+        return run
 
     @app.get("/api/tickers/{ticker}/workspace")
     def get_ticker_workspace(ticker: str) -> dict[str, Any]:
@@ -865,6 +446,16 @@ def create_app() -> FastAPI:
     @app.get("/api/tickers/{ticker}/overview")
     def get_ticker_overview(ticker: str) -> dict[str, Any]:
         return build_ticker_overview_payload(ticker)
+
+    @app.get("/api/tickers/{ticker}/dossier")
+    def get_ticker_dossier(ticker: str, source_mode: str | None = None) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return build_ticker_dossier_payload(ticker, source_mode=source_mode)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/tickers/{ticker}/valuation/summary")
     def get_ticker_valuation_summary(ticker: str) -> dict[str, Any]:
@@ -887,7 +478,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: AssumptionsApplyRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         selections = (payload.selections if payload else {})
         custom_values = (payload.custom_values if payload else {})
         preview = preview_override_selections(
@@ -902,7 +493,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: AssumptionsApplyRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         selections = (payload.selections if payload else {})
         custom_values = (payload.custom_values if payload else {})
 
@@ -914,7 +505,7 @@ def create_app() -> FastAPI:
                 actor="api",
             )
 
-        run_id = _submit_background_run("valuation_assumptions_apply", _runner, ticker=ticker)
+        run_id = submit_background_run("valuation_assumptions_apply", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/valuation/wacc")
@@ -926,7 +517,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: WaccSelectionRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or WaccSelectionRequest()
         preview = preview_wacc_methodology_selection(
             ticker,
@@ -941,7 +532,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: WaccSelectionRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or WaccSelectionRequest()
 
         def _runner(_run_id: str) -> dict[str, Any]:
@@ -953,7 +544,7 @@ def create_app() -> FastAPI:
                 actor="api",
             )
 
-        run_id = _submit_background_run("valuation_wacc_apply", _runner, ticker=ticker)
+        run_id = submit_background_run("valuation_wacc_apply", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/valuation/recommendations")
@@ -965,7 +556,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: RecommendationsPreviewRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or RecommendationsPreviewRequest()
         preview = preview_recommendations_with_approvals(ticker, request_payload.approved_fields)
         return _normalize_recommendations_preview_payload(ticker, preview)
@@ -975,7 +566,7 @@ def create_app() -> FastAPI:
         ticker: str,
         payload: RecommendationsApplyRequest | None = None,
     ) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or RecommendationsApplyRequest()
 
         def _runner(_run_id: str) -> dict[str, Any]:
@@ -985,7 +576,7 @@ def create_app() -> FastAPI:
                 actor="api",
             )
 
-        run_id = _submit_background_run("valuation_recommendations_apply", _runner, ticker=ticker)
+        run_id = submit_background_run("valuation_recommendations_apply", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/market")
@@ -1002,12 +593,12 @@ def create_app() -> FastAPI:
 
     @app.get("/api/tickers/{ticker}/exports")
     def get_ticker_exports(ticker: str, limit: int = 25) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         return {"exports": list_saved_exports(ticker=ticker, scope="ticker", limit=limit)}
 
     @app.post("/api/tickers/{ticker}/exports", status_code=202)
     def create_ticker_export(ticker: str, payload: TickerExportRequest | None = None) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or TickerExportRequest()
         if request_payload.source_mode == "latest_snapshot" and load_latest_snapshot_for_ticker(ticker) is None:
             raise HTTPException(status_code=409, detail="no archived snapshot found for export")
@@ -1021,7 +612,7 @@ def create_app() -> FastAPI:
                 created_by="api",
             )
 
-        run_id = _submit_background_run(
+        run_id = submit_background_run(
             "ticker_export",
             _runner,
             ticker=ticker,
@@ -1054,7 +645,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/tickers/{ticker}/analysis/run", status_code=202)
     def run_ticker_analysis(ticker: str, payload: AnalysisRunRequest | None = None) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         request_payload = payload or AnalysisRunRequest()
 
         def _runner(_run_id: str) -> list[dict[str, Any]]:
@@ -1064,7 +655,7 @@ def create_app() -> FastAPI:
                 force_refresh_agents=request_payload.force_refresh_agents,
             )
 
-        run_id = _submit_background_run(
+        run_id = submit_background_run(
             "deep_analysis",
             _runner,
             ticker=ticker,
@@ -1074,18 +665,15 @@ def create_app() -> FastAPI:
 
     @app.post("/api/tickers/{ticker}/snapshot/open-latest")
     def open_ticker_latest_snapshot(ticker: str) -> dict[str, Any]:
-        ticker = _coerce_ticker(ticker)
+        ticker = api_coerce_ticker(ticker)
         payload = load_latest_snapshot_for_ticker(ticker)
         if payload is None:
             raise HTTPException(status_code=404, detail="no archived snapshot found")
-        return payload
+        return _attach_api_ticker_dossier(dict(payload), ticker, source_mode="latest_snapshot")
 
     return app
 
 
-_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="alpha-pod-api")
-_RUNS: dict[str, dict[str, Any]] = {}
-_RUN_LOCK = Lock()
 
 
 app = create_app()
