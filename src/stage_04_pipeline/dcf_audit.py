@@ -2,15 +2,16 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
 from src.stage_02_valuation.input_assembler import build_valuation_inputs
 from src.stage_02_valuation.professional_dcf import (
-    ForecastDrivers,
-    ScenarioSpec,
     default_scenario_specs,
     run_dcf_professional,
     run_probabilistic_valuation,
 )
+from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
+from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
 from src.stage_04_pipeline.risk_impact import quantify_risk_impact
 
 
@@ -26,9 +27,9 @@ def _usd_mm(value: float | None) -> float | None:
     return round(float(value) / 1_000_000.0, 2)
 
 
-def _scenario_summary(prob_result, current_price: float | None) -> list[dict]:
+def _scenario_summary(prob_result, current_price: float | None, scenario_specs=None) -> list[dict]:
     rows: list[dict] = []
-    weights = {spec.name: spec.probability for spec in default_scenario_specs()}
+    weights = {spec.name: spec.probability for spec in (scenario_specs or default_scenario_specs())}
     for name in ("bear", "base", "bull"):
         result = prob_result.scenario_results.get(name)
         if result is None:
@@ -336,6 +337,20 @@ def build_dcf_audit_view(
         default_scenario_specs(),
         current_price=inputs.current_price,
     )
+    driver_consensus = build_driver_consensus(inputs.drivers, [])
+    scenario_policy = build_context_scenario_policy(
+        ticker=ticker,
+        sector=inputs.sector,
+        industry=inputs.industry,
+        drivers=inputs.drivers,
+        story_profile=inputs.story_profile,
+        driver_consensus=driver_consensus,
+    )
+    context_prob_result = run_probabilistic_valuation(
+        inputs.drivers,
+        scenario_policy.context_specs,
+        current_price=inputs.current_price,
+    )
     base_result = prob_result.scenario_results["base"]
 
     risk_impact_view = None
@@ -359,6 +374,13 @@ def build_dcf_audit_view(
         "industry": inputs.industry,
         "current_price": inputs.current_price,
         "scenario_summary": _scenario_summary(prob_result, inputs.current_price),
+        "context_scenario_summary": _scenario_summary(
+            context_prob_result,
+            inputs.current_price,
+            scenario_policy.context_specs,
+        ),
+        "scenario_policy": scenario_policy.metadata,
+        "driver_consensus": consensus_to_jsonable(driver_consensus),
         "forecast_bridge": _forecast_bridge(base_result),
         "terminal_bridge": _terminal_bridge(base_result),
         "ev_bridge": _ev_bridge(base_result),

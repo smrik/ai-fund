@@ -22,9 +22,9 @@ This document is the concrete checklist for making Alpha Pod safer to operate in
 - minimal `SECURITY.md`
 - release-process guide: `docs/reference/release-process.md`
 - mock release-note generator: `scripts/release/prepare_mock_release.py`
-- CI jobs for frontend build, backend/API contracts, docs build, and release-readiness validation
+- CI jobs for frontend build, frontend tests, backend/API contracts, docs build, and release-readiness validation
 - repo-level merge settings tightened: squash-only merges and automatic branch deletion on merge
-- live branch ruleset updated to require `pre-commit`, `frontend-build`, `backend-api-tests`, `docs-build`, and `release-readiness`
+- live branch ruleset updated to require `pre-commit`, `frontend-build`, `frontend-tests`, `backend-api-tests`, `docs-build`, and `release-readiness`
 
 ## GitHub Settings Status
 
@@ -37,6 +37,7 @@ These are now enforced live in GitHub for `smrik/ai-fund` and should be periodic
 - require status checks before merging
 - require `pre-commit`
 - require `frontend-build`
+- require `frontend-tests`
 - require `backend-api-tests`
 - require `docs-build`
 - require `release-readiness`
@@ -63,14 +64,12 @@ One intentional exception remains in config: `scripts/create_ibm_review.py` is c
 
 Recommended next step: either leave the legacy script ignored, or replace/archive it rather than force style-only rewrites into it.
 
-### 2. CI Coverage Is Better, But Still Not Full Product Coverage
+### 2. CI Coverage Expanded
 
-The required checks now cover hygiene, frontend build, backend/API contracts, docs, and release metadata, but they still do not exhaustively exercise every product path.
+The required checks now cover hygiene, frontend build, frontend routing/export flows, backend/API core contracts, docs, and release metadata.
 
 Recommended next additions:
 
-- focused frontend route tests in CI
-- expanded backend pytest coverage beyond `tests/test_api_contracts.py`
 - optional smoke workflow for Streamlit/operator flows if that shell remains supported
 
 ### 3. Docs Navigation Still Has Drift

@@ -8,6 +8,7 @@ valuation inputs directly.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from src.stage_00_data import edgar_client, filing_retrieval
@@ -61,7 +62,12 @@ Return ONLY valid JSON with this schema:
 }
 """
 
-_ADJUSTMENT_CLASSES = {"non_recurring_expense", "non_recurring_gain", "non_core", "unclear"}
+_ADJUSTMENT_CLASSES = {
+    "non_recurring_expense",
+    "non_recurring_gain",
+    "non_core",
+    "unclear",
+}
 _EBIT_DIRECTIONS = {"+", "-", "none"}
 _BS_CLASSES = {
     "operating_asset",
@@ -87,11 +93,16 @@ _OVERRIDE_KEYS = (
     "preferred_equity",
     "pension_deficit",
 )
+DEFAULT_ACCOUNTING_RECAST_MODEL = "gemini-3-flash-preview"
 
 
 class AccountingRecastAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            model=os.getenv(
+                "ACCOUNTING_RECAST_AGENT_MODEL", DEFAULT_ACCOUNTING_RECAST_MODEL
+            )
+        )
         self.name = "AccountingRecastAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []
@@ -127,7 +138,9 @@ class AccountingRecastAgent(BaseAgent):
                     "classification": classification,
                     "proposed_ebit_direction": direction,
                     "rationale": str(item.get("rationale", "")),
-                    "citation_text": str(item.get("citation_text")) if item.get("citation_text") else None,
+                    "citation_text": str(item.get("citation_text"))
+                    if item.get("citation_text")
+                    else None,
                 }
             )
         return parsed
@@ -149,11 +162,15 @@ class AccountingRecastAgent(BaseAgent):
             parsed.append(
                 {
                     "line_item": str(item.get("line_item", "")),
-                    "reported_value": AccountingRecastAgent._to_float(item.get("reported_value")),
+                    "reported_value": AccountingRecastAgent._to_float(
+                        item.get("reported_value")
+                    ),
                     "classification": classification,
                     "proposed_driver_field": driver_field,
                     "rationale": str(item.get("rationale", "")),
-                    "citation_text": str(item.get("citation_text")) if item.get("citation_text") else None,
+                    "citation_text": str(item.get("citation_text"))
+                    if item.get("citation_text")
+                    else None,
                 }
             )
         return parsed
@@ -161,7 +178,10 @@ class AccountingRecastAgent(BaseAgent):
     @staticmethod
     def _parse_override_candidates(raw: Any) -> dict:
         payload = raw if isinstance(raw, dict) else {}
-        return {key: AccountingRecastAgent._to_float(payload.get(key)) for key in _OVERRIDE_KEYS}
+        return {
+            key: AccountingRecastAgent._to_float(payload.get(key))
+            for key in _OVERRIDE_KEYS
+        }
 
     def _fallback(self, ticker: str, source: str) -> dict:
         return {
@@ -193,7 +213,9 @@ class AccountingRecastAgent(BaseAgent):
             "balance_sheet_reclassifications": self._parse_balance_sheet_reclassifications(
                 data.get("balance_sheet_reclassifications")
             ),
-            "override_candidates": self._parse_override_candidates(data.get("override_candidates")),
+            "override_candidates": self._parse_override_candidates(
+                data.get("override_candidates")
+            ),
             "approval_required": True,
             "pm_review_notes": str(data.get("pm_review_notes", "")),
         }
@@ -214,7 +236,9 @@ class AccountingRecastAgent(BaseAgent):
                     include_10k=True,
                     ten_q_limit=2,
                 )
-                filing_text = filing_retrieval.render_filing_context(bundle, max_chars=40_000)
+                filing_text = filing_retrieval.render_filing_context(
+                    bundle, max_chars=40_000
+                )
                 source = "sec_edgar_filing_context"
             except Exception:
                 filing_text = edgar_client.get_10k_text(ticker, max_chars=40_000)
@@ -255,8 +279,14 @@ def build_accounting_recast_context(result: dict) -> str:
         for item in adjustments[:3]:
             direction = item.get("proposed_ebit_direction", "none")
             amount = item.get("amount")
-            amount_text = f"${amount/1e6:.1f}mm" if isinstance(amount, (int, float)) else "amount unclear"
-            rendered.append(f"{item.get('item', 'Unknown item')} ({direction} {amount_text})")
+            amount_text = (
+                f"${amount / 1e6:.1f}mm"
+                if isinstance(amount, (int, float))
+                else "amount unclear"
+            )
+            rendered.append(
+                f"{item.get('item', 'Unknown item')} ({direction} {amount_text})"
+            )
         lines.append("Income statement adjustments: " + "; ".join(rendered))
 
     reclasses = result.get("balance_sheet_reclassifications") or []
