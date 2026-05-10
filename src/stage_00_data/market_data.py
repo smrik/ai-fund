@@ -232,6 +232,110 @@ def _row(df, *keys):
     return []
 
 
+
+def _derive_nwc_series(current_assets, current_liabilities, cash_bs):
+    n_nwc = min(len(current_assets), len(current_liabilities), len(cash_bs))
+    nwc_series = []
+    for i in range(n_nwc):
+        ca = current_assets[i]
+        cl = current_liabilities[i]
+        c = cash_bs[i]
+        nwc_series.append(ca - c - cl)
+    nwc_change = []
+    for i in range(len(nwc_series) - 1):
+        nwc_change.append(nwc_series[i] - nwc_series[i + 1])
+    return nwc_change
+
+def _derive_dso_dio_dpo(accounts_receivable, inventory, accounts_payable, revenue, cost_of_revenue):
+    dso_derived = None
+    dso_values = []
+    for i in range(min(len(accounts_receivable), len(revenue))):
+        if revenue[i] and revenue[i] > 0:
+            dso = 365.0 * accounts_receivable[i] / revenue[i]
+            if 0 < dso <= 365:
+                dso_values.append(dso)
+    if dso_values:
+        dso_derived = round(sum(dso_values) / len(dso_values), 1)
+
+    dio_derived = None
+    dio_values = []
+    for i in range(min(len(inventory), len(revenue))):
+        denom = None
+        if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
+            denom = cost_of_revenue[i]
+        elif revenue[i] and revenue[i] > 0:
+            denom = revenue[i]
+        if denom:
+            dio = 365.0 * inventory[i] / denom
+            if 0 < dio <= 500:
+                dio_values.append(dio)
+    if dio_values:
+        dio_derived = round(sum(dio_values) / len(dio_values), 1)
+
+    dpo_derived = None
+    dpo_values = []
+    for i in range(min(len(accounts_payable), len(revenue))):
+        denom = None
+        if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
+            denom = cost_of_revenue[i]
+        elif revenue[i] and revenue[i] > 0:
+            denom = revenue[i]
+        if denom:
+            dpo = 365.0 * accounts_payable[i] / denom
+            if 0 < dpo <= 365:
+                dpo_values.append(dpo)
+    if dpo_values:
+        dpo_derived = round(sum(dpo_values) / len(dpo_values), 1)
+
+    return dso_derived, dio_derived, dpo_derived
+
+def _derive_margins_and_growth(revenue, operating_income, capex, da, nwc_change):
+    revenue_cagr_3yr = None
+    if len(revenue) >= 2 and revenue[-1] != 0:
+        n = len(revenue) - 1
+        try:
+            revenue_cagr_3yr = round((revenue[0] / revenue[-1]) ** (1.0 / n) - 1, 4)
+        except (ZeroDivisionError, ValueError):
+            revenue_cagr_3yr = None
+
+    op_margin_avg_3yr = None
+    if revenue:
+        margins = []
+        for i in range(min(len(operating_income), len(revenue))):
+            if revenue[i] != 0:
+                margins.append(operating_income[i] / revenue[i])
+        if margins:
+            op_margin_avg_3yr = round(sum(margins) / len(margins), 4)
+
+    capex_pct_avg_3yr = None
+    if revenue:
+        pcts = []
+        for i in range(min(len(capex), len(revenue))):
+            if revenue[i] != 0:
+                pcts.append(capex[i] / revenue[i])
+        if pcts:
+            capex_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
+
+    da_pct_avg_3yr = None
+    if revenue:
+        pcts = []
+        for i in range(min(len(da), len(revenue))):
+            if revenue[i] != 0:
+                pcts.append(da[i] / revenue[i])
+        if pcts:
+            da_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
+
+    nwc_pct_avg_3yr = None
+    if revenue and nwc_change:
+        pcts = []
+        for i in range(min(len(nwc_change), len(revenue))):
+            if revenue[i] != 0:
+                pcts.append(nwc_change[i] / revenue[i])
+        if pcts:
+            nwc_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
+
+    return revenue_cagr_3yr, op_margin_avg_3yr, capex_pct_avg_3yr, da_pct_avg_3yr, nwc_pct_avg_3yr
+
 def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
     """
     Return 3-year historical financial series and derived DCF inputs.
@@ -318,117 +422,13 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
         diluted_shares = _row(financials, "Diluted Average Shares", "Diluted Shares")
 
         # --- NWC change series ---
-        # NWC[i] = (CurrentAssets[i] - Cash[i]) - CurrentLiabilities[i]
-        # nwc_change[i] = NWC[i] - NWC[i+1]  (i=0 is most recent)
-        n_nwc = min(len(current_assets), len(current_liabilities), len(cash_bs))
-        nwc_series = []
-        for i in range(n_nwc):
-            ca = current_assets[i]
-            cl = current_liabilities[i]
-            c = cash_bs[i]
-            nwc_series.append(ca - c - cl)
-
-        nwc_change = []
-        for i in range(len(nwc_series) - 1):
-            nwc_change.append(nwc_series[i] - nwc_series[i + 1])
+        nwc_change = _derive_nwc_series(current_assets, current_liabilities, cash_bs)
 
         # --- Derived metrics ---
+        revenue_cagr_3yr, op_margin_avg_3yr, capex_pct_avg_3yr, da_pct_avg_3yr, nwc_pct_avg_3yr = _derive_margins_and_growth(revenue, operating_income, capex, da, nwc_change)
+        dso_derived, dio_derived, dpo_derived = _derive_dso_dio_dpo(accounts_receivable, inventory, accounts_payable, revenue, cost_of_revenue)
 
-        # Revenue CAGR: (newest / oldest) ^ (1/(n-1)) - 1
-        revenue_cagr_3yr = None
-        if len(revenue) >= 2 and revenue[-1] != 0:
-            n = len(revenue) - 1
-            try:
-                revenue_cagr_3yr = round((revenue[0] / revenue[-1]) ** (1.0 / n) - 1, 4)
-            except (ZeroDivisionError, ValueError):
-                revenue_cagr_3yr = None
-
-        # Operating margin average
-        op_margin_avg_3yr = None
-        if revenue:
-            margins = []
-            for i in range(min(len(operating_income), len(revenue))):
-                if revenue[i] != 0:
-                    margins.append(operating_income[i] / revenue[i])
-            if margins:
-                op_margin_avg_3yr = round(sum(margins) / len(margins), 4)
-
-        # Capex % of revenue average
-        capex_pct_avg_3yr = None
-        if revenue:
-            pcts = []
-            for i in range(min(len(capex), len(revenue))):
-                if revenue[i] != 0:
-                    pcts.append(capex[i] / revenue[i])
-            if pcts:
-                capex_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
-
-        # D&A % of revenue average
-        da_pct_avg_3yr = None
-        if revenue:
-            pcts = []
-            for i in range(min(len(da), len(revenue))):
-                if revenue[i] != 0:
-                    pcts.append(da[i] / revenue[i])
-            if pcts:
-                da_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
-
-        # NWC change % of revenue average
-        nwc_pct_avg_3yr = None
-        if revenue and nwc_change:
-            pcts = []
-            for i in range(min(len(nwc_change), len(revenue))):
-                if revenue[i] != 0:
-                    pcts.append(nwc_change[i] / revenue[i])
-            if pcts:
-                nwc_pct_avg_3yr = round(sum(pcts) / len(pcts), 4)
-
-
-        # NWC day-driver approximations (using revenue denominator)
-        # NWC day-driver approximations
-        # DSO uses revenue denominator.
-        # DIO/DPO prefer COGS denominator when available, falling back to revenue.
-        dso_derived = None
-        dso_values = []
-        for i in range(min(len(accounts_receivable), len(revenue))):
-            if revenue[i] and revenue[i] > 0:
-                dso = 365.0 * accounts_receivable[i] / revenue[i]
-                if 0 < dso <= 365:
-                    dso_values.append(dso)
-        if dso_values:
-            dso_derived = round(sum(dso_values) / len(dso_values), 1)
-
-        dio_derived = None
-        dio_values = []
-        for i in range(min(len(inventory), len(revenue))):
-            denom = None
-            if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
-                denom = cost_of_revenue[i]
-            elif revenue[i] and revenue[i] > 0:
-                denom = revenue[i]
-            if denom:
-                dio = 365.0 * inventory[i] / denom
-                if 0 < dio <= 500:
-                    dio_values.append(dio)
-        if dio_values:
-            dio_derived = round(sum(dio_values) / len(dio_values), 1)
-
-        dpo_derived = None
-        dpo_values = []
-        for i in range(min(len(accounts_payable), len(revenue))):
-            denom = None
-            if i < len(cost_of_revenue) and cost_of_revenue[i] and cost_of_revenue[i] > 0:
-                denom = cost_of_revenue[i]
-            elif revenue[i] and revenue[i] > 0:
-                denom = revenue[i]
-            if denom:
-                dpo = 365.0 * accounts_payable[i] / denom
-                if 0 < dpo <= 365:
-                    dpo_values.append(dpo)
-        if dpo_values:
-            dpo_derived = round(sum(dpo_values) / len(dpo_values), 1)
-
-        # Effective tax rate average (use absolute ratio to handle sign convention variability)
+        # Effective tax rate average
         effective_tax_rate_avg = None
         rates = []
         for i in range(min(len(tax_expense), len(pretax_income))):
@@ -439,7 +439,8 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
                     rates.append(rate)
         if rates:
             effective_tax_rate_avg = round(sum(rates) / len(rates), 4)
-        # Cost of debt derived: interest_expense[0] / total_debt[0]
+
+        # Cost of debt derived
         cost_of_debt_derived = None
         if interest_expense and total_debt and total_debt[0] > 0:
             kd = interest_expense[0] / total_debt[0]
@@ -448,7 +449,7 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
 
         _lease_total = (lease_liabilities[0] if lease_liabilities else 0.0) + (finance_lease[0] if finance_lease else 0.0)
 
-        # COGS as % of revenue (for DIO/DPO denominator in DCF NWC projection)
+        # COGS as % of revenue
         cogs_pct_of_revenue = None
         if cost_of_revenue and revenue:
             pcts = []
@@ -458,7 +459,7 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
             if pcts:
                 cogs_pct_of_revenue = round(sum(pcts) / len(pcts), 4)
 
-        # Invested capital derived from balance sheet: Total Assets - Current Liabilities - Cash
+        # Invested capital derived
         invested_capital_derived = None
         if total_assets and current_liabilities and cash_bs:
             ic = total_assets[0] - current_liabilities[0] - cash_bs[0]

@@ -9,17 +9,23 @@ Architecture rule:
 
 from __future__ import annotations
 
+import os
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
 from src.stage_02_valuation.batch_runner import value_single_ticker
 from src.stage_02_valuation.templates.ic_memo import FilingsSummary, ValuationRange
+from src.utils import safe_float
+
+DEFAULT_VALUATION_MODEL = "gemini-3-flash-preview"
 
 
 class ValuationAgent(BaseAgent):
     """Judgment-layer wrapper that exposes deterministic valuation output."""
 
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            model=os.getenv("VALUATION_AGENT_MODEL", DEFAULT_VALUATION_MODEL)
+        )
         self.name = "ValuationAgent"
         self.system_prompt = (
             "Deterministic valuation adapter. Numeric outputs must come from "
@@ -27,15 +33,6 @@ class ValuationAgent(BaseAgent):
         )
         self.tools = []
         self.tool_handlers = {}
-
-    @staticmethod
-    def _safe_float(value) -> float | None:
-        try:
-            if value is None:
-                return None
-            return float(value)
-        except (TypeError, ValueError):
-            return None
 
     @staticmethod
     def _fallback_range(ticker: str) -> ValuationRange:
@@ -49,7 +46,9 @@ class ValuationAgent(BaseAgent):
             upside_pct_base=0.0,
         )
 
-    def analyze(self, ticker: str, filings_summary: FilingsSummary | None = None) -> ValuationRange:
+    def analyze(
+        self, ticker: str, filings_summary: FilingsSummary | None = None
+    ) -> ValuationRange:
         """
         Return deterministic bear/base/bull values for the ticker.
 
@@ -63,15 +62,15 @@ class ValuationAgent(BaseAgent):
         if not data:
             return self._fallback_range(ticker)
 
-        bear = self._safe_float(data.get("iv_bear"))
-        base = self._safe_float(data.get("iv_base"))
-        bull = self._safe_float(data.get("iv_bull"))
-        price = self._safe_float(data.get("price")) or 0.0
+        bear = safe_float(data.get("iv_bear"))
+        base = safe_float(data.get("iv_base"))
+        bull = safe_float(data.get("iv_bull"))
+        price = safe_float(data.get("price")) or 0.0
 
         if bear is None or base is None or bull is None:
             return self._fallback_range(ticker)
 
-        upside_pct_base = self._safe_float(data.get("upside_base_pct"))
+        upside_pct_base = safe_float(data.get("upside_base_pct"))
         if upside_pct_base is None:
             upside_decimal = ((base / price) - 1.0) if price > 0 else 0.0
         else:

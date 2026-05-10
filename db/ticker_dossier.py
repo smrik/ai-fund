@@ -3,18 +3,18 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Callable
-from datetime import datetime, timezone
 from typing import Any
 
 from db.schema import create_tables, get_connection
 from src.contracts.ticker_dossier import TickerDossier
+from src.utils import utc_now_iso
 
 
 ConnectionFactory = Callable[[], sqlite3.Connection]
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return utc_now_iso()
 
 
 def _source_key(dossier: TickerDossier) -> str:

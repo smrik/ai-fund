@@ -77,6 +77,8 @@ def build_nested_structure(
     forecast_bridge = _parse_json_field("forecast_bridge_json", [])
     story_profile = _parse_json_field("story_profile_json", {})
     story_adjustments = _parse_json_field("story_adjustments_json", {})
+    scenario_policy = _parse_json_field("context_scenario_policy_json", {})
+    driver_consensus = _parse_json_field("driver_consensus_json", [])
 
     ticker = str(r.get("ticker") or "").upper()
     price = r.get("price")
@@ -186,10 +188,12 @@ def build_nested_structure(
         "iv_base": iv_base,
         "iv_bull": iv_bull,
         "expected_iv": r.get("expected_iv"),
+        "context_expected_iv": r.get("context_expected_iv"),
         "upside_bear_pct": r.get("upside_bear_pct") if r.get("upside_bear_pct") is not None else _upside(iv_bear),
         "upside_base_pct": r.get("upside_base_pct") if r.get("upside_base_pct") is not None else _upside(iv_base),
         "upside_bull_pct": r.get("upside_bull_pct") if r.get("upside_bull_pct") is not None else _upside(iv_bull),
         "expected_upside_pct": r.get("expected_upside_pct"),
+        "context_expected_upside_pct": r.get("context_expected_upside_pct"),
         "margin_of_safety": r.get("margin_of_safety"),
         "iv_gordon": r.get("iv_gordon"),
         "iv_exit": r.get("iv_exit"),
@@ -222,6 +226,11 @@ def build_nested_structure(
             "iv": iv_bull,
             "upside_pct": r.get("upside_bull_pct") if r.get("upside_bull_pct") is not None else _upside(iv_bull),
         },
+    }
+    context_scenarios = {
+        row["name"]: row
+        for row in scenario_policy.get("context_specs", [])
+        if isinstance(row, dict) and row.get("name")
     }
 
     # ── terminal ──────────────────────────────────────────────────────────────
@@ -322,6 +331,9 @@ def build_nested_structure(
         "ciq_lineage": ciq_lineage,
         "story_profile": story_profile,
         "story_adjustments": story_adjustments,
+        "scenario_policy": scenario_policy,
+        "context_scenarios": context_scenarios,
+        "driver_consensus": driver_consensus,
         "drivers_raw": drivers_raw,
     }
 

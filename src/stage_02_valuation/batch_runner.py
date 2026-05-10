@@ -26,38 +26,25 @@ from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
 from src.stage_02_valuation.comps_model import build_comps_detail_from_yfinance
 from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
+from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
 from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
 from src.stage_02_valuation.json_exporter import export_ticker_json
+from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_02_valuation.professional_dcf import (
-    ForecastDrivers,
-    ScenarioSpec,
     default_scenario_specs,
     reverse_dcf_professional,
     run_dcf_professional,
     run_probabilistic_valuation,
 )
+from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.utils import safe_float
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
-
-
-def _safe_float(value):
-    if value is None:
-        return None
-    try:
-        if pd.isna(value):
-            return None
-    except TypeError:
-        pass
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
 
 def _mm(value: float | None) -> float | None:
     if value is None:
@@ -477,25 +464,41 @@ def value_single_ticker(ticker: str) -> dict | None:
                     "scenario_prob_bear": 0.20,
                     "scenario_prob_base": 0.60,
                     "scenario_prob_bull": 0.20,
+                    "context_expected_iv": None,
+                    "context_expected_upside_pct": None,
+                    "context_scenario_policy_json": "{}",
+                    "driver_consensus_json": "[]",
                     "forecast_bridge_json": "[]",
                 }
             )
             return row
 
         scenario_specs = default_scenario_specs()
+        regime_weights = None
         try:
             from src.stage_02_valuation.regime_model import detect_current_regime, get_scenario_weights
             regime = detect_current_regime()
             if regime.available:
-                weights = get_scenario_weights(regime)
-                scenario_specs = [
-                    ScenarioSpec("bear", weights.bear, growth_multiplier=0.8, margin_shift=-0.02, wacc_shift=0.01, exit_multiple_multiplier=0.9),
-                    ScenarioSpec("base", weights.base),
-                    ScenarioSpec("bull", weights.bull, growth_multiplier=1.2, margin_shift=0.02, wacc_shift=-0.01, exit_multiple_multiplier=1.1),
-                ]
+                regime_weights = get_scenario_weights(regime)
         except Exception:
             pass
+
+        driver_consensus = build_driver_consensus(inputs.drivers, [])
+        scenario_policy = build_context_scenario_policy(
+            ticker=ticker,
+            sector=inputs.sector,
+            industry=inputs.industry,
+            drivers=inputs.drivers,
+            story_profile=getattr(inputs, "story_profile", None),
+            regime_weights=regime_weights,
+            driver_consensus=driver_consensus,
+        )
         probabilistic = run_probabilistic_valuation(inputs.drivers, scenario_specs, current_price=price)
+        context_probabilistic = run_probabilistic_valuation(
+            inputs.drivers,
+            scenario_policy.context_specs,
+            current_price=price,
+        )
 
         bear = _scenario_by_name(probabilistic.scenario_results, "bear")
         base = _scenario_by_name(probabilistic.scenario_results, "base")
@@ -570,6 +573,10 @@ def value_single_ticker(ticker: str) -> dict | None:
                 "scenario_prob_bear": next((s.probability for s in scenario_specs if s.name == "bear"), None),
                 "scenario_prob_base": next((s.probability for s in scenario_specs if s.name == "base"), None),
                 "scenario_prob_bull": next((s.probability for s in scenario_specs if s.name == "bull"), None),
+                "context_expected_iv": round(context_probabilistic.expected_iv, 2),
+                "context_expected_upside_pct": _pct(context_probabilistic.expected_upside_pct),
+                "context_scenario_policy_json": json.dumps(scenario_policy.metadata, separators=(",", ":")),
+                "driver_consensus_json": json.dumps(consensus_to_jsonable(driver_consensus), separators=(",", ":")),
                 "forecast_bridge_json": json.dumps([asdict(p) for p in (base.projections if base else [])], separators=(",", ":")),
             }
         )
@@ -811,11 +818,11 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
                 (
                     row.get("ticker"),
                     snapshot_date,
-                    _safe_float(row.get("market_cap_mm")),
-                    _safe_float(row.get("ev_mm")),
-                    _safe_float(row.get("pe_trailing")),
-                    _safe_float(row.get("pe_forward")),
-                    _safe_float(row.get("ev_ebitda")),
+                    safe_float(row.get("market_cap_mm")),
+                    safe_float(row.get("ev_mm")),
+                    safe_float(row.get("pe_trailing")),
+                    safe_float(row.get("pe_forward")),
+                    safe_float(row.get("ev_ebitda")),
                     None,
                     None,
                     None,
@@ -844,14 +851,14 @@ def persist_results_to_db(df: pd.DataFrame, snapshot_date: str) -> tuple[int, in
                     (
                         row.get("ticker"),
                         snapshot_date,
-                        _safe_float(row.get("iv_bear")),
-                        _safe_float(row.get("iv_base")),
-                        _safe_float(row.get("iv_bull")),
-                        _safe_float(row.get("expected_iv")),
-                        _safe_float(row.get("price")),
-                        _safe_float(row.get("expected_upside_pct")),
-                        _safe_float(row.get("wacc")),
-                        _safe_float(row.get("exit_multiple_used")),
+                        safe_float(row.get("iv_bear")),
+                        safe_float(row.get("iv_base")),
+                        safe_float(row.get("iv_bull")),
+                        safe_float(row.get("expected_iv")),
+                        safe_float(row.get("price")),
+                        safe_float(row.get("expected_upside_pct")),
+                        safe_float(row.get("wacc")),
+                        safe_float(row.get("exit_multiple_used")),
                         row.get("net_debt_source"),
                         row.get("revenue_source"),
                     )
