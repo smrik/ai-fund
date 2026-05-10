@@ -9,6 +9,7 @@ Writes: data/macro_context.md        (overwrites; single latest snapshot)
 Uses Perplexity API for web-grounded searches (PERPLEXITY_API_KEY env var).
 Falls back to LLM knowledge-only if key is absent.
 """
+
 from __future__ import annotations
 
 import os
@@ -37,6 +38,7 @@ Rules:
 - Keep the "Market Implications" section focused on what matters for equity L/S investors
 - Write today's date in the header
 """
+DEFAULT_MACRO_MODEL = "gemini-3-flash-preview"
 
 
 def _perplexity_search(query: str, recency: str = "week") -> str:
@@ -67,7 +69,7 @@ def _perplexity_search(query: str, recency: str = "week") -> str:
 
 class MacroAgent(BaseAgent):
     def __init__(self) -> None:
-        super().__init__()
+        super().__init__(model=os.getenv("MACRO_AGENT_MODEL", DEFAULT_MACRO_MODEL))
         self.name = "MacroAgent"
         self.system_prompt = SYSTEM_PROMPT
 

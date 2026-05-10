@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """
 FilingsAgent — parses SEC 10-K and 10-Q filings.
 Extracts revenue trends, margins, FCF, debt, guidance, and red flags.
@@ -5,6 +7,7 @@ Returns a FilingsSummary.
 """
 
 import json
+import os
 
 from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_02_valuation.templates.ic_memo import FilingsSummary
@@ -32,11 +35,12 @@ Focus on:
 
 Be specific. Use numbers. Flag anomalies explicitly.
 Output a structured analysis. Do not hedge excessively — make a clear directional call on quality."""
+DEFAULT_FILINGS_MODEL = "gemini-3-flash-preview"
 
 
 class FilingsAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(model=os.getenv("FILINGS_AGENT_MODEL", DEFAULT_FILINGS_MODEL))
         self.name = "FilingsAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -44,7 +48,12 @@ class FilingsAgent(BaseAgent):
             self._tool(
                 name="get_company_facts",
                 description="Fetch XBRL financial facts (revenue, net income, EPS, cash, debt) from SEC EDGAR for the given ticker.",
-                properties={"ticker": {"type": "string", "description": "Stock ticker symbol, e.g. AAPL"}},
+                properties={
+                    "ticker": {
+                        "type": "string",
+                        "description": "Stock ticker symbol, e.g. AAPL",
+                    }
+                },
                 required=["ticker"],
             ),
         ]
@@ -57,7 +66,9 @@ class FilingsAgent(BaseAgent):
         ticker = inp["ticker"]
         try:
             extracted = edgar_client.extract_financial_facts(ticker)
-            return json.dumps({"company": ticker, "ticker": ticker, "facts": extracted}, default=str)
+            return json.dumps(
+                {"company": ticker, "ticker": ticker, "facts": extracted}, default=str
+            )
         except Exception as e:
             return json.dumps({"error": str(e), "ticker": ticker, "facts": []})
 
@@ -71,9 +82,13 @@ class FilingsAgent(BaseAgent):
                     include_10k=True,
                     ten_q_limit=2,
                 )
-                filing_context = filing_retrieval.render_filing_context(bundle, max_chars=30_000)
+                filing_context = filing_retrieval.render_filing_context(
+                    bundle, max_chars=30_000
+                )
             except Exception:
-                filing_context = edgar_client.get_10k_text(ticker, max_chars=30_000) or ""
+                filing_context = (
+                    edgar_client.get_10k_text(ticker, max_chars=30_000) or ""
+                )
 
         prompt = f"""Analyze the SEC filings for {ticker.upper()}.
 
