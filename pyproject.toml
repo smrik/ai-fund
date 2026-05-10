@@ -2,6 +2,9 @@
 markers = [
     "live: marks tests that require network access (yfinance, SEC EDGAR, etc.) — deselect with -m 'not live'",
 ]
+tmp_path_retention_policy = "failed"
+tmp_path_retention_count = 3
+addopts = "--basetemp=.tmp-tests"
 
 [tool.ruff]
 target-version = "py311"

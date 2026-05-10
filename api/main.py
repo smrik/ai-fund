@@ -373,6 +373,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.get("/api/health")
+    def get_health() -> dict[str, Any]:
+        from src.stage_04_pipeline.diagnostics import run_diagnostics
+        return run_diagnostics().as_dict()
+
     @app.get("/api/watchlist")
     def get_watchlist(shortlist_size: int = 10) -> dict[str, Any]:
         return load_saved_watchlist(shortlist_size=shortlist_size)
