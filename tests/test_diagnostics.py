@@ -44,24 +44,24 @@ def test_as_dict_includes_checks():
 # Database check
 # ---------------------------------------------------------------------------
 
-def test_database_ok_when_tables_present(monkeypatch):
+def test_database_ok_when_tables_present():
     fake_conn = MagicMock()
+    fake_conn.__enter__ = lambda s: fake_conn
+    fake_conn.__exit__ = MagicMock(return_value=False)
     fake_conn.execute.return_value.fetchall.return_value = [
         ("pipeline_log",), ("market_data_cache",), ("universe",)
     ]
-    fake_db = MagicMock(spec=Path)
-    monkeypatch.setattr("src.stage_04_pipeline.diagnostics.DB_PATH", fake_db)
-    with patch("sqlite3.connect", return_value=fake_conn):
+    with patch("src.stage_04_pipeline.diagnostics.get_connection", return_value=fake_conn):
         result = _check_database()
     assert result.status == "ok"
 
 
-def test_database_degraded_when_tables_missing(monkeypatch):
+def test_database_degraded_when_tables_missing():
     fake_conn = MagicMock()
-    fake_conn.execute.return_value.fetchall.return_value = []  # no tables
-    fake_db = MagicMock(spec=Path)
-    monkeypatch.setattr("src.stage_04_pipeline.diagnostics.DB_PATH", fake_db)
-    with patch("sqlite3.connect", return_value=fake_conn):
+    fake_conn.__enter__ = lambda s: fake_conn
+    fake_conn.__exit__ = MagicMock(return_value=False)
+    fake_conn.execute.return_value.fetchall.return_value = []
+    with patch("src.stage_04_pipeline.diagnostics.get_connection", return_value=fake_conn):
         result = _check_database()
     assert result.status == "degraded"
     assert "missing tables" in result.message

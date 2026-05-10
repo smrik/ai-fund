@@ -7,12 +7,12 @@ no CIQ refresh.
 """
 from __future__ import annotations
 
-import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
 from config import DB_PATH, DOSSIER_ROOT, OUTPUT_DIR, REPORTS_DIR, UNIVERSE_PATH
+from db.schema import get_connection
 
 Status = Literal["ok", "degraded", "unavailable"]
 
@@ -41,14 +41,13 @@ class DiagnosticsPayload:
 
 def _check_database() -> CheckResult:
     try:
-        conn = sqlite3.connect(str(DB_PATH), timeout=2)
-        tables = {
-            row[0]
-            for row in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table'"
-            ).fetchall()
-        }
-        conn.close()
+        with get_connection() as conn:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
         required = {"pipeline_log", "market_data_cache"}
         missing = required - tables
         if missing:
