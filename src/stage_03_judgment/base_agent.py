@@ -4,6 +4,7 @@ Handles OpenAI client, tool-call loop, and error recovery.
 """
 
 import json
+import logging
 import os
 import re
 import time
@@ -15,6 +16,8 @@ from config import LLM_MODEL, LLM_BASE_URL
 # Retry config for transient API errors
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = [5, 15, 30]  # seconds to wait before each retry attempt
+
+_logger = logging.getLogger(__name__)
 
 
 ToolDefinition = dict[str, Any]
@@ -68,14 +71,22 @@ class BaseAgent:
 			except RateLimitError as e:
 				last_exc = e
 				if attempt < _MAX_RETRIES:
+					_logger.warning(
+						f"{self.name} rate limited — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
+					)
 					time.sleep(_RETRY_BACKOFF[attempt])
 				else:
+					_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: RateLimitError")
 					raise
 			except (APITimeoutError, APIConnectionError) as e:
 				last_exc = e
 				if attempt < _MAX_RETRIES:
+					_logger.warning(
+						f"{self.name} {type(e).__name__} — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
+					)
 					time.sleep(_RETRY_BACKOFF[attempt])
 				else:
+					_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: {type(e).__name__}")
 					raise
 		raise last_exc  # unreachable, satisfies type checkers
 

@@ -8,13 +8,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import logging
 import sqlite3
 from pathlib import Path
 from typing import Sequence
 
 from config import DB_PATH
 from db.schema import create_tables
+from src.logging_config import configure_logging
 from src.utils import utc_now_iso
+
+logger = logging.getLogger(__name__)
 
 
 def _log(conn: sqlite3.Connection, pipeline: str, status: str, details: str = "", duration_sec: float = 0.0) -> None:
@@ -57,11 +61,11 @@ def refresh_market_data(universe: list[str], *, verbose: bool = True) -> dict:
             get_historical_financials(ticker, use_cache=False)
             results[ticker] = "ok"
             if verbose:
-                print(f"  ✓ {ticker} market data refreshed")
+                logger.info(f"  ✓ {ticker} market data refreshed", extra={"ticker": ticker, "step": "market_data"})
         except Exception as e:
             results[ticker] = f"error: {e}"
             if verbose:
-                print(f"  ✗ {ticker} market data error: {e}")
+                logger.error(f"  ✗ {ticker} market data error: {e}", extra={"ticker": ticker, "step": "market_data"})
 
     # Clear in-process cache so next callers get the DB-cached (fresh) version
     _TICKER_CACHE.clear()
@@ -74,7 +78,7 @@ def refresh_estimates(universe: list[str], *, verbose: bool = True) -> dict:
         from src.stage_00_data.estimate_tracker import snapshot_estimates
     except ImportError:
         if verbose:
-            print("  ! estimate_tracker not available — skipping")
+            logger.warning("  ! estimate_tracker not available — skipping")
         return {}
 
     results: dict[str, str] = {}
@@ -83,11 +87,11 @@ def refresh_estimates(universe: list[str], *, verbose: bool = True) -> dict:
             snapshot_estimates(ticker)
             results[ticker] = "ok"
             if verbose:
-                print(f"  ✓ {ticker} estimates snapshotted")
+                logger.info(f"  ✓ {ticker} estimates snapshotted", extra={"ticker": ticker, "step": "estimates"})
         except Exception as e:
             results[ticker] = f"error: {e}"
             if verbose:
-                print(f"  ✗ {ticker} estimates error: {e}")
+                logger.error(f"  ✗ {ticker} estimates error: {e}", extra={"ticker": ticker, "step": "estimates"})
     return results
 
 
@@ -97,17 +101,17 @@ def refresh_macro(*, verbose: bool = True) -> dict:
         from src.stage_00_data.fred_client import get_macro_snapshot
     except ImportError:
         if verbose:
-            print("  ! fred_client not available — skipping macro")
+            logger.warning("  ! fred_client not available — skipping macro")
         return {"status": "skipped"}
 
     try:
         snapshot = get_macro_snapshot()
         if verbose:
-            print(f"  ✓ Macro snapshot refreshed ({len(snapshot)} series)")
+            logger.info(f"  ✓ Macro snapshot refreshed ({len(snapshot)} series)", extra={"step": "macro"})
         return {"status": "ok", "series_count": len(snapshot)}
     except Exception as e:
         if verbose:
-            print(f"  ✗ Macro refresh error: {e}")
+            logger.error(f"  ✗ Macro refresh error: {e}", extra={"step": "macro"})
         return {"status": f"error: {e}"}
 
 
@@ -122,7 +126,7 @@ def refresh_all(universe: list[str] | None = None, *, verbose: bool = True) -> d
         universe = _get_universe_tickers()
     if not universe:
         if verbose:
-            print("No universe defined. Pass --tickers or create data/universe.csv")
+            logger.warning("No universe defined. Pass --tickers or create data/universe.csv")
         return {"status": "no_universe"}
 
     conn = sqlite3.connect(str(DB_PATH))
@@ -130,15 +134,15 @@ def refresh_all(universe: list[str] | None = None, *, verbose: bool = True) -> d
 
     t0 = time.time()
     if verbose:
-        print(f"\n── Market Data ({len(universe)} tickers) ──────────────────────────")
+        logger.info(f"\n── Market Data ({len(universe)} tickers) ──────────────────────────")
     md_results = refresh_market_data(universe, verbose=verbose)
 
     if verbose:
-        print(f"\n── Estimates ({len(universe)} tickers) ──────────────────────────")
+        logger.info(f"\n── Estimates ({len(universe)} tickers) ──────────────────────────")
     est_results = refresh_estimates(universe, verbose=verbose)
 
     if verbose:
-        print("\n── Macro ────────────────────────────────────────────────────────")
+        logger.info("\n── Macro ────────────────────────────────────────────────────────")
     macro_result = refresh_macro(verbose=verbose)
 
     duration = round(time.time() - t0, 1)
@@ -159,12 +163,16 @@ def refresh_all(universe: list[str] | None = None, *, verbose: bool = True) -> d
     conn.close()
 
     if verbose:
-        print(f"\n✓ Refresh complete in {duration}s — market_data:{md_ok}/{len(universe)} "
-              f"estimates:{est_ok}/{len(universe)} macro:{macro_result.get('status')}")
+        logger.info(
+            f"\n✓ Refresh complete in {duration}s — market_data:{md_ok}/{len(universe)} "
+            f"estimates:{est_ok}/{len(universe)} macro:{macro_result.get('status')}",
+            extra={"step": "refresh_all", "duration_ms": int(duration * 1000)},
+        )
     return summary
 
 
 def main(argv: Sequence[str] | None = None) -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Alpha Pod data refresh orchestrator")
     parser.add_argument("--tickers", type=str, default=None,
                         help="Comma-separated list of tickers to refresh (default: full universe)")
