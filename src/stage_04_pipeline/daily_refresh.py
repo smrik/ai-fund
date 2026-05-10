@@ -6,6 +6,7 @@ Usage:
     cd alpha-pod
     python -m src.stage_04_pipeline.daily_refresh
 """
+import logging
 import sys
 import time
 from pathlib import Path
@@ -13,6 +14,7 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from src.logging_config import configure_logging
 from config.settings import (
     MAX_SINGLE_POSITION_PCT, MAX_GROSS_EXPOSURE_PCT,
     MAX_NET_EXPOSURE_PCT, STOP_LOSS_REVIEW_PCT,
@@ -21,6 +23,8 @@ from config.settings import (
 from db.schema import get_connection
 from db.loader import upsert_prices, upsert_positions, insert_risk_snapshot, log_pipeline_run
 from db.queries import get_tickers, get_positions
+logger = logging.getLogger(__name__)
+
 from ibkr.connection import IBKRConnection
 from ibkr.price_feed import get_batch_prices
 from ibkr.account import get_account_summary, get_portfolio_positions, compute_risk_snapshot
@@ -108,63 +112,63 @@ def generate_dashboard(risk: dict, positions_df, alerts: list[str]) -> str:
 
 def run():
     """Execute the full daily refresh pipeline."""
+    configure_logging()
     start = time.time()
     conn = get_connection()
 
-    print("Starting daily refresh pipeline...")
+    logger.info("Starting daily refresh pipeline...")
     log_pipeline_run(conn, "daily_refresh", "started")
 
     try:
         with IBKRConnection() as ib:
             # Step 1: Pull prices for universe
-            print("\n[1/4] Pulling prices...")
+            logger.info("\n[1/4] Pulling prices...", extra={"step": "prices"})
             tickers = get_tickers(conn)
             if tickers:
                 prices_df = get_batch_prices(ib, tickers, days=5)  # Last 5 days
                 if not prices_df.empty:
                     upsert_prices(conn, prices_df.to_dict("records"))
-                    print(f"  ✓ {len(prices_df)} price records updated")
+                    logger.info(f"  ✓ {len(prices_df)} price records updated", extra={"step": "prices"})
 
             # Step 2: Pull positions
-            print("\n[2/4] Pulling positions...")
+            logger.info("\n[2/4] Pulling positions...", extra={"step": "positions"})
             positions = get_portfolio_positions(ib)
             if positions:
                 upsert_positions(conn, positions)
-                print(f"  ✓ {len(positions)} positions updated")
+                logger.info(f"  ✓ {len(positions)} positions updated", extra={"step": "positions"})
             else:
-                print("  No open positions")
+                logger.info("  No open positions", extra={"step": "positions"})
 
             # Step 3: Compute risk snapshot
-            print("\n[3/4] Computing risk snapshot...")
+            logger.info("\n[3/4] Computing risk snapshot...", extra={"step": "risk"})
             account = get_account_summary(ib)
             risk = compute_risk_snapshot(positions, account)
             insert_risk_snapshot(conn, risk)
-            print(f"  ✓ Risk snapshot saved (NAV: ${risk['nav']:,.0f})")
+            logger.info(f"  ✓ Risk snapshot saved (NAV: ${risk['nav']:,.0f})", extra={"step": "risk"})
 
         # Step 4: Generate dashboard
-        print("\n[4/4] Generating dashboard...")
+        logger.info("\n[4/4] Generating dashboard...", extra={"step": "dashboard"})
         positions_df = get_positions(conn)
         alerts = check_risk_alerts(risk, positions_df)
         dashboard = generate_dashboard(risk, positions_df, alerts)
 
-        # Print to terminal
-        print("\n" + dashboard)
+        logger.info("\n" + dashboard)
 
         # Save to file
         REPORTS_DIR.mkdir(parents=True, exist_ok=True)
         today = datetime.now().strftime("%Y-%m-%d")
         report_path = REPORTS_DIR / f"daily_{today}.md"
         report_path.write_text(dashboard)
-        print(f"\nSaved to {report_path}")
+        logger.info(f"\nSaved to {report_path}", extra={"step": "dashboard"})
 
         duration = time.time() - start
         log_pipeline_run(conn, "daily_refresh", "completed", duration_sec=round(duration, 1))
-        print(f"\n✓ Daily refresh complete in {duration:.1f}s")
+        logger.info(f"\n✓ Daily refresh complete in {duration:.1f}s", extra={"duration_ms": int(duration * 1000)})
 
     except Exception as e:
         duration = time.time() - start
         log_pipeline_run(conn, "daily_refresh", "failed", details=str(e), duration_sec=round(duration, 1))
-        print(f"\n✗ Pipeline failed: {e}")
+        logger.error(f"\n✗ Pipeline failed: {e}")
         raise
     finally:
         conn.close()
