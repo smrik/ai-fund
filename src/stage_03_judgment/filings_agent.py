@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """
 FilingsAgent — parses SEC 10-K and 10-Q filings.
 Extracts revenue trends, margins, FCF, debt, guidance, and red flags.
 Returns a FilingsSummary.
 """
+
+from __future__ import annotations
 
 import json
 import os

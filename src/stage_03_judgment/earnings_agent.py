@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """
 EarningsAgent — analyses earnings call 8-K filings and EPS history.
 Extracts guidance vs actuals, management tone, and key themes.
 Returns an EarningsSummary.
 """
+
+from __future__ import annotations
 
 import json
 import os

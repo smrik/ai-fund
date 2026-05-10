@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """
 ThesisAgent — synthesizes all prior agent outputs into a structured IC memo.
 This is the final synthesis step. No external tool calls — works purely from context.
@@ -9,6 +7,8 @@ Also provides generate_story_profile() — a focused call that produces a
 structured StoryDriverProfile for the ticker, suitable for writing to
 config/story_drivers_pending.yaml for PM review and approval.
 """
+
+from __future__ import annotations
 
 import os
 from datetime import datetime, timezone

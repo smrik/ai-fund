@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 """
 RiskAgent — calculates position sizing based on conviction, volatility, and portfolio config.
 Returns a RiskOutput with dollar position size, portfolio %, and stop loss.
 """
+
+from __future__ import annotations
 
 import json
 import os

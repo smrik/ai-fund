@@ -1,9 +1,9 @@
-from __future__ import annotations
-
 """
 SentimentAgent — scores recent news and analyst positioning.
 Returns a SentimentOutput with direction, score, and key themes.
 """
+
+from __future__ import annotations
 
 import json
 import os
