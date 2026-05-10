@@ -24,3 +24,14 @@ File: src\stage_02_valuation\wacc.py
 30:     except Exception:
 31:         return {}
 ```
+
+## Patrik's TODO
+
+### 1
+
+Add more adamodaran's resources to it, a scraper is not needed, because of how rarely he updated.
+But it would be nice to add a drop input folder for those Excel files. Examples:  
+
+- [Data pages](https://pages.stern.nyu.edu/~adamodar/New_Home_Page/datacurrent.html#options)
+
+This would also require a bit better definitions of sectors and industries (helpful overall)

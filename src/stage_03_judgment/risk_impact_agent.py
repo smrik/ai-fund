@@ -5,6 +5,7 @@ Advisory only. Does not mutate the deterministic valuation inputs.
 
 from __future__ import annotations
 
+import os
 from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
 from src.stage_03_judgment.base_agent import BaseAgent
 
@@ -29,11 +30,14 @@ Rules:
 - Return at most 3 overlays
 - Be specific and economically coherent. Avoid extreme values unless the evidence supports it.
 """
+DEFAULT_RISK_IMPACT_MODEL = "gemini-3-flash-preview"
 
 
 class RiskImpactAgent(BaseAgent):
     def __init__(self):
-        super().__init__()
+        super().__init__(
+            model=os.getenv("RISK_IMPACT_AGENT_MODEL", DEFAULT_RISK_IMPACT_MODEL)
+        )
         self.name = "RiskImpactAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []
