@@ -30,6 +30,42 @@ const watchlistPayload = {
   default_focus_ticker: "IBM",
 };
 
+const canonicalDossier = {
+  contract_name: "TickerDossier",
+  contract_version: "1.0.0",
+  ticker: "IBM",
+  as_of_date: "2026-04-30",
+  display_name: "Canonical Machines",
+  currency: "USD",
+  latest_snapshot: {
+    company_identity: {
+      ticker: "IBM",
+      display_name: "Canonical Machines",
+      sector: "Canonical Sector",
+      industry: "Canonical Industry",
+      exchange: "NYSE",
+    },
+    market_snapshot: {
+      as_of_date: "2026-04-30",
+      price: 111,
+      analyst_target: 222,
+      analyst_recommendation: "canonical-rating",
+    },
+    valuation_snapshot: {
+      bear_iv: 120,
+      base_iv: 155,
+      bull_iv: 210,
+      expected_iv: 166,
+      current_price: 112,
+      upside_pct: 0.35,
+    },
+  },
+  loaded_backend_state: { backend_name: "test", source_mode: "latest_snapshot" },
+  source_lineage: {},
+  export_metadata: { source_mode: "latest_snapshot", snapshot_id: 44 },
+  optional_overlays: {},
+} as const;
+
 const workspacePayload = {
   ticker: "IBM",
   company_name: "IBM",
@@ -41,6 +77,8 @@ const workspacePayload = {
   upside_pct_base: 0.2,
   latest_snapshot_date: "2026-03-28",
   snapshot_available: true,
+  ticker_dossier: canonicalDossier,
+  ticker_dossier_contract_version: "1.0.0",
 };
 
 beforeEach(() => {
@@ -65,6 +103,8 @@ beforeEach(() => {
             one_liner: "Memo",
             variant_thesis_prompt: "Question?",
             thesis_changes: ["Moved to watchlist-first IA"],
+            ticker_dossier: canonicalDossier,
+            ticker_dossier_contract_version: "1.0.0",
           }),
           { status: 200 },
         );
@@ -85,6 +125,8 @@ beforeEach(() => {
             memo_date: "2026-03-28",
             why_it_matters: "Base case still implies upside with a controlled terminal value contribution.",
             readiness: { tv_high_flag: false, revenue_data_quality_flag: "company", nwc_driver_quality_flag: false },
+            ticker_dossier: canonicalDossier,
+            ticker_dossier_contract_version: "1.0.0",
           }),
           { status: 200 },
         );
@@ -595,8 +637,10 @@ describe("frontend routes", () => {
   it("renders a shared ticker nav and a consistent overview hero", async () => {
     renderRoute("/ticker/IBM/overview");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "IBM" })).toBeInTheDocument();
+    expect(screen.getByText("$155.00")).toBeInTheDocument();
+    expect(screen.getByText("+35.0%")).toBeInTheDocument();
     expect(screen.getByText("Variant Thesis")).toBeInTheDocument();
     expect(screen.getByText("Latest Snapshot")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Latest Snapshot" })).toBeInTheDocument();
@@ -606,7 +650,9 @@ describe("frontend routes", () => {
   it("shows valuation sub-navigation including assumptions and wacc", async () => {
     renderRoute("/ticker/IBM/valuation?view=Assumptions");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
+    expect(screen.getByText("$111.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$155.00").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Assumptions" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "WACC" })).toBeInTheDocument();
   });
@@ -688,7 +734,7 @@ describe("frontend routes", () => {
 
     renderRoute("/ticker/IBM/valuation?view=Assumptions");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     await waitFor(() => expect(hits.assumptions).toBeGreaterThan(0));
     expect(hits.summary).toBe(0);
     expect(hits.dcf).toBe(0);
@@ -708,7 +754,7 @@ describe("frontend routes", () => {
 
     renderRoute("/ticker/IBM/valuation?view=WACC");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     await waitFor(() => expect(hits.wacc).toBeGreaterThan(0));
     expect(hits.summary).toBe(0);
     expect(hits.dcf).toBe(0);
@@ -726,7 +772,7 @@ describe("frontend routes", () => {
     hits.waccPreview = 0;
     hits.recommendations = 0;
     renderRoute("/ticker/IBM/valuation?view=Comparables");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     await waitFor(() => expect(hits.comps).toBeGreaterThan(0));
     expect(hits.summary).toBe(0);
     expect(hits.dcf).toBe(0);
@@ -743,7 +789,7 @@ describe("frontend routes", () => {
     hits.waccPreview = 0;
     hits.recommendations = 0;
     renderRoute("/ticker/IBM/valuation?view=Multiples");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     await waitFor(() => expect(hits.comps).toBeGreaterThan(0));
 
     cleanup();
@@ -758,7 +804,7 @@ describe("frontend routes", () => {
     hits.waccPreview = 0;
     hits.recommendations = 0;
     renderRoute("/ticker/IBM/valuation?view=Recommendations");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     await waitFor(() => expect(hits.recommendations).toBeGreaterThan(0));
     expect(hits.summary).toBe(0);
     expect(hits.comps).toBe(0);
@@ -767,7 +813,7 @@ describe("frontend routes", () => {
   it("keeps ticker navigation shared and valuation sub-navigation local to the page", async () => {
     const { container } = renderRoute("/ticker/IBM/valuation?view=Summary");
 
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Latest Snapshot" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run Deep Analysis" })).toBeInTheDocument();
     expect(container.querySelector(".ticker-strip")).not.toBeInTheDocument();
@@ -921,7 +967,7 @@ describe("frontend routes", () => {
 
   it("renders the other ticker surfaces without blowing up the route shell", async () => {
     const { container: marketContainer } = renderRoute("/ticker/IBM/market");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "News & Revisions" })).toBeInTheDocument();
     expect(await screen.findByText("Recommendation")).toBeInTheDocument();
     expect(await screen.findByText("Historical Timeline")).toBeInTheDocument();
@@ -943,7 +989,7 @@ describe("frontend routes", () => {
 
     cleanup();
     renderRoute("/ticker/IBM/research");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(await screen.findByText("Cost discipline improved, but acquisition execution still needs proof.")).toBeInTheDocument();
     expect(await screen.findByText("Draft memo available (7 sections: Summary, Business, Thesis, Valuation, Risks, Catalysts, Sources).")).toBeInTheDocument();
     expect(await screen.findByText("WATCH")).toBeInTheDocument();
@@ -958,7 +1004,7 @@ describe("frontend routes", () => {
 
     cleanup();
     renderRoute("/ticker/IBM/audit");
-    expect(await screen.findByRole("heading", { name: "IBM" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(await screen.findByText("DCF Integrity")).toBeInTheDocument();
     expect(await screen.findByText("Filings Coverage")).toBeInTheDocument();
     expect(await screen.findByText("Historical Multiples Audit")).toBeInTheDocument();

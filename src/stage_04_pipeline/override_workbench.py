@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 from typing import Any
 
 import yaml
@@ -16,11 +15,12 @@ from src.stage_02_valuation.input_assembler import (
     clear_valuation_overrides_cache,
 )
 from src.stage_02_valuation.professional_dcf import (
-    ForecastDrivers,
     default_scenario_specs,
     run_probabilistic_valuation,
 )
+from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.stage_04_pipeline.recommendations import load_recommendations
+from src.utils import utc_now_iso
 
 
 DISPLAY_FIELDS: list[tuple[str, str, str]] = [
@@ -48,8 +48,7 @@ DISPLAY_FIELDS: list[tuple[str, str, str]] = [
 ]
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
 
 
 def _approx_equal(left: float | None, right: float | None, tol: float = 1e-9) -> bool:
@@ -281,7 +280,7 @@ def apply_override_selections(
     ticker_overrides = overrides.setdefault("tickers", {}).setdefault(ticker, {})
     current_iv_json = json.dumps(preview.get("current_iv", {}))
     proposed_iv_json = json.dumps(preview.get("proposed_iv", {}))
-    event_ts = _now()
+    event_ts = utc_now_iso()
 
     audit_rows: list[dict[str, Any]] = []
     applied_fields: list[str] = []

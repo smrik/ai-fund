@@ -1,46 +1,25 @@
 # Session State
 
-**Updated:** 2026-04-02 15:05:00 +02:00
+**Updated:** 2026-05-06 18:03:54 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Finish the PR fix for the failing `pre-commit` GitHub check on `codex/final-hygiene-pass` and carry the formatting-only cleanup through commit/push.
+Propagate the `industry_agent.py` initialization-style refactor pattern across all `src/stage_03_judgment/*agent.py` modules.
 
 ## Recent Actions
-- Investigated the PR failure and confirmed the root cause was not Ruff or tests; CI failed because `end-of-file-fixer` and `trailing-whitespace` modified 9 files on the branch.
-- Applied the exact whitespace/EOF cleanup locally to those files:
-  - `ciq/ingest.py`
-  - `skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py`
-  - `skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py`
-  - `src/stage_00_data/market_data.py`
-  - `src/stage_02_valuation/story_drivers.py`
-  - `src/stage_03_judgment/chat_agent.py`
-  - `src/stage_04_pipeline/daily_refresh.py`
-  - `tests/test_market_data.py`
-  - `tests/test_valuation_pipeline.py`
-- Re-ran the same pre-commit hooks with elevated permissions after local cache-path permissions blocked reproduction in the sandbox; all relevant hooks passed.
+- Inspected `industry_agent.py` refactor commit (`e7ef78f`) and compared all stage_03 agent modules.
+- Standardized agent constructors to use explicit per-agent model env overrides with deterministic defaults and `super().__init__(model=...)` across judgment agents.
+- Added `from __future__ import annotations` where missing in agent modules.
+- Ran `python -m compileall src/stage_03_judgment` successfully to verify syntax/import integrity.
 
 ## Next Steps
-- Stage and commit the 9 formatting-only file changes on `codex/final-hygiene-pass`.
-- Push the branch so the PR picks up the pre-commit fix.
-- Recheck the PR checks and merge if green.
+- Run targeted runtime tests for stage_03 pipeline paths to validate behavior under existing orchestration flows.
+- Review default model constants if PM wants different model routing per agent.
 
 ## Known Issues
-- Running `pre_commit` locally inside the sandbox hit cache permission failures in both the default user cache and repo-local temp directories. The successful verification used elevated permissions with:
-  - `PRE_COMMIT_HOME=C:\Users\patri\.codex\memories\pre-commit-home-ci`
-- This is an environment/tooling issue, not a repo code issue.
-- `python scripts/dev/run_local_quality_gate.py` still emits a non-fatal `.pytest_cache` permission warning in this Windows environment.
-- `mkdocs build --strict` still reports informational absolute-link notices in handbook docs, but the build passes.
+- Behavior-level parity not yet validated with end-to-end stage_03 orchestration tests in this session.
 
 ## Notes
-- Current branch state:
-  - branch: `codex/final-hygiene-pass`
-  - worktree: dirty with the 9 formatting-only files listed above
-- Exact successful verification command for the CI fix:
-  - `python -m pre_commit run --files ciq/ingest.py skills/financial-analysis/skills/dcf-model/scripts/validate_dcf.py skills/financial-analysis/skills/skill-creator/scripts/quick_validate.py src/stage_00_data/market_data.py src/stage_02_valuation/story_drivers.py src/stage_03_judgment/chat_agent.py src/stage_04_pipeline/daily_refresh.py tests/test_market_data.py tests/test_valuation_pipeline.py --show-diff-on-failure --color always`
-- Result:
-  - `fix end of files` passed
-  - `trim trailing whitespace` passed
-  - `ruff check` passed
-  - `architecture boundary tests` passed
+- Files touched: accounting_recast_agent.py, earnings_agent.py, filings_agent.py, macro_agent.py, qoe_agent.py, research_note_agent.py, risk_agent.py, risk_impact_agent.py, sentiment_agent.py, thesis_agent.py, valuation_agent.py.
+- No changes made to deterministic stage_02 valuation logic.

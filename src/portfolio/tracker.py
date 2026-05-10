@@ -16,7 +16,7 @@ CLI usage:
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +24,7 @@ import pandas as pd
 import yfinance as yf
 
 from config import ROOT_DIR, PORTFOLIO_SIZE_USD, STOP_LOSS_REVIEW_PCT, MAX_SINGLE_POSITION_PCT
+from src.utils import utc_now_iso
 
 DB_PATH = ROOT_DIR / "data" / "alpha_pod.db"
 EXPORT_PATH = ROOT_DIR / "data" / "portfolio" / "positions.csv"
@@ -45,7 +46,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def _now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return utc_now_iso()
 
 
 def _ensure_tables(conn: sqlite3.Connection) -> None:

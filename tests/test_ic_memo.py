@@ -46,4 +46,3 @@ def test_ic_memo_accepts_structured_thesis_fields():
 
     assert memo.thesis_pillars[0].title == "Consulting stabilization"
     assert memo.structured_catalysts[0].title == "Mainframe cycle"
-

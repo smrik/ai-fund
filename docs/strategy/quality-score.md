@@ -56,5 +56,3 @@ Last updated: 2026-03-06 (Sprint 1 complete)
 - `src/stage_02_valuation/wacc.py`: B (derived cost of debt from actuals) ✅
 - `src/stage_03_judgment/base_agent.py`: C → **B** ✅ (TD-05)
 - `tests/`: C → **B** ✅ (15 tests, 5 mocked)
-
-

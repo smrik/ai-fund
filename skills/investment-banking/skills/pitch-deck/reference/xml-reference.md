@@ -409,8 +409,8 @@ Text-based "tables" cannot be edited by the recipient, will misalign when fonts 
 In `ppt/slides/_rels/slideN.xml.rels`:
 
 ```xml
-<Relationship Id="rIdLogo" 
-  Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" 
+<Relationship Id="rIdLogo"
+  Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image"
   Target="../media/logo.png"/>
 ```
 

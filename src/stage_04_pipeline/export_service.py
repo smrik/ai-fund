@@ -12,13 +12,16 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from db.schema import create_tables, get_connection
+from db.ticker_dossier import upsert_ticker_dossier_snapshot
 from src.stage_04_pipeline.batch_funnel import load_saved_watchlist
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 from src.stage_04_pipeline.dossier_view import build_publishable_memo_context, build_research_board_view
 from src.stage_04_pipeline.override_workbench import build_override_workbench
 from src.stage_04_pipeline.report_archive import list_report_snapshots, load_report_snapshot
+from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload, ticker_dossier_to_payload
 from src.stage_04_pipeline.wacc_workbench import build_wacc_workbench
+from src.utils import coerce_ticker, utc_now_iso
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXPORT_ROOT = PROJECT_ROOT / "data" / "exports" / "generated"
@@ -29,17 +32,6 @@ HEADER_FONT = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
 HEADER_FILL = PatternFill(fill_type="solid", start_color="1F3864", end_color="1F3864")
 SECTION_FILL = PatternFill(fill_type="solid", start_color="D9E1F2", end_color="D9E1F2")
 SUBTLE_FILL = PatternFill(fill_type="solid", start_color="F5F7FA", end_color="F5F7FA")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def _coerce_ticker(value: str) -> str:
-    ticker = (value or "").strip().upper()
-    if not ticker:
-        raise ValueError("ticker is required")
-    return ticker
 
 
 def _ensure_schema(conn) -> None:
@@ -105,6 +97,14 @@ def _normalise_comps_analysis(comps: dict[str, Any] | None) -> dict[str, Any]:
         "metric_status_rows": comps.get("metric_status_rows") or [],
         "football_field": comps.get("football_field") or {"ranges": [], "markers": [], "range_min": None, "range_max": None},
         "historical_multiples_summary": comps.get("historical_multiples_summary") or {"available": False, "metrics": {}},
+        "operating_context": comps.get("operating_context") or {"target": {}, "peer_medians": {}, "peer_count": 0},
+        "support_data_quality": comps.get("support_data_quality")
+        or {
+            "target_missing_fields": [],
+            "peer_coverage": {},
+            "valuation_metric_count": len(comps.get("valuation_by_metric_rows") or []),
+            "common_patchups_needed": [],
+        },
         "audit_flags": list(comps.get("audit_flags") or []),
         "notes": comps.get("notes") or "",
         "source_lineage": comps.get("source_lineage") or {},
@@ -112,6 +112,73 @@ def _normalise_comps_analysis(comps: dict[str, Any] | None) -> dict[str, Any]:
         "similarity_model": comps.get("similarity_model"),
         "weighting_formula": comps.get("weighting_formula"),
     }
+
+
+def _attach_ticker_dossier(
+    payload: dict[str, Any],
+    *,
+    source_mode: str,
+    snapshot_id: int | None = None,
+) -> dict[str, Any]:
+    dossier = build_ticker_dossier_from_export_payload(
+        payload,
+        source_mode=source_mode,
+        snapshot_id=snapshot_id,
+    )
+    payload["ticker_dossier"] = ticker_dossier_to_payload(dossier)
+    return payload
+
+
+def _persist_attached_ticker_dossier(payload: dict[str, Any]) -> None:
+    dossier_payload = payload.get("ticker_dossier")
+    if not isinstance(dossier_payload, dict):
+        return
+    upsert_ticker_dossier_snapshot(dossier_payload, connection_factory=get_connection)
+
+
+def _html_context_scalars_from_dossier(payload: dict[str, Any]) -> dict[str, Any]:
+    dossier = payload.get("ticker_dossier")
+    if not isinstance(dossier, dict):
+        return {}
+    latest = dossier.get("latest_snapshot") if isinstance(dossier.get("latest_snapshot"), dict) else {}
+    identity = latest.get("company_identity") if isinstance(latest.get("company_identity"), dict) else {}
+    market = latest.get("market_snapshot") if isinstance(latest.get("market_snapshot"), dict) else {}
+    valuation = latest.get("valuation_snapshot") if isinstance(latest.get("valuation_snapshot"), dict) else {}
+    metadata = dossier.get("export_metadata") if isinstance(dossier.get("export_metadata"), dict) else {}
+    current_price = market.get("price")
+    if current_price is None:
+        current_price = valuation.get("current_price")
+    return {
+        "ticker": dossier.get("ticker"),
+        "company_name": dossier.get("display_name") or identity.get("display_name"),
+        "source_mode": metadata.get("source_mode"),
+        "current_price": current_price,
+        "base_iv": valuation.get("base_iv"),
+        "expected_iv": valuation.get("expected_iv"),
+        "as_of_date": dossier.get("as_of_date"),
+        "snapshot_id": metadata.get("snapshot_id"),
+        "ticker_dossier_contract_version": dossier.get("contract_version"),
+        "ticker_dossier": dossier,
+    }
+
+
+def _apply_html_context_scalars(context: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    scalars = _html_context_scalars_from_dossier(payload)
+    for key, value in scalars.items():
+        if value is not None:
+            context[key] = value
+
+    valuation = dict(context.get("valuation") or {})
+    for context_key, valuation_key in (
+        ("current_price", "current_price"),
+        ("base_iv", "iv_base"),
+        ("expected_iv", "expected_iv"),
+    ):
+        value = scalars.get(context_key)
+        if value is not None:
+            valuation[valuation_key] = value
+    context["valuation"] = valuation
+    return context
 
 
 def _clear_sheet(ws) -> None:
@@ -250,6 +317,9 @@ def _populate_comps_sheet(workbook, ticker: str, company_name: str | None, marke
             "Company",
             "Similarity Score",
             "Model Weight",
+            "Revenue LTM",
+            "EBITDA LTM",
+            "EBIT LTM",
             "Revenue Growth",
             "EBIT Margin",
             "Net Debt / EBITDA",
@@ -263,6 +333,9 @@ def _populate_comps_sheet(workbook, ticker: str, company_name: str | None, marke
                 row.get("display_name"),
                 row.get("similarity_score"),
                 row.get("model_weight"),
+                row.get("revenue_ltm_mm"),
+                row.get("ebitda_ltm_mm"),
+                row.get("ebit_ltm_mm"),
                 row.get("revenue_growth"),
                 row.get("ebit_margin"),
                 row.get("net_debt_to_ebitda"),
@@ -374,7 +447,7 @@ def _copy_public_artifacts(artifacts: list[dict[str, Any]], bundle_dir: Path) ->
 
 
 def _render_html_report(context: dict[str, Any]) -> str:
-    ticker = _coerce_ticker(str(context.get("ticker") or ""))
+    ticker = coerce_ticker(str(context.get("ticker") or ""))
     company_name = str(context.get("company_name") or ticker)
     source_mode = str(context.get("source_mode") or "loaded_backend_state")
     summary = str(context.get("summary") or "No publishable memo summary is available.")
@@ -433,10 +506,10 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
     if not template_path.exists():
         raise FileNotFoundError(f"Ticker export template not found: {template_path}")
 
-    json_path = bundle_dir / f"{_coerce_ticker(ticker)}_latest.json"
+    json_path = bundle_dir / f"{coerce_ticker(ticker)}_latest.json"
     _json_dump(json_path, payload)
 
-    workbook_path = bundle_dir / f"{_coerce_ticker(ticker)}_review.xlsx"
+    workbook_path = bundle_dir / f"{coerce_ticker(ticker)}_review.xlsx"
     shutil.copy2(template_path, workbook_path)
 
     workbook = load_workbook(workbook_path)
@@ -446,14 +519,14 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
     comps_analysis = _normalise_comps_analysis(payload.get("comps_analysis"))
     _populate_comps_sheet(
         workbook,
-        _coerce_ticker(ticker),
+        coerce_ticker(ticker),
         payload.get("company_name"),
         payload.get("market") or {},
         comps_analysis,
     )
     _populate_comps_diagnostics_sheet(
         workbook,
-        _coerce_ticker(ticker),
+        coerce_ticker(ticker),
         comps_analysis,
     )
     workbook.save(workbook_path)
@@ -462,7 +535,7 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
     _json_dump(
         manifest_path,
         {
-            "ticker": _coerce_ticker(ticker),
+            "ticker": coerce_ticker(ticker),
             "format": "xlsx",
             "template": str(template_path),
             "artifacts": ["excel_workbook", "power_query_json"],
@@ -476,7 +549,7 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
             _artifact_row(
                 artifact_key="excel_workbook",
                 artifact_role="primary",
-                title=f"{_coerce_ticker(ticker)} review workbook",
+                title=f"{coerce_ticker(ticker)} review workbook",
                 path=workbook_path,
                 mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 is_primary=True,
@@ -484,7 +557,7 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
             _artifact_row(
                 artifact_key="power_query_json",
                 artifact_role="sidecar_data",
-                title=f"{_coerce_ticker(ticker)} export payload",
+                title=f"{coerce_ticker(ticker)} export payload",
                 path=json_path,
                 mime_type="application/json",
             ),
@@ -496,7 +569,7 @@ def build_html_export_bundle(ticker: str, context: dict[str, Any], bundle_dir: P
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
 
-    html_path = bundle_dir / f"{_coerce_ticker(ticker).lower()}-memo.html"
+    html_path = bundle_dir / f"{coerce_ticker(ticker).lower()}-memo.html"
     context_path = bundle_dir / "context.json"
     manifest_path = bundle_dir / "manifest.json"
 
@@ -508,7 +581,7 @@ def build_html_export_bundle(ticker: str, context: dict[str, Any], bundle_dir: P
         _artifact_row(
             artifact_key="html_report",
             artifact_role="primary",
-            title=f"{_coerce_ticker(ticker)} memo export",
+            title=f"{coerce_ticker(ticker)} memo export",
             path=html_path,
             mime_type="text/html",
             is_primary=True,
@@ -525,7 +598,7 @@ def build_html_export_bundle(ticker: str, context: dict[str, Any], bundle_dir: P
     _json_dump(
         manifest_path,
         {
-            "ticker": _coerce_ticker(ticker),
+            "ticker": coerce_ticker(ticker),
             "format": "html",
             "artifacts": [
                 {
@@ -582,8 +655,8 @@ def register_export_bundle(
     export_id = uuid4().hex
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
-    ticker_value = _coerce_ticker(ticker) if ticker else None
-    now = _now()
+    ticker_value = coerce_ticker(ticker) if ticker else None
+    now = utc_now_iso()
 
     with get_connection() as conn:
         _ensure_schema(conn)
@@ -648,7 +721,7 @@ def list_exports(*, ticker: str | None = None, scope: str | None = None, limit: 
     params: list[Any] = []
     if ticker:
         query.append("AND ticker = ?")
-        params.append(_coerce_ticker(ticker))
+        params.append(coerce_ticker(ticker))
     if scope:
         query.append("AND scope = ?")
         params.append(scope)
@@ -708,7 +781,7 @@ def resolve_export_artifact_path(export_id: str, artifact_key: str | None = None
 
 
 def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
+    ticker = coerce_ticker(ticker)
     workbench = build_override_workbench(ticker)
     dcf = build_dcf_audit_view(ticker)
     comps = build_comps_dashboard_view(ticker)
@@ -735,9 +808,9 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
     }
     comps_target = (comps.get("target_vs_peers") or {}).get("target") or {}
     peer_medians = (comps.get("target_vs_peers") or {}).get("peer_medians") or {}
-    return {
+    payload = {
         "$schema_version": "1.0",
-        "generated_at": _now(),
+        "generated_at": utc_now_iso(),
         "ticker": ticker,
         "company_name": workbench.get("company_name") or research.get("company_name") or ticker,
         "sector": workbench.get("sector"),
@@ -783,6 +856,7 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
             "current_price": workbench.get("current_price"),
         },
         "scenarios": scenario_map,
+        "sensitivity": dcf.get("sensitivity") or {},
         "terminal": dcf.get("terminal_bridge") or {},
         "health_flags": dcf.get("health_flags") or {},
         "forecast_bridge": dcf.get("forecast_bridge") or [],
@@ -800,10 +874,11 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "comps_analysis": _normalise_comps_analysis(comps),
         "research": research,
     }
+    return _attach_ticker_dossier(payload, source_mode="loaded_backend_state")
 
 
 def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
-    ticker = _coerce_ticker(ticker)
+    ticker = coerce_ticker(ticker)
     snapshots = list_report_snapshots(ticker, limit=1)
     if not snapshots:
         raise FileNotFoundError(f"No archived snapshot found for {ticker}")
@@ -813,10 +888,9 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
     dashboard_snapshot = snapshot.get("dashboard_snapshot") or {}
     dcf = dashboard_snapshot.get("dcf_audit") or {}
     comps = dashboard_snapshot.get("comps_view") or {}
-    return (
-        {
+    payload = {
             "$schema_version": "1.0",
-            "generated_at": _now(),
+            "generated_at": utc_now_iso(),
             "ticker": ticker,
             "company_name": snapshot.get("company_name") or memo.get("company_name") or ticker,
             "sector": snapshot.get("sector") or memo.get("sector"),
@@ -845,6 +919,7 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
                 for row in dcf.get("scenario_summary") or []
                 if row.get("scenario")
             },
+            "sensitivity": dcf.get("sensitivity") or {},
             "terminal": dcf.get("terminal_bridge") or {},
             "health_flags": dcf.get("health_flags") or {},
             "forecast_bridge": dcf.get("forecast_bridge") or [],
@@ -861,18 +936,20 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
             },
             "comps_analysis": _normalise_comps_analysis(comps),
             "snapshot": snapshot,
-        },
+        }
+    return (
+        _attach_ticker_dossier(payload, source_mode="latest_snapshot", snapshot_id=snapshot_id),
         snapshot_id,
     )
 
 
 def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], int | None]:
-    ticker = _coerce_ticker(ticker)
+    ticker = coerce_ticker(ticker)
     if source_mode == "latest_snapshot":
         payload, snapshot_id = _build_snapshot_ticker_payload(ticker)
         memo = payload.get("snapshot", {}).get("memo") or {}
         publishable = build_publishable_memo_context(ticker)
-        return (
+        context = _apply_html_context_scalars(
             {
                 "ticker": ticker,
                 "company_name": payload.get("company_name"),
@@ -883,13 +960,15 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
                 "summary": publishable.get("memo_content") or memo.get("one_liner") or memo.get("variant_thesis_prompt") or "",
                 "valuation": payload.get("valuation") or {},
                 "artifacts": publishable.get("artifacts") or [],
+                "ticker_dossier": payload.get("ticker_dossier"),
             },
-            snapshot_id,
+            payload,
         )
+        return (context, snapshot_id)
     payload = _build_current_ticker_payload(ticker)
     publishable = build_publishable_memo_context(ticker)
     research = payload.get("research") or {}
-    return (
+    context = _apply_html_context_scalars(
         {
             "ticker": ticker,
             "company_name": payload.get("company_name"),
@@ -900,14 +979,16 @@ def _build_html_context(ticker: str, source_mode: str) -> tuple[dict[str, Any], 
             "summary": publishable.get("memo_content") or research.get("publishable_memo_preview") or "",
             "valuation": payload.get("valuation") or {},
             "artifacts": publishable.get("artifacts") or [],
+            "ticker_dossier": payload.get("ticker_dossier"),
         },
-        None,
+        payload,
     )
+    return (context, None)
 
 
 def _ticker_bundle_dir(ticker: str, export_format: str) -> Path:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    return EXPORT_ROOT / "ticker" / _coerce_ticker(ticker) / f"{stamp}-{export_format}-{uuid4().hex[:8]}"
+    return EXPORT_ROOT / "ticker" / coerce_ticker(ticker) / f"{stamp}-{export_format}-{uuid4().hex[:8]}"
 
 
 def _watchlist_bundle_dir(export_format: str) -> Path:
@@ -923,13 +1004,14 @@ def run_ticker_export(
     template_strategy: str | None = None,
     created_by: str = "api",
 ) -> dict[str, Any]:
-    ticker = _coerce_ticker(ticker)
+    ticker = coerce_ticker(ticker)
     if export_format == "xlsx":
         snapshot_id = None
         if source_mode == "latest_snapshot":
             payload, snapshot_id = _build_snapshot_ticker_payload(ticker)
         else:
             payload = _build_current_ticker_payload(ticker)
+        _persist_attached_ticker_dossier(payload)
         bundle_dir = _ticker_bundle_dir(ticker, export_format)
         staged = stage_power_query_workbook(ticker, payload, bundle_dir)
         return register_export_bundle(
@@ -949,6 +1031,7 @@ def run_ticker_export(
 
     if export_format == "html":
         context, snapshot_id = _build_html_context(ticker, source_mode)
+        _persist_attached_ticker_dossier(context)
         bundle_dir = _ticker_bundle_dir(ticker, export_format)
         staged = build_html_export_bundle(ticker, context, bundle_dir)
         return register_export_bundle(

@@ -3,15 +3,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, is_dataclass
-from datetime import datetime, timezone
 from typing import Any
 
 from db.loader import insert_pipeline_report_archive
 from db.schema import create_tables, get_connection
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+from src.utils import coerce_ticker, utc_now_iso
 
 
 def _ensure_schema(conn) -> None:
@@ -30,11 +26,7 @@ def _serialize(value: Any) -> Any:
     return value
 
 
-def _coerce_ticker(value: str) -> str:
-    ticker = (value or "").strip().upper()
-    if not ticker:
-        raise ValueError("ticker is required")
-    return ticker
+# _coerce_ticker removed — use coerce_ticker from src.utils
 
 
 def _extract_base_iv(memo_payload: dict[str, Any]) -> float | None:
@@ -91,7 +83,7 @@ def save_report_snapshot(
     filings_browser_view: dict | None,
     run_trace: list[dict] | None,
 ) -> int:
-    archive_ticker = _coerce_ticker(ticker)
+    archive_ticker = coerce_ticker(ticker)
     memo_payload = _serialize(memo)
     dashboard_snapshot = _build_dashboard_snapshot(
         dcf_audit=dcf_audit,
@@ -106,7 +98,7 @@ def save_report_snapshot(
             conn,
             {
                 "ticker": archive_ticker,
-                "created_at": _now(),
+                "created_at": utc_now_iso(),
                 "run_group_ts": _extract_run_group_ts(trace_payload),
                 "company_name": memo_payload.get("company_name"),
                 "sector": memo_payload.get("sector"),
@@ -122,7 +114,7 @@ def save_report_snapshot(
 
 
 def list_report_snapshots(ticker: str, limit: int = 50) -> list[dict]:
-    archive_ticker = _coerce_ticker(ticker)
+    archive_ticker = coerce_ticker(ticker)
     query_limit = max(int(limit), 1)
     with get_connection() as conn:
         _ensure_schema(conn)

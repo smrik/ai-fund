@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 from openpyxl import Workbook, load_workbook
 
@@ -11,9 +11,11 @@ from db.schema import create_tables
 
 
 def _workspace_tempdir(name: str) -> Path:
-    root = Path.home() / ".codex" / "memories" / "ai-fund-test-temp"
-    root.mkdir(exist_ok=True)
-    return Path(tempfile.mkdtemp(prefix=f"{name}-", dir=root))
+    root = Path.cwd() / ".tmp-tests" / "export-service"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / f"{name}-{uuid4().hex}"
+    path.mkdir(parents=True)
+    return path
 
 
 def _temp_conn_factory(db_path: Path):
@@ -24,6 +26,39 @@ def _temp_conn_factory(db_path: Path):
         return conn
 
     return _factory
+
+
+def _payload_with_attached_dossier(source_mode: str, snapshot_id: int | None = None) -> dict:
+    return {
+        "ticker": "IBM",
+        "company_name": "Legacy Export Name",
+        "source_mode": source_mode,
+        "generated_at": "2026-04-01T00:00:00+00:00",
+        "valuation": {"current_price": 10.0, "iv_base": 20.0, "expected_iv": 30.0},
+        "research": {"publishable_memo_preview": "Legacy research memo."},
+        "snapshot": {"memo": {"one_liner": "Legacy snapshot memo."}},
+        "ticker_dossier": {
+            "contract_name": "TickerDossier",
+            "contract_version": "1.0.0",
+            "ticker": "IBM",
+            "as_of_date": "2026-04-30",
+            "display_name": "Canonical Machines",
+            "currency": "USD",
+            "latest_snapshot": {
+                "company_identity": {"ticker": "IBM", "display_name": "Canonical Machines", "sector": "Canonical Sector"},
+                "market_snapshot": {"as_of_date": "2026-04-30", "price": 111.0},
+                "valuation_snapshot": {"base_iv": 155.0, "expected_iv": 166.0, "current_price": 112.0},
+                "historical_series": {},
+                "qoe_snapshot": {"present": False, "score": None, "flags": []},
+                "comps_snapshot": {},
+                "source_lineage": {},
+            },
+            "loaded_backend_state": {"backend_name": "test", "source_mode": source_mode},
+            "source_lineage": {},
+            "export_metadata": {"source_mode": source_mode, "snapshot_id": snapshot_id},
+            "optional_overlays": {},
+        },
+    }
 
 
 def test_stage_power_query_workbook_copies_template_and_points_json_path(monkeypatch):
@@ -109,7 +144,16 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
                 {"metric": "revenue_growth", "label": "Revenue Growth", "target": 0.03, "peer_median": 0.05, "delta": -0.02}
             ],
             "peer_table": [
-                {"ticker": "ACN", "display_name": "Accenture", "similarity_score": 0.8, "model_weight": 0.4, "tev_ebitda_ltm": 17.0}
+                {
+                    "ticker": "ACN",
+                    "display_name": "Accenture",
+                    "similarity_score": 0.8,
+                    "model_weight": 0.4,
+                    "revenue_ltm_mm": 70000.0,
+                    "ebitda_ltm_mm": 13000.0,
+                    "ebit_ltm_mm": 10500.0,
+                    "tev_ebitda_ltm": 17.0,
+                }
             ],
             "metric_status_rows": [
                 {"ticker": "ACN", "metric": "tev_ebitda_ltm", "label": "TEV / EBITDA LTM", "raw_multiple": 17.0, "status": "included"}
@@ -120,6 +164,17 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
             },
             "historical_multiples_summary": {
                 "metrics": {"pe_trailing": {"current": 20.0, "summary": {"median": 18.0, "current_percentile": 0.65}}}
+            },
+            "operating_context": {
+                "target": {"revenue_ltm_mm": 60000.0, "ebitda_ltm_mm": 11428.6, "ebit_ltm_mm": 8450.0},
+                "peer_medians": {"ebit_margin": 0.18, "net_debt_to_ebitda": 0.6},
+                "peer_count": 1,
+            },
+            "support_data_quality": {
+                "target_missing_fields": [],
+                "peer_coverage": {"ebitda_ltm_mm": {"present": 1, "total": 1, "ratio": 1.0}},
+                "valuation_metric_count": 1,
+                "common_patchups_needed": [],
             },
             "audit_flags": ["Outliers removed from tev_ebitda_ltm: MSFT"],
             "notes": "primary=tev_ebitda_ltm",
@@ -134,6 +189,7 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
     assert "IBM" in str(staged["Comps"]["A1"].value)
     assert staged["Comps"]["B5"].value == "tev_ebitda_ltm"
     assert staged["Comps"]["A20"].value == "Peer Table"
+    assert staged["Comps"]["E21"].value == "Revenue LTM"
     assert staged["Comps Diagnostics"]["A4"].value == "Audit Flags"
     assert staged["Comps Diagnostics"]["A10"].value == "Ticker"
 
@@ -176,6 +232,40 @@ def test_build_html_export_bundle_writes_primary_and_sidecar_assets():
     assert context_path.exists()
     assert copied_asset.exists()
     assert {artifact["artifact_key"] for artifact in result["artifacts"]} == {"html_report", "context_json", "public_chart"}
+
+
+def test_build_html_context_prefers_attached_canonical_dossier_for_current_and_snapshot(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    monkeypatch.setattr(export_service, "_build_snapshot_ticker_payload", lambda ticker: (_payload_with_attached_dossier("latest_snapshot", 7), 7))
+    monkeypatch.setattr(export_service, "_build_current_ticker_payload", lambda ticker: _payload_with_attached_dossier("loaded_backend_state"))
+    monkeypatch.setattr(
+        export_service,
+        "build_publishable_memo_context",
+        lambda ticker: {"memo_content": "Canonical memo content.", "artifacts": [{"artifact_key": "chart"}]},
+    )
+
+    snapshot_context, snapshot_id = export_service._build_html_context("IBM", "latest_snapshot")
+    current_context, current_snapshot_id = export_service._build_html_context("IBM", "loaded_backend_state")
+
+    for context in (snapshot_context, current_context):
+        assert context["company_name"] == "Canonical Machines"
+        assert context["current_price"] == 111.0
+        assert context["base_iv"] == 155.0
+        assert context["expected_iv"] == 166.0
+        assert context["as_of_date"] == "2026-04-30"
+        assert context["ticker_dossier_contract_version"] == "1.0.0"
+        assert context["valuation"]["current_price"] == 111.0
+        assert context["valuation"]["iv_base"] == 155.0
+        assert context["valuation"]["expected_iv"] == 166.0
+        assert context["summary"] == "Canonical memo content."
+        assert context["ticker_dossier"]["display_name"] == "Canonical Machines"
+
+    assert snapshot_context["source_mode"] == "latest_snapshot"
+    assert snapshot_context["snapshot_id"] == 7
+    assert snapshot_id == 7
+    assert current_context["source_mode"] == "loaded_backend_state"
+    assert current_snapshot_id is None
 
 
 def test_register_export_bundle_persists_export_and_artifacts(monkeypatch):
@@ -235,3 +325,114 @@ def test_register_export_bundle_persists_export_and_artifacts(monkeypatch):
     assert loaded["artifacts"][0]["artifact_key"] == "html_report"
     assert Path(export_service.resolve_export_artifact_path(export_row["export_id"])).name == "report.html"
     assert Path(export_service.resolve_export_artifact_path(export_row["export_id"], "context_json")).name == "context.json"
+
+
+def test_ticker_exports_persist_current_and_snapshot_dossiers(monkeypatch):
+    from src.stage_04_pipeline import export_service
+    from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload, ticker_dossier_to_payload
+
+    tmp_path = _workspace_tempdir("export-dossier")
+    db_path = tmp_path / "exports.db"
+    monkeypatch.setattr(export_service, "get_connection", _temp_conn_factory(db_path))
+    monkeypatch.setattr(export_service, "_ticker_bundle_dir", lambda ticker, export_format: tmp_path / f"{ticker}-{export_format}")
+
+    def _payload(source_mode: str, snapshot_id: int | None = None) -> dict:
+        payload = {
+            "ticker": "IBM",
+            "company_name": "International Business Machines",
+            "industry": "IT Services",
+            "exchange": "NYSE",
+            "generated_at": "2026-04-30T12:00:00+00:00",
+            "market": {"price": 260.0},
+            "valuation": {"iv_base": 202.0, "expected_iv": 205.0},
+            "ciq_lineage": {"snapshot_as_of_date": "2026-04-30"},
+            "forecast_bridge": [{"year": 2027, "fcff": 100.0}],
+            "historical_series": {"revenue": [{"period": "2025", "value": 1000.0}]},
+            "qoe": {
+                "qoe_score": 2.0,
+                "qoe_flag": "red",
+                "deterministic": {"signal_scores": {"dso": "amber"}},
+                "llm": {
+                    "dcf_ebit_override_pending": True,
+                    "revenue_recognition_flags": ["Channel stuffing risk"],
+                    "auditor_flags": [],
+                },
+            },
+        }
+        dossier = build_ticker_dossier_from_export_payload(payload, source_mode=source_mode, snapshot_id=snapshot_id)
+        payload["ticker_dossier"] = ticker_dossier_to_payload(dossier)
+        return payload
+
+    def _stage_workbook(ticker, payload, bundle_dir):
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        primary = bundle_dir / "workbook.xlsx"
+        primary.write_bytes(b"xlsx")
+        return {
+            "artifacts": [
+                {
+                    "artifact_key": "excel_workbook",
+                    "artifact_role": "primary",
+                    "title": "Workbook",
+                    "path": primary,
+                    "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "is_primary": True,
+                }
+            ]
+        }
+
+    def _stage_html(ticker, context, bundle_dir):
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+        primary = bundle_dir / "report.html"
+        primary.write_text("<html>ok</html>", encoding="utf-8")
+        return {
+            "artifacts": [
+                {
+                    "artifact_key": "html_report",
+                    "artifact_role": "primary",
+                    "title": "Report",
+                    "path": primary,
+                    "mime_type": "text/html",
+                    "is_primary": True,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(export_service, "_build_snapshot_ticker_payload", lambda ticker: (_payload("latest_snapshot", 7), 7))
+    monkeypatch.setattr(export_service, "_build_html_context", lambda ticker, source_mode: (_payload("loaded_backend_state"), None))
+    monkeypatch.setattr(export_service, "stage_power_query_workbook", _stage_workbook)
+    monkeypatch.setattr(export_service, "build_html_export_bundle", _stage_html)
+
+    export_service.run_ticker_export(ticker="IBM", export_format="xlsx", source_mode="latest_snapshot")
+    export_service.run_ticker_export(ticker="IBM", export_format="html", source_mode="loaded_backend_state")
+
+    conn = _temp_conn_factory(db_path)()
+    rows = conn.execute(
+        """
+        SELECT source_mode, source_key
+        FROM ticker_dossier_snapshots
+        ORDER BY source_mode
+        """
+    ).fetchall()
+
+    assert [(row["source_mode"], row["source_key"]) for row in rows] == [
+        ("latest_snapshot", "snapshot:7"),
+        ("loaded_backend_state", "asof:2026-04-30"),
+    ]
+
+    payloads = [
+        json.loads(row["payload_json"])
+        for row in conn.execute(
+            """
+            SELECT payload_json
+            FROM ticker_dossier_snapshots
+            ORDER BY source_mode
+            """
+        ).fetchall()
+    ]
+    for dossier_payload in payloads:
+        latest = dossier_payload["latest_snapshot"]
+        assert latest["company_identity"]["industry"] == "IT Services"
+        assert latest["company_identity"]["exchange"] == "NYSE"
+        assert latest["qoe_snapshot"]["present"] is True
+        assert latest["qoe_snapshot"]["flags"] == ["red", "dso:amber", "Channel stuffing risk", "dcf_ebit_override_pending"]
+        assert latest["historical_series"]["revenue"] == [{"period": "2025", "value": 1000.0}]

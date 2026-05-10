@@ -127,4 +127,3 @@
 
 **Step 5: Commit**
 - Make a final commit summarizing the config consolidation and docs additions.
-

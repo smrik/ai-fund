@@ -10,12 +10,12 @@ class MockLLMResponse:
             def __init__(self, content):
                 self.content = content
                 self.tool_calls = None
-                
+
         class Choice:
             def __init__(self, content):
                 self.message = Message(content)
                 self.finish_reason = "stop"
-                
+
         self.choices = [Choice(content)]
         self.usage = None
 
@@ -38,10 +38,10 @@ class MockLLMClient:
 @pytest.fixture
 def mock_sdk(monkeypatch):
     client = MockLLMClient("Based on the SEC filings, management expects AI capex to increase by 20% next year.")
-    
+
     def mock_create_with_retry(self, **kwargs):
         return client.create(**kwargs)
-        
+
     monkeypatch.setattr("src.stage_03_judgment.base_agent.BaseAgent._create_with_retry", mock_create_with_retry)
     return client
 
@@ -73,7 +73,7 @@ def test_chat_agent_answers_query_with_context(mock_sdk):
     # Check SDK prompt
     assert "In 2026, we expect AI capital expenditures to increase" in mock_sdk.last_prompt
     assert "What is the expectation for AI capex?" in mock_sdk.last_prompt
-    
+
     # Check agent response
     assert response.ticker == "IBM"
     assert response.query == "What is the expectation for AI capex?"
@@ -94,7 +94,7 @@ def test_chat_agent_handles_empty_context(mock_sdk):
 
     agent = ChatAgent()
     response = agent.answer_query("What is the expectation for AI capex?", context_bundle=bundle)
-    
+
     assert response.error is not None
     assert "No relevant SEC filing text" in response.error
     assert response.answer == ""

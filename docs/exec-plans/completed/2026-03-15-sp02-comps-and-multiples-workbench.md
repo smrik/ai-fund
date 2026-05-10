@@ -7,14 +7,14 @@
 Turn the current comps surface into a proper comparable-company workbench with metric selection, target-vs-peer context, football-field output, and a dedicated historical multiples tab.
 
 ## Files
-- Modify: [dashboard/app.py](../../dashboard/app.py)
-- Modify: [src/stage_04_pipeline/comps_dashboard.py](../../src/stage_04_pipeline/comps_dashboard.py)
-- Modify: [src/stage_00_data/market_data.py](../../src/stage_00_data/market_data.py)
-- Optional Modify: [src/stage_00_data/ciq_adapter.py](../../src/stage_00_data/ciq_adapter.py)
-- Optional Modify: [src/stage_02_valuation/comps_model.py](../../src/stage_02_valuation/comps_model.py)
-- Create: [src/stage_04_pipeline/multiples_dashboard.py](../../src/stage_04_pipeline/multiples_dashboard.py)
-- Create: [tests/test_multiples_dashboard.py](../../tests/test_multiples_dashboard.py)
-- Modify: [tests/test_comps_dashboard.py](../../tests/test_comps_dashboard.py)
+- Modify: [dashboard/app.py](../../../dashboard/app.py)
+- Modify: [src/stage_04_pipeline/comps_dashboard.py](../../../src/stage_04_pipeline/comps_dashboard.py)
+- Modify: [src/stage_00_data/market_data.py](../../../src/stage_00_data/market_data.py)
+- Optional Modify: [src/stage_00_data/ciq_adapter.py](../../../src/stage_00_data/ciq_adapter.py)
+- Optional Modify: [src/stage_02_valuation/comps_model.py](../../../src/stage_02_valuation/comps_model.py)
+- Create: [src/stage_04_pipeline/multiples_dashboard.py](../../../src/stage_04_pipeline/multiples_dashboard.py)
+- Create: [tests/test_multiples_dashboard.py](../../../tests/test_multiples_dashboard.py)
+- Modify: [tests/test_comps_dashboard.py](../../../tests/test_comps_dashboard.py)
 
 ## Current Gaps
 - The existing comps tab exposes one primary metric and a peer table, but not metric switching.

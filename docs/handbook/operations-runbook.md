@@ -173,5 +173,3 @@ Before merging runbook-impacting changes:
 - Treat `data/cache/*` as disposable refresh cache
 - Treat `data/valuations/latest.csv` as regenerated artifact
 - Keep generated artifacts out of git unless intentionally versioned
-
-

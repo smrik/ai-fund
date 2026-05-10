@@ -4,6 +4,32 @@ This file is the short map, not the full manual.
 
 Read this first, then follow the canonical docs it points to. Keep this file concise and keep the detailed truth in `docs/`.
 
+## Tone
+
+## Human-in-the-loop thinking protocol
+
+The agent must not replace the user's analytical thinking.
+
+Before writing substantial code, proposing an architecture, or running an autonomous implementation loop, first ask for or infer the following:
+
+1. What is the goal?
+2. What is the input data or starting state?
+3. What should the output look like?
+4. What is the simplest pipeline in plain English?
+5. What assumptions could make the result wrong?
+6. What sanity check will verify the result?
+
+If the user has not provided these, do not proceed directly to full implementation. Instead, produce a short planning scaffold and ask the user to fill in missing pieces, unless the task is trivial.
+
+When coding:
+
+- Prefer the smallest working version first.
+- Avoid unnecessary abstractions.
+- Add sanity checks after major transformations.
+- Explain assumptions and silent failure modes.
+- Do not hide important reasoning inside generated code.
+- After implementation, summarize what the user should manually inspect.
+
 ## What This Repo Is
 
 Alpha Pod is an AI-augmented fundamental long/short equity research pipeline for a solo PM.
@@ -91,6 +117,17 @@ Before starting a new branch or ending a major work session:
 4. Do not assume the user remembered to push; remind them when the repo is not fully up to date on GitHub
 5. If the user says they want to “start fresh” or “branch properly”, pause and verify Git hygiene before doing anything else
 6. When in doubt, babysit the workflow: explain whether `main` is clean, whether GitHub matches local, and what the next safe git step is
+
+## Pre-Commit On This Machine
+
+The default user pre-commit cache can be readonly in Codex/Windows sandbox sessions. If `pre-commit` fails with `attempt to write a readonly database` or cannot write `C:\Users\patri\.cache\pre-commit\pre-commit.log`, rerun it with a workspace-local cache:
+
+```powershell
+$env:PRE_COMMIT_HOME = "$PWD\.pre-commit-cache-run-codex"
+rtk pre-commit run --all-files
+```
+
+`.pre-commit-cache-run*/` is ignored by Git, so the local hook cache should not pollute commits.
 
 ## Project Structure
 

@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 
 from src.stage_02_valuation import batch_runner
@@ -146,6 +147,18 @@ def test_value_single_ticker_returns_prob_weighted_fields(monkeypatch):
     assert out["iv_exit"] == 10.0
     assert out["iv_blended"] == 100.0
     assert out["model_applicability_status"] == "dcf_applicable"
+    assert out["scenario_prob_bear"] == 0.2
+    assert out["scenario_prob_base"] == 0.6
+    assert out["scenario_prob_bull"] == 0.2
+    assert out["context_expected_iv"] == 100.0
+    assert out["context_expected_upside_pct"] == 0.0
+
+    scenario_policy = json.loads(out["context_scenario_policy_json"])
+    assert scenario_policy["official_policy"] == "fixed_default"
+    assert scenario_policy["policy"] == "context_advisory_v1"
+    assert scenario_policy["official_specs"][0]["probability"] == 0.2
+    assert "context_specs" in scenario_policy
+    assert json.loads(out["driver_consensus_json"]) == []
 
 
 def test_value_single_ticker_alt_model_required(monkeypatch):
@@ -190,6 +203,8 @@ def test_value_single_ticker_alt_model_required(monkeypatch):
     assert out["model_applicability_status"] == "alt_model_required"
     assert out["iv_base"] is None
     assert out["expected_iv"] is None
+    assert out["context_expected_iv"] is None
+    assert out["context_scenario_policy_json"] == "{}"
 
 
 def test_value_single_ticker_implied_growth_uses_professional_reverse_dcf(monkeypatch):
