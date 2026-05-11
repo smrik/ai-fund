@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import tempfile
 import time
-import uuid
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -795,10 +795,7 @@ def test_analysis_run_accepts_empty_body_for_frontend_trigger(monkeypatch):
 
 
 def _workspace_tempdir(name: str) -> Path:
-    root = Path(".tmp-tests") / "api-contracts"
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / f"{name}-{uuid.uuid4().hex}"
-    path.mkdir(parents=True, exist_ok=False)
+    path = Path(tempfile.mkdtemp(prefix=f"{name}-"))
     return path
 
 
