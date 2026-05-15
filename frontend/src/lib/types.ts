@@ -181,6 +181,7 @@ export interface AssumptionsPayload {
     initial_mode?: string | null;
   }>;
   audit_rows?: Array<Record<string, unknown>>;
+  pending_changes?: Array<Record<string, unknown>>;
 }
 
 export interface AssumptionsPreviewPayload {
@@ -219,6 +220,26 @@ export interface WaccPreviewPayload {
   current_expected_iv?: number | null;
   proposed_expected_iv?: number | null;
   method_result?: Record<string, unknown>;
+}
+
+export interface ValuationPolicyPayload {
+  contract_version?: string;
+  policy_id?: number | null;
+  created_at?: string | null;
+  actor?: string | null;
+  global_defaults: {
+    risk_free_rate?: number | null;
+    equity_risk_premium?: number | null;
+  };
+  sector_defaults?: Record<string, Record<string, number>>;
+  source_ref?: string | null;
+  notes?: string | null;
+}
+
+export interface ValuationPolicyPreviewPayload {
+  current_policy?: ValuationPolicyPayload;
+  proposed_policy?: ValuationPolicyPayload;
+  changed_fields?: Record<string, Record<string, unknown>>;
 }
 
 export interface DcfFcffPoint {

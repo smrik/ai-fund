@@ -1,36 +1,37 @@
 # Session State
 
-**Updated:** 2026-05-11 01:26:51 +02:00
+**Updated:** 2026-05-11 15:05:52 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Implemented deterministic V1 Assumption Register on branch `53-assumption-register-contract`.
+Implemented the next Assumption Register extension slice: editable valuation policy defaults, Damodaran drop-folder draft parsing, DB-canonical pending/approved assumption changes, stacked preview/apply APIs, React Pending Changes surface, and approved-register override wiring into input assembly.
 
 ## Recent Actions
-- Committed the planning baseline first: `CONTEXT.md`, `.agent/issue-53-prd.md`, `.agent/session-state.md`, and `docs/plans/2026-05-06-assumption-register-contract.md`.
-- Added strict Pydantic V2 contract models in `src/contracts/assumption_register.py`.
-- Added Stage 02 builder, static range rules, materiality rules, compact summary, and audit diff logic in `src/stage_02_valuation/assumption_register.py`.
-- Added separate append-only `assumption_register_audit` schema plus insert/list helpers in `db/schema.py` and `db/loader.py`.
-- Wired `value_single_ticker()` to emit `assumption_register_json`, compact summary JSON, trust state, max flag, and flag counts.
-- Wired JSON export, override workbench, valuation assumptions API, and ticker dossier adapters to expose full register or compact summary as planned.
-- Updated the valuation methodology critical-review memo with V1 implementation status and V2 leftovers.
-- Used `requesting-code-review` as a local review pass; no blocking issues found.
+- Added `src/contracts/assumption_policy.py` with Pydantic V2 policy, Damodaran draft, pending-change, and stack-preview contracts.
+- Added DB tables/helpers for valuation policy versions, Damodaran policy drafts, pending assumption changes, and approved assumption entries.
+- Added `src/stage_04_pipeline/assumption_policy.py` and `src/stage_04_pipeline/pending_assumption_changes.py` services.
+- Wired FastAPI endpoints for valuation policy get/preview/save, Damodaran parse, pending-change list/preview/apply.
+- Wired `input_assembler.py` so approved DB register entries override legacy YAML values, and WACC now receives editable policy Rf/ERP at runtime.
+- Updated recommendation writes to queue numeric recommendations as pending register changes when using the canonical config path; legacy YAML remains a compatibility copy.
+- Added React Assumptions UI sections for policy defaults and pending changes.
+- Added focused tests in `tests/test_assumption_policy.py`, plus API and input-assembler coverage.
 
 ## Next Steps
-- Review the diff and commit implementation changes when ready.
-- Optional: broaden tests beyond the focused bundle if you want extra regression confidence before PR.
-- Optional: decide whether automatic persistence of assumption-register audit diffs should be called by a specific scheduled workflow, or stay helper/API-ready in V1.
+- Review the diff and commit if satisfied.
+- Optional: broaden React interaction tests for the new policy editor and pending-changes table.
+- Optional: decide whether to remove the legacy YAML mirror in a later PR once all consumers are migrated.
 
 ## Known Issues
 - Untracked `course/` still exists and was intentionally left untouched.
-- `.pytest_cache` is permission-restricted on this Windows checkout, so pytest emits cache warnings. Tests still pass.
-- A stale ignored `.tmp-tests/diag` folder initially blocked the repo default pytest basetemp; it was removed and the exact focused pytest command now passes.
-- A safety stash from the planning session may still exist: `stash@{0}: On 45-periodic-audit-routine: assumption-register-plan-refine`.
+- `.pytest_cache` remains permission-restricted on this Windows checkout; pytest emits cache warnings but tests pass.
+- `tests/test_wacc.py` still has pre-existing size-premium expectation failures against the current WACC implementation when run outside the focused bundle.
 
 ## Notes
 - Verification passed:
-  - `rtk python -m pytest tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_ticker_dossier_contract_runtime.py -q`
+  - `rtk python -m pytest tests/test_assumption_policy.py tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_recommendations.py tests/test_ticker_dossier_contract_runtime.py tests/test_valuation_input_assembler.py -q`
+  - `npm --prefix frontend run build`
   - `rtk python -m mkdocs build --strict`
   - `rtk git diff --check`
-- Focused pytest result: 75 passed, with third-party deprecation warnings and the existing `.pytest_cache` permission warning.
+- Focused pytest result: 123 passed, with existing json_exporter deprecation warnings and the `.pytest_cache` permission warning.
+- A broad extra probe of `tests/test_wacc.py` failed on pre-existing size-premium expectations; no changes were made there in this pass.

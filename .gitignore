@@ -31,6 +31,7 @@ data/cache/
 data/dossiers/
 data/valuations/
 data/exports/
+data/damodaran_drop/
 data/alpha_pod.db
 data/tracker-test-*.db
 data/stage1_survivors.csv

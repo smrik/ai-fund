@@ -316,6 +316,7 @@ def compute_wacc_from_yfinance(
     peer_tickers: list[str] = None,
     hist: dict = None,
     risk_free_rate: float | None = None,
+    equity_risk_premium: float | None = None,
 ) -> WACCResult:
     """
     Convenience: compute WACC using yfinance data.
@@ -362,7 +363,8 @@ def compute_wacc_from_yfinance(
                 continue
 
     rf = risk_free_rate if risk_free_rate is not None else RISK_FREE_RATE
-    return compute_wacc(target, peers, risk_free_rate=rf)
+    erp = equity_risk_premium if equity_risk_premium is not None else EQUITY_RISK_PREMIUM
+    return compute_wacc(target, peers, risk_free_rate=rf, equity_risk_premium=erp)
 
 
 def _target_from_market_data(
@@ -436,7 +438,12 @@ def _median_or_default(values: list[float], default: float) -> float:
     return float(np.median(cleaned))
 
 
-def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData], risk_free_rate: float = RISK_FREE_RATE) -> WACCResult:
+def _compute_industry_proxy_wacc(
+    target: PeerData,
+    peers: list[PeerData],
+    risk_free_rate: float = RISK_FREE_RATE,
+    equity_risk_premium: float = EQUITY_RISK_PREMIUM,
+) -> WACCResult:
     peer_betas = [float(peer.beta) for peer in peers if peer.beta is not None and peer.beta > 0]
     peer_de_ratios = [ratio for peer in peers if (ratio := _de_ratio(peer)) is not None]
 
@@ -455,13 +462,17 @@ def _compute_industry_proxy_wacc(target: PeerData, peers: list[PeerData], risk_f
         tax_rate=target.tax_rate,
         cost_of_debt=target.cost_of_debt,
     )
-    result = compute_wacc(proxy_target, [], risk_free_rate=risk_free_rate)
+    result = compute_wacc(proxy_target, [], risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium)
     result.peers_used = [peer.ticker for peer in peers] or ["industry_proxy"]
     return result
 
 
-def _compute_self_hamada_wacc(target: PeerData, risk_free_rate: float = RISK_FREE_RATE) -> WACCResult:
-    return compute_wacc(target, [], risk_free_rate=risk_free_rate)
+def _compute_self_hamada_wacc(
+    target: PeerData,
+    risk_free_rate: float = RISK_FREE_RATE,
+    equity_risk_premium: float = EQUITY_RISK_PREMIUM,
+) -> WACCResult:
+    return compute_wacc(target, [], risk_free_rate=risk_free_rate, equity_risk_premium=equity_risk_premium)
 
 
 def compute_wacc_methodology_set_for_ticker(
@@ -471,15 +482,17 @@ def compute_wacc_methodology_set_for_ticker(
     hist: dict | None = None,
     market_data: dict | None = None,
     risk_free_rate: float | None = None,
+    equity_risk_premium: float | None = None,
 ) -> dict[str, WACCResult]:
     target = _target_from_market_data(ticker, market_data=market_data, hist=hist)
     peers = _load_peer_data(peer_tickers or [])
     rf = risk_free_rate if risk_free_rate is not None else RISK_FREE_RATE
+    erp = equity_risk_premium if equity_risk_premium is not None else EQUITY_RISK_PREMIUM
 
     return {
-        "peer_bottom_up": compute_wacc(target, peers, risk_free_rate=rf),
-        "industry_proxy": _compute_industry_proxy_wacc(target, peers, risk_free_rate=rf),
-        "self_hamada": _compute_self_hamada_wacc(target, risk_free_rate=rf),
+        "peer_bottom_up": compute_wacc(target, peers, risk_free_rate=rf, equity_risk_premium=erp),
+        "industry_proxy": _compute_industry_proxy_wacc(target, peers, risk_free_rate=rf, equity_risk_premium=erp),
+        "self_hamada": _compute_self_hamada_wacc(target, risk_free_rate=rf, equity_risk_premium=erp),
     }
 
 

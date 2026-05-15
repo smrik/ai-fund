@@ -734,6 +734,89 @@ def test_preview_endpoints_normalize_empty_helper_payloads(monkeypatch):
     }
 
 
+def test_policy_and_pending_change_endpoints(monkeypatch):
+    from api.main import app
+
+    monkeypatch.setattr(
+        "api.main.load_valuation_policy_payload",
+        lambda: {
+            "contract_version": "1.0.0",
+            "policy_id": None,
+            "created_at": "2026-01-01T00:00:00Z",
+            "actor": "config_bootstrap",
+            "global_defaults": {"risk_free_rate": 0.045, "equity_risk_premium": 0.05},
+            "sector_defaults": {},
+            "source_ref": "config/config.yaml",
+            "notes": None,
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.preview_valuation_policy_payload",
+        lambda payload: {
+            "current_policy": {"global_defaults": {"risk_free_rate": 0.045, "equity_risk_premium": 0.05}},
+            "proposed_policy": {"global_defaults": {"risk_free_rate": 0.039, "equity_risk_premium": 0.05}},
+            "changed_fields": {"global_defaults.risk_free_rate": {"prior": 0.045, "new": 0.039}},
+        },
+    )
+    monkeypatch.setattr("api.main.save_valuation_policy_payload", lambda payload, actor="api": {"policy_id": 7, "actor": actor})
+    monkeypatch.setattr(
+        "api.main.parse_damodaran_policy_drafts_payload",
+        lambda: {"parsed_count": 1, "drafts": [{"field": "equity_risk_premium", "value": 0.052}], "rejected_files": []},
+    )
+    monkeypatch.setattr(
+        "api.main.list_pending_assumptions_payload",
+        lambda ticker: {"ticker": ticker, "pending_changes": [{"change_id": 1, "assumption_name": "wacc"}]},
+    )
+    monkeypatch.setattr(
+        "api.main.preview_pending_assumptions_payload",
+        lambda ticker, change_ids, manual_values=None: {
+            "ticker": ticker,
+            "selected_change_ids": change_ids,
+            "proposed_iv": {"base": 108.0},
+            "conflicts": [],
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.apply_pending_assumptions_payload",
+        lambda ticker, change_ids, actor="api": {"ticker": ticker, "applied_count": len(change_ids), "actor": actor},
+    )
+
+    client = TestClient(app)
+
+    policy = client.get("/api/valuation/policy")
+    policy_preview = client.post("/api/valuation/policy/preview", json={"global_defaults": {"risk_free_rate": 0.039}})
+    policy_save = client.put("/api/valuation/policy", json={"global_defaults": {"risk_free_rate": 0.039}})
+    damodaran = client.post("/api/valuation/policy/damodaran/parse")
+    pending = client.get("/api/tickers/IBM/valuation/pending-changes")
+    pending_preview = client.post("/api/tickers/IBM/valuation/pending-changes/preview", json={"change_ids": [1]})
+    pending_apply = client.post("/api/tickers/IBM/valuation/pending-changes/apply", json={"change_ids": [1]})
+
+    assert policy.status_code == 200
+    assert policy.json()["global_defaults"]["risk_free_rate"] == 0.045
+    assert policy_preview.status_code == 200
+    assert policy_preview.json()["changed_fields"]["global_defaults.risk_free_rate"]["new"] == 0.039
+    assert policy_save.status_code == 200
+    assert policy_save.json()["policy_id"] == 7
+    assert damodaran.status_code == 200
+    assert damodaran.json()["parsed_count"] == 1
+    assert pending.status_code == 200
+    assert pending.json()["pending_changes"][0]["change_id"] == 1
+    assert pending_preview.status_code == 200
+    assert pending_preview.json()["proposed_iv"]["base"] == 108.0
+    assert pending_apply.status_code == 202
+    run_id = pending_apply.json()["run_id"]
+    for _ in range(20):
+        status = client.get(f"/api/runs/{run_id}")
+        assert status.status_code == 200
+        payload = status.json()
+        if payload["status"] == "completed":
+            assert payload["result"]["applied_count"] == 1
+            break
+        time.sleep(0.01)
+    else:  # pragma: no cover
+        raise AssertionError("pending apply never completed")
+
+
 def test_analysis_run_returns_run_id_and_completion_status(monkeypatch):
     from api.main import app
 

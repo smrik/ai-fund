@@ -180,6 +180,14 @@ def _apply_overrides(
         if entry.get("status") == "approved":
             _apply(entry.get("suggested_override") or {}, "qoe_llm_approved")
 
+    try:
+        from src.stage_04_pipeline.pending_assumption_changes import approved_assumption_overrides_for_ticker
+
+        approved_register_entries = approved_assumption_overrides_for_ticker(ticker)
+    except Exception:
+        approved_register_entries = {}
+    _apply(approved_register_entries, "approved_assumption_register")
+
 
 def _load_wacc_methodology_override(ticker: str) -> dict[str, Any] | None:
     overrides = load_valuation_overrides()
@@ -272,8 +280,18 @@ def build_valuation_inputs(
     except Exception:
         pass
 
-    # Use FRED live 10Y rate if available, else config default
-    rf_override = _fred_rf  # may be None (will use config default)
+    try:
+        from src.stage_04_pipeline.assumption_policy import load_current_valuation_policy
+
+        policy = load_current_valuation_policy()
+        policy_rf = float(policy.global_defaults.risk_free_rate)
+        policy_erp = float(policy.global_defaults.equity_risk_premium)
+    except Exception:
+        policy_rf = 0.045
+        policy_erp = 0.05
+
+    # Use FRED live 10Y rate if available, else the editable valuation policy.
+    rf_override = _fred_rf if _fred_rf is not None else policy_rf
 
     if price <= 0:
         return None
@@ -407,6 +425,7 @@ def build_valuation_inputs(
             hist=hist,
             market_data=mkt,
             risk_free_rate=rf_override,
+            equity_risk_premium=policy_erp,
         )
         wacc_result = wacc_method_results["peer_bottom_up"]
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
@@ -678,7 +697,8 @@ def build_valuation_inputs(
         "options_value": options_value_source,
         "convertibles_value": convertibles_value_source,
         "cogs_pct_of_revenue": cogs_pct_source,
-        "risk_free_rate": f"fred_live:{rf_override:.4f}" if rf_override else "config_default:0.0450",
+        "risk_free_rate": f"fred_live:{rf_override:.4f}" if _fred_rf is not None else f"valuation_policy:{rf_override:.4f}",
+        "equity_risk_premium": f"valuation_policy:{policy_erp:.4f}",
     }
 
     story_profile, story_profile_source = resolve_story_driver_profile(ticker=ticker, sector=sector)
@@ -793,6 +813,8 @@ def build_valuation_inputs(
             "equity_weight": getattr(wacc_result, "equity_weight", None),
             "debt_weight": getattr(wacc_result, "debt_weight", None),
             "peers_used": getattr(wacc_result, "peers_used", None),
+            "risk_free_rate": rf_override,
+            "equity_risk_premium": policy_erp,
             "method_results": {
                 method: {
                     "wacc": getattr(result, "wacc", None),
