@@ -14,7 +14,7 @@ All deterministic — no LLM needed.
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import numpy as np
 import yaml
@@ -489,11 +489,27 @@ def compute_wacc_methodology_set_for_ticker(
     rf = risk_free_rate if risk_free_rate is not None else RISK_FREE_RATE
     erp = equity_risk_premium if equity_risk_premium is not None else EQUITY_RISK_PREMIUM
 
-    return {
+    results: dict[str, Any] = {
         "peer_bottom_up": compute_wacc(target, peers, risk_free_rate=rf, equity_risk_premium=erp),
         "industry_proxy": _compute_industry_proxy_wacc(target, peers, risk_free_rate=rf, equity_risk_premium=erp),
         "self_hamada": _compute_self_hamada_wacc(target, risk_free_rate=rf, equity_risk_premium=erp),
     }
+
+    _WACC_DISAGREEMENT_THRESHOLD = 0.015  # 150bps
+    method_waccs = {
+        k: getattr(v, "wacc", None)
+        for k, v in results.items()
+        if getattr(v, "wacc", None) is not None
+    }
+    if len(method_waccs) >= 2:
+        spread = max(method_waccs.values()) - min(method_waccs.values())
+        results["_meta"] = {
+            "wacc_method_spread": round(spread, 4),
+            "wacc_method_spread_high": spread >= _WACC_DISAGREEMENT_THRESHOLD,
+            "method_waccs": method_waccs,
+        }
+
+    return results
 
 
 def blend_wacc_results(results: dict[str, WACCResult], weights: dict[str, float]) -> WACCResult:

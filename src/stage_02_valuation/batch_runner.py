@@ -490,6 +490,7 @@ def value_single_ticker(ticker: str) -> dict | None:
 
         scenario_specs = default_scenario_specs()
         regime_weights = None
+        regime = None
         try:
             from src.stage_02_valuation.regime_model import detect_current_regime, get_scenario_weights
             regime = detect_current_regime()
@@ -604,6 +605,10 @@ def value_single_ticker(ticker: str) -> dict | None:
             "health_terminal_ronic_guardrail_flag": row.get("health_terminal_ronic_guardrail_flag"),
             "health_terminal_denominator_guardrail_flag": row.get("health_terminal_denominator_guardrail_flag"),
             "health_fcff_interest_contamination_flag": row.get("health_fcff_interest_contamination_flag"),
+            "forensic_flag_severe": row.get("forensic_flag") == "red",
+            "wacc_method_spread_high": getattr(inputs, "wacc_method_spread_high", False),
+            "regime_label": getattr(regime, "label", None) if regime_weights is not None else None,
+            "regime_weights_applied": regime_weights is not None,
         }
         _attach_assumption_register(register_diagnostics)
 
