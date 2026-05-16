@@ -1457,3 +1457,55 @@ def insert_dossier_note_block(conn: sqlite3.Connection, row: dict[str, Any]) -> 
     )
     conn.commit()
     return int(cursor.lastrowid)
+
+
+# ---------------------------------------------------------------------------
+# Convenience helpers — used by valuation layer (stage_02) to avoid importing
+# stage_04 pipeline modules.
+# ---------------------------------------------------------------------------
+
+def get_valuation_policy_rf_erp() -> tuple[float, float]:
+    """Return (risk_free_rate, equity_risk_premium) from the latest saved policy.
+
+    Falls back to (0.045, 0.05) if no policy has been saved yet.
+    """
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            row = load_latest_valuation_policy_version(conn)
+    except Exception:
+        row = None
+    if not row:
+        return 0.045, 0.05
+    g = row.get("global_defaults") or {}
+    rf = float(g.get("risk_free_rate", 0.045))
+    erp = float(g.get("equity_risk_premium", 0.05))
+    return rf, erp
+
+
+def get_valuation_policy_sector_defaults(sector: str) -> dict[str, float]:
+    """Return saved sector-level defaults for *sector*, or {} if none saved."""
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            row = load_latest_valuation_policy_version(conn)
+    except Exception:
+        row = None
+    if not row:
+        return {}
+    sector_map: dict[str, dict[str, float]] = row.get("sector_defaults") or {}
+    return dict(sector_map.get(sector) or {})
+
+
+def get_approved_assumption_overrides(ticker: str) -> dict[str, float]:
+    """Return active approved assumption overrides for *ticker* as {name: value}."""
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            rows = load_approved_assumption_entries(conn, ticker)
+    except Exception:
+        return {}
+    return {row["assumption_name"]: float(row["value"]) for row in rows}

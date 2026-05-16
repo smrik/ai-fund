@@ -241,7 +241,7 @@ def _entry_payload(
 def _wacc_payloads(inputs: Any, drivers: dict[str, Any]) -> dict[str, Any]:
     raw = getattr(inputs, "wacc_inputs", None) or {}
     out = {
-        "wacc": raw.get("wacc", drivers.get("wacc")),
+        "wacc": drivers.get("wacc", raw.get("wacc")),
         "cost_of_equity": raw.get("cost_of_equity", drivers.get("cost_of_equity")),
         "risk_free_rate": raw.get("risk_free_rate", drivers.get("risk_free_rate")),
         "equity_risk_premium": raw.get("equity_risk_premium", drivers.get("equity_risk_premium")),

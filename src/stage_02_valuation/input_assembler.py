@@ -181,9 +181,9 @@ def _apply_overrides(
             _apply(entry.get("suggested_override") or {}, "qoe_llm_approved")
 
     try:
-        from src.stage_04_pipeline.pending_assumption_changes import approved_assumption_overrides_for_ticker
+        from db.loader import get_approved_assumption_overrides
 
-        approved_register_entries = approved_assumption_overrides_for_ticker(ticker)
+        approved_register_entries = get_approved_assumption_overrides(ticker)
     except Exception:
         approved_register_entries = {}
     _apply(approved_register_entries, "approved_assumption_register")
@@ -281,11 +281,12 @@ def build_valuation_inputs(
         pass
 
     try:
-        from src.stage_04_pipeline.assumption_policy import load_current_valuation_policy
+        from db.loader import get_valuation_policy_rf_erp, get_valuation_policy_sector_defaults
 
-        policy = load_current_valuation_policy()
-        policy_rf = float(policy.global_defaults.risk_free_rate)
-        policy_erp = float(policy.global_defaults.equity_risk_premium)
+        policy_rf, policy_erp = get_valuation_policy_rf_erp()
+        saved_sector = get_valuation_policy_sector_defaults(sector)
+        if saved_sector:
+            defaults = {**defaults, **saved_sector}
     except Exception:
         policy_rf = 0.045
         policy_erp = 0.05
