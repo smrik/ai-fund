@@ -60,7 +60,7 @@ RANGE_RULES: dict[str, dict[str, Any]] = {
     "revenue_base": {"low": 1.0, "high": None, "description": "Revenue base should be positive."},
     "revenue_growth_near": {"low": -0.20, "high": 0.30, "description": "Default PM review range for near-term revenue growth."},
     "revenue_growth_mid": {"low": -0.15, "high": 0.25, "description": "Default PM review range for mid-term revenue growth."},
-    "revenue_growth_terminal": {"low": 0.00, "high": 0.05, "description": "Terminal growth should stay within mature nominal growth guardrails."},
+    "revenue_growth_terminal": {"low": 0.00, "high": 0.04, "description": "Terminal growth capped at long-run nominal GDP growth (4%)."},
     "ebit_margin_start": {"low": -0.10, "high": 0.45, "description": "Default PM review range for starting EBIT margin."},
     "ebit_margin_target": {"low": -0.05, "high": 0.50, "description": "Default PM review range for target EBIT margin."},
     "tax_rate_start": {"low": 0.00, "high": 0.40, "description": "Default PM review range for effective tax rate."},
@@ -120,8 +120,15 @@ CRITICAL_DIAGNOSTICS = {
     "terminal_denominator_guardrail_flag",
     "health_terminal_growth_guardrail_flag",
     "terminal_growth_guardrail_flag",
+    "health_terminal_ronic_guardrail_flag",  # RONIC ≤ terminal_growth — mathematically invalid
+    "forensic_flag_severe",                  # Beneish M-Score in manipulator zone (red)
 }
-REVIEW_DIAGNOSTICS = {"tv_high_flag", "health_tv_extreme_flag", "tv_extreme_flag"}
+REVIEW_DIAGNOSTICS = {
+    "tv_high_flag",
+    "health_tv_extreme_flag",
+    "tv_extreme_flag",
+    "wacc_method_spread_high",  # ≥150bps spread across WACC methods
+}
 
 
 def _now() -> str:
@@ -278,6 +285,11 @@ def _apply_diagnostic_rollup(register: AssumptionRegister, diagnostics: dict[str
         except (TypeError, ValueError):
             pass
     if max_flag == register.max_flag_level:
+        if diagnostics.get("regime_weights_applied"):
+            current_notes = dict(register.notes or {})
+            current_notes["regime_label"] = diagnostics.get("regime_label") or "unknown"
+            current_notes["regime_weights_applied"] = True
+            object.__setattr__(register, "notes", current_notes)
         return register
     object.__setattr__(register, "max_flag_level", max_flag)
     object.__setattr__(register, "has_critical", max_flag == FlagLevel.critical)
@@ -296,6 +308,13 @@ def _apply_diagnostic_rollup(register: AssumptionRegister, diagnostics: dict[str
         "has_critical": max_flag == FlagLevel.critical,
         "diagnostic_notes": diagnostic_notes,
     })
+
+    if diagnostics.get("regime_weights_applied"):
+        current_notes = dict(register.notes or {})
+        current_notes["regime_label"] = diagnostics.get("regime_label") or "unknown"
+        current_notes["regime_weights_applied"] = True
+        object.__setattr__(register, "notes", current_notes)
+
     return register
 
 

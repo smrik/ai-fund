@@ -274,3 +274,95 @@ def test_assumption_register_audit_schema_and_loader_store_concise_rows():
     assert rows[0]["prior_diff"]["current_value"] == pytest.approx(0.09)
     assert rows[0]["new_diff"]["current_value"] == pytest.approx(0.096)
     assert "entries" not in rows[0]["prior_diff_json"]
+
+
+# ---------------------------------------------------------------------------
+# Task B — diagnostic rollup extension tests
+# ---------------------------------------------------------------------------
+
+def _base_inputs(**driver_overrides):
+    """Minimal FakeInputs for diagnostic rollup tests."""
+    base_drivers = dict(
+        revenue_growth_near=0.08, revenue_growth_mid=0.05,
+        ebit_margin_start=0.20, ebit_margin_target=0.22,
+        tax_rate_start=0.21, tax_rate_target=0.21,
+        capex_pct_start=0.05, capex_pct_target=0.05,
+        da_pct_start=0.04, da_pct_target=0.04,
+        dso_start=45.0, dso_target=45.0,
+        dio_start=0.0, dio_target=0.0,
+        dpo_start=30.0, dpo_target=30.0,
+        wacc=0.09, exit_multiple=15.0,
+        ronic_terminal=0.12, revenue_growth_terminal=0.025,
+    )
+    base_drivers.update(driver_overrides)
+
+    class FakeInputs:
+        wacc_inputs = {
+            "wacc": 0.09, "risk_free_rate": 0.045, "equity_risk_premium": 0.05,
+            "beta_relevered": 1.0, "size_premium": 0.01, "cost_of_debt": 0.05,
+            "equity_weight": 0.8, "debt_weight": 0.2, "cost_of_equity": 0.11,
+        }
+        drivers = type("D", (), base_drivers)()
+        source_lineage = {}
+        model_applicability_status = "dcf_applicable"
+
+    return FakeInputs()
+
+
+def test_ronic_guardrail_flag_critical():
+    """health_terminal_ronic_guardrail_flag=True must produce critical trust state."""
+    reg = build_assumption_register(
+        "TEST", _base_inputs(),
+        diagnostics={"health_terminal_ronic_guardrail_flag": True},
+    )
+    assert reg.model_trust_state in (
+        ModelTrustState.critical_review_required.value,
+        ModelTrustState.critical_review_required,
+    )
+
+
+def test_wacc_method_spread_flags_review():
+    """wacc_method_spread_high=True must produce at least review_required trust state."""
+    reg = build_assumption_register(
+        "TEST", _base_inputs(),
+        diagnostics={"wacc_method_spread_high": True},
+    )
+    assert reg.model_trust_state not in (
+        ModelTrustState.clean.value, ModelTrustState.watch.value,
+        ModelTrustState.clean, ModelTrustState.watch,
+    )
+
+
+def test_forensic_red_flag_critical():
+    """forensic_flag_severe=True must degrade trust state to critical."""
+    reg = build_assumption_register(
+        "TEST", _base_inputs(),
+        diagnostics={"forensic_flag_severe": True},
+    )
+    assert reg.model_trust_state in (
+        ModelTrustState.critical_review_required.value,
+        ModelTrustState.critical_review_required,
+    )
+
+
+def test_regime_label_in_register_notes():
+    """regime_weights_applied=True must store regime label in register.notes dict."""
+    reg = build_assumption_register(
+        "TEST", _base_inputs(),
+        diagnostics={"regime_label": "Risk-Off", "regime_weights_applied": True},
+    )
+    assert "regime_label" in reg.notes
+    assert reg.notes["regime_label"] == "Risk-Off"
+
+
+# ---------------------------------------------------------------------------
+# Task C — terminal growth range cap
+# ---------------------------------------------------------------------------
+
+def test_terminal_growth_accepted_high_capped_at_four_percent():
+    from src.stage_02_valuation.assumption_register import RANGE_RULES
+    r = RANGE_RULES.get("revenue_growth_terminal")
+    assert r is not None, "revenue_growth_terminal must have a range rule"
+    assert r["high"] <= 0.04, (
+        f"Terminal growth cap must be ≤ 4% (long-run nominal), got {r['high']}"
+    )
