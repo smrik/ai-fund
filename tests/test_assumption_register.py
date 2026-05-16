@@ -353,3 +353,16 @@ def test_regime_label_in_register_notes():
     )
     assert "regime_label" in reg.notes
     assert reg.notes["regime_label"] == "Risk-Off"
+
+
+# ---------------------------------------------------------------------------
+# Task C — terminal growth range cap
+# ---------------------------------------------------------------------------
+
+def test_terminal_growth_accepted_high_capped_at_four_percent():
+    from src.stage_02_valuation.assumption_register import RANGE_RULES
+    r = RANGE_RULES.get("revenue_growth_terminal")
+    assert r is not None, "revenue_growth_terminal must have a range rule"
+    assert r["high"] <= 0.04, (
+        f"Terminal growth cap must be ≤ 4% (long-run nominal), got {r['high']}"
+    )

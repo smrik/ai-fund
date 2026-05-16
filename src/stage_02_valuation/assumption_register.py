@@ -60,7 +60,7 @@ RANGE_RULES: dict[str, dict[str, Any]] = {
     "revenue_base": {"low": 1.0, "high": None, "description": "Revenue base should be positive."},
     "revenue_growth_near": {"low": -0.20, "high": 0.30, "description": "Default PM review range for near-term revenue growth."},
     "revenue_growth_mid": {"low": -0.15, "high": 0.25, "description": "Default PM review range for mid-term revenue growth."},
-    "revenue_growth_terminal": {"low": 0.00, "high": 0.05, "description": "Terminal growth should stay within mature nominal growth guardrails."},
+    "revenue_growth_terminal": {"low": 0.00, "high": 0.04, "description": "Terminal growth capped at long-run nominal GDP growth (4%)."},
     "ebit_margin_start": {"low": -0.10, "high": 0.45, "description": "Default PM review range for starting EBIT margin."},
     "ebit_margin_target": {"low": -0.05, "high": 0.50, "description": "Default PM review range for target EBIT margin."},
     "tax_rate_start": {"low": 0.00, "high": 0.40, "description": "Default PM review range for effective tax rate."},
