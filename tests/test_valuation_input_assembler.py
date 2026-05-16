@@ -21,6 +21,21 @@ def test_financials_and_reits_marked_alt_model_required():
     assert determine_model_applicability("Technology", "Software") == "dcf_applicable"
 
 
+def test_apply_overrides_prefers_approved_assumption_register(monkeypatch):
+    import db.loader as db_loader
+    from src.stage_02_valuation import input_assembler as ia
+
+    drivers = SimpleNamespace(ebit_margin_start=0.18)
+    source_lineage = {"ebit_margin_start": "ciq"}
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"global": {}, "sectors": {}, "tickers": {"IBM": {"ebit_margin_start": 0.19}}})
+    monkeypatch.setattr(db_loader, "get_approved_assumption_overrides", lambda ticker: {"ebit_margin_start": 0.21})
+
+    ia._apply_overrides(drivers, source_lineage, ticker="IBM", sector="Technology")
+
+    assert drivers.ebit_margin_start == pytest.approx(0.21)
+    assert source_lineage["ebit_margin_start"] == "approved_assumption_register"
+
+
 def test_build_valuation_inputs_applies_ciq_precedence(monkeypatch):
     from src.stage_02_valuation import input_assembler as ia
 

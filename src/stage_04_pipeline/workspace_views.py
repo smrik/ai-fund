@@ -469,6 +469,14 @@ def build_valuation_assumptions_payload(ticker: str) -> dict[str, Any]:
     from src.stage_04_pipeline.override_workbench import load_override_audit_history
 
     payload["audit_rows"] = load_override_audit_history(ticker, limit=50)
+    try:
+        from src.stage_04_pipeline.pending_assumption_changes import list_pending_assumption_changes
+
+        payload["pending_changes"] = [
+            change.model_dump() for change in list_pending_assumption_changes(ticker)
+        ]
+    except Exception:
+        payload["pending_changes"] = []
     return payload
 
 def build_wacc_payload(ticker: str) -> dict[str, Any]:

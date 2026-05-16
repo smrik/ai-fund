@@ -207,10 +207,12 @@ def _qoe_snapshot(qoe: dict[str, Any]) -> QoeSnapshot:
 
 def _default_overlays(payload: dict[str, Any]) -> dict[str, Any]:
     legacy_payload_keys = sorted(key for key in payload if key != "ticker_dossier")
+    assumption_register_summary = payload.get("assumption_register_summary") or {}
     return {
         "api_view": {},
         "react_view": {},
         "excel_view": {"legacy_roots": legacy_payload_keys},
+        "assumption_register_summary": assumption_register_summary,
         "forecast_bridge": payload.get("forecast_bridge") or [],
         "html_view": {},
         "debug_view": {"legacy_payload_keys": legacy_payload_keys},
@@ -399,6 +401,7 @@ def workspace_payload_from_dossier(dossier: TickerDossier | dict[str, Any]) -> d
         "last_snapshot_date": dossier.as_of_date,
         "latest_action": None,
         "latest_conviction": None,
+        "assumption_register_summary": dossier.optional_overlays.get("assumption_register_summary") or {},
         "ticker_dossier_contract_version": TICKER_DOSSIER_CONTRACT_VERSION,
     }
 
@@ -447,5 +450,6 @@ def valuation_summary_payload_from_dossier(dossier: TickerDossier | dict[str, An
         "why_it_matters": why_it_matters,
         "readiness": {},
         "summary": {},
+        "assumption_register_summary": dossier.optional_overlays.get("assumption_register_summary") or {},
         "ticker_dossier_contract_version": TICKER_DOSSIER_CONTRACT_VERSION,
     }

@@ -1,710 +1,280 @@
 # Assumption Register Contract Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use executing-plans to implement this plan task-by-task.
+## Summary
 
-**Goal:** Build a typed `AssumptionRegister` that attaches to every valuation run, records each DCF driver with its source, accepted range, and flag level, and surfaces that register through the batch runner, JSON exporter, and override workbench.
+Build the first executable assumption-register layer for Alpha Pod.
 
-**Architecture:** A new `assumption_register.py` module defines the Pydantic contracts (`AssumptionRegisterEntry`, `AssumptionRegister`) and the range-rule table. `build_assumption_register()` takes a completed `ValuationInputsWithLineage` and produces a register. The batch runner populates it after `build_valuation_inputs()` and passes it to the JSON exporter. The override workbench reads it so the dashboard can surface flags. No LLM touches this path — it is entirely deterministic.
+V1 is intentionally narrow:
 
-**Tech Stack:** Python 3.13, Pydantic v2 (already a dep via FastAPI), existing `valuation_types.py` dataclass pattern, pytest.
+- numeric ticker-level DCF drivers only
+- deterministic-only population
+- flag-only validation, no valuation blocking
+- global contract available to all stages
+- stage 02 builder populates the register from valuation inputs
+- append-only audit table captures material events
 
----
+This is the foundation for later LLM advisory inputs, Damodaran data, WACC policy inputs, and richer industry/company-specific range rules.
 
-## Task 1: Define the contracts in `assumption_register.py`
+## Decisions
 
-**Files:**
-- Create: `src/stage_02_valuation/assumption_register.py`
-- Test: `tests/test_assumption_register.py`
+- Contract location: define shared types in `src/contracts/assumption_register.py`.
+- Builder location: build valuation-specific entries in `src/stage_02_valuation/assumption_register.py`.
+- Contract boundary: Pydantic models define the public boundary; stage 02 may build lightweight dict payloads internally and validate once into `AssumptionRegister`.
+- V1 scope: populate ticker-level DCF driver assumptions only.
+- Future scope: contract may represent ticker, sector, industry, and global identities, but sector/global policy population is V2.
+- Entity identity: V1 entries represent effective ticker assumptions, so populated entries use `entity_type="ticker"` even when source lineage points to sector/global defaults or overrides.
+- Value types: numeric only in V1; reserve `value_type="numeric"` for future compatibility.
+- Scenarios: V1 does not add scenario probabilities or context scenario outputs to the register; scenario assumption packs are V2.
+- Terminal value: terminal value drivers are first-class V1 assumption entries; terminal concentration and computed terminal values remain diagnostics.
+- LLMs: no LLM or agent output populates or mutates the register in V1.
+- Future LLM work: V2 connects `driver_assessments.py` and judgment agents as advisory inputs.
+- Advisory reserve: V1 reserves neutral advisory attachment fields, but leaves them empty and does not import `driver_assessments.py` workflow states into the official contract.
+- Ranges: static fallback ranges in V1; historical, industry, and scale-aware rules are V2.
+- Flags: out-of-range values flag for review but do not block valuation.
+- Flag semantics: V1 defines deterministic meanings for `none`, `watch`, `review_required`, and `critical`; flags are severity labels, not PM approval state.
+- Model trust: out-of-range and critical flags do not block computation or export in V1, but they must downgrade the valuation's review/trust state on ranked and dossier/export surfaces.
+- Model trust rollup: derive `model_trust_state` from max assumption flag level plus selected valuation diagnostics such as terminal concentration or mathematically dangerous guardrails.
+- Approval: register displays approval state, but durable truth remains in PM override and audit records.
+- Approval granularity: PM approval is value-specific; material value changes make approval stale or review-needed.
+- Approval references: `approval_ref` points only to durable PM-applied audit rows, such as `valuation_override_audit` or `wacc_methodology_audit`; pending recommendation files belong in `advisory_refs`.
+- WACC treatment: final WACC and its material cost-of-capital components are first-class assumption entries in V1.
+- WACC approval staleness: assess staleness at the component level; material movement in beta, ERP, size premium, cost of debt, weights, or methodology can make that component stale even when final WACC moves less than 25 bps.
+- Naming discipline: V1 uses stable field keys and controlled stage/scope/forecast-line vocabularies so register entries are filterable and testable.
+- Accepted ranges: V1 range rules are PM-review ranges for effective values, not necessarily the same as input-assembly hard clamps.
+- Materiality rules: keep provisional thresholds in a centralized table near the builder/diff logic rather than scattered inline conditionals.
+- Audit: append material events only, not every generated assumption on every run.
+- First-seen audit: log first-seen events only for review-relevant entries in V1; the full generated baseline remains in valuation JSON, not the audit table.
+- Audit payloads: store concise prior/new diffs for changed fields, not full entry snapshots or full-register snapshots.
+- Valuation impact: optional in entries; required only for override preview/apply paths.
+- Automatic impact scoring: V1 does not run per-assumption what-if DCFs for every flagged entry; broader sensitivity-driven impact scoring is V2.
+- Exports: full register in valuation JSON; compact flagged summary in ticker dossier V1.
+- Compact summary: dossier/export/ranking summaries include trust state, flag counts, max flag, and flagged entries only; clean assumptions stay in the full valuation JSON register.
+- API audit families: expose existing PM override audit and new assumption-register audit as separate payload keys in V1.
 
-**Step 1: Write the failing test**
+## Contract Shape
 
-```python
-# tests/test_assumption_register.py
-from src.stage_02_valuation.assumption_register import (
-    AssumptionOwner,
-    FlagLevel,
-    AssumptionRegisterEntry,
-    AssumptionRegister,
-)
+Create shared Pydantic v2 models under `src/contracts/assumption_register.py`.
 
-def test_entry_in_range_has_no_flag():
-    e = AssumptionRegisterEntry(
-        assumption_name="revenue_growth_near",
-        proposed_value=0.08,
-        accepted_low=0.02,
-        accepted_high=0.20,
-        range_rule_id="revenue_growth_default",
-        source="yfinance_cagr_3yr",
-        flag_level=FlagLevel.none,
-        owner=AssumptionOwner.deterministic,
-    )
-    assert e.flag_level == FlagLevel.none
-    assert e.out_of_range is False
+Core enums:
 
-def test_entry_out_of_range_detected():
-    e = AssumptionRegisterEntry(
-        assumption_name="ebit_margin_start",
-        proposed_value=0.55,
-        accepted_low=0.05,
-        accepted_high=0.40,
-        range_rule_id="ebit_margin_default",
-        source="yfinance",
-        flag_level=FlagLevel.review_required,
-        owner=AssumptionOwner.deterministic,
-    )
-    assert e.out_of_range is True
+- `AssumptionEntityType`: `ticker`, `sector`, `industry`, `global`
+- `AssumptionOwner`: `deterministic`, `pm_override`, `system_flag`
+- `AssumptionApprovalState`: `none`, `review_required`, `pm_approved`, `rejected`, `stale_approval`
+- `FlagLevel`: `none`, `watch`, `review_required`, `critical`
+- `AssumptionValueType`: `numeric`
 
-def test_register_holds_entries_and_counts_flags():
-    entries = [
-        AssumptionRegisterEntry(
-            assumption_name="revenue_growth_near",
-            proposed_value=0.08,
-            accepted_low=0.02,
-            accepted_high=0.20,
-            range_rule_id="revenue_growth_default",
-            source="yfinance_cagr_3yr",
-            flag_level=FlagLevel.none,
-            owner=AssumptionOwner.deterministic,
-        ),
-        AssumptionRegisterEntry(
-            assumption_name="ebit_margin_start",
-            proposed_value=0.55,
-            accepted_low=0.05,
-            accepted_high=0.40,
-            range_rule_id="ebit_margin_default",
-            source="yfinance",
-            flag_level=FlagLevel.review_required,
-            owner=AssumptionOwner.deterministic,
-        ),
-    ]
-    reg = AssumptionRegister(ticker="AAPL", entries=entries)
-    assert reg.flag_count(FlagLevel.review_required) == 1
-    assert reg.flag_count(FlagLevel.none) == 1
-    assert reg.has_critical is False
+Owner semantics:
+
+- `deterministic`: official value is owned by deterministic data/config/model logic.
+- `pm_override`: official value is owned by a PM-approved override, regardless of whether the idea originated from manual review or an advisory agent.
+- `system_flag`: entry is generated to surface a system diagnostic or guardrail rather than a PM-authored value.
+
+Detailed provenance remains in `source_lineage`, `approval_ref`, and `advisory_refs`; `owner` should not encode source strings such as `override_ticker`, `qoe_llm_approved`, or `story_profile`.
+
+Naming conventions:
+
+- `assumption_name`: machine-stable key matching `ForecastDrivers` or WACC input names where possible, such as `revenue_growth_near`, `ebit_margin_target`, `wacc`, `beta_relevered`, or `exit_multiple`.
+- `stage`: controlled workflow location; V1 values are `input_assembly`, `wacc`, `dcf`, and `terminal_value`.
+- `scope`: PM-facing grouping; V1 values are `growth`, `margin`, `tax`, `working_capital`, `reinvestment`, `wacc`, `terminal_value`, and `capital_structure`.
+- `affected_forecast_lines`: stable line names; V1 values include `revenue`, `ebit`, `nopat`, `fcff`, `terminal_value`, `enterprise_value`, and `equity_value`.
+
+Flag-level semantics:
+
+- `none`: value is inside accepted range and has no review-state issue.
+- `watch`: value is near a boundary or has a weak deterministic diagnostic, but is still usable.
+- `review_required`: value is outside accepted range, approval is stale, source/range/owner changed materially, or PM review is required before trust improves.
+- `critical`: value or diagnostic is mathematically dangerous or valuation-trust dangerous, such as impossible values, terminal denominator failure, terminal growth above guardrail, or WACC-method disagreement above the critical threshold.
+
+Core entry fields:
+
+- `entity_type`
+- `entity_id`
+- `ticker`
+- `assumption_name`
+- `scope`
+- `stage`
+- `value_type`
+- `current_value`
+- `accepted_low`
+- `accepted_high`
+- `range_rule_id`
+- `range_rule_description`
+- `source_lineage`
+- `affected_forecast_lines`
+- `flag_level`
+- `owner`
+- `approval_state`
+- `approval_ref`
+- `out_of_range`
+- `valuation_impact`
+- `evidence_refs`
+- `advisory_refs`
+- `notes`
+
+Register fields:
+
+- `ticker`
+- `generated_at`
+- `entries`
+- `flag_counts`
+- `max_flag_level`
+- `has_critical`
+- `model_trust_state`
+- `summary`
+
+Model trust semantics:
+
+- `clean`: no assumption flags above `none` and no major valuation diagnostics.
+- `watch`: max flag is `watch` or terminal concentration is elevated but not dangerous.
+- `review_required`: max flag is `review_required`, stale approval exists, or major diagnostics such as `tv_high_flag` fire.
+- `critical_review_required`: max flag is `critical` or mathematically dangerous diagnostics fire.
+
+## Implementation
+
+Execution requirements:
+
+- Use relevant skills before implementation. Start with `executing-plans`; use `requesting-code-review` before final handoff.
+- Use `rtk` for Git, test, and repo-inspection commands where available.
+- Read `AGENTS.md`, `.agent/session-state.md`, and this plan before changing code.
+- Keep `course/` and other unrelated untracked local artifacts out of the branch.
+- Preserve the deterministic/LLM boundary: no LLM or advisory output may mutate official valuation inputs except through the PM-approved override path.
+- Ship V1 as one coherent PR with internally sliced commits/checkpoints rather than multiple partially wired PRs.
+
+1. Add shared contracts.
+   - Create `src/contracts/__init__.py` if needed.
+   - Add `src/contracts/assumption_register.py`.
+   - Keep this module free of stage 02 imports.
+
+2. Add stage 02 builder.
+   - Create `src/stage_02_valuation/assumption_register.py`.
+   - Build entries from `ForecastDrivers` and `source_lineage`.
+   - Use lightweight internal payload construction if helpful, then validate once against `AssumptionRegister` at the contract boundary.
+   - Cover the core numeric DCF drivers already shown in the assumptions workbench.
+   - Cover terminal value drivers: `revenue_growth_terminal`, `ronic_terminal`, `exit_multiple`, `terminal_blend_gordon_weight`, and `terminal_blend_exit_weight`.
+   - Cover WACC assumption inputs from `wacc_inputs`, including final WACC, risk-free rate, equity risk premium, beta, size premium, cost of debt, equity/debt weights, and selected methodology where available.
+   - Populate V1 entries as effective ticker assumptions; preserve sector/global origins in lineage/scope without creating sector/global policy rows.
+   - Use static fallback `RANGE_RULES`.
+   - Do not simply mirror `_bounded()` hard clamps as accepted ranges when the PM-review range should be narrower or differently described.
+   - If raw/pre-clamp evidence is readily available, mention it in `evidence_refs` or `notes`; do not add a V1 `raw_value` field.
+   - Mark `owner=pm_override` when source lineage or override state indicates an approved override; keep detailed origin in lineage and references.
+
+3. Add materiality and diff logic.
+   - Define centralized `MATERIALITY_RULES` keyed by field class, scope, or explicit assumption name.
+   - Implement field-class thresholds for V1:
+     - WACC: 25 bps
+     - WACC components: 25 bps for rate components, 0.10 beta points for beta, 5 percentage points for capital structure weights, any selected-methodology change
+     - other percentage drivers: 50 bps
+     - multiples: 0.5x
+     - working-capital days: 5 days
+     - money fields: greater of USD 10m or 1% of revenue base
+   - Always treat flag, source, owner, approval, and range-rule changes as material.
+   - Document these thresholds as provisional.
+
+4. Add append-only audit.
+   - Add `assumption_register_audit` to `db/schema.py`.
+   - Add insert/list helpers to `db/loader.py` or a focused stage 04 helper.
+   - Log only material events:
+     - first seen when the entry is review-relevant
+     - value materially changed
+     - flag changed
+     - source changed
+     - owner or approval state changed
+     - range rule changed
+     - PM override applied or removed
+   - Include `event_ts`, `actor`, `actor_type`, `entity_type`, `entity_id`, `ticker`, `assumption_name`, `scope`, `event_type`, prior/new diff JSON, optional valuation impact, and reason.
+   - Keep audit rows concise; do not duplicate the full register or full entry payload in every audit row.
+
+5. Wire valuation outputs.
+   - In `batch_runner.value_single_ticker()`, attach `assumption_register_json`.
+   - In `json_exporter`, add top-level `assumption_register`.
+   - In `dcf_audit` or workspace views, expose a compact flag summary where useful.
+
+6. Wire workbench and API.
+   - Extend `override_workbench.build_override_workbench()` with `assumption_register`.
+   - Add assumption-register audit rows to the valuation assumptions payload as `assumption_register_audit_rows`.
+   - Preserve existing override audit rows separately as `override_audit_rows`; keep legacy `audit_rows` only as a compatibility alias if needed.
+   - Preserve existing `valuation_overrides.yaml` as the official PM write path.
+   - On override preview/apply, compute and store optional valuation-impact metadata.
+   - Do not compute automatic per-flag valuation impact outside preview/apply paths in V1.
+
+7. Wire dossier/export summary.
+   - Keep full register in valuation JSON.
+   - Add compact summary to ticker dossier/export surfaces:
+     - max flag
+     - flag counts
+     - model trust state
+     - flagged entries only
+   - Do not include clean-but-important assumptions in the compact V1 summary; use full valuation JSON for drill-down.
+   - Preserve deterministic output rows for flagged valuations, but make review-required or critical-review-required trust state visible in ranking/export payloads.
+
+8. Update docs.
+   - Mark the critical-review memo's P0 assumption-register item as implemented once shipped.
+   - Add V2 notes for:
+     - LLM advisory attachment through `driver_assessments.py`
+     - population of reserved `advisory_refs`
+     - scale-aware materiality
+     - history/industry/Damodaran range rules
+     - sector/global policy population
+
+## Tests
+
+Add or extend:
+
+- `tests/test_assumption_register.py`
+- `tests/test_api_contracts.py`
+- `tests/test_batch_runner_professional.py`
+- `tests/test_json_exporter.py`
+- `tests/test_override_workbench.py`
+- `tests/test_ticker_dossier_contract_runtime.py`
+
+Required cases:
+
+- contract JSON round-trip
+- builder validates the final payload against the shared Pydantic contract
+- deterministic builder creates numeric ticker-level entries
+- terminal value drivers are included as assumption entries while terminal outputs remain diagnostics
+- naming conventions are enforced for assumption_name, stage, scope, and affected_forecast_lines
+- static range flags out-of-range values
+- flag levels follow deterministic semantics for none/watch/review_required/critical
+- out-of-range values do not block valuation
+- out-of-range or critical values downgrade `model_trust_state`
+- model trust state rolls up assumption flags plus selected valuation diagnostics
+- material diff logic ignores tiny changes
+- material diff logic logs source/flag/approval changes
+- materiality thresholds are centralized and covered by field-class tests
+- audit rows store concise prior/new diffs rather than full entry snapshots
+- PM approval is value-specific
+- stale approval is surfaced after material value change
+- valuation result includes `assumption_register_json`
+- JSON export includes full `assumption_register`
+- assumptions API payload includes register and audit rows
+- assumptions API payload keeps override and assumption-register audit families separate
+- override preview/apply paths can include valuation-impact metadata
+- ticker dossier/export includes compact flagged summary
+
+Focused verification command:
+
+```powershell
+python -m pytest tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_ticker_dossier_contract_runtime.py -q
 ```
 
-**Step 2: Run test to verify it fails**
-
-```
-pytest tests/test_assumption_register.py -x -q
-```
-Expected: ImportError — module does not exist yet.
-
-**Step 3: Implement the contracts**
-
-Create `src/stage_02_valuation/assumption_register.py`:
-
-```python
-"""Typed assumption register contract for deterministic valuation runs."""
-from __future__ import annotations
-
-from enum import Enum
-from typing import Any
-
-from pydantic import BaseModel, Field, model_validator
-
-
-class AssumptionOwner(str, Enum):
-    deterministic = "deterministic"
-    pm_override = "pm_override"
-    blocked = "blocked"
-
-
-class FlagLevel(str, Enum):
-    none = "none"
-    watch = "watch"
-    review_required = "review_required"
-    critical = "critical"
-
-
-_FLAG_RANK = {
-    FlagLevel.none: 0,
-    FlagLevel.watch: 1,
-    FlagLevel.review_required: 2,
-    FlagLevel.critical: 3,
-}
-
-
-class AssumptionRegisterEntry(BaseModel):
-    assumption_name: str
-    proposed_value: float
-    accepted_low: float
-    accepted_high: float
-    range_rule_id: str
-    source: str
-    flag_level: FlagLevel
-    owner: AssumptionOwner
-    notes: str = ""
-
-    @property
-    def out_of_range(self) -> bool:
-        return not (self.accepted_low <= self.proposed_value <= self.accepted_high)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "assumption_name": self.assumption_name,
-            "proposed_value": self.proposed_value,
-            "accepted_low": self.accepted_low,
-            "accepted_high": self.accepted_high,
-            "range_rule_id": self.range_rule_id,
-            "source": self.source,
-            "flag_level": self.flag_level.value,
-            "owner": self.owner.value,
-            "out_of_range": self.out_of_range,
-            "notes": self.notes,
-        }
-
-
-class AssumptionRegister(BaseModel):
-    ticker: str
-    entries: list[AssumptionRegisterEntry] = Field(default_factory=list)
-
-    def flag_count(self, level: FlagLevel) -> int:
-        return sum(1 for e in self.entries if e.flag_level == level)
-
-    @property
-    def has_critical(self) -> bool:
-        return any(e.flag_level == FlagLevel.critical for e in self.entries)
-
-    @property
-    def max_flag_level(self) -> FlagLevel:
-        if not self.entries:
-            return FlagLevel.none
-        return max(self.entries, key=lambda e: _FLAG_RANK[e.flag_level]).flag_level
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "ticker": self.ticker,
-            "max_flag_level": self.max_flag_level.value,
-            "has_critical": self.has_critical,
-            "flag_counts": {lvl.value: self.flag_count(lvl) for lvl in FlagLevel},
-            "entries": [e.to_dict() for e in self.entries],
-        }
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_assumption_register.py -x -q
-```
-Expected: 3 passed.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_02_valuation/assumption_register.py tests/test_assumption_register.py
-git commit -m "feat: add AssumptionRegister and AssumptionRegisterEntry contracts"
-```
-
----
-
-## Task 2: Add the range-rule table and flag computation
-
-**Files:**
-- Modify: `src/stage_02_valuation/assumption_register.py`
-- Modify: `tests/test_assumption_register.py`
-
-The range-rule table encodes the P0 #2 defaults from the action plan. Each rule maps a metric name to `(accepted_low, accepted_high, rule_id)`. Ranges are expressed as fractions (not percent) for margin/growth; raw values for multiples and days.
-
-**Step 1: Add tests for range-rule lookup and `_flag_for_value()`**
-
-Add to `tests/test_assumption_register.py`:
-
-```python
-from src.stage_02_valuation.assumption_register import flag_for_value, RANGE_RULES
-
-def test_flag_for_value_in_range():
-    assert flag_for_value(0.08, 0.02, 0.20) == FlagLevel.none
-
-def test_flag_for_value_watch_boundary():
-    # Just outside — watch, not review_required
-    assert flag_for_value(0.21, 0.02, 0.20) == FlagLevel.watch
-
-def test_flag_for_value_far_out_of_range():
-    # >2× the width outside → review_required
-    assert flag_for_value(0.60, 0.02, 0.20) == FlagLevel.review_required
-
-def test_range_rules_covers_core_drivers():
-    for key in ("revenue_growth_near", "ebit_margin_start", "tax_rate_start",
-                "capex_pct_start", "da_pct_start", "wacc", "exit_multiple"):
-        assert key in RANGE_RULES, f"Missing range rule for {key}"
-```
-
-**Step 2: Run tests to verify they fail**
-
-```
-pytest tests/test_assumption_register.py -x -q
-```
-Expected: ImportError on `flag_for_value, RANGE_RULES`.
-
-**Step 3: Implement range rules and flag logic**
-
-Add to `src/stage_02_valuation/assumption_register.py` (before the `AssumptionRegisterEntry` class):
-
-```python
-# (low, high, rule_id)
-RANGE_RULES: dict[str, tuple[float, float, str]] = {
-    "revenue_growth_near":   (0.00,  0.30, "revenue_growth_default"),
-    "revenue_growth_mid":    (-0.02, 0.20, "revenue_growth_mid_default"),
-    "ebit_margin_start":     (0.00,  0.45, "ebit_margin_default"),
-    "ebit_margin_target":    (0.00,  0.50, "ebit_margin_target_default"),
-    "tax_rate_start":        (0.10,  0.35, "tax_rate_default"),
-    "tax_rate_target":       (0.10,  0.35, "tax_rate_default"),
-    "capex_pct_start":       (0.01,  0.20, "capex_pct_default"),
-    "capex_pct_target":      (0.01,  0.15, "capex_pct_target_default"),
-    "da_pct_start":          (0.01,  0.15, "da_pct_default"),
-    "da_pct_target":         (0.01,  0.12, "da_pct_target_default"),
-    "dso_start":             (10.0, 120.0, "dso_default"),
-    "dio_start":             (0.0,  180.0, "dio_default"),
-    "dpo_start":             (10.0, 120.0, "dpo_default"),
-    "wacc":                  (0.05,  0.18, "wacc_default"),
-    "exit_multiple":         (4.0,   25.0, "exit_multiple_default"),
-    "ronic_terminal":        (0.04,  0.20, "ronic_terminal_default"),
-    "terminal_blend_gordon_weight": (0.0, 1.0, "blend_weight_default"),
-}
-
-
-def flag_for_value(value: float, low: float, high: float) -> FlagLevel:
-    """Deterministic flag from range bounds. Watch = just outside, review_required = far outside."""
-    if low <= value <= high:
-        return FlagLevel.none
-    width = high - low
-    distance = min(abs(value - low), abs(value - high))
-    if distance <= 0.10 * width + 1e-9:
-        return FlagLevel.watch
-    return FlagLevel.review_required
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_assumption_register.py -x -q
-```
-Expected: all pass.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_02_valuation/assumption_register.py tests/test_assumption_register.py
-git commit -m "feat: add RANGE_RULES table and flag_for_value() logic"
-```
-
----
-
-## Task 3: `build_assumption_register()` — assembles a register from valuation inputs
-
-**Files:**
-- Modify: `src/stage_02_valuation/assumption_register.py`
-- Modify: `tests/test_assumption_register.py`
-
-**Step 1: Write failing test**
-
-Add to `tests/test_assumption_register.py`:
-
-```python
-from src.stage_02_valuation.assumption_register import build_assumption_register
-from src.stage_02_valuation.valuation_types import ForecastDrivers
-
-def _minimal_drivers() -> ForecastDrivers:
-    return ForecastDrivers(
-        revenue_base=10_000.0,
-        revenue_growth_near=0.08,
-        revenue_growth_mid=0.05,
-        revenue_growth_terminal=0.025,
-        ebit_margin_start=0.18,
-        ebit_margin_target=0.22,
-        tax_rate_start=0.21,
-        tax_rate_target=0.21,
-        capex_pct_start=0.05,
-        capex_pct_target=0.04,
-        da_pct_start=0.04,
-        da_pct_target=0.04,
-        dso_start=45.0,
-        dso_target=45.0,
-        dio_start=30.0,
-        dio_target=30.0,
-        dpo_start=35.0,
-        dpo_target=35.0,
-        wacc=0.09,
-        exit_multiple=12.0,
-        exit_metric="ev_ebitda",
-        net_debt=500.0,
-        shares_outstanding=100.0,
-    )
-
-def test_build_assumption_register_returns_register():
-    drivers = _minimal_drivers()
-    lineage = {"revenue_growth_near": "yfinance_cagr_3yr", "ebit_margin_start": "ciq"}
-    reg = build_assumption_register("AAPL", drivers, lineage)
-    assert reg.ticker == "AAPL"
-    assert len(reg.entries) > 0
-
-def test_build_assumption_register_in_range_drivers_have_no_flag():
-    drivers = _minimal_drivers()
-    reg = build_assumption_register("AAPL", drivers, {})
-    flagged = [e for e in reg.entries if e.flag_level != FlagLevel.none]
-    assert len(flagged) == 0
-
-def test_build_assumption_register_out_of_range_driver_is_flagged():
-    drivers = _minimal_drivers()
-    drivers = ForecastDrivers(**{**drivers.__dict__, "ebit_margin_start": 0.80})
-    reg = build_assumption_register("AAPL", drivers, {})
-    flagged = [e for e in reg.entries if e.assumption_name == "ebit_margin_start"]
-    assert flagged[0].flag_level != FlagLevel.none
-
-def test_build_assumption_register_lineage_flows_to_source():
-    drivers = _minimal_drivers()
-    lineage = {"ebit_margin_start": "ciq"}
-    reg = build_assumption_register("AAPL", drivers, lineage)
-    entry = next(e for e in reg.entries if e.assumption_name == "ebit_margin_start")
-    assert entry.source == "ciq"
-```
-
-**Step 2: Run tests to verify they fail**
-
-```
-pytest tests/test_assumption_register.py::test_build_assumption_register_returns_register -x -q
-```
-Expected: ImportError on `build_assumption_register`.
-
-**Step 3: Implement `build_assumption_register()`**
-
-Add to `src/stage_02_valuation/assumption_register.py`:
-
-```python
-from src.stage_02_valuation.valuation_types import ForecastDrivers
-
-
-def build_assumption_register(
-    ticker: str,
-    drivers: ForecastDrivers,
-    source_lineage: dict[str, str],
-) -> AssumptionRegister:
-    """Build a fully-flagged assumption register from a completed ForecastDrivers."""
-    driver_values: dict[str, float] = {
-        "revenue_growth_near":          drivers.revenue_growth_near,
-        "revenue_growth_mid":           drivers.revenue_growth_mid,
-        "ebit_margin_start":            drivers.ebit_margin_start,
-        "ebit_margin_target":           drivers.ebit_margin_target,
-        "tax_rate_start":               drivers.tax_rate_start,
-        "tax_rate_target":              drivers.tax_rate_target,
-        "capex_pct_start":              drivers.capex_pct_start,
-        "capex_pct_target":             drivers.capex_pct_target,
-        "da_pct_start":                 drivers.da_pct_start,
-        "da_pct_target":                drivers.da_pct_target,
-        "dso_start":                    drivers.dso_start,
-        "dio_start":                    drivers.dio_start,
-        "dpo_start":                    drivers.dpo_start,
-        "wacc":                         drivers.wacc,
-        "exit_multiple":                drivers.exit_multiple,
-        "ronic_terminal":               drivers.ronic_terminal,
-        "terminal_blend_gordon_weight": drivers.terminal_blend_gordon_weight,
-    }
-
-    entries: list[AssumptionRegisterEntry] = []
-    for name, value in driver_values.items():
-        if name not in RANGE_RULES:
-            continue
-        low, high, rule_id = RANGE_RULES[name]
-        flag = flag_for_value(value, low, high)
-        owner = AssumptionOwner.deterministic
-        if source_lineage.get(name) == "pm_override":
-            owner = AssumptionOwner.pm_override
-        entries.append(AssumptionRegisterEntry(
-            assumption_name=name,
-            proposed_value=value,
-            accepted_low=low,
-            accepted_high=high,
-            range_rule_id=rule_id,
-            source=source_lineage.get(name, "derived"),
-            flag_level=flag,
-            owner=owner,
-        ))
-
-    return AssumptionRegister(ticker=ticker, entries=entries)
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_assumption_register.py -x -q
-```
-Expected: all pass.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_02_valuation/assumption_register.py tests/test_assumption_register.py
-git commit -m "feat: implement build_assumption_register() from ForecastDrivers + lineage"
-```
-
----
-
-## Task 4: Wire into `batch_runner.py`
-
-**Files:**
-- Modify: `src/stage_02_valuation/batch_runner.py` (around `value_single_ticker`)
-- Modify: `tests/test_batch_runner_professional.py`
-
-The batch runner already calls `build_valuation_inputs()` and has access to `drivers` and `source_lineage`. Wire `build_assumption_register()` after that call and attach the result to the output row as `assumption_register_json`.
-
-**Step 1: Write failing test**
-
-Find the test that exercises `value_single_ticker` in `tests/test_batch_runner_professional.py`. Add:
-
-```python
-def test_value_single_ticker_result_has_assumption_register(monkeypatch):
-    """assumption_register_json is present and has entries."""
-    import json
-    from tests.test_batch_runner_professional import _make_minimal_mkt  # reuse existing helper
-
-    # Use existing monkeypatch fixture from nearby test if available,
-    # or replicate the minimal mock pattern already in the file.
-    # The key assertion is on the result dict key.
-    result = _run_minimal_ticker(monkeypatch)  # helper defined in next step
-    assert "assumption_register_json" in result
-    reg = json.loads(result["assumption_register_json"])
-    assert "entries" in reg
-    assert len(reg["entries"]) > 0
-```
-
-Check the existing test file first to understand existing helper patterns before writing `_run_minimal_ticker`. Match the existing mock style exactly.
-
-**Step 2: Run test to verify it fails**
-
-```
-pytest tests/test_batch_runner_professional.py::test_value_single_ticker_result_has_assumption_register -x -q
-```
-Expected: either KeyError or the helper doesn't exist yet.
-
-**Step 3: Wire `build_assumption_register()` into `value_single_ticker()`**
-
-In `src/stage_02_valuation/batch_runner.py`, find where `valuation_inputs` is built:
-
-```python
-# existing pattern (approximately):
-valuation_inputs = build_valuation_inputs(ticker, ...)
-if valuation_inputs is None:
-    ...
-drivers = valuation_inputs.drivers
-```
-
-After that block, add:
-
-```python
-from src.stage_02_valuation.assumption_register import build_assumption_register
-import json as _json
-
-assumption_register = build_assumption_register(
-    ticker,
-    drivers,
-    valuation_inputs.source_lineage,
-)
-```
-
-Then in the result dict assembly, add:
-
-```python
-"assumption_register_json": _json.dumps(assumption_register.to_dict()),
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_batch_runner_professional.py -x -q
-```
-Expected: all pass including the new test.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_02_valuation/batch_runner.py tests/test_batch_runner_professional.py
-git commit -m "feat: wire assumption_register into batch_runner result row"
-```
-
----
-
-## Task 5: Wire into `json_exporter.py`
-
-**Files:**
-- Modify: `src/stage_02_valuation/json_exporter.py`
-- Modify: `tests/test_json_exporter.py`
-
-The JSON exporter builds the nested ticker payload. The assumption register should appear as a top-level `assumption_register` section — same pattern as `scenarios`, `wacc`, etc.
-
-**Step 1: Write failing test**
-
-In `tests/test_json_exporter.py`, add `assumption_register_json` to `MINIMAL_RESULT` (the test fixture dict) and assert the exported section exists:
-
-```python
-# Add to MINIMAL_RESULT dict (already defined at top of test file):
-# "assumption_register_json": json.dumps({"ticker": "IBM", "entries": [], "max_flag_level": "none", ...})
-
-def test_json_contains_assumption_register_section(tmp_dir):
-    import json as _json
-    result_with_reg = dict(MINIMAL_RESULT)
-    result_with_reg["assumption_register_json"] = _json.dumps({
-        "ticker": "IBM",
-        "max_flag_level": "none",
-        "has_critical": False,
-        "flag_counts": {"none": 1, "watch": 0, "review_required": 0, "critical": 0},
-        "entries": [{"assumption_name": "wacc", "proposed_value": 0.09,
-                     "accepted_low": 0.05, "accepted_high": 0.18,
-                     "range_rule_id": "wacc_default", "source": "derived",
-                     "flag_level": "none", "owner": "deterministic",
-                     "out_of_range": False, "notes": ""}],
-    })
-    dated = export_ticker_json(result_with_reg, output_dir=tmp_dir, date_str="2026-01-01")
-    content = _json.loads(dated.read_text())
-    assert "assumption_register" in content
-    assert content["assumption_register"]["max_flag_level"] == "none"
-```
-
-**Step 2: Run test to verify it fails**
-
-```
-pytest tests/test_json_exporter.py::test_json_contains_assumption_register_section -x -q
-```
-Expected: AssertionError — section missing.
-
-**Step 3: Add `assumption_register` to `build_nested_structure()`**
-
-In `src/stage_02_valuation/json_exporter.py`, find `build_nested_structure()`. Add:
-
-```python
-# near the other _safe_json_loads() calls:
-"assumption_register": _safe_json_loads(result.get("assumption_register_json")) or {},
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_json_exporter.py -x -q
-```
-Expected: all pass.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_02_valuation/json_exporter.py tests/test_json_exporter.py
-git commit -m "feat: add assumption_register section to json_exporter nested output"
-```
-
----
-
-## Task 6: Surface flags in `override_workbench.py`
-
-**Files:**
-- Modify: `src/stage_04_pipeline/override_workbench.py`
-- Test: no new test file — extend existing workbench test if one exists, or assert on the dict key in a minimal inline test
-
-The override workbench returns a dict from `build_override_workbench(ticker)`. Add an `assumption_register` key to that dict so the dashboard can surface flag counts and per-assumption detail without a separate API call.
-
-**Step 1: Write failing test**
-
-```python
-# tests/test_override_workbench_assumption_register.py
-import pytest
-from unittest.mock import patch, MagicMock
-from src.stage_04_pipeline.override_workbench import build_override_workbench
-
-def _fake_valuation_inputs(apply_overrides=True):
-    from src.stage_02_valuation.valuation_types import ForecastDrivers
-    from src.stage_02_valuation.input_assembler import ValuationInputsWithLineage
-    drivers = ForecastDrivers(
-        revenue_base=10_000.0, revenue_growth_near=0.08, revenue_growth_mid=0.05,
-        revenue_growth_terminal=0.025, ebit_margin_start=0.18, ebit_margin_target=0.22,
-        tax_rate_start=0.21, tax_rate_target=0.21, capex_pct_start=0.05,
-        capex_pct_target=0.04, da_pct_start=0.04, da_pct_target=0.04,
-        dso_start=45.0, dso_target=45.0, dio_start=30.0, dio_target=30.0,
-        dpo_start=35.0, dpo_target=35.0, wacc=0.09, exit_multiple=12.0,
-        exit_metric="ev_ebitda", net_debt=500.0, shares_outstanding=100.0,
-    )
-    return ValuationInputsWithLineage(
-        ticker="FAKE", company_name="Fake Co", sector="Technology", industry="Software",
-        current_price=100.0, as_of_date=None, model_applicability_status="dcf_applicable",
-        drivers=drivers, source_lineage={}, ciq_lineage={}, wacc_inputs={},
-    )
-
-def test_build_override_workbench_includes_assumption_register(monkeypatch):
-    monkeypatch.setattr(
-        "src.stage_04_pipeline.override_workbench.build_valuation_inputs",
-        _fake_valuation_inputs,
-    )
-    result = build_override_workbench("FAKE")
-    assert "assumption_register" in result
-    assert "entries" in result["assumption_register"]
-    assert "max_flag_level" in result["assumption_register"]
-```
-
-**Step 2: Run test to verify it fails**
-
-```
-pytest tests/test_override_workbench_assumption_register.py -x -q
-```
-Expected: KeyError — key not present.
-
-**Step 3: Add assumption register to `build_override_workbench()`**
-
-In `src/stage_04_pipeline/override_workbench.py`, find `build_override_workbench()`. After building `effective_inputs`, add:
-
-```python
-from src.stage_02_valuation.assumption_register import build_assumption_register
-
-assumption_register = build_assumption_register(
-    ticker,
-    effective_inputs.drivers,
-    effective_inputs.source_lineage,
-)
-```
-
-Then add to the returned dict:
-
-```python
-"assumption_register": assumption_register.to_dict(),
-```
-
-**Step 4: Run tests**
-
-```
-pytest tests/test_override_workbench_assumption_register.py -x -q
-```
-Expected: pass.
-
-**Step 5: Commit**
-
-```bash
-git add src/stage_04_pipeline/override_workbench.py tests/test_override_workbench_assumption_register.py
-git commit -m "feat: surface assumption_register in override_workbench payload"
-```
-
----
-
-## Task 7: Full suite check and doc update
-
-**Step 1: Run the full test bundle for this branch**
-
-```
-pytest tests/test_assumption_register.py tests/test_json_exporter.py tests/test_batch_runner_professional.py tests/test_override_workbench_assumption_register.py -q
-```
-Expected: all pass, no errors.
-
-**Step 2: Update the action plan doc**
-
-In `docs/design-docs/valuation-methodology-critical-review-and-action-plan.md`, mark P0 #1 ("Define the assumption register as an executable contract") and P0 #2 ("Make accepted ranges deterministic by default") as implemented. Add a one-line note: "Implemented in `src/stage_02_valuation/assumption_register.py` — range rules are in `RANGE_RULES`, flags computed by `flag_for_value()`."
-
-**Step 3: Commit docs**
-
-```bash
-git add docs/design-docs/valuation-methodology-critical-review-and-action-plan.md
-git commit -m "docs: mark P0 #1 and P0 #2 implemented in action plan"
-```
-
----
-
-## Notes for the implementer
-
-- `ForecastDrivers` is a `dataclass(slots=True)` — you cannot do `drivers.__dict__`. Use `dataclasses.asdict(drivers)` or access fields directly.
-- The test file `tests/test_batch_runner_professional.py` already has a detailed mock pattern for `value_single_ticker`. Read it before writing Task 4's test — match the existing helper style exactly rather than inventing a new one.
-- `_safe_json_loads()` is already defined in `json_exporter.py` — use it as-is for Task 5.
-- Keep `assumption_register.py` import-safe: the `from src.stage_02_valuation.valuation_types import ForecastDrivers` import inside `build_assumption_register()` avoids any circular import risk.
+## V2 Backlog
+
+- Connect `driver_assessments.py` and judgment-stage agents as advisory register inputs.
+- Feed register flags back to advisory agents so they can retry or revise proposed assumptions.
+- Add `source_quality_state` or equivalent source-confidence classification separate from numeric range checks.
+- Add automatic sensitivity-driven valuation-impact scoring for flagged assumptions.
+- Add raw/pre-clamp value diagnostics if review of clamped assumptions becomes important.
+- Replace fixed bps thresholds with scale-aware and valuation-impact-aware materiality.
+- Compute accepted ranges from company history, peer/industry context, and Damodaran data.
+- Populate sector, industry, and global assumption policy entries.
+- Add qualitative/enum/text assumptions only after numeric register behavior is stable.
+- Add scenario assumption packs for bear/base/bull and context-aware scenario cases.
+- Integrate Damodaran ERP, country-risk, synthetic-rating, and sector data into range/source policy.
+
+## Assumptions
+
+- Existing deterministic valuation should continue to run even with critical register flags.
+- Existing `valuation_overrides.yaml` and override audit paths remain authoritative for official PM changes.
+- V1 should avoid broad React redesign; show register data through existing valuation assumptions surfaces first.
+- The initial implementation should not scrape Damodaran data or build the config editor.

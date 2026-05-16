@@ -3,6 +3,7 @@ Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
 import sqlite3
+import json
 from typing import Any
 
 from src.utils import utc_now_iso
@@ -586,6 +587,353 @@ def insert_valuation_override_audit(conn: sqlite3.Connection, rows: list[dict[st
     conn.commit()
 
 
+def _split_assumption_register_diff(row: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    prior: dict[str, Any] = {}
+    new: dict[str, Any] = {}
+    for field, change in (row.get("changed_fields") or {}).items():
+        if not isinstance(change, dict):
+            continue
+        prior[field] = change.get("prior")
+        new[field] = change.get("new")
+    return prior, new
+
+
+def insert_assumption_register_audit(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> None:
+    """Append review-relevant Assumption Register audit events."""
+    if not rows:
+        return
+
+    payload: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        prior, new = _split_assumption_register_diff(item)
+        item["ticker"] = str(item["ticker"]).upper()
+        item["entity_type"] = (
+            item["entity_type"].value
+            if hasattr(item.get("entity_type"), "value")
+            else str(item.get("entity_type"))
+        )
+        item["prior_diff_json"] = json.dumps(prior, separators=(",", ":"))
+        item["new_diff_json"] = json.dumps(new, separators=(",", ":"))
+        item["changed_fields_json"] = json.dumps(item.get("changed_fields") or {}, separators=(",", ":"))
+        item["valuation_impact_json"] = (
+            json.dumps(item.get("valuation_impact"), separators=(",", ":"))
+            if item.get("valuation_impact") is not None
+            else None
+        )
+        payload.append(item)
+
+    conn.executemany(
+        """
+        INSERT INTO assumption_register_audit (
+            event_ts, actor, actor_type, entity_type, entity_id, ticker,
+            assumption_name, scope, event_type, prior_diff_json, new_diff_json,
+            changed_fields_json, valuation_impact_json, reason
+        ) VALUES (
+            :event_ts, :actor, :actor_type, :entity_type, :entity_id, :ticker,
+            :assumption_name, :scope, :event_type, :prior_diff_json, :new_diff_json,
+            :changed_fields_json, :valuation_impact_json, :reason
+        )
+        """,
+        payload,
+    )
+    conn.commit()
+
+
+def load_assumption_register_audit_history(
+    conn: sqlite3.Connection,
+    ticker: str,
+    limit: int = 50,
+) -> list[dict[str, Any]]:
+    """Load Assumption Register audit history separately from PM override audit."""
+    rows = conn.execute(
+        """
+        SELECT event_ts, actor, actor_type, entity_type, entity_id, ticker,
+               assumption_name, scope, event_type, prior_diff_json, new_diff_json,
+               changed_fields_json, valuation_impact_json, reason
+        FROM assumption_register_audit
+        WHERE ticker = ?
+        ORDER BY event_ts DESC, id DESC
+        LIMIT ?
+        """,
+        [str(ticker).upper(), max(1, int(limit))],
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["prior_diff"] = json.loads(item["prior_diff_json"] or "{}")
+        item["new_diff"] = json.loads(item["new_diff_json"] or "{}")
+        item["changed_fields"] = json.loads(item["changed_fields_json"] or "{}")
+        item["valuation_impact"] = (
+            json.loads(item["valuation_impact_json"])
+            if item.get("valuation_impact_json")
+            else None
+        )
+        out.append(item)
+    return out
+
+
+def insert_valuation_policy_version(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Append a PM-editable valuation policy version and return its id."""
+    cursor = conn.execute(
+        """
+        INSERT INTO valuation_policy_versions (
+            created_at, actor, global_defaults_json, sector_defaults_json, source_ref, notes
+        ) VALUES (
+            :created_at, :actor, :global_defaults_json, :sector_defaults_json, :source_ref, :notes
+        )
+        """,
+        row,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def load_latest_valuation_policy_version(conn: sqlite3.Connection) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, created_at, actor, global_defaults_json, sector_defaults_json, source_ref, notes
+        FROM valuation_policy_versions
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    item["global_defaults"] = json.loads(item.pop("global_defaults_json") or "{}")
+    item["sector_defaults"] = json.loads(item.pop("sector_defaults_json") or "{}")
+    return item
+
+
+def upsert_damodaran_policy_drafts(conn: sqlite3.Connection, rows: list[dict[str, Any]]) -> int:
+    """Upsert parsed Damodaran drop-folder rows as reviewable drafts."""
+    if not rows:
+        return 0
+    payload: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["raw_json"] = json.dumps(item.get("raw") or {}, separators=(",", ":"))
+        payload.append(item)
+    conn.executemany(
+        """
+        INSERT INTO damodaran_policy_drafts (
+            created_at, source_file, source_kind, row_key, field, value, unit,
+            source_date, status, raw_json
+        ) VALUES (
+            :created_at, :source_file, :source_kind, :row_key, :field, :value, :unit,
+            :source_date, :status, :raw_json
+        )
+        ON CONFLICT(source_file, row_key, field) DO UPDATE SET
+            created_at = excluded.created_at,
+            source_kind = excluded.source_kind,
+            value = excluded.value,
+            unit = excluded.unit,
+            source_date = excluded.source_date,
+            raw_json = excluded.raw_json
+        """,
+        payload,
+    )
+    conn.commit()
+    return len(payload)
+
+
+def load_damodaran_policy_drafts(
+    conn: sqlite3.Connection,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    where = "WHERE status = ?" if status else ""
+    params: list[Any] = [status] if status else []
+    params.append(max(1, int(limit)))
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, source_file, source_kind, row_key, field, value,
+               unit, source_date, status, raw_json
+        FROM damodaran_policy_drafts
+        {where}
+        ORDER BY created_at DESC, id DESC
+        LIMIT ?
+        """,
+        params,
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["raw"] = json.loads(item.pop("raw_json") or "{}")
+        out.append(item)
+    return out
+
+
+def insert_pending_assumption_change(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    item = dict(row)
+    item["ticker"] = str(item["ticker"]).upper()
+    item["metadata_json"] = json.dumps(item.get("metadata") or {}, separators=(",", ":"))
+    cursor = conn.execute(
+        """
+        INSERT INTO pending_assumption_changes (
+            created_at, updated_at, ticker, assumption_name, current_value, proposed_value,
+            source_type, source_ref, confidence, rationale, citation, status,
+            approval_ref, applied_at, metadata_json
+        ) VALUES (
+            :created_at, :updated_at, :ticker, :assumption_name, :current_value, :proposed_value,
+            :source_type, :source_ref, :confidence, :rationale, :citation, :status,
+            :approval_ref, :applied_at, :metadata_json
+        )
+        """,
+        item,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def load_pending_assumption_changes(
+    conn: sqlite3.Connection,
+    ticker: str,
+    status: str | None = "pending",
+) -> list[dict[str, Any]]:
+    params: list[Any] = [str(ticker).upper()]
+    where = "WHERE ticker = ?"
+    if status:
+        where += " AND status = ?"
+        params.append(status)
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, updated_at, ticker, assumption_name, current_value,
+               proposed_value, source_type, source_ref, confidence, rationale,
+               citation, status, approval_ref, applied_at, metadata_json
+        FROM pending_assumption_changes
+        {where}
+        ORDER BY updated_at DESC, id DESC
+        """,
+        params,
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+        item["change_id"] = item.pop("id")
+        out.append(item)
+    return out
+
+
+def apply_pending_assumption_changes(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    change_ids: list[int],
+    actor: str,
+    applied_at: str,
+    approval_ref: str,
+) -> list[dict[str, Any]]:
+    """Approve selected pending changes and make them active effective entries."""
+    if not change_ids:
+        return []
+    ticker = str(ticker).upper()
+    placeholders = ",".join("?" for _ in change_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, ticker, assumption_name, proposed_value, source_type, source_ref, metadata_json
+        FROM pending_assumption_changes
+        WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+        ORDER BY id
+        """,
+        [ticker, *change_ids],
+    ).fetchall()
+    approved = [dict(row) for row in rows]
+    if not approved:
+        return []
+    with conn:
+        for row in approved:
+            conn.execute(
+                """
+                UPDATE approved_assumption_entries
+                SET active = 0
+                WHERE ticker = ? AND assumption_name = ? AND active = 1
+                """,
+                [ticker, row["assumption_name"]],
+            )
+            conn.execute(
+                """
+                INSERT INTO approved_assumption_entries (
+                    applied_at, ticker, assumption_name, value, source_type,
+                    source_ref, approval_ref, actor, metadata_json, active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                """,
+                [
+                    applied_at,
+                    ticker,
+                    row["assumption_name"],
+                    row["proposed_value"],
+                    row["source_type"],
+                    row["source_ref"],
+                    approval_ref,
+                    actor,
+                    row["metadata_json"] or "{}",
+                ],
+            )
+            conn.execute(
+                """
+                UPDATE pending_assumption_changes
+                SET status = 'approved', updated_at = ?, applied_at = ?, approval_ref = ?
+                WHERE id = ?
+                """,
+                [applied_at, applied_at, approval_ref, row["id"]],
+            )
+    for row in approved:
+        row["metadata"] = json.loads(row.pop("metadata_json") or "{}")
+        row["change_id"] = row.pop("id")
+        row["approval_ref"] = approval_ref
+        row["applied_at"] = applied_at
+    return approved
+
+
+def reject_pending_assumption_changes(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    change_ids: list[int],
+    actor: str,
+    rejected_at: str,
+) -> int:
+    if not change_ids:
+        return 0
+    placeholders = ",".join("?" for _ in change_ids)
+    cursor = conn.execute(
+        f"""
+        UPDATE pending_assumption_changes
+        SET status = 'rejected', updated_at = ?
+        WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+        """,
+        [rejected_at, str(ticker).upper(), *change_ids],
+    )
+    conn.commit()
+    return int(cursor.rowcount or 0)
+
+
+def load_approved_assumption_entries(conn: sqlite3.Connection, ticker: str) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT id, applied_at, ticker, assumption_name, value, source_type, source_ref,
+               approval_ref, actor, metadata_json
+        FROM approved_assumption_entries
+        WHERE ticker = ? AND active = 1
+        ORDER BY applied_at DESC, id DESC
+        """,
+        [str(ticker).upper()],
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for row in rows:
+        item = dict(row)
+        if item["assumption_name"] in seen:
+            continue
+        seen.add(item["assumption_name"])
+        item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+        out.append(item)
+    return out
+
+
 def insert_pipeline_report_archive(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
     """Append a dashboard report snapshot and return its row id."""
     cursor = conn.execute(
@@ -1109,3 +1457,55 @@ def insert_dossier_note_block(conn: sqlite3.Connection, row: dict[str, Any]) -> 
     )
     conn.commit()
     return int(cursor.lastrowid)
+
+
+# ---------------------------------------------------------------------------
+# Convenience helpers — used by valuation layer (stage_02) to avoid importing
+# stage_04 pipeline modules.
+# ---------------------------------------------------------------------------
+
+def get_valuation_policy_rf_erp() -> tuple[float, float]:
+    """Return (risk_free_rate, equity_risk_premium) from the latest saved policy.
+
+    Falls back to (0.045, 0.05) if no policy has been saved yet.
+    """
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            row = load_latest_valuation_policy_version(conn)
+    except Exception:
+        row = None
+    if not row:
+        return 0.045, 0.05
+    g = row.get("global_defaults") or {}
+    rf = float(g.get("risk_free_rate", 0.045))
+    erp = float(g.get("equity_risk_premium", 0.05))
+    return rf, erp
+
+
+def get_valuation_policy_sector_defaults(sector: str) -> dict[str, float]:
+    """Return saved sector-level defaults for *sector*, or {} if none saved."""
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            row = load_latest_valuation_policy_version(conn)
+    except Exception:
+        row = None
+    if not row:
+        return {}
+    sector_map: dict[str, dict[str, float]] = row.get("sector_defaults") or {}
+    return dict(sector_map.get(sector) or {})
+
+
+def get_approved_assumption_overrides(ticker: str) -> dict[str, float]:
+    """Return active approved assumption overrides for *ticker* as {name: value}."""
+    try:
+        from db.schema import create_tables, get_connection
+        with get_connection() as conn:
+            create_tables(conn)
+            rows = load_approved_assumption_entries(conn, ticker)
+    except Exception:
+        return {}
+    return {row["assumption_name"]: float(row["value"]) for row in rows}

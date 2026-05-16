@@ -57,6 +57,21 @@ class RecommendationsApplyRequest(BaseModel):
     approved_fields: list[str] = Field(default_factory=list)
 
 
+class ValuationPolicyEditRequest(BaseModel):
+    global_defaults: dict[str, float] = Field(default_factory=dict)
+    sector_defaults: dict[str, dict[str, float]] = Field(default_factory=dict)
+    notes: str | None = None
+
+
+class PendingAssumptionPreviewRequest(BaseModel):
+    change_ids: list[int] = Field(default_factory=list)
+    manual_values: dict[str, float] = Field(default_factory=dict)
+
+
+class PendingAssumptionApplyRequest(BaseModel):
+    change_ids: list[int] = Field(default_factory=list)
+
+
 class AnalysisRunRequest(BaseModel):
     use_cache: bool = True
     force_refresh_agents: list[str] = Field(default_factory=list)
@@ -344,6 +359,65 @@ def apply_recommendations_to_overrides(
     return _impl(ticker, approved_fields=approved_fields, actor=actor)
 
 
+def load_valuation_policy_payload() -> dict[str, Any]:
+    from src.stage_04_pipeline.assumption_policy import load_current_valuation_policy
+
+    return load_current_valuation_policy().model_dump()
+
+
+def preview_valuation_policy_payload(payload: ValuationPolicyEditRequest) -> dict[str, Any]:
+    from src.stage_04_pipeline.assumption_policy import preview_valuation_policy_edits
+
+    return preview_valuation_policy_edits(
+        global_defaults=payload.global_defaults,
+        sector_defaults=payload.sector_defaults,
+    ).model_dump()
+
+
+def save_valuation_policy_payload(payload: ValuationPolicyEditRequest, actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.assumption_policy import preview_valuation_policy_edits, save_valuation_policy
+
+    preview = preview_valuation_policy_edits(
+        global_defaults=payload.global_defaults,
+        sector_defaults=payload.sector_defaults,
+    )
+    policy = preview.proposed_policy.model_copy(update={"notes": payload.notes})
+    return save_valuation_policy(policy, actor=actor).model_dump()
+
+
+def parse_damodaran_policy_drafts_payload() -> dict[str, Any]:
+    from src.stage_04_pipeline.assumption_policy import parse_damodaran_drop_folder
+
+    return parse_damodaran_drop_folder()
+
+
+def list_pending_assumptions_payload(ticker: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import list_pending_assumption_changes
+
+    changes = [change.model_dump() for change in list_pending_assumption_changes(ticker)]
+    return {"ticker": ticker.upper(), "pending_changes": changes}
+
+
+def preview_pending_assumptions_payload(
+    ticker: str,
+    change_ids: list[int],
+    manual_values: dict[str, float] | None = None,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import preview_pending_assumption_stack
+
+    return preview_pending_assumption_stack(ticker, change_ids, manual_values=manual_values).model_dump()
+
+
+def apply_pending_assumptions_payload(
+    ticker: str,
+    change_ids: list[int],
+    actor: str = "api",
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import apply_pending_assumption_stack
+
+    return apply_pending_assumption_stack(ticker, change_ids, actor=actor)
+
+
 build_ticker_overview_payload = build_overview_payload
 
 
@@ -582,6 +656,54 @@ def create_app() -> FastAPI:
             )
 
         run_id = submit_background_run("valuation_recommendations_apply", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.get("/api/valuation/policy")
+    def get_valuation_policy() -> dict[str, Any]:
+        return load_valuation_policy_payload()
+
+    @app.post("/api/valuation/policy/preview")
+    def preview_valuation_policy(payload: ValuationPolicyEditRequest | None = None) -> dict[str, Any]:
+        return preview_valuation_policy_payload(payload or ValuationPolicyEditRequest())
+
+    @app.put("/api/valuation/policy")
+    def save_valuation_policy(payload: ValuationPolicyEditRequest | None = None) -> dict[str, Any]:
+        return save_valuation_policy_payload(payload or ValuationPolicyEditRequest(), actor="api")
+
+    @app.post("/api/valuation/policy/damodaran/parse")
+    def parse_damodaran_policy_drafts() -> dict[str, Any]:
+        return parse_damodaran_policy_drafts_payload()
+
+    @app.get("/api/tickers/{ticker}/valuation/pending-changes")
+    def get_ticker_pending_assumption_changes(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return list_pending_assumptions_payload(ticker)
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/preview")
+    def preview_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionPreviewRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionPreviewRequest()
+        return preview_pending_assumptions_payload(
+            ticker,
+            request_payload.change_ids,
+            manual_values=request_payload.manual_values,
+        )
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/apply", status_code=202)
+    def apply_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionApplyRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionApplyRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return apply_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_apply", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/market")

@@ -398,8 +398,10 @@ class TestBuildNestedStructure:
                     "scenarios", "scenario_policy", "context_scenarios",
                     "driver_consensus", "terminal", "health_flags", "forecast_bridge",
                     "source_lineage", "ciq_lineage", "story_profile", "story_adjustments",
-                    "drivers_raw"):
+            "drivers_raw"):
             assert key in out, f"Missing top-level key: {key}"
+        assert "assumption_register" in out
+        assert "assumption_register_summary" in out
 
     def test_ticker_uppercase(self):
         r = dict(MINIMAL_RESULT)
@@ -513,6 +515,25 @@ class TestBuildNestedStructure:
         out = build_nested_structure(r)
         assert out["drivers_raw"] == {}
         assert out["assumptions"]["growth_terminal_pct"] is None
+
+    def test_assumption_register_is_top_level_full_payload(self):
+        r = dict(MINIMAL_RESULT)
+        r["assumption_register_json"] = json.dumps({
+            "ticker": "IBM",
+            "entries": [{"assumption_name": "wacc", "current_value": 0.085, "flag_level": "none"}],
+        })
+        r["assumption_register_summary_json"] = json.dumps({
+            "model_trust_state": "clean",
+            "flag_counts": {"none": 1},
+            "max_flag_level": "none",
+            "flagged_entries": [],
+        })
+
+        out = build_nested_structure(r)
+
+        assert out["assumption_register"]["ticker"] == "IBM"
+        assert out["assumption_register"]["entries"][0]["assumption_name"] == "wacc"
+        assert out["assumption_register_summary"]["model_trust_state"] == "clean"
 
 
 # ── Tests: export_ticker_json ─────────────────────────────────────────────────

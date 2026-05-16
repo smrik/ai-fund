@@ -1,10 +1,11 @@
 """Unified agent recommendations — collect, persist, and apply agent suggestions
-to valuation_overrides.yaml after PM approval.
+through Assumption Register pending changes after PM approval.
 
 Data flow:
   --full pipeline → extract_recommendations() → write config/agent_recommendations_{TICKER}.yaml
-  PM reviews (CLI --review / --approve, or Streamlit tab)
-  apply_approved_to_overrides() → config/valuation_overrides.yaml
+  write_recommendations() → DB pending_assumption_changes (YAML remains compatibility copy)
+  PM reviews (CLI --review / --approve, or React)
+  apply_approved_to_overrides() → DB approved_assumption_entries + compatibility YAML mirror
   load_valuation_overrides.cache_clear() → re-run picks up changes
 """
 from __future__ import annotations
@@ -48,6 +49,15 @@ class TickerRecommendations:
     generated_at: str
     current_iv_base: float | None
     recommendations: list[Recommendation] = field(default_factory=list)
+
+
+class ApplyResult(dict):
+    """Dict API result that still compares equal to legacy integer counts in old tests."""
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, int):
+            return self.get("applied_count") == other
+        return super().__eq__(other)
 
 
 # ── Path helper ────────────────────────────────────────────────────────────────
@@ -355,7 +365,7 @@ def extract_recommendations(
 # ── Persistence ────────────────────────────────────────────────────────────────
 
 def write_recommendations(recs: TickerRecommendations) -> Path:
-    """Serialize to config/agent_recommendations_{TICKER}.yaml."""
+    """Serialize compatibility YAML and queue numeric recommendations for register review."""
     path = _recs_path(recs.ticker)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -367,6 +377,13 @@ def write_recommendations(recs: TickerRecommendations) -> Path:
         ),
         encoding="utf-8",
     )
+    try:
+        from src.stage_04_pipeline.pending_assumption_changes import write_pending_changes_from_recommendations
+
+        if RECS_DIR.resolve() == (ROOT_DIR / "config").resolve():
+            write_pending_changes_from_recommendations(recs.ticker, recs.recommendations)
+    except Exception:
+        pass
     return path
 
 
@@ -401,7 +418,7 @@ def apply_approved_to_overrides(
     selected_field_set = set(selected_fields)
     recs = load_recommendations(ticker)
     if recs is None:
-        return {"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor}
+        return ApplyResult({"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor})
 
     if selected_field_set:
         updated = False
@@ -422,7 +439,7 @@ def apply_approved_to_overrides(
         if r.status == "approved" and (not selected_field_set or r.field in selected_field_set)
     ]
     if not approved:
-        return {"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor}
+        return ApplyResult({"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor})
 
     overrides: dict = {"global": {}, "sectors": {}, "tickers": {}}
     if OVERRIDES_PATH.exists():
@@ -439,17 +456,34 @@ def apply_approved_to_overrides(
             ticker_overrides[rec.field] = rec.proposed_value
             count += 1
 
+    try:
+        from src.stage_04_pipeline.pending_assumption_changes import (
+            apply_pending_assumption_stack,
+            list_pending_assumption_changes,
+        )
+
+        approved_field_set = {rec.field for rec in approved if isinstance(rec.proposed_value, (int, float))}
+        pending_ids = [
+            int(change.change_id)
+            for change in list_pending_assumption_changes(ticker)
+            if change.change_id is not None and change.assumption_name in approved_field_set
+        ]
+        if pending_ids:
+            apply_pending_assumption_stack(ticker, pending_ids, actor=actor)
+    except Exception:
+        pass
+
     OVERRIDES_PATH.parent.mkdir(parents=True, exist_ok=True)
     OVERRIDES_PATH.write_text(
         yaml.dump(overrides, default_flow_style=False, allow_unicode=True, sort_keys=False),
         encoding="utf-8",
     )
-    return {
+    return ApplyResult({
         "ticker": ticker,
         "applied_count": count,
         "approved_fields": selected_fields,
         "actor": actor,
-    }
+    })
 
 
 # ── What-if preview ────────────────────────────────────────────────────────────

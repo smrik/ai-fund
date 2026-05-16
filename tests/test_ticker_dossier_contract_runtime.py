@@ -18,6 +18,12 @@ def _legacy_payload() -> dict:
         "scenarios": {"base": {"probability": 0.6, "iv": 202.0}},
         "terminal": {},
         "health_flags": {},
+        "assumption_register_summary": {
+            "model_trust_state": "review_required",
+            "flag_counts": {"none": 2, "watch": 0, "review_required": 1, "critical": 0},
+            "max_flag_level": "review_required",
+            "flagged_entries": [{"assumption_name": "wacc", "flag_level": "review_required"}],
+        },
         "forecast_bridge": [{"year": 2027, "fcff_mm": 100.0}],
         "source_lineage": {"wacc": "override"},
         "ciq_lineage": {"snapshot_source_file": "IBM_comps.xlsx", "snapshot_as_of_date": "2026-03-01", "peer_count": 4},
@@ -61,6 +67,7 @@ def test_ticker_dossier_model_validates_required_envelope_and_round_trips_json()
         "api_view",
         "react_view",
         "excel_view",
+        "assumption_register_summary",
         "forecast_bridge",
         "html_view",
         "debug_view",
@@ -150,5 +157,7 @@ def test_legacy_workspace_and_summary_payloads_can_be_derived_from_dossier():
     assert workspace["ticker"] == "IBM"
     assert workspace["base_iv"] == 202.0
     assert workspace["ticker_dossier_contract_version"] == "1.0.0"
+    assert workspace["assumption_register_summary"]["model_trust_state"] == "review_required"
     assert summary["weighted_iv"] == 205.0
+    assert summary["assumption_register_summary"]["flagged_entries"][0]["assumption_name"] == "wacc"
     assert summary["why_it_matters"] == "Base IV $202.00 versus current price $260.00."

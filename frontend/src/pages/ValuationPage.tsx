@@ -13,11 +13,13 @@ import {
   getValuationAssumptions,
   getValuationComps,
   getValuationDcf,
+  getValuationPolicy,
   getValuationSummary,
   getWacc,
   previewRecommendations,
   previewValuationAssumptions,
   previewWacc,
+  saveValuationPolicy,
 } from "@/lib/api";
 import { downloadCompletedExport, getCompletedExportId } from "@/lib/exportJobs";
 import { formatCurrency, formatDateLabel, formatPercent, formatText } from "@/lib/format";
@@ -25,6 +27,7 @@ import type {
   RecommendationsPayload,
   RecommendationsPreviewPayload,
   TickerWorkspace,
+  ValuationPolicyPayload,
   WaccPreviewPayload,
 } from "@/lib/types";
 
@@ -887,6 +890,13 @@ function MultiplesPanel({ comps }: { comps: Record<string, unknown> | null | und
 
 function AssumptionsPanel({
   assumptions,
+  policy,
+  policyRf,
+  setPolicyRf,
+  policyErp,
+  setPolicyErp,
+  onSavePolicy,
+  policySavePending,
   selections,
   setSelections,
   customValues,
@@ -899,6 +909,13 @@ function AssumptionsPanel({
   runStatus,
 }: {
   assumptions: Record<string, unknown> | null | undefined;
+  policy: ValuationPolicyPayload | null | undefined;
+  policyRf: number;
+  setPolicyRf: Dispatch<SetStateAction<number>>;
+  policyErp: number;
+  setPolicyErp: Dispatch<SetStateAction<number>>;
+  onSavePolicy: () => void;
+  policySavePending: boolean;
   selections: Record<string, string>;
   setSelections: Dispatch<SetStateAction<Record<string, string>>>;
   customValues: Record<string, number>;
@@ -912,6 +929,7 @@ function AssumptionsPanel({
 }) {
   const fields = asRows(assumptions?.fields);
   const auditRows = asRows(assumptions?.audit_rows);
+  const pendingChanges = asRows(assumptions?.pending_changes);
   return (
     <section className="page-stack">
       <section className="grid-cards">
@@ -919,6 +937,64 @@ function AssumptionsPanel({
         <article className="panel"><h2>Current Price</h2><p>{formatCurrency(asNumber(assumptions?.current_price))}</p></article>
         <article className="panel"><h2>Tracked Fields</h2><p>{fields.length}</p></article>
         <article className="panel"><h2>Current Expected IV</h2><p>{formatCurrency(asNumber(assumptions?.current_expected_iv))}</p></article>
+      </section>
+      <section className="panel">
+        <div className="panel-toolbar">
+          <div>
+            <h2>Policy Defaults</h2>
+            <p className="table-note">{formatText(asText(policy?.source_ref ?? "DB valuation policy"))}</p>
+          </div>
+          <button type="button" className="primary-button" onClick={onSavePolicy} disabled={policySavePending}>
+            {policySavePending ? "Saving..." : "Save Policy"}
+          </button>
+        </div>
+        <div className="valuation-form-grid">
+          <div>
+            <label className="form-label" htmlFor="policy-risk-free-rate">Risk-free rate</label>
+            <input
+              id="policy-risk-free-rate"
+              className="form-input"
+              type="number"
+              step="0.001"
+              value={policyRf}
+              onChange={(event) => setPolicyRf(Number(event.target.value))}
+            />
+          </div>
+          <div>
+            <label className="form-label" htmlFor="policy-equity-risk-premium">Equity risk premium</label>
+            <input
+              id="policy-equity-risk-premium"
+              className="form-input"
+              type="number"
+              step="0.001"
+              value={policyErp}
+              onChange={(event) => setPolicyErp(Number(event.target.value))}
+            />
+          </div>
+        </div>
+      </section>
+      <section className="panel">
+        <h2>Pending Changes</h2>
+        {renderValueTable(
+          pendingChanges.map((change) => ({
+            id: change.change_id,
+            field: change.assumption_name,
+            current: change.current_value,
+            proposed: change.proposed_value,
+            source: change.source_ref,
+            confidence: change.confidence,
+            status: change.status,
+          })),
+          [
+            { key: "id", label: "ID", kind: "number" },
+            { key: "field", label: "Field", kind: "text" },
+            { key: "current", label: "Current", kind: "number" },
+            { key: "proposed", label: "Proposed", kind: "number" },
+            { key: "source", label: "Source", kind: "text" },
+            { key: "confidence", label: "Confidence", kind: "text" },
+            { key: "status", label: "Status", kind: "text" },
+          ],
+        )}
       </section>
       <section className="stacked-cards">
         {fields.map((field) => {
@@ -1300,6 +1376,8 @@ export function ValuationPage() {
   const selected = (params.get("view") ?? "Summary") as ValuationTab;
   const [assumptionSelections, setAssumptionSelections] = useState<Record<string, string>>({});
   const [assumptionCustomValues, setAssumptionCustomValues] = useState<Record<string, number>>({});
+  const [policyRf, setPolicyRf] = useState(0.045);
+  const [policyErp, setPolicyErp] = useState(0.05);
   const [waccMode, setWaccMode] = useState("single_method");
   const [waccSelectedMethod, setWaccSelectedMethod] = useState("peer_bottom_up");
   const [waccWeights, setWaccWeights] = useState<Record<string, number>>({});
@@ -1329,6 +1407,11 @@ export function ValuationPage() {
     queryKey: ["ticker-valuation-assumptions", ticker],
     queryFn: () => getValuationAssumptions(ticker),
     enabled: Boolean(ticker) && selected === "Assumptions",
+  });
+  const policyQuery = useQuery({
+    queryKey: ["valuation-policy"],
+    queryFn: () => getValuationPolicy(),
+    enabled: selected === "Assumptions",
   });
   const waccQuery = useQuery({
     queryKey: ["ticker-valuation-wacc", ticker],
@@ -1366,6 +1449,14 @@ export function ValuationPage() {
     setWaccWeights((waccQuery.data.current_selection?.weights as Record<string, number> | undefined) ?? {});
   }, [waccQuery.data]);
 
+  useEffect(() => {
+    if (!policyQuery.data?.global_defaults) {
+      return;
+    }
+    setPolicyRf(Number(policyQuery.data.global_defaults.risk_free_rate ?? 0.045));
+    setPolicyErp(Number(policyQuery.data.global_defaults.equity_risk_premium ?? 0.05));
+  }, [policyQuery.data]);
+
   const assumptionsPreviewMutation = useMutation({
     mutationFn: () =>
       previewValuationAssumptions(ticker, {
@@ -1390,6 +1481,19 @@ export function ValuationPage() {
         ),
       }),
     onSuccess: (payload) => setAssumptionsRunId(payload.run_id),
+  });
+  const policySaveMutation = useMutation({
+    mutationFn: () =>
+      saveValuationPolicy({
+        global_defaults: {
+          risk_free_rate: policyRf,
+          equity_risk_premium: policyErp,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["valuation-policy"] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-assumptions", ticker] }).catch(() => undefined);
+    },
   });
 
   const waccPreviewMutation = useMutation({
@@ -1497,6 +1601,13 @@ export function ValuationPage() {
         return assumptionsQuery.isPending && !assumptionsQuery.data ? renderLoadingPanel("Assumptions") : (
           <AssumptionsPanel
             assumptions={assumptionsQuery.data as unknown as Record<string, unknown>}
+            policy={policyQuery.data}
+            policyRf={policyRf}
+            setPolicyRf={setPolicyRf}
+            policyErp={policyErp}
+            setPolicyErp={setPolicyErp}
+            onSavePolicy={() => policySaveMutation.mutate()}
+            policySavePending={policySaveMutation.isPending}
             selections={assumptionSelections}
             setSelections={setAssumptionSelections}
             customValues={assumptionCustomValues}

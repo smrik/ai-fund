@@ -17,6 +17,8 @@ import type {
   ValuationCompsPayload,
   ValuationDcfPayload,
   ValuationSummaryPayload,
+  ValuationPolicyPayload,
+  ValuationPolicyPreviewPayload,
   WatchlistPayload,
   WatchlistExportRequest,
   WatchlistExportSourceMode,
@@ -91,6 +93,28 @@ export function getValuationComps(ticker: string): Promise<ValuationCompsPayload
 
 export function getValuationAssumptions(ticker: string): Promise<AssumptionsPayload> {
   return requestJSON<AssumptionsPayload>(`/tickers/${encodeURIComponent(ticker)}/valuation/assumptions`);
+}
+
+export function getValuationPolicy(): Promise<ValuationPolicyPayload> {
+  return requestJSON<ValuationPolicyPayload>("/valuation/policy");
+}
+
+export function previewValuationPolicy(payload: unknown): Promise<ValuationPolicyPreviewPayload> {
+  return requestJSON<ValuationPolicyPreviewPayload>("/valuation/policy/preview", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function saveValuationPolicy(payload: unknown): Promise<ValuationPolicyPayload> {
+  return requestJSON<ValuationPolicyPayload>("/valuation/policy", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function parseDamodaranPolicyDrafts(): Promise<Record<string, unknown>> {
+  return requestJSON<Record<string, unknown>>("/valuation/policy/damodaran/parse", { method: "POST" });
 }
 
 export function previewValuationAssumptions(ticker: string, payload: unknown): Promise<AssumptionsPreviewPayload> {

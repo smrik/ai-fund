@@ -110,6 +110,13 @@ The critique remains valid because the docs do not define enough policy around:
 
 The `assumption_register` should be the first real contract.
 
+Implementation status, 2026-05-11: V1 shipped as a deterministic executable contract in
+`src/contracts/assumption_register.py` and `src/stage_02_valuation/assumption_register.py`.
+It now emits numeric effective ticker assumptions, WACC components, terminal value drivers,
+model trust state, compact flagged summaries, and separate assumption-register audit rows.
+The remaining richer range policy, source quality state, LLM advisory attachment, sector/global
+policy entries, and automatic sensitivity-driven impact scoring remain V2 work.
+
 Draft Pydantic shape:
 
 ```python

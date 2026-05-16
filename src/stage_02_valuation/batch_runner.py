@@ -28,6 +28,10 @@ from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
 from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
 from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
+from src.stage_02_valuation.assumption_register import (
+    build_assumption_register,
+    summarize_assumption_register,
+)
 from src.stage_02_valuation.json_exporter import export_ticker_json
 from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
@@ -248,6 +252,16 @@ def value_single_ticker(ticker: str) -> dict | None:
         lineage = inputs.source_lineage
         ciq = inputs.ciq_lineage
         wacc_inputs = inputs.wacc_inputs
+
+        def _attach_assumption_register(diagnostics: dict | None = None) -> None:
+            register = build_assumption_register(ticker, inputs, diagnostics=diagnostics or {})
+            summary = summarize_assumption_register(register)
+            row["assumption_register_json"] = register.model_dump_json()
+            row["assumption_register_summary_json"] = json.dumps(summary, separators=(",", ":"))
+            row["model_trust_state"] = summary["model_trust_state"]
+            row["assumption_max_flag_level"] = summary["max_flag_level"]
+            row["assumption_flag_counts_json"] = json.dumps(summary["flag_counts"], separators=(",", ":"))
+            row["assumption_flagged_count"] = len(summary["flagged_entries"])
 
         row = {
             "ticker": ticker,
@@ -471,6 +485,7 @@ def value_single_ticker(ticker: str) -> dict | None:
                     "forecast_bridge_json": "[]",
                 }
             )
+            _attach_assumption_register({"model_applicability_status": inputs.model_applicability_status})
             return row
 
         scenario_specs = default_scenario_specs()
@@ -580,6 +595,17 @@ def value_single_ticker(ticker: str) -> dict | None:
                 "forecast_bridge_json": json.dumps([asdict(p) for p in (base.projections if base else [])], separators=(",", ":")),
             }
         )
+        register_diagnostics = {
+            "wacc": inputs.drivers.wacc,
+            "tv_pct_of_ev": base.tv_pct_of_ev if base else None,
+            "tv_high_flag": row.get("tv_high_flag"),
+            "health_tv_extreme_flag": row.get("health_tv_extreme_flag"),
+            "health_terminal_growth_guardrail_flag": row.get("health_terminal_growth_guardrail_flag"),
+            "health_terminal_ronic_guardrail_flag": row.get("health_terminal_ronic_guardrail_flag"),
+            "health_terminal_denominator_guardrail_flag": row.get("health_terminal_denominator_guardrail_flag"),
+            "health_fcff_interest_contamination_flag": row.get("health_fcff_interest_contamination_flag"),
+        }
+        _attach_assumption_register(register_diagnostics)
 
         return row
 
@@ -608,6 +634,9 @@ def export_to_excel(results: list[dict], output_path: Path):
             "upside_base_pct",
             "expected_upside_pct",
             "wacc",
+            "model_trust_state",
+            "assumption_max_flag_level",
+            "assumption_flagged_count",
             "model_applicability_status",
         ]
         df_summary = df[[c for c in summary_cols if c in df.columns]].copy()
@@ -697,6 +726,9 @@ def export_to_excel(results: list[dict], output_path: Path):
             "size_premium",
             "equity_weight",
             "peers_used",
+            "model_trust_state",
+            "assumption_max_flag_level",
+            "assumption_flagged_count",
         ]
         df_wacc = df[[c for c in wacc_cols if c in df.columns]].copy()
         df_wacc.to_excel(writer, sheet_name="WACC", index=False)
