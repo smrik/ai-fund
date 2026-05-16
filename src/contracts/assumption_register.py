@@ -153,6 +153,7 @@ class AssumptionRegister(ContractModel):
     has_critical: bool = False
     model_trust_state: ModelTrustState = ModelTrustState.clean
     summary: dict[str, Any] = Field(default_factory=dict)
+    notes: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("ticker")
     @classmethod

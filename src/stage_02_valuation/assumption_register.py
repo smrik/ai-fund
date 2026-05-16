@@ -120,8 +120,15 @@ CRITICAL_DIAGNOSTICS = {
     "terminal_denominator_guardrail_flag",
     "health_terminal_growth_guardrail_flag",
     "terminal_growth_guardrail_flag",
+    "health_terminal_ronic_guardrail_flag",  # RONIC ≤ terminal_growth — mathematically invalid
+    "forensic_flag_severe",                  # Beneish M-Score in manipulator zone (red)
 }
-REVIEW_DIAGNOSTICS = {"tv_high_flag", "health_tv_extreme_flag", "tv_extreme_flag"}
+REVIEW_DIAGNOSTICS = {
+    "tv_high_flag",
+    "health_tv_extreme_flag",
+    "tv_extreme_flag",
+    "wacc_method_spread_high",  # ≥150bps spread across WACC methods
+}
 
 
 def _now() -> str:
@@ -278,6 +285,11 @@ def _apply_diagnostic_rollup(register: AssumptionRegister, diagnostics: dict[str
         except (TypeError, ValueError):
             pass
     if max_flag == register.max_flag_level:
+        if diagnostics.get("regime_weights_applied"):
+            current_notes = dict(register.notes or {})
+            current_notes["regime_label"] = diagnostics.get("regime_label") or "unknown"
+            current_notes["regime_weights_applied"] = True
+            object.__setattr__(register, "notes", current_notes)
         return register
     object.__setattr__(register, "max_flag_level", max_flag)
     object.__setattr__(register, "has_critical", max_flag == FlagLevel.critical)
@@ -296,6 +308,13 @@ def _apply_diagnostic_rollup(register: AssumptionRegister, diagnostics: dict[str
         "has_critical": max_flag == FlagLevel.critical,
         "diagnostic_notes": diagnostic_notes,
     })
+
+    if diagnostics.get("regime_weights_applied"):
+        current_notes = dict(register.notes or {})
+        current_notes["regime_label"] = diagnostics.get("regime_label") or "unknown"
+        current_notes["regime_weights_applied"] = True
+        object.__setattr__(register, "notes", current_notes)
+
     return register
 
 

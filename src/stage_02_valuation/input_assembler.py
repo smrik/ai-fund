@@ -69,6 +69,7 @@ class ValuationInputsWithLineage:
     wacc_inputs: dict[str, Any]
     story_profile: dict[str, Any] | None = None
     story_adjustments: dict[str, Any] | None = None
+    wacc_method_spread_high: bool = False
 
 
 def _mm(v: float | None) -> float | None:
@@ -429,6 +430,8 @@ def build_valuation_inputs(
             equity_risk_premium=policy_erp,
         )
         wacc_result = wacc_method_results["peer_bottom_up"]
+    _wacc_meta = wacc_method_results.get("_meta") or {}
+    _wacc_spread_high = bool(_wacc_meta.get("wacc_method_spread_high", False))
     wacc = _bounded(getattr(wacc_result, "wacc", 0.09), 0.04, 0.20, 0.09)
     cost_of_equity = _bounded(getattr(wacc_result, "cost_of_equity", None), 0.04, 0.30, max(0.06, wacc + 0.015))
     equity_weight = getattr(wacc_result, "equity_weight", None)
@@ -831,4 +834,5 @@ def build_valuation_inputs(
         },
         story_profile=asdict(story_profile),
         story_adjustments=story_adjustments,
+        wacc_method_spread_high=_wacc_spread_high,
     )
