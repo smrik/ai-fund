@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.stage_00_data import edgar_client
-from src.stage_03_judgment.qoe_agent import QoEAgent
+from src.stage_03_judgment.qoe_agent import QoEAgent, create_qoe_pending_change
 
 
 # ── Schema helpers ─────────────────────────────────────────────────────────────
@@ -291,3 +291,36 @@ def test_qoe_agent_revenue_recognition_flags_passed_through(monkeypatch):
     assert len(out["llm"]["revenue_recognition_flags"]) == 2
     assert len(out["llm"]["auditor_flags"]) == 1
     assert out["llm"]["narrative_credibility"] == "low"
+
+
+def test_create_qoe_pending_change_persists_pending_queue_record(monkeypatch):
+    captured = {}
+
+    def _fake_create(change):
+        captured["change"] = change
+        return change.model_copy(update={"change_id": 999})
+
+    monkeypatch.setattr("src.stage_03_judgment.qoe_agent.create_pending_assumption_change", _fake_create)
+    proposal = create_qoe_pending_change(
+        "test",
+        {
+            "qoe_score": 4,
+            "qoe_flag": "amber",
+            "pm_summary": "normalize for non-recurring gain",
+            "llm": {
+                "reported_ebit": 120_000_000.0,
+                "normalized_ebit": 108_000_000.0,
+                "ebit_haircut_pct": -10.0,
+                "dcf_ebit_override_pending": True,
+                "llm_confidence": "medium",
+                "ebit_adjustments": [{"item": "gain", "amount": 12_000_000.0, "direction": "-", "rationale": "one-off"}],
+                "revenue_recognition_flags": [],
+                "auditor_flags": [],
+            },
+        },
+        revenue_mm=1000.0,
+    )
+    assert proposal is not None
+    assert proposal.change_id == 999
+    assert proposal.status.value == "pending"
+    assert captured["change"].assumption_name == "ebit_margin_start"
