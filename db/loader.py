@@ -911,6 +911,51 @@ def reject_pending_assumption_changes(
     return int(cursor.rowcount or 0)
 
 
+def transition_pending_assumption_changes_status(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    change_ids: list[int],
+    status: str,
+    updated_at: str,
+) -> list[dict[str, Any]]:
+    if not change_ids:
+        return []
+    placeholders = ",".join("?" for _ in change_ids)
+    ticker_value = str(ticker).upper()
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, updated_at, ticker, assumption_name, current_value,
+               proposed_value, source_type, source_ref, confidence, rationale,
+               citation, status, approval_ref, applied_at, metadata_json
+        FROM pending_assumption_changes
+        WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+        ORDER BY id
+        """,
+        [ticker_value, *change_ids],
+    ).fetchall()
+    selected = [dict(row) for row in rows]
+    if not selected:
+        return []
+    with conn:
+        conn.execute(
+            f"""
+            UPDATE pending_assumption_changes
+            SET status = ?, updated_at = ?
+            WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+            """,
+            [status, updated_at, ticker_value, *change_ids],
+        )
+    out: list[dict[str, Any]] = []
+    for row in selected:
+        row["metadata"] = json.loads(row.pop("metadata_json") or "{}")
+        row["change_id"] = row.pop("id")
+        row["status"] = status
+        row["updated_at"] = updated_at
+        out.append(row)
+    return out
+
+
 def load_approved_assumption_entries(conn: sqlite3.Connection, ticker: str) -> list[dict[str, Any]]:
     rows = conn.execute(
         """

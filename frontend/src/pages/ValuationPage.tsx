@@ -5,6 +5,7 @@ import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { PageHero } from "@/components/PageHero";
 import {
   applyRecommendations,
+  applyPendingChangesAction,
   applyValuationAssumptions,
   applyWacc,
   createTickerExport,
@@ -905,6 +906,7 @@ function AssumptionsPanel({
   previewPending,
   onPreview,
   onApply,
+  onPendingAction,
   applyPending,
   runStatus,
 }: {
@@ -924,6 +926,7 @@ function AssumptionsPanel({
   previewPending: boolean;
   onPreview: () => void;
   onApply: () => void;
+  onPendingAction: (action: "apply" | "reject" | "defer", changeId: number) => void;
   applyPending: boolean;
   runStatus: Record<string, unknown> | null | undefined;
 }) {
@@ -978,23 +981,35 @@ function AssumptionsPanel({
         {renderValueTable(
           pendingChanges.map((change) => ({
             id: change.change_id,
-            field: change.assumption_name,
-            current: change.current_value,
-            proposed: change.proposed_value,
-            source: change.source_ref,
+            proposed_change: `${String(change.assumption_name)}: ${String(change.current_value ?? "—")} → ${String(change.proposed_value ?? "—")}`,
             confidence: change.confidence,
+            why: Array.isArray(change.rationale_bullets) ? (change.rationale_bullets as unknown[]).map((v) => String(v)).join(" • ") : "—",
+            evidence_refs: Array.isArray(change.evidence_references) ? (change.evidence_references as unknown[]).map((v) => String(v)).join("; ") : "—",
+            impact_preview: `${formatCurrency(asNumber(asRecord(change.preview_payload)?.base_iv))} → ${formatCurrency(asNumber(asRecord(change.preview_payload)?.preview_iv))} (${formatPercent(asNumber(asRecord(change.preview_payload)?.delta_pct))})`,
             status: change.status,
+            actions: change.change_id,
           })),
           [
             { key: "id", label: "ID", kind: "number" },
-            { key: "field", label: "Field", kind: "text" },
-            { key: "current", label: "Current", kind: "number" },
-            { key: "proposed", label: "Proposed", kind: "number" },
-            { key: "source", label: "Source", kind: "text" },
+            { key: "proposed_change", label: "Proposed Change", kind: "text" },
             { key: "confidence", label: "Confidence", kind: "text" },
+            { key: "why", label: "Why", kind: "text" },
+            { key: "evidence_refs", label: "Evidence Refs", kind: "text" },
+            { key: "impact_preview", label: "Impact Preview", kind: "text" },
             { key: "status", label: "Status", kind: "text" },
+            { key: "actions", label: "Actions", kind: "text" },
           ],
         )}
+        <div className="action-controls">
+          {pendingChanges.map((change) => (
+            <div key={`pending-actions-${String(change.change_id)}`}>
+              <strong>#{String(change.change_id)}</strong>{" "}
+              <button type="button" className="ghost-button" onClick={() => onPendingAction("apply", Number(change.change_id))}>Approve</button>{" "}
+              <button type="button" className="ghost-button" onClick={() => onPendingAction("reject", Number(change.change_id))}>Reject</button>{" "}
+              <button type="button" className="ghost-button" onClick={() => onPendingAction("defer", Number(change.change_id))}>Defer</button>
+            </div>
+          ))}
+        </div>
       </section>
       <section className="stacked-cards">
         {fields.map((field) => {
@@ -1511,6 +1526,13 @@ export function ValuationPage() {
     mutationFn: () => applyRecommendations(ticker, { approved_fields: selectedRecommendationFields }),
     onSuccess: (payload) => setRecommendationsRunId(payload.run_id),
   });
+  const pendingActionMutation = useMutation({
+    mutationFn: ({ action, changeId }: { action: "apply" | "reject" | "defer"; changeId: number }) =>
+      applyPendingChangesAction(ticker, action, { change_ids: [changeId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-assumptions", ticker] }).catch(() => undefined);
+    },
+  });
   const exportMutation = useMutation({
     mutationFn: () => createTickerExport(ticker, { format: "xlsx", source_mode: "loaded_backend_state" }),
     onSuccess: (payload) => setExportRunId(payload.run_id),
@@ -1616,6 +1638,7 @@ export function ValuationPage() {
             previewPending={assumptionsPreviewMutation.isPending}
             onPreview={() => assumptionsPreviewMutation.mutate()}
             onApply={() => assumptionsApplyMutation.mutate()}
+            onPendingAction={(action, changeId) => pendingActionMutation.mutate({ action, changeId })}
             applyPending={assumptionsApplyMutation.isPending}
             runStatus={assumptionsRunStatusQuery.data as unknown as Record<string, unknown> | undefined}
           />
@@ -1668,6 +1691,7 @@ export function ValuationPage() {
     dcf,
     dcfQuery.isPending,
     recommendationsApplyMutation,
+    pendingActionMutation,
     recommendationsPreviewMutation,
     recommendationsQuery.data,
     recommendationsQuery.isPending,

@@ -18,6 +18,7 @@ class PendingAssumptionStatus(str, Enum):
     pending = "pending"
     approved = "approved"
     rejected = "rejected"
+    deferred = "deferred"
     superseded = "superseded"
 
 
