@@ -817,7 +817,7 @@ def load_pending_assumption_changes(
     return out
 
 
-def apply_pending_assumption_changes(
+def approve_pending_assumption_changes(
     conn: sqlite3.Connection,
     *,
     ticker: str,
@@ -826,7 +826,7 @@ def apply_pending_assumption_changes(
     applied_at: str,
     approval_ref: str,
 ) -> list[dict[str, Any]]:
-    """Approve selected pending changes and make them active effective entries."""
+    """Mark selected pending changes as approved without mutating active assumptions."""
     if not change_ids:
         return []
     ticker = str(ticker).upper()
@@ -836,6 +836,51 @@ def apply_pending_assumption_changes(
         SELECT id, ticker, assumption_name, proposed_value, source_type, source_ref, metadata_json
         FROM pending_assumption_changes
         WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+        ORDER BY id
+        """,
+        [ticker, *change_ids],
+    ).fetchall()
+    approved = [dict(row) for row in rows]
+    if not approved:
+        return []
+    with conn:
+        for row in approved:
+            conn.execute(
+                """
+                UPDATE pending_assumption_changes
+                SET status = 'approved', updated_at = ?, applied_at = ?, approval_ref = ?
+                WHERE id = ?
+                """,
+                [applied_at, applied_at, approval_ref, row["id"]],
+            )
+    for row in approved:
+        row["metadata"] = json.loads(row.pop("metadata_json") or "{}")
+        row["change_id"] = row.pop("id")
+        row["approval_ref"] = approval_ref
+        row["applied_at"] = applied_at
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
+    return approved
+=======
+    return approved
+
+
+def apply_approved_assumption_changes(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    change_ids: list[int],
+    actor: str,
+    applied_at: str,
+) -> list[dict[str, Any]]:
+    if not change_ids:
+        return []
+    ticker = str(ticker).upper()
+    placeholders = ",".join("?" for _ in change_ids)
+    rows = conn.execute(
+        f"""
+        SELECT id, ticker, assumption_name, proposed_value, source_type, source_ref, metadata_json, approval_ref
+        FROM pending_assumption_changes
+        WHERE ticker = ? AND status = 'approved' AND id IN ({placeholders})
         ORDER BY id
         """,
         [ticker, *change_ids],
@@ -867,25 +912,17 @@ def apply_pending_assumption_changes(
                     row["proposed_value"],
                     row["source_type"],
                     row["source_ref"],
-                    approval_ref,
+                    row.get("approval_ref"),
                     actor,
                     row["metadata_json"] or "{}",
                 ],
             )
-            conn.execute(
-                """
-                UPDATE pending_assumption_changes
-                SET status = 'approved', updated_at = ?, applied_at = ?, approval_ref = ?
-                WHERE id = ?
-                """,
-                [applied_at, applied_at, approval_ref, row["id"]],
-            )
     for row in approved:
         row["metadata"] = json.loads(row.pop("metadata_json") or "{}")
         row["change_id"] = row.pop("id")
-        row["approval_ref"] = approval_ref
         row["applied_at"] = applied_at
     return approved
+>>>>>>> main
 
 
 def reject_pending_assumption_changes(
@@ -907,15 +944,24 @@ def reject_pending_assumption_changes(
         """,
         [rejected_at, str(ticker).upper(), *change_ids],
     )
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
     conn.commit()
     return int(cursor.rowcount or 0)
 
 
 def transition_pending_assumption_changes_status(
+=======
+    conn.commit()
+    return int(cursor.rowcount or 0)
+
+
+def defer_pending_assumption_changes(
+>>>>>>> main
     conn: sqlite3.Connection,
     *,
     ticker: str,
     change_ids: list[int],
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
     status: str,
     updated_at: str,
 ) -> list[dict[str, Any]]:
@@ -954,6 +1000,23 @@ def transition_pending_assumption_changes_status(
         row["updated_at"] = updated_at
         out.append(row)
     return out
+=======
+    deferred_at: str,
+) -> int:
+    if not change_ids:
+        return 0
+    placeholders = ",".join("?" for _ in change_ids)
+    cursor = conn.execute(
+        f"""
+        UPDATE pending_assumption_changes
+        SET status = 'deferred', updated_at = ?
+        WHERE ticker = ? AND status = 'pending' AND id IN ({placeholders})
+        """,
+        [deferred_at, str(ticker).upper(), *change_ids],
+    )
+    conn.commit()
+    return int(cursor.rowcount or 0)
+>>>>>>> main
 
 
 def load_approved_assumption_entries(conn: sqlite3.Connection, ticker: str) -> list[dict[str, Any]]:

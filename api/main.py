@@ -72,7 +72,11 @@ class PendingAssumptionApplyRequest(BaseModel):
     change_ids: list[int] = Field(default_factory=list)
 
 
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
 class PendingAssumptionTransitionRequest(BaseModel):
+=======
+class PendingAssumptionDecisionRequest(BaseModel):
+>>>>>>> main
     change_ids: list[int] = Field(default_factory=list)
 
 
@@ -422,6 +426,24 @@ def apply_pending_assumptions_payload(
     return apply_pending_assumption_stack(ticker, change_ids, actor=actor)
 
 
+def approve_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import approve_pending_assumption_changes
+
+    return approve_pending_assumption_changes(ticker, change_ids, actor=actor)
+
+
+def reject_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import reject_pending_assumption_changes
+
+    return reject_pending_assumption_changes(ticker, change_ids, actor=actor)
+
+
+def defer_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import defer_pending_assumption_changes
+
+    return defer_pending_assumption_changes(ticker, change_ids, actor=actor)
+
+
 build_ticker_overview_payload = build_overview_payload
 
 
@@ -695,6 +717,49 @@ def create_app() -> FastAPI:
             request_payload.change_ids,
             manual_values=request_payload.manual_values,
         )
+
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/approve", status_code=202)
+    def approve_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return approve_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_approve", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/reject", status_code=202)
+    def reject_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return reject_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_reject", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/defer", status_code=202)
+    def defer_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return defer_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_defer", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
 
     @app.post("/api/tickers/{ticker}/valuation/pending-changes/apply", status_code=202)
     def apply_ticker_pending_assumption_changes(

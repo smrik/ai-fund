@@ -133,10 +133,10 @@ def _sensitivity_rows(ticker: str, drivers: ForecastDrivers) -> list[dict]:
 
 def _run_qoe_llm(ticker: str, valuation_result: dict) -> None:
     """
-    Run QoEAgent (LLM layer) for a ticker and write pending override to
-    config/qoe_pending.yaml.  PM sets status → 'approved' to apply on next run.
+    Run QoEAgent (LLM layer) for a ticker and persist a pending assumption
+    change proposal in the canonical register queue.
     """
-    from src.stage_03_judgment.qoe_agent import QoEAgent, write_qoe_pending_override
+    from src.stage_03_judgment.qoe_agent import QoEAgent, create_qoe_pending_change
 
     ticker = ticker.upper().strip()
     revenue_mm = valuation_result.get("revenue_mm") or 0.0
@@ -204,18 +204,19 @@ def _run_qoe_llm(ticker: str, valuation_result: dict) -> None:
                     extra={"ticker": ticker, "step": "qoe_llm"},
                 )
 
-        path = write_qoe_pending_override(ticker, qoe, revenue_mm)
+        proposal = create_qoe_pending_change(ticker, qoe, revenue_mm)
 
         if pending:
             logger.warning(
-                "\n  Override warranted (haircut >%s%% > 10%% threshold)\n  → Review config/qoe_pending.yaml\n  → Set status: approved  to apply on next --json run",
+                "\n  Override warranted (haircut >%s%% > 10%% threshold)\n  → Review pending assumption queue entry %s\n  → Manual PM approval is required before apply",
                 f"{abs(haircut):.0f}",
+                proposal.change_id if proposal else "n/a",
                 extra={"ticker": ticker, "step": "qoe_llm"},
             )
         else:
             logger.info(
-                "\n  Haircut below 10%% threshold — no override needed\n  → Logged to %s (status: pending)",
-                path,
+                "\n  Haircut below 10%% threshold — proposal remains advisory\n  → Pending assumption change id: %s",
+                proposal.change_id if proposal else "n/a",
                 extra={"ticker": ticker, "step": "qoe_llm"},
             )
 

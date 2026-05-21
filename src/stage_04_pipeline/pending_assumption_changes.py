@@ -9,6 +9,8 @@ from src.contracts.assumption_policy import (
     PendingAssumptionChange,
     PendingAssumptionSourceType,
     PendingAssumptionStackPreview,
+    QoEProposal,
+    qoe_proposal_to_pending_change_payload,
 )
 from src.stage_02_valuation.professional_dcf import default_scenario_specs, run_dcf_professional
 
@@ -56,9 +58,25 @@ def write_pending_changes_from_recommendations(ticker: str, recommendations: lis
         key = (str(getattr(rec, "field", "")), str(getattr(rec, "agent", "agent")), round(float(proposed), 12))
         if key in existing:
             continue
-        created.append(
-            create_pending_assumption_change(
-                PendingAssumptionChange(
+        if str(getattr(rec, "agent", "")).lower() == "qoe" and str(getattr(rec, "field", "")) == "ebit_margin_start":
+            qoe_proposal_raw = (getattr(rec, "qoe_proposal", None) or {}).copy() if isinstance(getattr(rec, "qoe_proposal", None), dict) else None
+            if qoe_proposal_raw:
+                proposal = QoEProposal.model_validate(qoe_proposal_raw)
+                payload = qoe_proposal_to_pending_change_payload(proposal)
+                change = PendingAssumptionChange(
+                    ticker=payload["ticker"],
+                    assumption_name=payload["assumption_name"],
+                    current_value=getattr(rec, "current_value", None),
+                    proposed_value=float(proposed),
+                    source_type=PendingAssumptionSourceType.agent,
+                    source_ref=payload["source_ref"],
+                    confidence=payload["confidence"],
+                    rationale=payload["rationale"],
+                    citation=payload["citation"],
+                    metadata={**payload.get("metadata", {}), "legacy_recommendation_status": getattr(rec, "status", "pending")},
+                )
+            else:
+                change = PendingAssumptionChange(
                     ticker=ticker,
                     assumption_name=str(getattr(rec, "field", "")),
                     current_value=getattr(rec, "current_value", None),
@@ -70,8 +88,20 @@ def write_pending_changes_from_recommendations(ticker: str, recommendations: lis
                     citation=getattr(rec, "citation", None),
                     metadata={"legacy_recommendation_status": getattr(rec, "status", "pending")},
                 )
+        else:
+            change = PendingAssumptionChange(
+                ticker=ticker,
+                assumption_name=str(getattr(rec, "field", "")),
+                current_value=getattr(rec, "current_value", None),
+                proposed_value=float(proposed),
+                source_type=PendingAssumptionSourceType.agent,
+                source_ref=str(getattr(rec, "agent", "agent")),
+                confidence=getattr(rec, "confidence", None),
+                rationale=getattr(rec, "rationale", None),
+                citation=getattr(rec, "citation", None),
+                metadata={"legacy_recommendation_status": getattr(rec, "status", "pending")},
             )
-        )
+        created.append(create_pending_assumption_change(change))
         existing.add(key)
     return created
 
@@ -183,6 +213,7 @@ def apply_pending_assumption_stack(
     applied_at = _now()
     with get_connection() as conn:
         create_tables(conn)
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
         from db.loader import insert_assumption_register_audit, transition_pending_assumption_changes_status
 
         approved = transition_pending_assumption_changes_status(
@@ -191,6 +222,16 @@ def apply_pending_assumption_stack(
             change_ids=change_ids,
             status="approved",
             updated_at=applied_at,
+=======
+        from db.loader import apply_approved_assumption_changes, insert_assumption_register_audit
+
+        approved = apply_approved_assumption_changes(
+            conn,
+            ticker=ticker,
+            change_ids=change_ids,
+            actor=actor,
+            applied_at=applied_at,
+>>>>>>> main
         )
         audit_rows = []
         for row in approved:
@@ -219,6 +260,7 @@ def apply_pending_assumption_stack(
     }
 
 
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
 def transition_pending_assumption_statuses(
     ticker: str,
     change_ids: list[int],
@@ -257,6 +299,72 @@ def transition_pending_assumption_statuses(
         ]
         insert_assumption_register_audit(conn, audit_rows)
     return {"ticker": ticker.upper(), "changed_count": len(changed), "change_ids": [row["change_id"] for row in changed], "status": target_status}
+=======
+def approve_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    approved_at = _now()
+    approval_ref = f"assumption_register_approval:{ticker.upper()}:{approved_at}"
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import approve_pending_assumption_changes, insert_assumption_register_audit
+
+        approved = approve_pending_assumption_changes(
+            conn,
+            ticker=ticker,
+            change_ids=change_ids,
+            actor=actor,
+            applied_at=approved_at,
+            approval_ref=approval_ref,
+        )
+        insert_assumption_register_audit(
+            conn,
+            [
+                {
+                    "event_ts": approved_at,
+                    "actor": actor,
+                    "actor_type": "pm" if actor != "system" else "system",
+                    "entity_type": "ticker",
+                    "entity_id": ticker.upper(),
+                    "ticker": ticker.upper(),
+                    "assumption_name": row["assumption_name"],
+                    "scope": "dcf",
+                    "event_type": "pm_override_approved",
+                    "changed_fields": {"status": {"prior": "pending", "new": "approved"}},
+                    "valuation_impact": None,
+                    "reason": row.get("source_ref"),
+                }
+                for row in approved
+            ],
+        )
+    return {"ticker": ticker.upper(), "approved_count": len(approved), "change_ids": [r["change_id"] for r in approved]}
+
+
+def reject_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    changed_at = _now()
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import insert_assumption_register_audit, reject_pending_assumption_changes
+
+        count = reject_pending_assumption_changes(conn, ticker=ticker, change_ids=change_ids, actor=actor, rejected_at=changed_at)
+        insert_assumption_register_audit(
+            conn,
+            [{"event_ts": changed_at, "actor": actor, "actor_type": "pm", "entity_type": "ticker", "entity_id": ticker.upper(), "ticker": ticker.upper(), "assumption_name": "*", "scope": "dcf", "event_type": "pm_override_rejected", "changed_fields": {"status": {"prior": "pending", "new": "rejected"}}, "valuation_impact": None, "reason": f"change_ids={change_ids}"}],
+        )
+    return {"ticker": ticker.upper(), "rejected_count": count, "change_ids": change_ids}
+
+
+def defer_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    changed_at = _now()
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import defer_pending_assumption_changes, insert_assumption_register_audit
+
+        count = defer_pending_assumption_changes(conn, ticker=ticker, change_ids=change_ids, deferred_at=changed_at)
+        insert_assumption_register_audit(
+            conn,
+            [{"event_ts": changed_at, "actor": actor, "actor_type": "pm", "entity_type": "ticker", "entity_id": ticker.upper(), "ticker": ticker.upper(), "assumption_name": "*", "scope": "dcf", "event_type": "pm_override_deferred", "changed_fields": {"status": {"prior": "pending", "new": "deferred"}}, "valuation_impact": None, "reason": f"change_ids={change_ids}"}],
+        )
+    return {"ticker": ticker.upper(), "deferred_count": count, "change_ids": change_ids}
+>>>>>>> main
 
 
 def approved_assumption_overrides_for_ticker(ticker: str) -> dict[str, float]:
