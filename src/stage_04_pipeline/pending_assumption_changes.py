@@ -187,18 +187,16 @@ def apply_pending_assumption_stack(
     actor: str = "api",
 ) -> dict[str, Any]:
     applied_at = _now()
-    approval_ref = f"assumption_register_apply:{ticker.upper()}:{applied_at}"
     with get_connection() as conn:
         create_tables(conn)
-        from db.loader import apply_pending_assumption_changes, insert_assumption_register_audit
+        from db.loader import apply_approved_assumption_changes, insert_assumption_register_audit
 
-        approved = apply_pending_assumption_changes(
+        approved = apply_approved_assumption_changes(
             conn,
             ticker=ticker,
             change_ids=change_ids,
             actor=actor,
             applied_at=applied_at,
-            approval_ref=approval_ref,
         )
         audit_rows = []
         for row in approved:
@@ -223,9 +221,74 @@ def apply_pending_assumption_stack(
         "ticker": ticker.upper(),
         "applied_count": len(approved),
         "change_ids": [row["change_id"] for row in approved],
-        "approval_ref": approval_ref,
         "actor": actor,
     }
+
+
+def approve_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    approved_at = _now()
+    approval_ref = f"assumption_register_approval:{ticker.upper()}:{approved_at}"
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import approve_pending_assumption_changes, insert_assumption_register_audit
+
+        approved = approve_pending_assumption_changes(
+            conn,
+            ticker=ticker,
+            change_ids=change_ids,
+            actor=actor,
+            applied_at=approved_at,
+            approval_ref=approval_ref,
+        )
+        insert_assumption_register_audit(
+            conn,
+            [
+                {
+                    "event_ts": approved_at,
+                    "actor": actor,
+                    "actor_type": "pm" if actor != "system" else "system",
+                    "entity_type": "ticker",
+                    "entity_id": ticker.upper(),
+                    "ticker": ticker.upper(),
+                    "assumption_name": row["assumption_name"],
+                    "scope": "dcf",
+                    "event_type": "pm_override_approved",
+                    "changed_fields": {"status": {"prior": "pending", "new": "approved"}},
+                    "valuation_impact": None,
+                    "reason": row.get("source_ref"),
+                }
+                for row in approved
+            ],
+        )
+    return {"ticker": ticker.upper(), "approved_count": len(approved), "change_ids": [r["change_id"] for r in approved]}
+
+
+def reject_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    changed_at = _now()
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import insert_assumption_register_audit, reject_pending_assumption_changes
+
+        count = reject_pending_assumption_changes(conn, ticker=ticker, change_ids=change_ids, actor=actor, rejected_at=changed_at)
+        insert_assumption_register_audit(
+            conn,
+            [{"event_ts": changed_at, "actor": actor, "actor_type": "pm", "entity_type": "ticker", "entity_id": ticker.upper(), "ticker": ticker.upper(), "assumption_name": "*", "scope": "dcf", "event_type": "pm_override_rejected", "changed_fields": {"status": {"prior": "pending", "new": "rejected"}}, "valuation_impact": None, "reason": f"change_ids={change_ids}"}],
+        )
+    return {"ticker": ticker.upper(), "rejected_count": count, "change_ids": change_ids}
+
+
+def defer_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:
+    changed_at = _now()
+    with get_connection() as conn:
+        create_tables(conn)
+        from db.loader import defer_pending_assumption_changes, insert_assumption_register_audit
+
+        count = defer_pending_assumption_changes(conn, ticker=ticker, change_ids=change_ids, deferred_at=changed_at)
+        insert_assumption_register_audit(
+            conn,
+            [{"event_ts": changed_at, "actor": actor, "actor_type": "pm", "entity_type": "ticker", "entity_id": ticker.upper(), "ticker": ticker.upper(), "assumption_name": "*", "scope": "dcf", "event_type": "pm_override_deferred", "changed_fields": {"status": {"prior": "pending", "new": "deferred"}}, "valuation_impact": None, "reason": f"change_ids={change_ids}"}],
+        )
+    return {"ticker": ticker.upper(), "deferred_count": count, "change_ids": change_ids}
 
 
 def approved_assumption_overrides_for_ticker(ticker: str) -> dict[str, float]:
