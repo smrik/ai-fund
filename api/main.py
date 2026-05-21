@@ -72,7 +72,11 @@ class PendingAssumptionApplyRequest(BaseModel):
     change_ids: list[int] = Field(default_factory=list)
 
 
+<<<<<<< codex/extend-api-and-frontend-for-minimum-approval-card
+class PendingAssumptionTransitionRequest(BaseModel):
+=======
 class PendingAssumptionDecisionRequest(BaseModel):
+>>>>>>> main
     change_ids: list[int] = Field(default_factory=list)
 
 
@@ -396,9 +400,9 @@ def parse_damodaran_policy_drafts_payload() -> dict[str, Any]:
 
 
 def list_pending_assumptions_payload(ticker: str) -> dict[str, Any]:
-    from src.stage_04_pipeline.pending_assumption_changes import list_pending_assumption_changes
+    from src.stage_04_pipeline.pending_assumption_changes import list_pending_assumption_changes_with_preview
 
-    changes = [change.model_dump() for change in list_pending_assumption_changes(ticker)]
+    changes = list_pending_assumption_changes_with_preview(ticker)
     return {"ticker": ticker.upper(), "pending_changes": changes}
 
 
@@ -769,6 +773,38 @@ def create_app() -> FastAPI:
             return apply_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
 
         run_id = submit_background_run("valuation_pending_changes_apply", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/reject", status_code=202)
+    def reject_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionTransitionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionTransitionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            from src.stage_04_pipeline.pending_assumption_changes import transition_pending_assumption_statuses
+
+            return transition_pending_assumption_statuses(ticker, request_payload.change_ids, target_status="rejected", actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_reject", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/defer", status_code=202)
+    def defer_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionTransitionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionTransitionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            from src.stage_04_pipeline.pending_assumption_changes import transition_pending_assumption_statuses
+
+            return transition_pending_assumption_statuses(ticker, request_payload.change_ids, target_status="deferred", actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_defer", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/market")

@@ -167,6 +167,13 @@ export function applyRecommendations(ticker: string, payload: unknown): Promise<
   });
 }
 
+export function applyPendingChangesAction(ticker: string, action: "apply" | "reject" | "defer", payload: unknown): Promise<RunPayload> {
+  return requestJSON<RunPayload>(`/tickers/${encodeURIComponent(ticker)}/valuation/pending-changes/${action}`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getMarket(ticker: string): Promise<MarketPayload> {
   return requestJSON<MarketPayload>(`/tickers/${encodeURIComponent(ticker)}/market`);
 }
