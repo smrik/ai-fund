@@ -7,14 +7,14 @@ import { snapshotToOverview, snapshotToWorkspace } from "@/lib/snapshot";
 import type { OverviewPayload, TickerWorkspace } from "@/lib/types";
 
 export function TickerLayout() {
-  const { ticker = "" } = useParams();
+  const { ticker = "" } = useParams(); // set default value to be empty string to avoid NoneTypes
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const workspaceQuery = useQuery({
     queryKey: ["ticker-workspace", ticker],
     queryFn: () => getTickerWorkspace(ticker),
-    enabled: Boolean(ticker),
+    enabled: Boolean(ticker), // check if not blank, otherwise no point calling function
   });
 
   const openLatestSnapshotMutation = useMutation({
@@ -39,7 +39,7 @@ export function TickerLayout() {
     mutationFn: () => runDeepAnalysis(ticker),
   });
 
-  const workspace = workspaceQuery.data;
+  const workspace = workspaceQuery.data; // get data from the function
   const handleOpenLatestSnapshot = () => openLatestSnapshotMutation.mutate();
   const handleRunDeepAnalysis = () => runDeepAnalysisMutation.mutate();
 

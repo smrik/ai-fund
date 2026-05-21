@@ -72,6 +72,14 @@ class PendingAssumptionApplyRequest(BaseModel):
     change_ids: list[int] = Field(default_factory=list)
 
 
+class PMDecisionQueueEditRequest(BaseModel):
+    proposal_pack: dict[str, Any]
+
+
+class PMDecisionQueueActionRequest(BaseModel):
+    reason: str | None = None
+
+
 class AnalysisRunRequest(BaseModel):
     use_cache: bool = True
     force_refresh_agents: list[str] = Field(default_factory=list)
@@ -418,6 +426,147 @@ def apply_pending_assumptions_payload(
     return apply_pending_assumption_stack(ticker, change_ids, actor=actor)
 
 
+def run_agentic_handoff_profile_payload(ticker: str, profile_name: str) -> dict[str, Any]:
+    from db.loader import insert_pm_decision_queue_item
+    from db.schema import create_tables, get_connection
+    from src.stage_03_judgment.earnings_agent import EarningsAgent
+    from src.stage_03_judgment.filings_agent import FilingsAgent
+    from src.stage_03_judgment.industry_agent import IndustryAgent
+    from src.stage_03_judgment.valuation_agent import ValuationAgent
+    from src.stage_04_pipeline.evidence_packets import build_evidence_packet
+    from src.stage_04_pipeline.observation_translator import translate_observations_to_queue_items
+
+    ticker = ticker.upper().strip()
+    packet = build_evidence_packet(ticker, profile_name)
+
+    agent_map = {
+        "earnings_update": EarningsAgent,
+        "company_analysis": FilingsAgent,
+        "industry_analysis": IndustryAgent,
+        "comps_analysis": ValuationAgent,
+        "risk_review": ValuationAgent,
+        "valuation_review": ValuationAgent,
+    }
+    agent_cls = agent_map.get(profile_name, ValuationAgent)
+    observations = []
+    try:
+        observations = agent_cls().analyze_evidence_packet(packet, profile_name)
+    except Exception:
+        observations = []
+    packet = packet.model_copy(update={"observations": observations})
+    queue_items = translate_observations_to_queue_items(
+        ticker=ticker,
+        profile_name=profile_name,
+        evidence_packet_id=int(packet.packet_id or 0),
+        observations=observations,
+    )
+
+    saved_queue_item_ids: list[int] = []
+    with get_connection() as conn:
+        create_tables(conn)
+        for item in queue_items:
+            item_id = insert_pm_decision_queue_item(
+                conn,
+                {
+                    **item.model_dump(),
+                    "created_at": item.created_at,
+                    "updated_at": item.updated_at,
+                    "item_type": item.item_type.value,
+                    "status": item.status.value,
+                    "qualitative_importance": item.qualitative_importance.value if item.qualitative_importance else None,
+                    "valuation_impact_bucket": item.metadata.get("valuation_impact_bucket"),
+                    "proposal_pack": item.proposal_pack.model_dump() if item.proposal_pack else None,
+                    "pm_edited_proposal_pack": item.pm_edited_proposal_pack.model_dump() if item.pm_edited_proposal_pack else None,
+                    "approved_proposal_pack": item.approved_proposal_pack.model_dump() if item.approved_proposal_pack else None,
+                    "agent_confidence": item.agent_confidence.value if item.agent_confidence else None,
+                    "translator_confidence": item.translator_confidence.value if item.translator_confidence else None,
+                    "pm_confidence": item.pm_confidence.value if item.pm_confidence else None,
+                    "valuation_impact": item.valuation_impact,
+                    "evidence_anchor_ids": item.evidence_anchor_ids,
+                    "evidence_packet_ids": item.evidence_packet_ids,
+                    "adapter_links": item.adapter_links,
+                    "decision_history": item.decision_history,
+                    "metadata": item.metadata,
+                },
+            )
+            saved_queue_item_ids.append(item_id)
+
+    return {
+        "ticker": ticker,
+        "profile_name": profile_name,
+        "evidence_packet": packet.model_dump(),
+        "observation_count": len(observations),
+        "queue_item_count": len(saved_queue_item_ids),
+        "queue_item_ids": saved_queue_item_ids,
+    }
+
+
+def list_evidence_packets_payload(ticker: str) -> dict[str, Any]:
+    from db.loader import list_evidence_packets
+    from db.schema import create_tables, get_connection
+
+    ticker = ticker.upper().strip()
+    with get_connection() as conn:
+        create_tables(conn)
+        packets = list_evidence_packets(conn, ticker=ticker)
+    return {"ticker": ticker, "evidence_packets": packets}
+
+
+def list_pm_decision_queue_payload(
+    ticker: str,
+    *,
+    status: str | None = None,
+    item_type: str | None = None,
+    qualitative_importance: str | None = None,
+    valuation_impact_bucket: str | None = None,
+) -> dict[str, Any]:
+    from db.loader import list_pm_decision_queue_items
+    from db.schema import create_tables, get_connection
+
+    ticker = ticker.upper().strip()
+    with get_connection() as conn:
+        create_tables(conn)
+        items = list_pm_decision_queue_items(
+            conn,
+            ticker=ticker,
+            status=status,
+            item_type=item_type,
+            qualitative_importance=qualitative_importance,
+            valuation_impact_bucket=valuation_impact_bucket,
+        )
+    return {"ticker": ticker, "items": items}
+
+
+def preview_pm_decision_queue_payload(ticker: str, item_id: int) -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import preview_pm_decision_queue_item
+
+    return preview_pm_decision_queue_item(ticker, item_id)
+
+
+def edit_pm_decision_queue_payload(ticker: str, item_id: int, proposal_pack: dict[str, Any], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import edit_pm_decision_queue_item
+
+    return edit_pm_decision_queue_item(ticker, item_id, proposal_pack, actor=actor)
+
+
+def approve_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import approve_pm_decision_queue_item
+
+    return approve_pm_decision_queue_item(ticker, item_id, actor=actor)
+
+
+def reject_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import reject_pm_decision_queue_item
+
+    return reject_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+
+
+def defer_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import defer_pm_decision_queue_item
+
+    return defer_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+
+
 build_ticker_overview_payload = build_overview_payload
 
 
@@ -705,6 +854,72 @@ def create_app() -> FastAPI:
 
         run_id = submit_background_run("valuation_pending_changes_apply", _runner, ticker=ticker)
         return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/agentic-handoff/{profile_name}/run")
+    def run_agentic_handoff_profile(ticker: str, profile_name: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return run_agentic_handoff_profile_payload(ticker, profile_name)
+
+    @app.get("/api/tickers/{ticker}/evidence-packets")
+    def get_ticker_evidence_packets(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return list_evidence_packets_payload(ticker)
+
+    @app.get("/api/tickers/{ticker}/pm-decision-queue")
+    def get_ticker_pm_decision_queue(
+        ticker: str,
+        status: str | None = None,
+        item_type: str | None = None,
+        qualitative_importance: str | None = None,
+        valuation_impact_bucket: str | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return list_pm_decision_queue_payload(
+            ticker,
+            status=status,
+            item_type=item_type,
+            qualitative_importance=qualitative_importance,
+            valuation_impact_bucket=valuation_impact_bucket,
+        )
+
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/preview")
+    def preview_ticker_pm_decision_queue_item(ticker: str, item_id: int) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return preview_pm_decision_queue_payload(ticker, item_id)
+
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/edit")
+    def edit_ticker_pm_decision_queue_item(
+        ticker: str,
+        item_id: int,
+        payload: PMDecisionQueueEditRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return edit_pm_decision_queue_payload(ticker, item_id, payload.proposal_pack, actor="api")
+
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/approve")
+    def approve_ticker_pm_decision_queue_item(ticker: str, item_id: int) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return approve_pm_decision_queue_payload(ticker, item_id, actor="api")
+
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/reject")
+    def reject_ticker_pm_decision_queue_item(
+        ticker: str,
+        item_id: int,
+        payload: PMDecisionQueueActionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PMDecisionQueueActionRequest()
+        return reject_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/defer")
+    def defer_ticker_pm_decision_queue_item(
+        ticker: str,
+        item_id: int,
+        payload: PMDecisionQueueActionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PMDecisionQueueActionRequest()
+        return defer_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
 
     @app.get("/api/tickers/{ticker}/market")
     def get_ticker_market(ticker: str) -> dict[str, Any]:

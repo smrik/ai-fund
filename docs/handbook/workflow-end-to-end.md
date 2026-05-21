@@ -159,6 +159,38 @@ Guardrail:
 
 - Agent outputs should be treated as contextual overlays unless promoted through a deterministic acceptance rule.
 
+## Agentic Handoff MVP Workflow
+
+The valuation shell now includes a universal PM Queue / Insights path for judgment-agent handoffs.
+
+Shared loop:
+
+```text
+Evidence Packet -> Agent Observation -> Translator -> PM Decision Queue -> Preview/Edit/Approve -> Deterministic Rerun
+```
+
+Operational semantics:
+
+1. Run one or more handoff profiles (`earnings_update`, `company_analysis`, `industry_analysis`, `comps_analysis`, `risk_review`, `valuation_review`).
+2. Inspect generated Evidence Packets and anchored observations.
+3. Review PM Decision Queue items:
+   - advisory findings
+   - assumption change packs
+4. Use PM actions per item:
+   - preview
+   - edit
+   - approve
+   - reject
+   - defer
+5. On approve, queue items are linked into the existing pending/approved assumption path; only approved values flow into deterministic valuation inputs.
+
+Guardrails:
+
+- agents are analysts, not model mutators
+- translator rules are deterministic policy
+- PM is the only approval authority
+- SQLite queue/evidence tables are canonical; exports are inspection copies only
+
 ## Dashboard Shell
 
 The Streamlit dashboard remains available as a transitional review surface for the valuation workflow.

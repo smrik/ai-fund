@@ -10,7 +10,9 @@ import json
 import os
 
 from src.stage_00_data import edgar_client, filing_retrieval
+from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
 from src.stage_02_valuation.templates.ic_memo import FilingsSummary
+from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent
 
 
@@ -129,3 +131,14 @@ Curated filing context:
             return FilingsSummary(**data)
         except Exception:
             return FilingsSummary(raw_summary=raw[:2000] if raw else "")
+
+    def analyze_evidence_packet(
+        self,
+        packet: EvidencePacket,
+        profile_name: str = "company_analysis",
+    ) -> list[EvidencePacketObservation]:
+        return analyze_evidence_packet_with_agent(
+            agent=self,
+            packet=packet,
+            profile_name=profile_name,
+        )

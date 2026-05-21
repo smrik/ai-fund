@@ -10,7 +10,9 @@ import json
 import os
 
 from src.stage_00_data import edgar_client, filing_retrieval, market_data
+from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
 from src.stage_02_valuation.templates.ic_memo import EarningsSummary
+from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent
 
 
@@ -172,3 +174,14 @@ Return your analysis as JSON:
             return EarningsSummary(**data)
         except Exception:
             return EarningsSummary(raw_summary=raw[:2000] if raw else "")
+
+    def analyze_evidence_packet(
+        self,
+        packet: EvidencePacket,
+        profile_name: str = "earnings_update",
+    ) -> list[EvidencePacketObservation]:
+        return analyze_evidence_packet_with_agent(
+            agent=self,
+            packet=packet,
+            profile_name=profile_name,
+        )

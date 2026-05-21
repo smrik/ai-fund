@@ -313,6 +313,97 @@ export interface RecommendationsPreviewPayload {
   delta_pct?: Record<string, number | null>;
 }
 
+export interface AgenticHandoffRunPayload {
+  ticker: string;
+  profile_name: string;
+  evidence_packet?: EvidencePacketSummary;
+  observation_count?: number;
+  queue_item_count?: number;
+  queue_item_ids?: number[];
+}
+
+export interface AssumptionChangeProposal {
+  assumption_name: string;
+  proposal_mode: "delta" | "target";
+  proposed_delta?: number | null;
+  proposed_target_value?: number | null;
+  rationale?: string | null;
+}
+
+export interface AssumptionChangePack {
+  pack_id: string;
+  proposals: AssumptionChangeProposal[];
+}
+
+export interface PMDecisionQueueItem {
+  item_id: number;
+  ticker: string;
+  profile_name: string;
+  item_type: "advisory_finding" | "assumption_change_pack";
+  status: "pending" | "approved" | "rejected" | "deferred";
+  qualitative_importance?: "low" | "medium" | "high" | null;
+  valuation_impact_bucket?: "low" | "medium" | "high" | null;
+  title: string;
+  summary?: string | null;
+  evidence_anchor_ids: string[];
+  evidence_packet_ids: string[];
+  proposal_pack?: AssumptionChangePack | null;
+  pm_edited_proposal_pack?: AssumptionChangePack | null;
+  approved_proposal_pack?: AssumptionChangePack | null;
+  agent_confidence?: "low" | "medium" | "high" | null;
+  translator_confidence?: "low" | "medium" | "high" | null;
+  pm_confidence?: "low" | "medium" | "high" | null;
+  adapter_links?: Record<string, unknown>;
+  decision_history?: Array<Record<string, unknown>>;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface EvidencePacketSummary {
+  packet_id?: number | null;
+  ticker: string;
+  profile_name: string;
+  packet_kind: string;
+  bundle_id?: string | null;
+  generated_at: string;
+  source_refs?: Array<{ source_ref_id: string; source_kind: string; source_label: string; source_locator: string }>;
+  facts?: Array<{ fact_id: string; fact_name: string; value: unknown; unit?: string | null }>;
+  snippets?: Array<{ snippet_id: string; source_ref_id: string; text: string }>;
+  observations?: Array<{
+    observation_id: string;
+    observation_kind: "qualitative" | "numeric";
+    observation_type: string;
+    claim: string;
+    evidence_anchor_ids: string[];
+    text_snippet_ids: string[];
+    qualitative_importance?: "low" | "medium" | "high" | null;
+    agent_confidence?: "low" | "medium" | "high" | null;
+  }>;
+}
+
+export interface EvidencePacketsPayload {
+  ticker: string;
+  evidence_packets: EvidencePacketSummary[];
+}
+
+export interface PMDecisionQueueListPayload {
+  ticker: string;
+  items: PMDecisionQueueItem[];
+}
+
+export interface PMDecisionQueuePreviewPayload {
+  item?: PMDecisionQueueItem;
+  preview?: {
+    ticker: string;
+    current_iv?: Record<string, number | null>;
+    proposed_iv?: Record<string, number | null>;
+    delta_pct?: Record<string, number | null>;
+    resolved_values?: Record<string, Record<string, unknown>>;
+    conflicts?: Array<Record<string, unknown>>;
+  };
+  skipped_fields?: string[];
+}
+
 export interface MarketPayload {
   ticker: string;
   available?: boolean;

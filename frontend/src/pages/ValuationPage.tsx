@@ -4,10 +4,15 @@ import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 
 import { PageHero } from "@/components/PageHero";
 import {
+  approvePmDecisionQueueItem,
   applyRecommendations,
   applyValuationAssumptions,
   applyWacc,
   createTickerExport,
+  deferPmDecisionQueueItem,
+  editPmDecisionQueueItem,
+  getEvidencePackets,
+  getPmDecisionQueue,
   getRecommendations,
   getRunStatus,
   getValuationAssumptions,
@@ -16,6 +21,9 @@ import {
   getValuationPolicy,
   getValuationSummary,
   getWacc,
+  previewPmDecisionQueueItem,
+  rejectPmDecisionQueueItem,
+  runAgenticHandoffProfile,
   previewRecommendations,
   previewValuationAssumptions,
   previewWacc,
@@ -24,6 +32,7 @@ import {
 import { downloadCompletedExport, getCompletedExportId } from "@/lib/exportJobs";
 import { formatCurrency, formatDateLabel, formatPercent, formatText } from "@/lib/format";
 import type {
+  PMDecisionQueueListPayload,
   RecommendationsPayload,
   RecommendationsPreviewPayload,
   TickerWorkspace,
@@ -31,7 +40,7 @@ import type {
   WaccPreviewPayload,
 } from "@/lib/types";
 
-const valuationTabs = ["Summary", "DCF", "Comparables", "Multiples", "Assumptions", "WACC", "Recommendations"] as const;
+const valuationTabs = ["Summary", "DCF", "Comparables", "Multiples", "Assumptions", "WACC", "Recommendations", "PM Queue"] as const;
 type ValuationTab = (typeof valuationTabs)[number];
 
 type TickerLayoutContext = {
@@ -1362,6 +1371,467 @@ function RecommendationsPanel({
   );
 }
 
+function PMQueuePanel({
+  queuePayload,
+  evidencePackets,
+  statusFilter,
+  setStatusFilter,
+  editableValues,
+  setEditableValues,
+  onRunProfile,
+  onPreview,
+  onEdit,
+  onApprove,
+  onReject,
+  onDefer,
+  previewPayload,
+  actionPending,
+}: {
+  queuePayload: PMDecisionQueueListPayload | undefined;
+  evidencePackets: Record<string, unknown>[];
+  statusFilter: string;
+  setStatusFilter: Dispatch<SetStateAction<string>>;
+  editableValues: Record<number, string>;
+  setEditableValues: Dispatch<SetStateAction<Record<number, string>>>;
+  onRunProfile: (profileName: string) => void;
+  onPreview: (itemId: number) => void;
+  onEdit: (itemId: number, proposalPack: Record<string, unknown>) => void;
+  onApprove: (itemId: number) => void;
+  onReject: (itemId: number) => void;
+  onDefer: (itemId: number) => void;
+  previewPayload: Record<string, unknown> | null | undefined;
+  actionPending: boolean;
+}) {
+  const items = queuePayload?.items ?? [];
+  const profiles = ["earnings_update", "company_analysis", "industry_analysis", "comps_analysis", "risk_review", "valuation_review"];
+
+  const [itemTypeFilter, setItemTypeFilter] = useState<string>("all");
+  const [importanceFilter, setImportanceFilter] = useState<string>("all");
+  const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({});
+
+  const anchorMap = useMemo(() => {
+    const map = new Map<string, { type: string; label: string; content: string }>();
+    if (!Array.isArray(evidencePackets)) return map;
+    for (const packet of evidencePackets) {
+      const snippets = Array.isArray(packet.snippets) ? packet.snippets : [];
+      for (const s of snippets) {
+        const sId = String(s.snippet_id || "");
+        if (sId) {
+          map.set(sId, {
+            type: "Snippet",
+            label: `Snippet: ${sId}`,
+            content: String(s.text || ""),
+          });
+        }
+      }
+      const facts = Array.isArray(packet.facts) ? packet.facts : [];
+      for (const f of facts) {
+        const fId = String(f.fact_id || "");
+        if (fId) {
+          const unitText = f.unit ? ` (${String(f.unit)})` : "";
+          map.set(fId, {
+            type: "Fact",
+            label: `Fact: ${String(f.fact_name || "")}`,
+            content: `${String(f.value ?? "")}${unitText}`,
+          });
+        }
+      }
+      const sourceRefs = Array.isArray(packet.source_refs) ? packet.source_refs : [];
+      for (const sr of sourceRefs) {
+        const srId = String(sr.source_ref_id || "");
+        if (srId) {
+          map.set(srId, {
+            type: "Source",
+            label: `Source: ${String(sr.source_label || "")}`,
+            content: `${String(sr.source_kind || "")} @ ${String(sr.source_locator || "")}`,
+          });
+        }
+      }
+    }
+    return map;
+  }, [evidencePackets]);
+
+  const filteredItems = items.filter((item) => {
+    const typeMatch = itemTypeFilter === "all" || String(item.item_type) === itemTypeFilter;
+    const importanceMatch = importanceFilter === "all" || String(item.qualitative_importance || "low") === importanceFilter;
+    return typeMatch && importanceMatch;
+  });
+
+  const getStatusBadgeStyle = (status: string) => {
+    const common = {
+      display: "inline-flex",
+      alignItems: "center",
+      gap: "6px",
+      borderRadius: "12px",
+      padding: "4px 10px",
+      fontSize: "12px",
+      fontWeight: "600",
+      textTransform: "uppercase" as const,
+      letterSpacing: "0.5px",
+    };
+    switch (status) {
+      case "approved":
+        return {
+          ...common,
+          border: "1px solid #10b981",
+          color: "#10b981",
+          background: "rgba(16, 185, 129, 0.1)",
+        };
+      case "pending":
+        return {
+          ...common,
+          border: "1px solid #f59e0b",
+          color: "#f59e0b",
+          background: "rgba(245, 158, 11, 0.1)",
+        };
+      case "rejected":
+        return {
+          ...common,
+          border: "1px solid #ef4444",
+          color: "#ef4444",
+          background: "rgba(239, 68, 68, 0.1)",
+        };
+      case "deferred":
+        return {
+          ...common,
+          border: "1px solid #3b82f6",
+          color: "#3b82f6",
+          background: "rgba(59, 130, 246, 0.1)",
+        };
+      default:
+        return {
+          ...common,
+          border: "1px solid #6b7280",
+          color: "#6b7280",
+          background: "rgba(107, 114, 128, 0.1)",
+        };
+    }
+  };
+
+  const getImportanceBadgeStyle = (importance: string) => {
+    const common = {
+      display: "inline-flex",
+      alignItems: "center",
+      borderRadius: "4px",
+      padding: "2px 6px",
+      fontSize: "11px",
+      fontWeight: "600",
+      textTransform: "uppercase" as const,
+    };
+    switch (importance) {
+      case "high":
+        return {
+          ...common,
+          color: "#f97316",
+          background: "rgba(249, 115, 22, 0.15)",
+        };
+      case "medium":
+        return {
+          ...common,
+          color: "#eab308",
+          background: "rgba(234, 179, 8, 0.15)",
+        };
+      default:
+        return {
+          ...common,
+          color: "#94a3b8",
+          background: "rgba(148, 163, 184, 0.15)",
+        };
+    }
+  };
+
+  const toggleExpand = (itemId: number) => {
+    setExpandedItems((prev) => ({
+      ...prev,
+      [itemId]: !prev[itemId],
+    }));
+  };
+
+  return (
+    <section className="page-stack">
+      <section className="panel">
+        <h2>Run Agentic Handoff Profiles</h2>
+        <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: "12px" }}>
+          Trigger a deterministic background assembly of ticker facts, sources, and context, then execute judgment models to formulate anchored driver adjustments.
+        </p>
+        <div className="action-controls" style={{ flexWrap: "wrap", gap: "8px" }}>
+          {profiles.map((profileName) => (
+            <button key={profileName} type="button" className="ghost-button" onClick={() => onRunProfile(profileName)} disabled={actionPending}>
+              Run {titleize(profileName)}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>Evidence Packets</h2>
+        <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: "12px" }}>
+          {evidencePackets.length} source evidence packets compiled and locked in canonical SQLite.
+        </p>
+        <div className="stacked-cards">
+          {evidencePackets.slice(0, 6).map((packet, index) => (
+            <div key={`${String(packet.packet_id ?? index)}-${index}`} className="mini-card" style={{ borderLeft: "4px solid rgba(255,255,255,0.25)" }}>
+              <strong>{titleize(asText(packet.packet_kind) ?? "unknown")}</strong>
+              <p>Profile: {titleize(asText(packet.profile_name))}</p>
+              <span>Generated: {formatDateLabel(asText(packet.generated_at))}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel">
+        <h2>PM Queue / Insights</h2>
+        
+        {/* Modern Multi-Dropdown Toolbar */}
+        <div className="action-controls" style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "16px",
+          background: "rgba(255,255,255,0.02)",
+          padding: "16px",
+          borderRadius: "8px",
+          border: "1px solid rgba(255,255,255,0.05)",
+          marginBottom: "20px"
+        }}>
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Status Filter</span>
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
+              <option value="all">All</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+              <option value="deferred">Deferred</option>
+            </select>
+          </label>
+
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Item Type Filter</span>
+            <select value={itemTypeFilter} onChange={(event) => setItemTypeFilter(event.target.value)}>
+              <option value="all">All Types</option>
+              <option value="advisory_finding">Advisory Finding</option>
+              <option value="assumption_change_pack">Assumption Change Pack</option>
+            </select>
+          </label>
+
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Importance Filter</span>
+            <select value={importanceFilter} onChange={(event) => setImportanceFilter(event.target.value)}>
+              <option value="all">All Importance</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+        </div>
+
+        {filteredItems.length === 0 ? (
+          <div className="mini-card" style={{ textAlign: "center", padding: "32px", opacity: 0.6 }}>
+            No queue items match the active filters.
+          </div>
+        ) : (
+          <div className="stacked-cards">
+            {filteredItems.map((item) => {
+              const itemId = Number(item.item_id ?? 0);
+              const itemType = asText(item.item_type);
+              const status = asText(item.status);
+              const importance = asText(item.qualitative_importance || "low");
+              const pack = (asRecord(item.pm_edited_proposal_pack) ?? asRecord(item.proposal_pack)) ?? null;
+              const proposals = asRows(pack?.proposals);
+              const firstProposal = proposals[0] ?? null;
+              const anchorList = Array.isArray(item.evidence_anchor_ids)
+                ? item.evidence_anchor_ids.map((anchor) => String(anchor))
+                : [];
+              const defaultEditable =
+                asNumber(firstProposal?.proposed_target_value) ?? asNumber(firstProposal?.proposed_delta) ?? null;
+              const editableValue = editableValues[itemId] ?? (defaultEditable == null ? "" : `${defaultEditable}`);
+              const isExpanded = expandedItems[itemId] || false;
+
+              return (
+                <article
+                  key={`queue-item-${itemId}`}
+                  className="mini-card"
+                  style={{
+                    position: "relative",
+                    background: "rgba(255, 255, 255, 0.015)",
+                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    padding: "20px",
+                    borderRadius: "12px",
+                    transition: "transform 0.2s ease, border-color 0.2s ease",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px", marginBottom: "8px" }}>
+                    <strong style={{ fontSize: "16px" }}>{formatText(asText(item.title))}</strong>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                      <span style={getImportanceBadgeStyle(importance)}>
+                        {importance}
+                      </span>
+                      <span style={getStatusBadgeStyle(status)}>
+                        {status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p style={{ fontSize: "14px", opacity: 0.9, lineHeight: "1.4", margin: "0 0 12px 0" }}>
+                    {formatText(asText(item.summary))}
+                  </p>
+
+                  <div style={{ fontSize: "12px", opacity: 0.7, display: "flex", flexDirection: "column", gap: "4px", marginBottom: "16px" }}>
+                    <div>
+                      <strong style={{ opacity: 0.5 }}>Profile:</strong> {titleize(asText(item.profile_name))}
+                    </div>
+                    <div>
+                      <strong style={{ opacity: 0.5 }}>Item Type:</strong> {titleize(itemType)}
+                    </div>
+                    <div>
+                      <strong style={{ opacity: 0.5 }}>Target Driver:</strong> {proposals.map((proposal) => String(proposal.assumption_name ?? "—")).join(", ") || "—"}
+                    </div>
+                  </div>
+
+                  {/* Evidence anchors with expandable snippet drawer */}
+                  <div style={{ marginBottom: "16px" }}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      style={{ fontSize: "12px", padding: "4px 8px", height: "auto" }}
+                      onClick={() => toggleExpand(itemId)}
+                    >
+                      {isExpanded ? "Hide Evidence Details" : `Show Evidence Details (${anchorList.length})`}
+                    </button>
+
+                    {isExpanded && (
+                      <div style={{
+                        marginTop: "12px",
+                        padding: "12px",
+                        background: "rgba(0, 0, 0, 0.2)",
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                        borderRadius: "8px",
+                        fontSize: "13px",
+                      }}>
+                        <h4 style={{ margin: "0 0 8px 0", fontSize: "12px", opacity: 0.7, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          Anchored Facts & Context
+                        </h4>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {anchorList.map((anchor) => {
+                            const match = anchorMap.get(anchor);
+                            return (
+                              <div key={anchor} style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "4px", borderLeft: "3px solid #60a5fa" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", fontSize: "11px" }}>
+                                  <span style={{ fontWeight: "600", color: "#60a5fa" }}>{match?.label || anchor}</span>
+                                  <span style={{ opacity: 0.5, fontStyle: "italic" }}>{match?.type || "Reference"}</span>
+                                </div>
+                                <p style={{ margin: 0, fontStyle: match?.type === "Snippet" ? "italic" : "normal", opacity: 0.9 }}>
+                                  {match?.content || "Default anchoring reference value."}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {firstProposal ? (
+                    <label className="field-input" style={{ marginBottom: "16px" }}>
+                      <span>PM Edit Proposed Value</span>
+                      <input
+                        type="number"
+                        step="0.001"
+                        value={editableValue}
+                        style={{
+                          background: "rgba(0, 0, 0, 0.4)",
+                          border: "1px solid rgba(255, 255, 255, 0.15)",
+                          color: "#fff",
+                        }}
+                        onChange={(event) =>
+                          setEditableValues((current) => ({ ...current, [itemId]: event.target.value }))
+                        }
+                      />
+                    </label>
+                  ) : null}
+
+                  <div className="action-controls" style={{ gap: "8px" }}>
+                    <button type="button" className="ghost-button" onClick={() => onPreview(itemId)} disabled={actionPending}>
+                      Preview
+                    </button>
+                    {firstProposal ? (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        onClick={() => {
+                          const editedNumber = Number(editableValue);
+                          if (!Number.isFinite(editedNumber)) {
+                            return;
+                          }
+                          const editedProposal = {
+                            ...firstProposal,
+                            proposal_mode: "target",
+                            proposed_target_value: editedNumber,
+                            proposed_delta: undefined,
+                          };
+                          const remainingProposals = proposals.slice(1);
+                          onEdit(itemId, {
+                            pack_id: String(pack?.pack_id ?? `pack:edited:${itemId}`),
+                            proposals: [editedProposal, ...remainingProposals],
+                          });
+                        }}
+                        disabled={actionPending}
+                      >
+                        Save Edit
+                      </button>
+                    ) : null}
+                    <button type="button" className="primary-button" onClick={() => onApprove(itemId)} disabled={actionPending}>
+                      Approve
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => onReject(itemId)} disabled={actionPending}>
+                      Reject
+                    </button>
+                    <button type="button" className="ghost-button" onClick={() => onDefer(itemId)} disabled={actionPending}>
+                      Defer
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      {previewPayload ? (
+        <section className="panel" style={{
+          border: "1px solid rgba(96, 165, 250, 0.2)",
+          background: "linear-gradient(135deg, rgba(96, 165, 250, 0.05) 0%, rgba(0,0,0,0) 100%)",
+        }}>
+          <h2>Queue Preview Impact Analysis</h2>
+          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", marginTop: "12px" }}>
+            <div>
+              <span style={{ fontSize: "12px", opacity: 0.6 }}>Proposed Base Case IV</span>
+              <p style={{ fontSize: "24px", fontWeight: "700", margin: "4px 0", color: "#60a5fa" }}>
+                {formatCurrency(asNumber((asRecord(asRecord(previewPayload.preview)?.proposed_iv) ?? {}).base))}
+              </p>
+            </div>
+            <div>
+              <span style={{ fontSize: "12px", opacity: 0.6 }}>IV Impact % Delta</span>
+              <p style={{
+                fontSize: "24px",
+                fontWeight: "700",
+                margin: "4px 0",
+                color: asNumber((asRecord(asRecord(previewPayload.preview)?.delta_pct) ?? {}).base) >= 0 ? "#10b981" : "#ef4444",
+              }}>
+                {formatPercent(asNumber((asRecord(asRecord(previewPayload.preview)?.delta_pct) ?? {}).base))}
+              </p>
+            </div>
+          </div>
+          {Array.isArray(previewPayload.skipped_fields) && previewPayload.skipped_fields.length > 0 && (
+            <div style={{ marginTop: "12px", fontSize: "12px", opacity: 0.6, color: "#f59e0b" }}>
+              * Delta preview skipped for unresolvable field(s): {previewPayload.skipped_fields.join(", ")}
+            </div>
+          )}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 export function ValuationPage() {
   const { ticker = "" } = useParams();
   const {
@@ -1382,6 +1852,9 @@ export function ValuationPage() {
   const [waccSelectedMethod, setWaccSelectedMethod] = useState("peer_bottom_up");
   const [waccWeights, setWaccWeights] = useState<Record<string, number>>({});
   const [selectedRecommendationFields, setSelectedRecommendationFields] = useState<string[]>([]);
+  const [pmQueueStatusFilter, setPmQueueStatusFilter] = useState("all");
+  const [pmQueueEditableValues, setPmQueueEditableValues] = useState<Record<number, string>>({});
+  const [pmQueuePreviewPayload, setPmQueuePreviewPayload] = useState<Record<string, unknown> | null>(null);
   const [assumptionsRunId, setAssumptionsRunId] = useState<string | null>(null);
   const [waccRunId, setWaccRunId] = useState<string | null>(null);
   const [recommendationsRunId, setRecommendationsRunId] = useState<string | null>(null);
@@ -1422,6 +1895,19 @@ export function ValuationPage() {
     queryKey: ["ticker-valuation-recommendations", ticker],
     queryFn: () => getRecommendations(ticker),
     enabled: Boolean(ticker) && selected === "Recommendations",
+  });
+  const evidencePacketsQuery = useQuery({
+    queryKey: ["ticker-evidence-packets", ticker],
+    queryFn: () => getEvidencePackets(ticker),
+    enabled: Boolean(ticker) && selected === "PM Queue",
+  });
+  const pmQueueQuery = useQuery({
+    queryKey: ["ticker-pm-decision-queue", ticker, pmQueueStatusFilter],
+    queryFn: () =>
+      getPmDecisionQueue(ticker, {
+        status: pmQueueStatusFilter === "all" ? undefined : pmQueueStatusFilter,
+      }),
+    enabled: Boolean(ticker) && selected === "PM Queue",
   });
 
   useEffect(() => {
@@ -1510,6 +1996,45 @@ export function ValuationPage() {
   const recommendationsApplyMutation = useMutation({
     mutationFn: () => applyRecommendations(ticker, { approved_fields: selectedRecommendationFields }),
     onSuccess: (payload) => setRecommendationsRunId(payload.run_id),
+  });
+  const runAgenticHandoffMutation = useMutation({
+    mutationFn: (profileName: string) => runAgenticHandoffProfile(ticker, profileName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-evidence-packets", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+    },
+  });
+  const pmQueuePreviewMutation = useMutation({
+    mutationFn: (itemId: number) => previewPmDecisionQueueItem(ticker, itemId),
+    onSuccess: (payload) => setPmQueuePreviewPayload(payload as unknown as Record<string, unknown>),
+  });
+  const pmQueueEditMutation = useMutation({
+    mutationFn: ({ itemId, proposalPack }: { itemId: number; proposalPack: Record<string, unknown> }) =>
+      editPmDecisionQueueItem(ticker, itemId, proposalPack),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+    },
+  });
+  const pmQueueApproveMutation = useMutation({
+    mutationFn: (itemId: number) => approvePmDecisionQueueItem(ticker, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-assumptions", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-summary", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-dcf", ticker] }).catch(() => undefined);
+    },
+  });
+  const pmQueueRejectMutation = useMutation({
+    mutationFn: (itemId: number) => rejectPmDecisionQueueItem(ticker, itemId, "Rejected from PM Queue UI"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+    },
+  });
+  const pmQueueDeferMutation = useMutation({
+    mutationFn: (itemId: number) => deferPmDecisionQueueItem(ticker, itemId, "Deferred from PM Queue UI"),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+    },
   });
   const exportMutation = useMutation({
     mutationFn: () => createTickerExport(ticker, { format: "xlsx", source_mode: "loaded_backend_state" }),
@@ -1652,6 +2177,32 @@ export function ValuationPage() {
             runStatus={recommendationsRunStatusQuery.data as unknown as Record<string, unknown> | undefined}
           />
         );
+      case "PM Queue":
+        return pmQueueQuery.isPending && !pmQueueQuery.data ? renderLoadingPanel("PM Queue / Insights") : (
+          <PMQueuePanel
+            queuePayload={pmQueueQuery.data}
+            evidencePackets={(evidencePacketsQuery.data?.evidence_packets as Record<string, unknown>[] | undefined) ?? []}
+            statusFilter={pmQueueStatusFilter}
+            setStatusFilter={setPmQueueStatusFilter}
+            editableValues={pmQueueEditableValues}
+            setEditableValues={setPmQueueEditableValues}
+            onRunProfile={(profileName) => runAgenticHandoffMutation.mutate(profileName)}
+            onPreview={(itemId) => pmQueuePreviewMutation.mutate(itemId)}
+            onEdit={(itemId, proposalPack) => pmQueueEditMutation.mutate({ itemId, proposalPack })}
+            onApprove={(itemId) => pmQueueApproveMutation.mutate(itemId)}
+            onReject={(itemId) => pmQueueRejectMutation.mutate(itemId)}
+            onDefer={(itemId) => pmQueueDeferMutation.mutate(itemId)}
+            previewPayload={pmQueuePreviewPayload}
+            actionPending={
+              runAgenticHandoffMutation.isPending ||
+              pmQueuePreviewMutation.isPending ||
+              pmQueueEditMutation.isPending ||
+              pmQueueApproveMutation.isPending ||
+              pmQueueRejectMutation.isPending ||
+              pmQueueDeferMutation.isPending
+            }
+          />
+        );
       default:
         return renderLoadingPanel("Valuation");
     }
@@ -1672,10 +2223,22 @@ export function ValuationPage() {
     recommendationsQuery.data,
     recommendationsQuery.isPending,
     recommendationsRunStatusQuery.data,
+    runAgenticHandoffMutation,
+    pmQueueApproveMutation,
+    pmQueueDeferMutation,
+    pmQueueEditMutation,
+    pmQueueEditableValues,
+    pmQueuePreviewMutation,
+    pmQueuePreviewPayload,
+    pmQueueQuery.data,
+    pmQueueQuery.isPending,
+    pmQueueRejectMutation,
+    pmQueueStatusFilter,
     selected,
     selectedRecommendationFields,
     summary,
     summaryQuery.isPending,
+    evidencePacketsQuery.data?.evidence_packets,
     waccApplyMutation,
     waccMode,
     waccPreviewMutation,

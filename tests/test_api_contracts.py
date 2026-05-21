@@ -845,6 +845,81 @@ def test_analysis_run_returns_run_id_and_completion_status(monkeypatch):
         raise AssertionError("analysis run never completed")
 
 
+def test_agentic_handoff_endpoints(monkeypatch):
+    from api.main import app
+
+    monkeypatch.setattr(
+        "api.main.run_agentic_handoff_profile_payload",
+        lambda ticker, profile_name: {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "evidence_packet": {"packet_id": 1},
+            "observation_count": 2,
+            "queue_item_count": 1,
+            "queue_item_ids": [11],
+        },
+    )
+    monkeypatch.setattr(
+        "api.main.list_evidence_packets_payload",
+        lambda ticker: {"ticker": ticker, "evidence_packets": [{"packet_id": 1, "packet_kind": "earnings_update"}]},
+    )
+    monkeypatch.setattr(
+        "api.main.list_pm_decision_queue_payload",
+        lambda ticker, **kwargs: {"ticker": ticker, "items": [{"item_id": 11, "status": "pending"}], "filters": kwargs},
+    )
+    monkeypatch.setattr(
+        "api.main.preview_pm_decision_queue_payload",
+        lambda ticker, item_id: {"item": {"item_id": item_id}, "preview": {"proposed_iv": {"base": 110.0}}},
+    )
+    monkeypatch.setattr(
+        "api.main.edit_pm_decision_queue_payload",
+        lambda ticker, item_id, proposal_pack, actor="api": {"item_id": item_id, "status": "pending", "pm_edited_proposal_pack": proposal_pack},
+    )
+    monkeypatch.setattr(
+        "api.main.approve_pm_decision_queue_payload",
+        lambda ticker, item_id, actor="api": {"item_id": item_id, "status": "approved"},
+    )
+    monkeypatch.setattr(
+        "api.main.reject_pm_decision_queue_payload",
+        lambda ticker, item_id, actor="api", reason=None: {"item_id": item_id, "status": "rejected", "reason": reason},
+    )
+    monkeypatch.setattr(
+        "api.main.defer_pm_decision_queue_payload",
+        lambda ticker, item_id, actor="api", reason=None: {"item_id": item_id, "status": "deferred", "reason": reason},
+    )
+
+    client = TestClient(app)
+
+    run_response = client.post("/api/tickers/IBM/agentic-handoff/earnings_update/run")
+    packets_response = client.get("/api/tickers/IBM/evidence-packets")
+    queue_response = client.get("/api/tickers/IBM/pm-decision-queue?status=pending")
+    preview_response = client.post("/api/tickers/IBM/pm-decision-queue/11/preview")
+    edit_response = client.post(
+        "/api/tickers/IBM/pm-decision-queue/11/edit",
+        json={"proposal_pack": {"pack_id": "pack:edit", "proposals": []}},
+    )
+    approve_response = client.post("/api/tickers/IBM/pm-decision-queue/11/approve")
+    reject_response = client.post("/api/tickers/IBM/pm-decision-queue/11/reject", json={"reason": "not enough evidence"})
+    defer_response = client.post("/api/tickers/IBM/pm-decision-queue/11/defer", json={"reason": "wait for next quarter"})
+
+    assert run_response.status_code == 200
+    assert run_response.json()["queue_item_ids"] == [11]
+    assert packets_response.status_code == 200
+    assert packets_response.json()["evidence_packets"][0]["packet_kind"] == "earnings_update"
+    assert queue_response.status_code == 200
+    assert queue_response.json()["items"][0]["status"] == "pending"
+    assert preview_response.status_code == 200
+    assert preview_response.json()["preview"]["proposed_iv"]["base"] == 110.0
+    assert edit_response.status_code == 200
+    assert edit_response.json()["pm_edited_proposal_pack"]["pack_id"] == "pack:edit"
+    assert approve_response.status_code == 200
+    assert approve_response.json()["status"] == "approved"
+    assert reject_response.status_code == 200
+    assert reject_response.json()["reason"] == "not enough evidence"
+    assert defer_response.status_code == 200
+    assert defer_response.json()["reason"] == "wait for next quarter"
+
+
 def test_open_latest_snapshot_returns_latest_payload(monkeypatch):
     from api.main import app
 

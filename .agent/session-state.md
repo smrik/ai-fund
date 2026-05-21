@@ -1,37 +1,54 @@
 # Session State
 
-**Updated:** 2026-05-11 15:05:52 +02:00
+**Updated:** 2026-05-21 17:45:00 +02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Implemented the next Assumption Register extension slice: editable valuation policy defaults, Damodaran drop-folder draft parsing, DB-canonical pending/approved assumption changes, stacked preview/apply APIs, React Pending Changes surface, and approved-register override wiring into input assembly.
+Implemented Universal Agentic Handoff MVP backbone through Task 11 plan slices: contracts, canonical SQLite queue/evidence store, profile registry, evidence packet builders, anchored observation flow, deterministic translator, PM Decision Queue adapter, API endpoints, React PM Queue surface, smoke test, and docs updates.
 
 ## Recent Actions
-- Added `src/contracts/assumption_policy.py` with Pydantic V2 policy, Damodaran draft, pending-change, and stack-preview contracts.
-- Added DB tables/helpers for valuation policy versions, Damodaran policy drafts, pending assumption changes, and approved assumption entries.
-- Added `src/stage_04_pipeline/assumption_policy.py` and `src/stage_04_pipeline/pending_assumption_changes.py` services.
-- Wired FastAPI endpoints for valuation policy get/preview/save, Damodaran parse, pending-change list/preview/apply.
-- Wired `input_assembler.py` so approved DB register entries override legacy YAML values, and WACC now receives editable policy Rf/ERP at runtime.
-- Updated recommendation writes to queue numeric recommendations as pending register changes when using the canonical config path; legacy YAML remains a compatibility copy.
-- Added React Assumptions UI sections for policy defaults and pending changes.
-- Added focused tests in `tests/test_assumption_policy.py`, plus API and input-assembler coverage.
+- Added new contracts: `src/contracts/evidence_packet.py`, `src/contracts/pm_decision_queue.py` with strict anchoring + proposal-mode validation.
+- Added canonical queue/evidence schema + loader support in `db/schema.py` and `db/loader.py` (`evidence_packets`, `pm_decision_queue_items`, `pm_decision_queue_events`).
+- Added profile registry + shared services:
+  - `src/stage_04_pipeline/agentic_handoff_profiles.py`
+  - `src/stage_04_pipeline/evidence_packets.py`
+  - `src/stage_04_pipeline/observation_translator.py`
+  - `src/stage_04_pipeline/pm_decision_queue.py`
+- Added shared agent observation path `src/stage_03_judgment/agentic_observations.py` and wired `analyze_evidence_packet(...)` into earnings/filings/industry/valuation agents.
+- Added API transport endpoints in `api/main.py` for profile run, evidence packet list, queue list, preview/edit/approve/reject/defer.
+- Added frontend PM Queue/Insights support in:
+  - `frontend/src/lib/types.ts`
+  - `frontend/src/lib/api.ts`
+  - `frontend/src/pages/ValuationPage.tsx`
+- Added focused tests:
+  - `tests/test_pm_decision_queue_contracts.py`
+  - `tests/test_pm_decision_queue_store.py`
+  - `tests/test_agentic_handoff_profiles.py`
+  - `tests/test_evidence_packet_builders.py`
+  - `tests/test_agentic_observations.py`
+  - `tests/test_observation_translator.py`
+  - `tests/test_pm_decision_queue_adapter.py`
+  - `tests/test_agentic_handoff_mvp_flow.py`
+  - API coverage extension in `tests/test_api_contracts.py`
+- Updated docs:
+  - `docs/design-docs/agent-feedback-loop-and-comps-gaps.md`
+  - `docs/handbook/workflow-end-to-end.md`
 
 ## Next Steps
-- Review the diff and commit if satisfied.
-- Optional: broaden React interaction tests for the new policy editor and pending-changes table.
-- Optional: decide whether to remove the legacy YAML mirror in a later PR once all consumers are migrated.
+- Validate end-to-end manually in UI/API with live local app flow (profile run -> queue actions -> valuation refresh) beyond unit/integration stubs.
+- Decide whether to harden delta-mode resolution semantics (currently MVP-compatible simple resolution) before broader rollout.
+- Integrate richer evidence sourcing (real filing/industry/comps/QoE/risk context inputs) behind builders.
 
 ## Known Issues
-- Untracked `course/` still exists and was intentionally left untouched.
-- `.pytest_cache` remains permission-restricted on this Windows checkout; pytest emits cache warnings but tests pass.
-- `tests/test_wacc.py` still has pre-existing size-premium expectation failures against the current WACC implementation when run outside the focused bundle.
+- Unrelated dirty files remain present and untouched: `CONTEXT.md`, `docs/plans/index.md`, `frontend/src/components/TickerLayout.tsx`, `course/`, and untracked active plan file path.
+- `.pytest_cache` permission warning persists in this environment; tests pass regardless.
+- React build emits existing chunk-size warning (`>500kB`) but succeeds.
 
 ## Notes
 - Verification passed:
-  - `rtk python -m pytest tests/test_assumption_policy.py tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_recommendations.py tests/test_ticker_dossier_contract_runtime.py tests/test_valuation_input_assembler.py -q`
-  - `npm --prefix frontend run build`
+  - `rtk python -m pytest tests/test_pm_decision_queue_contracts.py tests/test_pm_decision_queue_store.py tests/test_agentic_handoff_profiles.py tests/test_evidence_packet_builders.py tests/test_agentic_observations.py tests/test_observation_translator.py tests/test_pm_decision_queue_adapter.py tests/test_api_contracts.py tests/test_agentic_handoff_mvp_flow.py -q`
+  - `rtk npm --prefix frontend run build`
   - `rtk python -m mkdocs build --strict`
   - `rtk git diff --check`
-- Focused pytest result: 123 passed, with existing json_exporter deprecation warnings and the `.pytest_cache` permission warning.
-- A broad extra probe of `tests/test_wacc.py` failed on pre-existing size-premium expectations; no changes were made there in this pass.
+- Focused MVP suite result: 40 passed, 1 warning (`.pytest_cache` permission).
