@@ -16,20 +16,15 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
-from pathlib import Path
 from typing import Any
-
-import yaml
 
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_03_judgment.qoe_signals import compute_qoe_signals
 from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_snapshot, get_ciq_nwc_history
-
-_ROOT = Path(__file__).resolve().parent.parent.parent
-QOE_PENDING_PATH = _ROOT / "config" / "qoe_pending.yaml"
-
+from src.contracts.assumption_policy import PendingAssumptionChange, PendingAssumptionSourceType
+from src.stage_04_pipeline.pending_assumption_changes import create_pending_assumption_change
 
 SYSTEM_PROMPT = """You are a buy-side accounting analyst specialising in quality-of-earnings (QoE) analysis.
 
@@ -392,19 +387,14 @@ class QoEAgent(BaseAgent):
         )
 
 
-def write_qoe_pending_override(
+def create_qoe_pending_change(
     ticker: str,
     qoe_result: dict,
     revenue_mm: float,
-) -> Path:
+) -> PendingAssumptionChange | None:
     """
-    Write QoE LLM normalisation recommendation to config/qoe_pending.yaml.
-
-    Status starts as 'pending'. PM sets status → 'approved' to apply the
-    suggested_override on the next batch_runner --json run.
-    Status → 'rejected' suppresses future writes for this ticker until cleared.
-
-    Returns the path written.
+    Create a canonical pending assumption change from QoE output.
+    Returns None when no margin proposal can be derived.
     """
     ticker = ticker.upper().strip()
     llm = qoe_result.get("llm", {})
@@ -412,80 +402,40 @@ def write_qoe_pending_override(
     reported_ebit = llm.get("reported_ebit") or 0.0
     normalized_ebit = llm.get("normalized_ebit") or reported_ebit
     haircut_pct = llm.get("ebit_haircut_pct")
-    pending_flag = llm.get("dcf_ebit_override_pending", False)
+    pending_flag = bool(llm.get("dcf_ebit_override_pending", False))
 
     # Convert absolute EBIT to margin using LTM revenue
     rev = revenue_mm * 1_000_000 if revenue_mm else 0.0
     reported_margin = round(reported_ebit / rev, 6) if rev else None
     normalized_margin = round(normalized_ebit / rev, 6) if rev else None
 
-    # Load existing pending file (preserve other tickers' entries)
-    existing: dict = {}
-    if QOE_PENDING_PATH.exists():
-        with QOE_PENDING_PATH.open("r", encoding="utf-8") as f:
-            existing = yaml.safe_load(f) or {}
+    if normalized_margin is None:
+        return None
 
-    # Don't overwrite a PM decision (approved/rejected) with a fresh run
-    prev_status = (existing.get(ticker) or {}).get("status", "pending")
-    if prev_status in {"approved", "rejected"}:
-        # Preserve the PM decision; just refresh metadata
-        existing.setdefault(ticker, {})["last_refreshed_at"] = (
-            datetime.utcnow().isoformat(timespec="seconds")
-        )
-        QOE_PENDING_PATH.write_text(
-            yaml.dump(
-                existing, default_flow_style=False, allow_unicode=True, sort_keys=False
-            ),
-            encoding="utf-8",
-        )
-        return QOE_PENDING_PATH
-
-    entry: dict = {
-        "generated_at": datetime.utcnow().isoformat(timespec="seconds"),
-        "qoe_score": qoe_result.get("qoe_score"),
-        "qoe_flag": qoe_result.get("qoe_flag"),
-        "confidence": llm.get("llm_confidence", "low"),
-        "reported_ebit_mm": round(reported_ebit / 1_000_000, 2)
-        if reported_ebit
-        else None,
+    proposal_id = f"qoe:{ticker}:{datetime.utcnow().isoformat(timespec='seconds')}"
+    evidence = {
+        "reported_ebit_mm": round(reported_ebit / 1_000_000, 2) if reported_ebit else None,
         "reported_ebit_margin": reported_margin,
-        "normalized_ebit_mm": round(normalized_ebit / 1_000_000, 2)
-        if normalized_ebit
-        else None,
+        "normalized_ebit_mm": round(normalized_ebit / 1_000_000, 2) if normalized_ebit else None,
         "normalized_ebit_margin": normalized_margin,
         "ebit_haircut_pct": haircut_pct,
         "override_warranted": pending_flag,
-        "adjustments": [
-            {
-                "item": a["item"],
-                "amount_mm": round(a["amount"] / 1_000_000, 2)
-                if a["amount"] > 1_000
-                else a["amount"],
-                "direction": a["direction"],
-                "rationale": a["rationale"],
-            }
-            for a in llm.get("ebit_adjustments", [])
-        ],
+        "adjustments": llm.get("ebit_adjustments", []),
         "revenue_recognition_flags": llm.get("revenue_recognition_flags", []),
         "auditor_flags": llm.get("auditor_flags", []),
         "pm_summary": qoe_result.get("pm_summary", ""),
-        # ── PM APPROVAL BLOCK ────────────────────────────────────────────────
-        # To apply: set status → 'approved', then re-run:
-        #   python -m src.stage_02_valuation.batch_runner --ticker TICKER --json
-        # To reject without applying: set status → 'rejected'
-        "suggested_override": {
-            "ebit_margin_start": normalized_margin,
-        }
-        if normalized_margin is not None
-        else {},
-        "status": "pending",  # pending | approved | rejected
     }
-
-    existing[ticker] = entry
-    QOE_PENDING_PATH.write_text(
-        yaml.dump(
-            existing, default_flow_style=False, allow_unicode=True, sort_keys=False
-        ),
-        encoding="utf-8",
+    return create_pending_assumption_change(
+        PendingAssumptionChange(
+            ticker=ticker,
+            assumption_name="ebit_margin_start",
+            current_value=reported_margin,
+            proposed_value=float(normalized_margin),
+            source_type=PendingAssumptionSourceType.agent,
+            source_ref=proposal_id,
+            confidence=llm.get("llm_confidence", "low"),
+            rationale=qoe_result.get("pm_summary", "") or "QoE EBIT normalisation proposal",
+            status="pending",
+            metadata=evidence,
+        )
     )
-    return QOE_PENDING_PATH

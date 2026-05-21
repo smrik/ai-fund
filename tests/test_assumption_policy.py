@@ -5,6 +5,9 @@ import pytest
 from db.schema import create_tables
 from src.contracts.assumption_policy import (
     PendingAssumptionChange,
+    QoEProposal,
+    qoe_proposal_to_api_payload,
+    qoe_proposal_to_pending_change_payload,
     ValuationPolicy,
     ValuationPolicyGlobalDefaults,
 )
@@ -115,3 +118,58 @@ def test_pending_change_apply_creates_active_approved_entry():
 
     assert applied[0]["assumption_name"] == "ebit_margin_start"
     assert active[0]["value"] == pytest.approx(0.21)
+
+
+def test_qoe_proposal_contract_validation_and_serialization():
+    proposal = QoEProposal(
+        ticker="ibm",
+        ebit_adjustment_pct=-0.12,
+        normalized_ebit=1_250_000_000.0,
+        confidence=0.8,
+        rationale_bullets=["Removed restructuring charge from run-rate EBIT"],
+        evidence_refs=["10K-2025-note-12"],
+        status="pending",
+    )
+
+    api_payload = qoe_proposal_to_api_payload(proposal)
+    db_payload = qoe_proposal_to_pending_change_payload(proposal)
+
+    assert proposal.ticker == "IBM"
+    assert api_payload["confidence"] == pytest.approx(0.8)
+    assert db_payload["assumption_name"] == "ebit_margin_start"
+    assert db_payload["metadata"]["qoe_proposal"]["evidence_refs"] == ["10K-2025-note-12"]
+
+
+def test_qoe_proposal_enforces_bounds_and_evidence_refs():
+    with pytest.raises(Exception):
+        QoEProposal(
+            ticker="IBM",
+            ebit_adjustment_pct=-0.25,
+            normalized_ebit=100.0,
+            confidence=0.5,
+            rationale_bullets=["test"],
+            evidence_refs=["ref"],
+            status="pending",
+        )
+
+    with pytest.raises(Exception):
+        QoEProposal(
+            ticker="IBM",
+            ebit_adjustment_pct=-0.1,
+            normalized_ebit=100.0,
+            confidence=1.1,
+            rationale_bullets=["test"],
+            evidence_refs=["ref"],
+            status="pending",
+        )
+
+    with pytest.raises(Exception):
+        QoEProposal(
+            ticker="IBM",
+            ebit_adjustment_pct=-0.1,
+            normalized_ebit=100.0,
+            confidence=0.7,
+            rationale_bullets=["test"],
+            evidence_refs=[],
+            status="pending",
+        )
