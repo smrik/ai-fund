@@ -74,7 +74,8 @@ def test_damodaran_drop_folder_parses_csv_drafts(tmp_path, monkeypatch):
 
 def test_pending_change_apply_creates_active_approved_entry():
     from db.loader import (
-        apply_pending_assumption_changes,
+        apply_approved_assumption_changes,
+        approve_pending_assumption_changes,
         insert_pending_assumption_change,
         load_approved_assumption_entries,
     )
@@ -103,13 +104,20 @@ def test_pending_change_apply_creates_active_approved_entry():
         },
     )
 
-    applied = apply_pending_assumption_changes(
+    approve_pending_assumption_changes(
         conn,
         ticker="IBM",
         change_ids=[change_id],
         actor="api",
         applied_at="2026-01-02T00:00:00Z",
-        approval_ref="assumption_register_apply:IBM:2026-01-02T00:00:00Z",
+        approval_ref="assumption_register_approval:IBM:2026-01-02T00:00:00Z",
+    )
+    applied = apply_approved_assumption_changes(
+        conn,
+        ticker="IBM",
+        change_ids=[change_id],
+        actor="api",
+        applied_at="2026-01-03T00:00:00Z",
     )
     active = load_approved_assumption_entries(conn, "IBM")
 
