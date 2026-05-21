@@ -9,6 +9,8 @@ from src.contracts.assumption_policy import (
     PendingAssumptionChange,
     PendingAssumptionSourceType,
     PendingAssumptionStackPreview,
+    QoEProposal,
+    qoe_proposal_to_pending_change_payload,
 )
 from src.stage_02_valuation.professional_dcf import default_scenario_specs, run_dcf_professional
 
@@ -56,9 +58,25 @@ def write_pending_changes_from_recommendations(ticker: str, recommendations: lis
         key = (str(getattr(rec, "field", "")), str(getattr(rec, "agent", "agent")), round(float(proposed), 12))
         if key in existing:
             continue
-        created.append(
-            create_pending_assumption_change(
-                PendingAssumptionChange(
+        if str(getattr(rec, "agent", "")).lower() == "qoe" and str(getattr(rec, "field", "")) == "ebit_margin_start":
+            qoe_proposal_raw = (getattr(rec, "qoe_proposal", None) or {}).copy() if isinstance(getattr(rec, "qoe_proposal", None), dict) else None
+            if qoe_proposal_raw:
+                proposal = QoEProposal.model_validate(qoe_proposal_raw)
+                payload = qoe_proposal_to_pending_change_payload(proposal)
+                change = PendingAssumptionChange(
+                    ticker=payload["ticker"],
+                    assumption_name=payload["assumption_name"],
+                    current_value=getattr(rec, "current_value", None),
+                    proposed_value=float(proposed),
+                    source_type=PendingAssumptionSourceType.agent,
+                    source_ref=payload["source_ref"],
+                    confidence=payload["confidence"],
+                    rationale=payload["rationale"],
+                    citation=payload["citation"],
+                    metadata={**payload.get("metadata", {}), "legacy_recommendation_status": getattr(rec, "status", "pending")},
+                )
+            else:
+                change = PendingAssumptionChange(
                     ticker=ticker,
                     assumption_name=str(getattr(rec, "field", "")),
                     current_value=getattr(rec, "current_value", None),
@@ -70,8 +88,20 @@ def write_pending_changes_from_recommendations(ticker: str, recommendations: lis
                     citation=getattr(rec, "citation", None),
                     metadata={"legacy_recommendation_status": getattr(rec, "status", "pending")},
                 )
+        else:
+            change = PendingAssumptionChange(
+                ticker=ticker,
+                assumption_name=str(getattr(rec, "field", "")),
+                current_value=getattr(rec, "current_value", None),
+                proposed_value=float(proposed),
+                source_type=PendingAssumptionSourceType.agent,
+                source_ref=str(getattr(rec, "agent", "agent")),
+                confidence=getattr(rec, "confidence", None),
+                rationale=getattr(rec, "rationale", None),
+                citation=getattr(rec, "citation", None),
+                metadata={"legacy_recommendation_status": getattr(rec, "status", "pending")},
             )
-        )
+        created.append(create_pending_assumption_change(change))
         existing.add(key)
     return created
 
