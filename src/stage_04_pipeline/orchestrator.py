@@ -29,7 +29,7 @@ from src.stage_03_judgment.accounting_recast_agent import (
 from src.stage_03_judgment.earnings_agent import EarningsAgent
 from src.stage_03_judgment.filings_agent import FilingsAgent
 from src.stage_03_judgment.industry_agent import IndustryAgent
-from src.stage_03_judgment.qoe_agent import QoEAgent
+from src.stage_03_judgment.qoe_agent import QoEAgent, create_qoe_pending_change
 from src.stage_03_judgment.risk_agent import RiskAgent
 from src.stage_03_judgment.risk_impact_agent import RiskImpactAgent
 from src.stage_03_judgment.sentiment_agent import SentimentAgent
@@ -393,8 +393,14 @@ class PipelineOrchestrator:
             self.last_qoe_result = qoe_result
             llm_block = qoe_result.get("llm") or {}
             pending = llm_block.get("dcf_ebit_override_pending", False)
+            revenue_mm = (hist.get("revenue") or [0.0])[0] / 1_000_000 if (hist.get("revenue") or []) else 0.0
+            proposal = create_qoe_pending_change(ticker=ticker, qoe_result=qoe_result, revenue_mm=float(revenue_mm))
+            if proposal:
+                self._on_warn(
+                    f"QoE proposal queued (change_id={proposal.change_id}, source_ref={proposal.source_ref}) — pending review only; no automatic apply"
+                )
             if pending:
-                self._on_warn("EBIT haircut >10% — review and manually approve any override in config/valuation_overrides.yaml before acting")
+                self._on_warn("EBIT haircut >10% — proposal is pending only; manual PM approval in pending-change queue is required before apply")
             det = qoe_result.get("deterministic") or {}
             signal_scores = det.get("signal_scores") or {}
             flags = [f"{k}: {v}" for k, v in signal_scores.items() if v in ("amber", "red")]
