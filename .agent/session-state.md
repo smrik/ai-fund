@@ -15,12 +15,12 @@ Finish PR #74 merge readiness for the v0.1 alpha Agentic PM Queue MVP.
 - Exposed preview fingerprints/timestamps, included deterministic input snapshots in fingerprints, and mapped stale preview approval attempts to HTTP 409.
 - Split queue approval from deterministic apply, made apply idempotent, and exposed an explicit PM Queue apply action.
 - Added a deliberate raw agent-artifact fetch endpoint while keeping packet-list responses compact.
+- Cleared CI-specific gates: API-test dependencies include `openai`, offline agent construction uses a provider-failing placeholder, and pre-commit lint/architecture debt checks pass.
 - Expanded the React PM Queue into a decision-room view with shared-driver clusters, observation context, richer preview diffs, decision history, reject/defer reason capture, and additional filters.
 - Updated tests and operator docs for the v0.1 alpha workflow.
 
 ## Next Steps
-- Commit and push the resolved merge to PR #74.
-- Verify GitHub reports PR #74 mergeable with no blocking checks.
+- Verify GitHub reports PR #74 mergeable with no blocking checks after the final CI repair push.
 
 ## Known Issues
 - `bash scripts/manual/launch-react-wsl.sh --status` failed with a shell line-ending/`pipefail` issue, so visual validation used the Windows FastAPI/Vite path.
@@ -32,6 +32,8 @@ Finish PR #74 merge readiness for the v0.1 alpha Agentic PM Queue MVP.
 ## Notes
 - PR: `https://github.com/smrik/ai-fund/pull/74`
 - Verification passed: documented backend alpha gate including QoE regression coverage (95 passed; pytest cache warning only).
+- Verification passed: local pre-commit all-files scope.
+- Verification passed: backend/API CI lane with provider credentials blank (34 passed).
 - Verification passed: `rtk npm --prefix frontend run build`.
 - Verification passed: `rtk npm --prefix frontend test -- appRoutes.test.tsx` (13 passed).
 - Verification passed: `rtk python scripts/manual/smoke_agentic_handoff_mvp.py --ticker IBM` (PASS; 6 packets, 6 observations, 6 queue items).

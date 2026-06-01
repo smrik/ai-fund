@@ -47,7 +47,9 @@ class BaseAgent:
 				or openrouter_key
 				or ""
 			)
-		kwargs: dict = {"api_key": api_key}
+		# Keep construction offline-safe for deterministic tests and blocked runs.
+		# A real request with this placeholder still fails closed at the provider.
+		kwargs: dict = {"api_key": api_key or "offline-placeholder"}
 		if LLM_BASE_URL:
 			kwargs["base_url"] = LLM_BASE_URL
 		self.client = OpenAI(**kwargs)
