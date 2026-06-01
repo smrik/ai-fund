@@ -353,6 +353,7 @@ def _proposal_targets_from_approved(item_payload: dict[str, Any]) -> dict[str, f
 def run_smoke_check(ticker: str, *, live_agents: bool) -> int:
     from api.main import (
         approve_pm_decision_queue_payload,
+        apply_pm_decision_queue_payload,
         list_evidence_packets_payload,
         list_pm_decision_queue_payload,
         preview_pm_decision_queue_payload,
@@ -410,6 +411,7 @@ def run_smoke_check(ticker: str, *, live_agents: bool) -> int:
         item_id = int(item["item_id"])
         preview_payload = preview_pm_decision_queue_payload(ticker, item_id)
         approved_payload = approve_pm_decision_queue_payload(ticker, item_id, actor="smoke_script")
+        applied_payload = apply_pm_decision_queue_payload(ticker, item_id, actor="smoke_script")
         preview_targets = _proposal_targets_from_preview(preview_payload)
         approved_targets = _proposal_targets_from_approved(approved_payload)
         skipped_fields = preview_payload.get("skipped_fields") or []
@@ -418,6 +420,7 @@ def run_smoke_check(ticker: str, *, live_agents: bool) -> int:
                 "item_id": item_id,
                 "preview_targets": preview_targets,
                 "approved_targets": approved_targets,
+                "applied_change_ids": (applied_payload.get("item") or {}).get("adapter_links", {}).get("applied_assumption_change_ids") or [],
                 "skipped_fields": skipped_fields,
             }
         )
@@ -425,6 +428,8 @@ def run_smoke_check(ticker: str, *, live_agents: bool) -> int:
             failures.append(
                 f"queue item {item_id} preview targets {preview_targets} did not match approved targets {approved_targets}"
             )
+        if not approval_checks[-1]["applied_change_ids"]:
+            failures.append(f"queue item {item_id} did not apply an approved deterministic change")
         if skipped_fields:
             notes.append(f"queue item {item_id}: skipped_fields={','.join(str(value) for value in skipped_fields)}")
 

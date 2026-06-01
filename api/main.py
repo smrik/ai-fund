@@ -72,12 +72,16 @@ class PendingAssumptionApplyRequest(BaseModel):
     change_ids: list[int] = Field(default_factory=list)
 
 
+class PendingAssumptionDecisionRequest(BaseModel):
+    change_ids: list[int] = Field(default_factory=list)
+
+
 class PMDecisionQueueEditRequest(BaseModel):
     proposal_pack: dict[str, Any]
 
 
 class PMDecisionQueueActionRequest(BaseModel):
-    reason: str | None = None
+    reason: str = Field(min_length=1)
 
 
 class AnalysisRunRequest(BaseModel):
@@ -705,7 +709,31 @@ def list_evidence_packets_payload(ticker: str) -> dict[str, Any]:
     with get_connection() as conn:
         create_tables(conn)
         packets = list_evidence_packets(conn, ticker=ticker)
-    return {"ticker": ticker, "evidence_packets": packets}
+    list_safe_packets = []
+    for packet in packets:
+        run_metadata = dict(packet.get("run_metadata") or {})
+        artifact = run_metadata.pop("agent_observation_artifact", None)
+        if artifact is not None:
+            run_metadata["agent_observation_artifact_available"] = True
+            run_metadata["agent_observation_artifact_status"] = artifact.get("status")
+        list_safe_packets.append({**packet, "run_metadata": run_metadata})
+    return {"ticker": ticker, "evidence_packets": list_safe_packets}
+
+
+def get_agent_observation_artifact_payload(ticker: str, packet_id: int) -> dict[str, Any]:
+    from db.loader import load_evidence_packet
+    from db.schema import create_tables, get_connection
+
+    ticker = ticker.upper().strip()
+    with get_connection() as conn:
+        create_tables(conn)
+        packet = load_evidence_packet(conn, packet_id)
+    if packet is None or packet.get("ticker") != ticker:
+        raise ValueError(f"evidence packet not found for ticker={ticker} packet_id={packet_id}")
+    artifact = (packet.get("run_metadata") or {}).get("agent_observation_artifact")
+    if artifact is None:
+        raise ValueError(f"agent observation artifact not found for ticker={ticker} packet_id={packet_id}")
+    return {"ticker": ticker, "packet_id": int(packet_id), "agent_observation_artifact": artifact}
 
 
 def list_pm_decision_queue_payload(
@@ -785,7 +813,19 @@ def approve_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "a
     }
 
 
-def reject_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
+def apply_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pm_decision_queue import apply_pm_decision_queue_item
+
+    item = apply_pm_decision_queue_item(ticker, item_id, actor=actor)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "status": item.get("status"),
+        "item": item,
+    }
+
+
+def reject_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str = "") -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import reject_pm_decision_queue_item
 
     item = reject_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
@@ -798,7 +838,7 @@ def reject_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "ap
     }
 
 
-def defer_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
+def defer_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str = "") -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import defer_pm_decision_queue_item
 
     item = defer_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
@@ -809,6 +849,24 @@ def defer_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api
         "reason": reason,
         "item": item,
     }
+
+
+def approve_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import approve_pending_assumption_changes
+
+    return approve_pending_assumption_changes(ticker, change_ids, actor=actor)
+
+
+def reject_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import reject_pending_assumption_changes
+
+    return reject_pending_assumption_changes(ticker, change_ids, actor=actor)
+
+
+def defer_pending_assumptions_payload(ticker: str, change_ids: list[int], actor: str = "api") -> dict[str, Any]:
+    from src.stage_04_pipeline.pending_assumption_changes import defer_pending_assumption_changes
+
+    return defer_pending_assumption_changes(ticker, change_ids, actor=actor)
 
 
 build_ticker_overview_payload = build_overview_payload
@@ -1091,6 +1149,49 @@ def create_app() -> FastAPI:
             manual_values=request_payload.manual_values,
         )
 
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/approve", status_code=202)
+    def approve_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return approve_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_approve", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/reject", status_code=202)
+    def reject_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return reject_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_reject", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
+    @app.post("/api/tickers/{ticker}/valuation/pending-changes/defer", status_code=202)
+    def defer_ticker_pending_assumption_changes(
+        ticker: str,
+        payload: PendingAssumptionDecisionRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or PendingAssumptionDecisionRequest()
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return defer_pending_assumptions_payload(ticker, request_payload.change_ids, actor="api")
+
+        run_id = submit_background_run("valuation_pending_changes_defer", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
+
     @app.post("/api/tickers/{ticker}/valuation/pending-changes/apply", status_code=202)
     def apply_ticker_pending_assumption_changes(
         ticker: str,
@@ -1114,6 +1215,14 @@ def create_app() -> FastAPI:
     def get_ticker_evidence_packets(ticker: str) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
         return list_evidence_packets_payload(ticker)
+
+    @app.get("/api/tickers/{ticker}/evidence-packets/{packet_id}/agent-artifact")
+    def get_ticker_agent_observation_artifact(ticker: str, packet_id: int) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return get_agent_observation_artifact_payload(ticker, packet_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.get("/api/tickers/{ticker}/pm-decision-queue")
     def get_ticker_pm_decision_queue(
@@ -1160,16 +1269,23 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             _raise_pm_queue_http_error(exc)
 
+    @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/apply")
+    def apply_ticker_pm_decision_queue_item(ticker: str, item_id: int) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return apply_pm_decision_queue_payload(ticker, item_id, actor="api")
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
+
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/reject")
     def reject_ticker_pm_decision_queue_item(
         ticker: str,
         item_id: int,
-        payload: PMDecisionQueueActionRequest | None = None,
+        payload: PMDecisionQueueActionRequest,
     ) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
-        request_payload = payload or PMDecisionQueueActionRequest()
         try:
-            return reject_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+            return reject_pm_decision_queue_payload(ticker, item_id, actor="api", reason=payload.reason)
         except ValueError as exc:
             _raise_pm_queue_http_error(exc)
 
@@ -1177,12 +1293,11 @@ def create_app() -> FastAPI:
     def defer_ticker_pm_decision_queue_item(
         ticker: str,
         item_id: int,
-        payload: PMDecisionQueueActionRequest | None = None,
+        payload: PMDecisionQueueActionRequest,
     ) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
-        request_payload = payload or PMDecisionQueueActionRequest()
         try:
-            return defer_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+            return defer_pm_decision_queue_payload(ticker, item_id, actor="api", reason=payload.reason)
         except ValueError as exc:
             _raise_pm_queue_http_error(exc)
 

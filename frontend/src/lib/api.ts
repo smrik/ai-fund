@@ -227,14 +227,20 @@ export function approvePmDecisionQueueItem(ticker: string, itemId: number): Prom
   });
 }
 
-export function rejectPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<PMDecisionQueueActionPayload> {
+export function applyPmDecisionQueueItem(ticker: string, itemId: number): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/apply`, {
+    method: "POST",
+  });
+}
+
+export function rejectPmDecisionQueueItem(ticker: string, itemId: number, reason: string): Promise<PMDecisionQueueActionPayload> {
   return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
   });
 }
 
-export function deferPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<PMDecisionQueueActionPayload> {
+export function deferPmDecisionQueueItem(ticker: string, itemId: number, reason: string): Promise<PMDecisionQueueActionPayload> {
   return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/defer`, {
     method: "POST",
     body: JSON.stringify({ reason }),

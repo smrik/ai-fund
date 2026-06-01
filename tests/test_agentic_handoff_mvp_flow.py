@@ -17,6 +17,7 @@ from src.stage_04_pipeline.evidence_packets import build_evidence_packet
 from src.stage_04_pipeline.observation_translator import translate_observations_to_queue_items
 from src.stage_04_pipeline.pm_decision_queue import (
     approve_pm_decision_queue_item,
+    apply_pm_decision_queue_item,
     edit_pm_decision_queue_item,
     preview_pm_decision_queue_item,
 )
@@ -157,6 +158,7 @@ def test_agentic_handoff_mvp_flow_smoke(monkeypatch):
     assert approved["status"] == "approved"
     assert approved["adapter_links"]["pending_assumption_change_ids"]
     assert approved["approved_proposal_pack"]["proposals"][0]["proposed_target_value"] == 0.08
+    apply_pm_decision_queue_item("IBM", saved_ids[0], actor="pm")
 
     edited = edit_pm_decision_queue_item(
         "IBM",
@@ -180,6 +182,7 @@ def test_agentic_handoff_mvp_flow_smoke(monkeypatch):
     approved_edited = approve_pm_decision_queue_item("IBM", saved_ids[1], actor="pm")
     assert approved_edited["status"] == "approved"
     assert approved_edited["approved_proposal_pack"]["proposals"][0]["proposed_target_value"] == 0.22
+    apply_pm_decision_queue_item("IBM", saved_ids[1], actor="pm")
 
     pending_rows = load_pending_assumption_changes(conn, ticker="IBM", status=None)
     approved_rows = load_approved_assumption_entries(conn, "IBM")

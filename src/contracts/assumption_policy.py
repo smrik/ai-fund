@@ -17,7 +17,9 @@ class ContractModel(BaseModel):
 class PendingAssumptionStatus(str, Enum):
     pending = "pending"
     approved = "approved"
+    applied = "applied"
     rejected = "rejected"
+    deferred = "deferred"
     superseded = "superseded"
 
 
@@ -105,6 +107,59 @@ class PendingAssumptionChange(ContractModel):
         if not cleaned:
             raise ValueError("field is required")
         return cleaned
+
+
+
+
+class QoEProposalStatus(str, Enum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+
+
+class QoEProposal(ContractModel):
+    ticker: str
+    ebit_adjustment_pct: float = Field(ge=-0.20, le=0.20)
+    normalized_ebit: float
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale_bullets: list[str] = Field(min_length=1)
+    evidence_refs: list[str] = Field(min_length=1)
+    status: QoEProposalStatus = QoEProposalStatus.pending
+
+    @field_validator("ticker")
+    @classmethod
+    def _uppercase_qoe_ticker(cls, value: str) -> str:
+        return str(value).upper().strip()
+
+    @field_validator("rationale_bullets", "evidence_refs")
+    @classmethod
+    def _strip_non_empty_items(cls, values: list[str]) -> list[str]:
+        cleaned = [str(v).strip() for v in values if str(v).strip()]
+        if not cleaned:
+            raise ValueError("at least one non-empty value is required")
+        return cleaned
+
+
+def qoe_proposal_to_api_payload(proposal: QoEProposal) -> dict[str, Any]:
+    return proposal.model_dump()
+
+
+def qoe_proposal_to_pending_change_payload(proposal: QoEProposal) -> dict[str, Any]:
+    return {
+        "ticker": proposal.ticker,
+        "assumption_name": "ebit_margin_start",
+        "proposed_value": proposal.normalized_ebit,
+        "source_type": PendingAssumptionSourceType.agent.value,
+        "source_ref": "qoe",
+        "confidence": f"{proposal.confidence:.2f}",
+        "rationale": " | ".join(proposal.rationale_bullets),
+        "citation": "; ".join(proposal.evidence_refs),
+        "status": proposal.status.value,
+        "metadata": {
+            "qoe_proposal": proposal.model_dump(),
+            "ebit_adjustment_pct": proposal.ebit_adjustment_pct,
+        },
+    }
 
 
 class PendingAssumptionStackPreview(ContractModel):

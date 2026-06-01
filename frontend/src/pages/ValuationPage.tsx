@@ -5,6 +5,7 @@ import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
 import { PageHero } from "@/components/PageHero";
 import {
   approvePmDecisionQueueItem,
+  applyPmDecisionQueueItem,
   applyRecommendations,
   applyValuationAssumptions,
   applyWacc,
@@ -1564,6 +1565,7 @@ function PMQueuePanel({
   onPreview,
   onEdit,
   onApprove,
+  onApply,
   onReject,
   onDefer,
   previewPayload,
@@ -1581,6 +1583,7 @@ function PMQueuePanel({
   onPreview: (itemId: number) => void;
   onEdit: (itemId: number, proposalPack: Record<string, unknown>) => void;
   onApprove: (itemId: number) => void;
+  onApply: (itemId: number) => void;
   onReject: (itemId: number, reason: string) => void;
   onDefer: (itemId: number, reason: string) => void;
   previewPayload: PMDecisionQueuePreviewPayload | null | undefined;
@@ -2006,7 +2009,9 @@ function PMQueuePanel({
               const editableValue = editableValues[itemId] ?? (defaultEditable == null ? "" : `${defaultEditable}`);
               const isExpanded = expandedItems[itemId] || false;
               const requiresPreview = itemType === "assumption_change_pack" && activeProposals.length > 0;
-              const previewReady = previewedSet.has(itemId);
+              const canMutateDecision = status === "pending" || status === "previewed";
+              const adapterLinks = asRecord(item.adapter_links);
+              const previewReady = previewedSet.has(itemId) || Boolean(adapterLinks?.last_preview_fingerprint);
               const previewForItem = previewPayload?.item_id === itemId ? previewPayload : null;
               const previewSkippedFields = previewForItem?.skipped_fields ?? asTextArray(asRecord(item.adapter_links)?.skipped_fields);
               const approvedValues = asRows(approvedPack?.proposals);
@@ -2022,7 +2027,6 @@ function PMQueuePanel({
               const decisionHistory = item.decision_history ?? [];
               const previewResolvedValues = asRecord(previewForItem?.preview?.resolved_values);
               const previewConflicts = asRows(previewForItem?.preview?.conflicts);
-              const adapterLinks = asRecord(item.adapter_links);
 
               return (
                 <article
@@ -2296,7 +2300,7 @@ function PMQueuePanel({
                   ) : null}
 
                   <div className="action-controls" style={{ gap: "8px", flexWrap: "wrap" }}>
-                    <button type="button" className="ghost-button" onClick={() => onPreview(itemId)} disabled={actionPending}>
+                    <button type="button" className="ghost-button" onClick={() => onPreview(itemId)} disabled={actionPending || !canMutateDecision}>
                       Preview
                     </button>
                     {firstProposal ? (
@@ -2319,7 +2323,7 @@ function PMQueuePanel({
                             proposals: [editedProposal, ...activeProposals.slice(1)],
                           });
                         }}
-                        disabled={actionPending}
+                        disabled={actionPending || !canMutateDecision}
                       >
                         Save Edit
                       </button>
@@ -2328,10 +2332,15 @@ function PMQueuePanel({
                       type="button"
                       className="primary-button"
                       onClick={() => onApprove(itemId)}
-                      disabled={actionPending || (requiresPreview && !previewReady)}
+                      disabled={actionPending || !canMutateDecision || (requiresPreview && !previewReady)}
                     >
                       Approve
                     </button>
+                    {status === "approved" && !adapterLinks?.applied_at ? (
+                      <button type="button" className="primary-button" onClick={() => onApply(itemId)} disabled={actionPending}>
+                        Apply
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="ghost-button"
@@ -2341,7 +2350,7 @@ function PMQueuePanel({
                           onReject(itemId, reason.trim());
                         }
                       }}
-                      disabled={actionPending}
+                      disabled={actionPending || !canMutateDecision}
                     >
                       Reject
                     </button>
@@ -2354,7 +2363,7 @@ function PMQueuePanel({
                           onDefer(itemId, reason.trim());
                         }
                       }}
-                      disabled={actionPending}
+                      disabled={actionPending || !canMutateDecision}
                     >
                       Defer
                     </button>
@@ -2661,6 +2670,15 @@ export function ValuationPage() {
       queryClient.invalidateQueries({ queryKey: ["ticker-valuation-dcf", ticker] }).catch(() => undefined);
     },
   });
+  const pmQueueApplyMutation = useMutation({
+    mutationFn: (itemId: number) => applyPmDecisionQueueItem(ticker, itemId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-assumptions", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-summary", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-valuation-dcf", ticker] }).catch(() => undefined);
+    },
+  });
   const pmQueueRejectMutation = useMutation({
     mutationFn: ({ itemId, reason }: { itemId: number; reason: string }) => rejectPmDecisionQueueItem(ticker, itemId, reason),
     onSuccess: () => {
@@ -2852,6 +2870,7 @@ export function ValuationPage() {
             onPreview={(itemId) => pmQueuePreviewMutation.mutate(itemId)}
             onEdit={(itemId, proposalPack) => pmQueueEditMutation.mutate({ itemId, proposalPack })}
             onApprove={(itemId) => pmQueueApproveMutation.mutate(itemId)}
+            onApply={(itemId) => pmQueueApplyMutation.mutate(itemId)}
             onReject={(itemId, reason) => pmQueueRejectMutation.mutate({ itemId, reason })}
             onDefer={(itemId, reason) => pmQueueDeferMutation.mutate({ itemId, reason })}
             previewPayload={pmQueuePreviewPayload}
@@ -2860,6 +2879,7 @@ export function ValuationPage() {
               pmQueuePreviewMutation.isPending ||
               pmQueueEditMutation.isPending ||
               pmQueueApproveMutation.isPending ||
+              pmQueueApplyMutation.isPending ||
               pmQueueRejectMutation.isPending ||
               pmQueueDeferMutation.isPending
             }

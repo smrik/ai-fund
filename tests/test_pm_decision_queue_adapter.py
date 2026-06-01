@@ -12,11 +12,59 @@ from db.loader import (
 from db.schema import create_tables
 from src.stage_04_pipeline.pm_decision_queue import (
     approve_pm_decision_queue_item,
+    apply_pm_decision_queue_item,
+    build_pm_decision_queue_conflict_groups,
     defer_pm_decision_queue_item,
     edit_pm_decision_queue_item,
     preview_pm_decision_queue_item,
     reject_pm_decision_queue_item,
 )
+
+
+def test_conflict_groups_require_distinct_profiles_and_keep_latest_profile_item():
+    def _item(item_id: int, profile_name: str, proposed_value: float) -> dict:
+        return {
+            "item_id": item_id,
+            "ticker": "IBM",
+            "profile_name": profile_name,
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "proposal_pack": {
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "target",
+                        "proposed_target_value": proposed_value,
+                    }
+                ]
+            },
+            "metadata": {"packet_provenance": {"source_quality": "real"}},
+        }
+
+    same_profile_only = build_pm_decision_queue_conflict_groups(
+        [_item(1, "earnings_update", 0.05), _item(2, "earnings_update", 0.06)]
+    )
+    cross_profile = build_pm_decision_queue_conflict_groups(
+        [
+            _item(1, "earnings_update", 0.05),
+            _item(2, "earnings_update", 0.06),
+            _item(3, "industry_analysis", 0.04),
+        ]
+    )
+    previewed_delta = _item(4, "company_analysis", 0.06)
+    previewed_delta["proposal_pack"]["proposals"][0] = {
+        "assumption_name": "revenue_growth_near",
+        "proposal_mode": "delta",
+        "proposed_delta": 0.01,
+    }
+    previewed_delta["adapter_links"] = {"last_preview_manual_values": {"revenue_growth_near": 0.06}}
+    equivalent_targets = build_pm_decision_queue_conflict_groups([_item(2, "earnings_update", 0.06), previewed_delta])
+
+    assert same_profile_only == []
+    assert cross_profile[0]["item_ids"] == [2, 3]
+    assert cross_profile[0]["profile_names"] == ["earnings_update", "industry_analysis"]
+    assert cross_profile[0]["proposal_count"] == 2
+    assert equivalent_targets[0]["conflict_level"] == "cluster"
 
 
 def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch):
@@ -34,9 +82,10 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
             "manual_values": manual_values or {},
         },
     )
+    driver_values = {"revenue_growth_near": 0.07}
     monkeypatch.setattr(
         "src.stage_02_valuation.input_assembler.build_valuation_inputs",
-        lambda ticker: SimpleNamespace(drivers=SimpleNamespace(revenue_growth_near=0.07)),
+        lambda ticker: SimpleNamespace(drivers=SimpleNamespace(**driver_values)),
     )
 
     item_id = insert_pm_decision_queue_item(
@@ -80,6 +129,12 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
     assert preview["preview"]["ticker"] == "IBM"
     assert preview["preview"]["manual_values"]["revenue_growth_near"] == 0.08
 
+    driver_values["revenue_growth_near"] = 0.08
+    with pytest.raises(ValueError, match="must be previewed"):
+        approve_pm_decision_queue_item("IBM", item_id, actor="pm")
+    driver_values["revenue_growth_near"] = 0.07
+    preview_pm_decision_queue_item("IBM", item_id)
+
     approved = approve_pm_decision_queue_item("IBM", item_id, actor="pm")
     assert approved["status"] == "approved"
     assert approved["approved_proposal_pack"]["pack_id"] == "pack:1"
@@ -92,8 +147,25 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
     pending_rows = load_pending_assumption_changes(conn, ticker="IBM", status=None)
     approved_rows = load_approved_assumption_entries(conn, ticker="IBM")
     assert len(pending_rows) >= 1
+    assert pending_rows[0]["status"] == "approved"
+    assert approved_rows == []
+
+    applied = apply_pm_decision_queue_item("IBM", item_id, actor="pm")
+    applied_again = apply_pm_decision_queue_item("IBM", item_id, actor="pm")
+    approved_rows = load_approved_assumption_entries(conn, ticker="IBM")
     assert approved_rows[0]["assumption_name"] == "revenue_growth_near"
     assert approved_rows[0]["value"] == 0.08
+    assert applied["adapter_links"]["applied_assumption_change_ids"]
+    assert applied_again["adapter_links"]["applied_assumption_change_ids"] == applied["adapter_links"]["applied_assumption_change_ids"]
+    assert len(approved_rows) == 1
+    with pytest.raises(ValueError, match="cannot be approved"):
+        approve_pm_decision_queue_item("IBM", item_id, actor="pm")
+    with pytest.raises(ValueError, match="cannot be edited"):
+        edit_pm_decision_queue_item("IBM", item_id, approved["approved_proposal_pack"], actor="pm")
+    with pytest.raises(ValueError, match="cannot be rejected"):
+        reject_pm_decision_queue_item("IBM", item_id, actor="pm", reason="too late")
+    with pytest.raises(ValueError, match="cannot be deferred"):
+        defer_pm_decision_queue_item("IBM", item_id, actor="pm", reason="too late")
 
     edited_item_id = insert_pm_decision_queue_item(
         conn,

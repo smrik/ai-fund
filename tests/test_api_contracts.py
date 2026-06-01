@@ -4,6 +4,7 @@ import sqlite3
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -986,6 +987,10 @@ def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monke
     monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
     monkeypatch.setattr("src.stage_04_pipeline.pending_assumption_changes.get_connection", lambda: conn)
     monkeypatch.setattr(
+        "src.stage_02_valuation.input_assembler.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(drivers=SimpleNamespace(revenue_growth_near=0.07)),
+    )
+    monkeypatch.setattr(
         "src.stage_04_pipeline.pm_decision_queue.preview_pending_assumption_stack",
         lambda ticker, change_ids, manual_values=None: {
             "ticker": ticker,
@@ -1132,6 +1137,7 @@ def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monke
     )
     preview = client.post(f"/api/tickers/IBM/pm-decision-queue/{target_item_id}/preview")
     approve = client.post(f"/api/tickers/IBM/pm-decision-queue/{target_item_id}/approve")
+    apply = client.post(f"/api/tickers/IBM/pm-decision-queue/{target_item_id}/apply")
     reject = client.post(
         f"/api/tickers/IBM/pm-decision-queue/{reject_item_id}/reject",
         json={"reason": "not compelling"},
@@ -1145,6 +1151,7 @@ def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monke
     deferred_list = client.get("/api/tickers/IBM/pm-decision-queue?status=deferred")
     missing_preview = client.post("/api/tickers/IBM/pm-decision-queue/999/preview")
     stale_approve = client.post(f"/api/tickers/IBM/pm-decision-queue/{conflict_item_id}/approve")
+    missing_reject_reason = client.post(f"/api/tickers/IBM/pm-decision-queue/{reject_item_id}/reject")
 
     assert filtered.status_code == 200
     assert filtered.json()["filters"] == {
@@ -1168,6 +1175,8 @@ def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monke
     assert approve.status_code == 200
     assert approve.json()["status"] == "approved"
     assert approve.json()["item"]["status"] == "approved"
+    assert apply.status_code == 200
+    assert apply.json()["item"]["adapter_links"]["applied_assumption_change_ids"]
 
     assert reject.status_code == 200
     assert reject.json()["status"] == "rejected"
@@ -1182,6 +1191,7 @@ def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monke
     assert [item["item_id"] for item in deferred_list.json()["items"]] == [defer_item_id]
 
     assert missing_preview.status_code == 404
+    assert missing_reject_reason.status_code == 422
     assert "queue item not found" in missing_preview.json()["detail"].lower()
     assert stale_approve.status_code == 409
     assert "previewed after the latest edit" in stale_approve.json()["detail"].lower()
@@ -1298,6 +1308,49 @@ def test_agentic_handoff_comps_profile_is_runnable_with_real_comps_packet(monkey
     packet = packets_response.json()["evidence_packets"][0]
     assert packet["run_metadata"]["handoff_run_status"] == "completed_with_items"
     assert packet["run_metadata"]["source_quality"] == "real"
+
+
+def test_evidence_packet_list_summarizes_raw_agent_artifact_and_dedicated_endpoint_fetches_it(monkeypatch):
+    from api.main import app
+    from db.loader import insert_evidence_packet
+    from db.schema import create_tables
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    packet_id = insert_evidence_packet(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:00Z",
+            "updated_at": "2026-05-21T00:00:00Z",
+            "ticker": "IBM",
+            "profile_name": "earnings_update",
+            "packet_kind": "earnings_update",
+            "bundle_id": None,
+            "generated_at": "2026-05-21T00:00:00Z",
+            "run_metadata": {
+                "source_quality": "real",
+                "agent_observation_artifact": {
+                    "status": "validated",
+                    "system_prompt": "raw prompt",
+                    "raw_response": "raw model output",
+                },
+            },
+        },
+    )
+    monkeypatch.setattr("db.schema.get_connection", lambda: conn)
+
+    client = TestClient(app)
+    packets_response = client.get("/api/tickers/IBM/evidence-packets")
+    artifact_response = client.get(f"/api/tickers/IBM/evidence-packets/{packet_id}/agent-artifact")
+
+    assert packets_response.status_code == 200
+    run_metadata = packets_response.json()["evidence_packets"][0]["run_metadata"]
+    assert "agent_observation_artifact" not in run_metadata
+    assert run_metadata["agent_observation_artifact_available"] is True
+    assert run_metadata["agent_observation_artifact_status"] == "validated"
+    assert artifact_response.status_code == 200
+    assert artifact_response.json()["agent_observation_artifact"]["raw_response"] == "raw model output"
 
 
 def test_open_latest_snapshot_returns_latest_payload(monkeypatch):

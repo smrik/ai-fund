@@ -24,6 +24,7 @@ from src.stage_02_valuation.professional_dcf import (
     run_dcf_professional,
 )
 from src.stage_02_valuation.valuation_types import ForecastDrivers
+from src.contracts.assumption_policy import QoEProposal, QoEProposalStatus
 
 RECS_DIR = ROOT_DIR / "config"
 OVERRIDES_PATH = ROOT_DIR / "config" / "valuation_overrides.yaml"
@@ -41,6 +42,7 @@ class Recommendation:
     rationale: str
     citation: str | None = None
     status: str = "pending"   # "pending" | "approved" | "rejected"
+    qoe_proposal: dict[str, Any] | None = None
 
 
 @dataclass
@@ -83,6 +85,7 @@ def _recs_to_dict(recs: TickerRecommendations) -> dict:
                 "rationale": r.rationale,
                 "citation": r.citation,
                 "status": r.status,
+                "qoe_proposal": r.qoe_proposal,
             }
             for r in recs.recommendations
         ],
@@ -104,11 +107,43 @@ def _recs_from_dict(data: dict) -> TickerRecommendations:
                 rationale=r.get("rationale", ""),
                 citation=r.get("citation"),
                 status=r.get("status", "pending"),
+                qoe_proposal=r.get("qoe_proposal"),
             )
             for r in (data.get("recommendations") or [])
         ],
     )
 
+
+
+
+def _confidence_label_to_score(value: Any) -> float:
+    mapping = {"high": 0.9, "medium": 0.6, "low": 0.3}
+    if isinstance(value, (int, float)):
+        return max(0.0, min(1.0, float(value)))
+    return mapping.get(str(value).strip().lower(), 0.3)
+
+
+def _build_qoe_proposal(ticker: str, llm: dict[str, Any], normalized_ebit: float) -> QoEProposal:
+    haircut_pct = llm.get("ebit_haircut_pct")
+    haircut_decimal = float(haircut_pct) / 100.0 if isinstance(haircut_pct, (int, float)) else 0.0
+    adjustments = llm.get("ebit_adjustments") or []
+    rationale = [
+        f"{a.get('item', 'adjustment')}: {a.get('rationale', '').strip() or 'management adjustment'}"
+        for a in adjustments[:3]
+        if isinstance(a, dict)
+    ]
+    if not rationale:
+        rationale = [f"QoE EBIT normalisation adjustment {haircut_pct:+.1f}%" if isinstance(haircut_pct, (int, float)) else "QoE EBIT normalisation adjustment"]
+    evidence_refs = [f"qoe_adjustment:{a.get('item','unknown')}" for a in adjustments[:3] if isinstance(a, dict)] or ["qoe_agent_output"]
+    return QoEProposal(
+        ticker=ticker,
+        ebit_adjustment_pct=haircut_decimal,
+        normalized_ebit=float(normalized_ebit),
+        confidence=_confidence_label_to_score(llm.get("llm_confidence")),
+        rationale_bullets=rationale,
+        evidence_refs=evidence_refs,
+        status=QoEProposalStatus.pending,
+    )
 
 # ── Main extraction ────────────────────────────────────────────────────────────
 
@@ -156,6 +191,7 @@ def extract_recommendations(
             if normalized_ebit and revenue_base and revenue_base > 0:
                 proposed_margin = round(float(normalized_ebit) / float(revenue_base), 6)
             if proposed_margin is not None:
+                qoe_proposal = _build_qoe_proposal(ticker, llm, float(normalized_ebit))
                 adjustments = llm.get("ebit_adjustments") or []
                 if adjustments:
                     rationale = (
@@ -177,7 +213,9 @@ def extract_recommendations(
                     proposed_value=proposed_margin,
                     confidence=llm.get("llm_confidence") or "medium",
                     rationale=rationale,
+                    citation="; ".join(qoe_proposal.evidence_refs),
                     status=existing_statuses.get(key, "pending"),
+                    qoe_proposal=qoe_proposal.model_dump(),
                 ))
 
     # ── AccountingRecast → EV bridge items + optional EBIT ───────────────────

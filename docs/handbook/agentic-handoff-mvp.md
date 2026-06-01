@@ -44,6 +44,8 @@ profile config + deterministic evidence packet
 -> anchored observations
 -> deterministic translator
 -> PM Decision Queue
+-> PM approve
+-> explicit apply to deterministic assumptions
 ```
 
 The profile changes the evidence payload, prompt guidance, allowed observation types, allowed assumption fields, and translator rule group. It does not change the LLM runner class.
@@ -69,7 +71,7 @@ Each queue item now surfaces:
 - decision history for edits, approvals, rejections, and deferrals
 - reject/defer reasons entered by the PM
 
-Approval remains preview-gated. If the proposal changes after preview, approval returns a conflict response and the PM must preview again.
+Approval remains preview-gated. If the proposal or deterministic input snapshot changes after preview, approval returns a conflict response and the PM must preview again. Approval records the PM decision; a separate apply action mutates deterministic assumptions exactly once.
 
 ## What The Smoke Check Verifies
 
@@ -99,7 +101,8 @@ After the smoke check passes:
 5. For assumption-change items, always preview after the latest PM edit.
 6. Review shared-driver clusters before approving isolated items.
 7. Approve only when the preview values look correct.
-8. Use reject or defer with a short reason for items that should not flow into deterministic overrides.
+8. Apply an approved item only when it should enter deterministic assumptions.
+9. Use reject or defer with a short reason for items that should not flow into deterministic overrides.
 
 ## Reading Statuses
 
@@ -115,4 +118,4 @@ After the smoke check passes:
 - The default smoke script uses fixture-backed evidence collectors and stub observations; it proves workflow safety, not model quality.
 - A profile can be `blocked` when local ticker evidence is incomplete even if the rest of the stack is healthy.
 - Queue approvals still write to SQLite, so live manual testing should stay deliberate even though the smoke script itself is isolated.
-- Agent prompt/output artifacts are stored in packet run metadata for alpha auditability; do not paste secrets or private credentials into evidence packets.
+- Agent prompt/output artifacts are stored in packet run metadata for alpha auditability. Packet lists expose only artifact availability and status; fetch raw audit material deliberately with `GET /api/tickers/{ticker}/evidence-packets/{packet_id}/agent-artifact`. Do not paste secrets or private credentials into evidence packets.
