@@ -63,6 +63,24 @@ def test_env_overrides_runtime_values(monkeypatch):
     }
 
 
+def test_llm_base_url_accepts_openai_compatible_alias(monkeypatch):
+    monkeypatch.delenv("LLM_BASE_URL", raising=False)
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+
+    config_module, _ = _reload_config_modules()
+
+    assert config_module.LLM_BASE_URL == "https://openrouter.ai/api/v1"
+
+
+def test_llm_base_url_specific_override_wins_over_alias(monkeypatch):
+    monkeypatch.setenv("LLM_BASE_URL", "https://example.test/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://openrouter.ai/api/v1")
+
+    config_module, _ = _reload_config_modules()
+
+    assert config_module.LLM_BASE_URL == "https://example.test/v1"
+
+
 def test_settings_shim_matches_package_exports(monkeypatch):
     monkeypatch.delenv("LLM_MODEL", raising=False)
     monkeypatch.delenv("PORTFOLIO_SIZE_USD", raising=False)

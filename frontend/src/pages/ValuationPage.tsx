@@ -32,7 +32,15 @@ import {
 import { downloadCompletedExport, getCompletedExportId } from "@/lib/exportJobs";
 import { formatCurrency, formatDateLabel, formatPercent, formatText } from "@/lib/format";
 import type {
+  AgenticHandoffRunError,
+  AgenticHandoffRunPayload,
+  EvidencePacketRunMetadata,
+  EvidencePacketSummary,
+  EvidenceSourceQuality,
+  PMDecisionQueueActionPayload,
   PMDecisionQueueListPayload,
+  PMDecisionQueueItem,
+  PMDecisionQueuePreviewPayload,
   RecommendationsPayload,
   RecommendationsPreviewPayload,
   TickerWorkspace,
@@ -560,6 +568,9 @@ function SummaryPanel({
   workspace?: TickerWorkspace;
 }) {
   const readiness = asRecord(summary?.readiness);
+  const financeQuality = asRecord(summary?.finance_quality);
+  const financeFlags = asRows(financeQuality?.flags);
+  const financeStatus = asText(financeQuality?.status);
   return (
     <section className="page-stack">
       <section className="panel">
@@ -594,7 +605,36 @@ function SummaryPanel({
           <p>Revenue Quality: <span className={readiness?.revenue_data_quality_flag && readiness.revenue_data_quality_flag !== "clean" ? "val-negative" : "val-positive"}>{formatText(asText(readiness?.revenue_data_quality_flag)) ?? "Pass"}</span></p>
           <p>NWC Driver Flag: <span className={readiness?.nwc_driver_quality_flag ? "val-negative" : "val-positive"}>{readiness?.nwc_driver_quality_flag ? "Flagged" : "Pass"}</span></p>
         </article>
+        <article className="panel">
+          <h2>Finance Quality</h2>
+          <p>
+            Review State:{" "}
+            <span className={financeStatus === "review_required" ? "val-negative" : financeStatus === "clean" ? "val-positive" : ""}>
+              {financeStatus ? titleize(financeStatus) : "Not scored"}
+            </span>
+          </p>
+          <p>High Flags: {asNumber(financeQuality?.high_count) ?? 0}</p>
+          <p>Medium Flags: {asNumber(financeQuality?.medium_count) ?? 0}</p>
+        </article>
       </section>
+      {financeFlags.length ? (
+        <section className="panel subtle">
+          <h2>Professional Finance Review Gates</h2>
+          <div className="grid-cards grid-cards--tight">
+            {financeFlags.slice(0, 6).map((flag, index) => {
+              const severity = asText(flag.severity);
+              return (
+                <article key={`${asText(flag.code) ?? "flag"}-${index}`} className="mini-card">
+                  <strong className={severity === "high" ? "val-negative" : ""}>{severity ? titleize(severity) : "Flag"}</strong>
+                  <span>{formatText(asText(flag.title))}</span>
+                  <p>{formatText(asText(flag.detail))}</p>
+                  <p>{formatText(asText(flag.pm_check))}</p>
+                </article>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
       {summary?.why_it_matters ? (
         <section className="panel subtle">
           <h2>Why This Matters</h2>
@@ -1371,6 +1411,146 @@ function RecommendationsPanel({
   );
 }
 
+type PMQueueRunCard = {
+  profile_name: string;
+  status: string;
+  reason?: string | null;
+  observation_count?: number | null;
+  queue_item_count?: number | null;
+  errors?: AgenticHandoffRunError[];
+  source_quality?: EvidenceSourceQuality | null;
+};
+
+function formatRunStatusLabel(status: string | null | undefined): string {
+  switch (status) {
+    case "completed_with_items":
+      return "Completed With Queue Items";
+    case "completed_no_items":
+      return "Completed Without Queue Items";
+    case "not_runnable":
+      return "Not Runnable";
+    default:
+      return titleize(status);
+  }
+}
+
+function runStatusBadgeStyle(status: string | null | undefined) {
+  const common = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "6px",
+    borderRadius: "999px",
+    padding: "6px 12px",
+    fontSize: "11px",
+    fontWeight: "700",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase" as const,
+  };
+
+  switch (status) {
+    case "completed_with_items":
+      return { ...common, color: "#fcd34d", border: "1px solid rgba(245, 158, 11, 0.45)", background: "rgba(245, 158, 11, 0.12)" };
+    case "completed_no_items":
+      return { ...common, color: "#86efac", border: "1px solid rgba(34, 197, 94, 0.45)", background: "rgba(34, 197, 94, 0.12)" };
+    case "blocked":
+      return { ...common, color: "#fca5a5", border: "1px solid rgba(239, 68, 68, 0.45)", background: "rgba(239, 68, 68, 0.12)" };
+    case "failed":
+      return { ...common, color: "#fb7185", border: "1px solid rgba(244, 63, 94, 0.45)", background: "rgba(244, 63, 94, 0.12)" };
+    case "not_runnable":
+      return { ...common, color: "#c4b5fd", border: "1px solid rgba(139, 92, 246, 0.45)", background: "rgba(139, 92, 246, 0.12)" };
+    default:
+      return { ...common, color: "#cbd5e1", border: "1px solid rgba(148, 163, 184, 0.35)", background: "rgba(148, 163, 184, 0.12)" };
+  }
+}
+
+function sourceQualityBadgeStyle(sourceQuality: EvidenceSourceQuality | null | undefined) {
+  const common = {
+    display: "inline-flex",
+    alignItems: "center",
+    borderRadius: "999px",
+    padding: "4px 10px",
+    fontSize: "11px",
+    fontWeight: "700",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase" as const,
+  };
+  switch (sourceQuality) {
+    case "real":
+      return { ...common, color: "#86efac", border: "1px solid rgba(34, 197, 94, 0.4)", background: "rgba(34, 197, 94, 0.12)" };
+    case "partial":
+      return { ...common, color: "#fcd34d", border: "1px solid rgba(245, 158, 11, 0.4)", background: "rgba(245, 158, 11, 0.12)" };
+    case "placeholder":
+      return { ...common, color: "#fca5a5", border: "1px solid rgba(239, 68, 68, 0.4)", background: "rgba(239, 68, 68, 0.12)" };
+    default:
+      return { ...common, color: "#cbd5e1", border: "1px solid rgba(148, 163, 184, 0.3)", background: "rgba(148, 163, 184, 0.12)" };
+  }
+}
+
+function proposalSummaryValue(proposal: Record<string, unknown>): string {
+  const mode = asText(proposal.proposal_mode);
+  const target = asNumber(proposal.proposed_target_value);
+  const delta = asNumber(proposal.proposed_delta);
+  if (mode === "delta" && delta != null) {
+    return `${delta >= 0 ? "+" : ""}${delta.toFixed(3)} delta`;
+  }
+  if (target != null) {
+    return target.toFixed(3);
+  }
+  return "—";
+}
+
+function ProposalPackCard({
+  title,
+  pack,
+  accentColor,
+}: {
+  title: string;
+  pack: Record<string, unknown> | null | undefined;
+  accentColor: string;
+}) {
+  const proposals = asRows(asRecord(pack)?.proposals);
+  if (!proposals.length) {
+    return (
+      <div
+        className="mini-card"
+        style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)", minHeight: "100%" }}
+      >
+        <strong style={{ color: accentColor }}>{title}</strong>
+        <p style={{ marginBottom: 0, opacity: 0.7 }}>No proposal stored.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="mini-card"
+      style={{
+        border: `1px solid ${accentColor}33`,
+        boxShadow: `inset 0 0 0 1px ${accentColor}1f`,
+        background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+        minHeight: "100%",
+      }}
+    >
+      <strong style={{ color: accentColor }}>{title}</strong>
+      <div style={{ display: "grid", gap: "10px", marginTop: "12px" }}>
+        {proposals.map((proposal, index) => (
+          <div
+            key={`${title}-${String(proposal.assumption_name ?? index)}-${index}`}
+            style={{ borderLeft: `3px solid ${accentColor}`, paddingLeft: "10px", display: "grid", gap: "4px" }}
+          >
+            <span style={{ fontSize: "11px", letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.6 }}>
+              {titleize(asText(proposal.assumption_name))}
+            </span>
+            <strong>{proposalSummaryValue(proposal)}</strong>
+            <span style={{ fontSize: "12px", opacity: 0.7 }}>Mode: {titleize(asText(proposal.proposal_mode))}</span>
+            {asText(proposal.rationale) ? <span style={{ fontSize: "12px", opacity: 0.78 }}>{asText(proposal.rationale)}</span> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PMQueuePanel({
   queuePayload,
   evidencePackets,
@@ -1378,6 +1558,8 @@ function PMQueuePanel({
   setStatusFilter,
   editableValues,
   setEditableValues,
+  profileRunCards,
+  previewedItemIds,
   onRunProfile,
   onPreview,
   onEdit,
@@ -1388,18 +1570,20 @@ function PMQueuePanel({
   actionPending,
 }: {
   queuePayload: PMDecisionQueueListPayload | undefined;
-  evidencePackets: Record<string, unknown>[];
+  evidencePackets: EvidencePacketSummary[];
   statusFilter: string;
   setStatusFilter: Dispatch<SetStateAction<string>>;
   editableValues: Record<number, string>;
   setEditableValues: Dispatch<SetStateAction<Record<number, string>>>;
+  profileRunCards: PMQueueRunCard[];
+  previewedItemIds: number[];
   onRunProfile: (profileName: string) => void;
   onPreview: (itemId: number) => void;
   onEdit: (itemId: number, proposalPack: Record<string, unknown>) => void;
   onApprove: (itemId: number) => void;
-  onReject: (itemId: number) => void;
-  onDefer: (itemId: number) => void;
-  previewPayload: Record<string, unknown> | null | undefined;
+  onReject: (itemId: number, reason: string) => void;
+  onDefer: (itemId: number, reason: string) => void;
+  previewPayload: PMDecisionQueuePreviewPayload | null | undefined;
   actionPending: boolean;
 }) {
   const items = queuePayload?.items ?? [];
@@ -1407,43 +1591,52 @@ function PMQueuePanel({
 
   const [itemTypeFilter, setItemTypeFilter] = useState<string>("all");
   const [importanceFilter, setImportanceFilter] = useState<string>("all");
+  const [sourceQualityFilter, setSourceQualityFilter] = useState<string>("all");
+  const [impactFilter, setImpactFilter] = useState<string>("all");
+  const [confidenceFilter, setConfidenceFilter] = useState<string>("all");
   const [expandedItems, setExpandedItems] = useState<Record<number, boolean>>({});
+
+  const packetById = useMemo(() => {
+    const map = new Map<string, EvidencePacketSummary>();
+    for (const packet of evidencePackets) {
+      if (packet.packet_id != null) {
+        map.set(String(packet.packet_id), packet);
+      }
+    }
+    return map;
+  }, [evidencePackets]);
 
   const anchorMap = useMemo(() => {
     const map = new Map<string, { type: string; label: string; content: string }>();
-    if (!Array.isArray(evidencePackets)) return map;
     for (const packet of evidencePackets) {
-      const snippets = Array.isArray(packet.snippets) ? packet.snippets : [];
-      for (const s of snippets) {
-        const sId = String(s.snippet_id || "");
-        if (sId) {
-          map.set(sId, {
+      for (const snippet of packet.snippets ?? []) {
+        const snippetId = String(snippet.snippet_id || "");
+        if (snippetId) {
+          map.set(snippetId, {
             type: "Snippet",
-            label: `Snippet: ${sId}`,
-            content: String(s.text || ""),
+            label: `Snippet: ${snippetId}`,
+            content: String(snippet.text || ""),
           });
         }
       }
-      const facts = Array.isArray(packet.facts) ? packet.facts : [];
-      for (const f of facts) {
-        const fId = String(f.fact_id || "");
-        if (fId) {
-          const unitText = f.unit ? ` (${String(f.unit)})` : "";
-          map.set(fId, {
+      for (const fact of packet.facts ?? []) {
+        const factId = String(fact.fact_id || "");
+        if (factId) {
+          const unitText = fact.unit ? ` (${String(fact.unit)})` : "";
+          map.set(factId, {
             type: "Fact",
-            label: `Fact: ${String(f.fact_name || "")}`,
-            content: `${String(f.value ?? "")}${unitText}`,
+            label: `Fact: ${String(fact.fact_name || "")}`,
+            content: `${String(fact.value ?? "")}${unitText}`,
           });
         }
       }
-      const sourceRefs = Array.isArray(packet.source_refs) ? packet.source_refs : [];
-      for (const sr of sourceRefs) {
-        const srId = String(sr.source_ref_id || "");
-        if (srId) {
-          map.set(srId, {
+      for (const sourceRef of packet.source_refs ?? []) {
+        const sourceRefId = String(sourceRef.source_ref_id || "");
+        if (sourceRefId) {
+          map.set(sourceRefId, {
             type: "Source",
-            label: `Source: ${String(sr.source_label || "")}`,
-            content: `${String(sr.source_kind || "")} @ ${String(sr.source_locator || "")}`,
+            label: `Source: ${String(sourceRef.source_label || "")}`,
+            content: `${String(sourceRef.source_kind || "")} @ ${String(sourceRef.source_locator || "")}`,
           });
         }
       }
@@ -1452,147 +1645,215 @@ function PMQueuePanel({
   }, [evidencePackets]);
 
   const filteredItems = items.filter((item) => {
+    const statusMatch = statusFilter === "all" || String(item.status) === statusFilter;
     const typeMatch = itemTypeFilter === "all" || String(item.item_type) === itemTypeFilter;
     const importanceMatch = importanceFilter === "all" || String(item.qualitative_importance || "low") === importanceFilter;
-    return typeMatch && importanceMatch;
+    const impactMatch = impactFilter === "all" || String(item.valuation_impact_bucket || "low") === impactFilter;
+    const confidenceMatch =
+      confidenceFilter === "all" ||
+      String(item.pm_confidence || item.translator_confidence || item.agent_confidence || "low") === confidenceFilter;
+    const packetQualities = item.evidence_packet_ids
+      .map((packetId) => packetById.get(String(packetId))?.run_metadata?.source_quality)
+      .filter(Boolean);
+    const sourceQualityMatch = sourceQualityFilter === "all" || packetQualities.includes(sourceQualityFilter as EvidenceSourceQuality);
+    return statusMatch && typeMatch && importanceMatch && impactMatch && confidenceMatch && sourceQualityMatch;
   });
 
-  const getStatusBadgeStyle = (status: string) => {
+  const getQueueStatusBadgeStyle = (status: string | null) => {
     const common = {
       display: "inline-flex",
       alignItems: "center",
       gap: "6px",
-      borderRadius: "12px",
+      borderRadius: "999px",
       padding: "4px 10px",
-      fontSize: "12px",
-      fontWeight: "600",
+      fontSize: "11px",
+      fontWeight: "700",
       textTransform: "uppercase" as const,
-      letterSpacing: "0.5px",
+      letterSpacing: "0.08em",
     };
     switch (status) {
       case "approved":
-        return {
-          ...common,
-          border: "1px solid #10b981",
-          color: "#10b981",
-          background: "rgba(16, 185, 129, 0.1)",
-        };
+        return { ...common, border: "1px solid rgba(16, 185, 129, 0.45)", color: "#86efac", background: "rgba(16, 185, 129, 0.12)" };
       case "pending":
-        return {
-          ...common,
-          border: "1px solid #f59e0b",
-          color: "#f59e0b",
-          background: "rgba(245, 158, 11, 0.1)",
-        };
+        return { ...common, border: "1px solid rgba(245, 158, 11, 0.45)", color: "#fcd34d", background: "rgba(245, 158, 11, 0.12)" };
       case "rejected":
-        return {
-          ...common,
-          border: "1px solid #ef4444",
-          color: "#ef4444",
-          background: "rgba(239, 68, 68, 0.1)",
-        };
+        return { ...common, border: "1px solid rgba(239, 68, 68, 0.45)", color: "#fca5a5", background: "rgba(239, 68, 68, 0.12)" };
       case "deferred":
-        return {
-          ...common,
-          border: "1px solid #3b82f6",
-          color: "#3b82f6",
-          background: "rgba(59, 130, 246, 0.1)",
-        };
+        return { ...common, border: "1px solid rgba(59, 130, 246, 0.45)", color: "#93c5fd", background: "rgba(59, 130, 246, 0.12)" };
       default:
-        return {
-          ...common,
-          border: "1px solid #6b7280",
-          color: "#6b7280",
-          background: "rgba(107, 114, 128, 0.1)",
-        };
+        return { ...common, border: "1px solid rgba(148, 163, 184, 0.35)", color: "#cbd5e1", background: "rgba(148, 163, 184, 0.12)" };
     }
   };
 
-  const getImportanceBadgeStyle = (importance: string) => {
+  const getImportanceBadgeStyle = (importance: string | null) => {
     const common = {
       display: "inline-flex",
       alignItems: "center",
-      borderRadius: "4px",
-      padding: "2px 6px",
+      borderRadius: "999px",
+      padding: "4px 10px",
       fontSize: "11px",
-      fontWeight: "600",
+      fontWeight: "700",
       textTransform: "uppercase" as const,
+      letterSpacing: "0.08em",
     };
     switch (importance) {
       case "high":
-        return {
-          ...common,
-          color: "#f97316",
-          background: "rgba(249, 115, 22, 0.15)",
-        };
+        return { ...common, color: "#fdba74", background: "rgba(249, 115, 22, 0.15)" };
       case "medium":
-        return {
-          ...common,
-          color: "#eab308",
-          background: "rgba(234, 179, 8, 0.15)",
-        };
+        return { ...common, color: "#fde68a", background: "rgba(234, 179, 8, 0.15)" };
       default:
-        return {
-          ...common,
-          color: "#94a3b8",
-          background: "rgba(148, 163, 184, 0.15)",
-        };
+        return { ...common, color: "#cbd5e1", background: "rgba(148, 163, 184, 0.15)" };
     }
   };
 
   const toggleExpand = (itemId: number) => {
-    setExpandedItems((prev) => ({
-      ...prev,
-      [itemId]: !prev[itemId],
-    }));
+    setExpandedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
   };
+
+  const previewedSet = useMemo(() => new Set(previewedItemIds), [previewedItemIds]);
+  const conflictGroups = queuePayload?.conflict_groups ?? [];
 
   return (
     <section className="page-stack">
       <section className="panel">
-        <h2>Run Agentic Handoff Profiles</h2>
-        <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: "12px" }}>
-          Trigger a deterministic background assembly of ticker facts, sources, and context, then execute judgment models to formulate anchored driver adjustments.
-        </p>
-        <div className="action-controls" style={{ flexWrap: "wrap", gap: "8px" }}>
-          {profiles.map((profileName) => (
-            <button key={profileName} type="button" className="ghost-button" onClick={() => onRunProfile(profileName)} disabled={actionPending}>
-              Run {titleize(profileName)}
-            </button>
-          ))}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ maxWidth: "760px" }}>
+            <h2>Run Agentic Handoff Profiles</h2>
+            <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: 0 }}>
+              Each profile stays inside the observation boundary: deterministic evidence in, anchored observations out, deterministic queue translation after that.
+            </p>
+          </div>
+          <div style={{ fontSize: "12px", opacity: 0.65 }}>Statuses stay visible until a fresh run replaces them.</div>
+        </div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+            gap: "14px",
+            marginTop: "16px",
+          }}
+        >
+          {profiles.map((profileName) => {
+            const runCard = profileRunCards.find((card) => card.profile_name === profileName);
+            const status = runCard?.status ?? "not_run";
+            return (
+              <article
+                key={profileName}
+                className="mini-card"
+                style={{
+                  border: "1px solid rgba(255,255,255,0.08)",
+                  background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+                  minHeight: "100%",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                  <div>
+                    <strong>{titleize(profileName)}</strong>
+                    <div style={{ fontSize: "12px", opacity: 0.62, marginTop: "4px" }}>Observation profile</div>
+                  </div>
+                  <span style={runStatusBadgeStyle(status)}>{status === "not_run" ? "Not Run" : formatRunStatusLabel(status)}</span>
+                </div>
+                <div style={{ display: "grid", gap: "8px", marginTop: "14px", fontSize: "13px" }}>
+                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                    <span>Observations: {runCard?.observation_count ?? 0}</span>
+                    <span>Queue items: {runCard?.queue_item_count ?? 0}</span>
+                  </div>
+                  {runCard?.source_quality ? (
+                    <div>
+                      <span style={sourceQualityBadgeStyle(runCard.source_quality)}>Source Quality: {runCard.source_quality}</span>
+                    </div>
+                  ) : null}
+                  {runCard?.reason ? <div style={{ opacity: 0.75 }}>{titleize(runCard.reason)}</div> : null}
+                  {runCard?.errors?.length ? (
+                    <div style={{ display: "grid", gap: "6px" }}>
+                      {runCard.errors.slice(0, 2).map((error, index) => (
+                        <div key={`${profileName}-error-${index}`} style={{ borderLeft: "3px solid rgba(244, 63, 94, 0.7)", paddingLeft: "10px", opacity: 0.84 }}>
+                          <strong>{formatText(asText(error.agent) ?? asText(error.code) ?? "Run error")}</strong>
+                          <div>{formatText(asText(error.message))}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                <div style={{ marginTop: "16px" }}>
+                  <button type="button" className="ghost-button" onClick={() => onRunProfile(profileName)} disabled={actionPending}>
+                    Run {titleize(profileName)}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
       <section className="panel">
-        <h2>Evidence Packets</h2>
-        <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: "12px" }}>
-          {evidencePackets.length} source evidence packets compiled and locked in canonical SQLite.
-        </p>
-        <div className="stacked-cards">
-          {evidencePackets.slice(0, 6).map((packet, index) => (
-            <div key={`${String(packet.packet_id ?? index)}-${index}`} className="mini-card" style={{ borderLeft: "4px solid rgba(255,255,255,0.25)" }}>
-              <strong>{titleize(asText(packet.packet_kind) ?? "unknown")}</strong>
-              <p>Profile: {titleize(asText(packet.profile_name))}</p>
-              <span>Generated: {formatDateLabel(asText(packet.generated_at))}</span>
-            </div>
-          ))}
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "16px", flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <h2>Evidence Packets</h2>
+            <p style={{ opacity: 0.8, fontSize: "14px", marginBottom: 0 }}>
+              {evidencePackets.length} evidence packets stored in SQLite, including source quality and persisted observation outcomes.
+            </p>
+          </div>
         </div>
+        {evidencePackets.length === 0 ? (
+          <div className="mini-card" style={{ marginTop: "14px", textAlign: "center", padding: "28px", opacity: 0.68 }}>
+            No evidence packets yet. Run a profile with real local data to materialize a reviewable packet.
+          </div>
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+              gap: "14px",
+              marginTop: "14px",
+            }}
+          >
+            {evidencePackets.slice(0, 8).map((packet, index) => {
+              const runMetadata = (packet.run_metadata ?? {}) as EvidencePacketRunMetadata;
+              const sourceQuality = runMetadata.source_quality;
+              return (
+                <div
+                  key={`${String(packet.packet_id ?? index)}-${index}`}
+                  className="mini-card"
+                  style={{
+                    borderLeft: "4px solid rgba(255,255,255,0.18)",
+                    background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.015))",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <strong>{titleize(packet.packet_kind)}</strong>
+                    <span style={sourceQualityBadgeStyle(sourceQuality)}>{sourceQuality ?? "unknown"}</span>
+                  </div>
+                  <p style={{ marginBottom: "10px" }}>Profile: {titleize(packet.profile_name)}</p>
+                  <div style={{ display: "grid", gap: "6px", fontSize: "12px", opacity: 0.76 }}>
+                    <span>Generated: {formatDateLabel(packet.generated_at)}</span>
+                    <span>Observations: {packet.observations?.length ?? 0}</span>
+                    <span>Facts: {packet.facts?.length ?? 0}</span>
+                    <span>Snippets: {packet.snippets?.length ?? 0}</span>
+                    {runMetadata.status ? <span>Status: {formatRunStatusLabel(runMetadata.status)}</span> : null}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="panel">
         <h2>PM Queue / Insights</h2>
-        
-        {/* Modern Multi-Dropdown Toolbar */}
-        <div className="action-controls" style={{
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "16px",
-          background: "rgba(255,255,255,0.02)",
-          padding: "16px",
-          borderRadius: "8px",
-          border: "1px solid rgba(255,255,255,0.05)",
-          marginBottom: "20px"
-        }}>
+        <div
+          className="action-controls"
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: "16px",
+            background: "rgba(255,255,255,0.02)",
+            padding: "16px",
+            borderRadius: "12px",
+            border: "1px solid rgba(255,255,255,0.05)",
+            marginBottom: "20px",
+          }}
+        >
           <label className="field-input" style={{ flex: "1 1 150px" }}>
             <span>Status Filter</span>
             <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
@@ -1622,11 +1883,98 @@ function PMQueuePanel({
               <option value="low">Low</option>
             </select>
           </label>
+
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Source Quality</span>
+            <select value={sourceQualityFilter} onChange={(event) => setSourceQualityFilter(event.target.value)}>
+              <option value="all">All Sources</option>
+              <option value="real">Real</option>
+              <option value="partial">Partial</option>
+              <option value="placeholder">Placeholder</option>
+            </select>
+          </label>
+
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Impact Bucket</span>
+            <select value={impactFilter} onChange={(event) => setImpactFilter(event.target.value)}>
+              <option value="all">All Impact</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+
+          <label className="field-input" style={{ flex: "1 1 150px" }}>
+            <span>Confidence</span>
+            <select value={confidenceFilter} onChange={(event) => setConfidenceFilter(event.target.value)}>
+              <option value="all">All Confidence</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </label>
+        </div>
+
+        <div
+          className="mini-card"
+          style={{
+            marginBottom: "18px",
+            background: "rgba(255,255,255,0.018)",
+            border: "1px solid rgba(255,255,255,0.07)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+            <div>
+              <strong>Conflicts / Shared Drivers</strong>
+              <p style={{ margin: "6px 0 0 0", opacity: 0.72, fontSize: "13px" }}>
+                Queue items are grouped when multiple profiles touch the same deterministic assumption.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", fontSize: "12px" }}>
+              <span style={sourceQualityBadgeStyle("real")}>real</span>
+              <span style={sourceQualityBadgeStyle("partial")}>partial</span>
+              <span style={sourceQualityBadgeStyle("placeholder")}>placeholder</span>
+            </div>
+          </div>
+          {conflictGroups.length === 0 ? (
+            <div style={{ marginTop: "12px", opacity: 0.62, fontSize: "13px" }}>No shared-driver clusters in the active pending queue.</div>
+          ) : (
+            <div style={{ display: "grid", gap: "10px", marginTop: "14px" }}>
+              {conflictGroups.map((group) => (
+                <div
+                  key={group.group_id}
+                  style={{
+                    padding: "12px",
+                    borderRadius: "10px",
+                    border: group.conflict_level === "conflict" ? "1px solid rgba(245, 158, 11, 0.35)" : "1px solid rgba(96, 165, 250, 0.22)",
+                    background: group.conflict_level === "conflict" ? "rgba(245, 158, 11, 0.08)" : "rgba(96, 165, 250, 0.06)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                    <strong>{titleize(group.assumption_name)}</strong>
+                    <span style={{ fontSize: "12px", opacity: 0.75 }}>
+                      {group.proposal_count} proposals · {group.profile_names.map(titleize).join(", ")}
+                    </span>
+                  </div>
+                  <p style={{ margin: "6px 0 10px 0", opacity: 0.78, fontSize: "13px" }}>{group.review_note}</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "8px" }}>
+                    {group.entries.map((entry) => (
+                      <div key={`${group.group_id}-${entry.item_id}-${entry.profile_name}`} style={{ fontSize: "12px", padding: "8px", borderRadius: "8px", background: "rgba(0,0,0,0.18)" }}>
+                        <strong>#{entry.item_id} · {titleize(String(entry.profile_name ?? ""))}</strong>
+                        <div style={{ opacity: 0.76 }}>{titleize(String(entry.proposal_mode ?? ""))}: {entry.proposed_value == null ? "—" : entry.proposed_value}</div>
+                        <div style={{ opacity: 0.6 }}>Status: {titleize(String(entry.status ?? ""))}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {filteredItems.length === 0 ? (
-          <div className="mini-card" style={{ textAlign: "center", padding: "32px", opacity: 0.6 }}>
-            No queue items match the active filters.
+          <div className="mini-card" style={{ textAlign: "center", padding: "32px", opacity: 0.68 }}>
+            No queue items match the active filters. Real evidence without approved translator output will keep the queue empty by design.
           </div>
         ) : (
           <div className="stacked-cards">
@@ -1635,16 +1983,46 @@ function PMQueuePanel({
               const itemType = asText(item.item_type);
               const status = asText(item.status);
               const importance = asText(item.qualitative_importance || "low");
-              const pack = (asRecord(item.pm_edited_proposal_pack) ?? asRecord(item.proposal_pack)) ?? null;
-              const proposals = asRows(pack?.proposals);
-              const firstProposal = proposals[0] ?? null;
-              const anchorList = Array.isArray(item.evidence_anchor_ids)
-                ? item.evidence_anchor_ids.map((anchor) => String(anchor))
-                : [];
-              const defaultEditable =
-                asNumber(firstProposal?.proposed_target_value) ?? asNumber(firstProposal?.proposed_delta) ?? null;
+              const proposalPack = asRecord(item.proposal_pack);
+              const editedPack = asRecord(item.pm_edited_proposal_pack);
+              const approvedPack = asRecord(item.approved_proposal_pack);
+              const activePack = editedPack ?? proposalPack;
+              const activeProposals = asRows(activePack?.proposals);
+              const firstProposal = activeProposals[0] ?? null;
+              const anchorList = item.evidence_anchor_ids.map((anchor) => String(anchor));
+              const previewAnchors = anchorList.slice(0, 2);
+              const extraAnchorCount = Math.max(anchorList.length - previewAnchors.length, 0);
+              const packetIds = item.evidence_packet_ids.map((packetId) => String(packetId));
+              const relatedPackets = packetIds.map((packetId) => packetById.get(packetId)).filter(Boolean) as EvidencePacketSummary[];
+              const packetQualities = Array.from(
+                new Set(
+                  relatedPackets
+                    .map((packet) => packet.run_metadata?.source_quality)
+                    .filter((quality): quality is EvidenceSourceQuality => Boolean(quality)),
+                ),
+              );
+              const sourceQuality = packetQualities.length === 1 ? packetQualities[0] : packetQualities[0] ?? null;
+              const defaultEditable = asNumber(firstProposal?.proposed_target_value) ?? asNumber(firstProposal?.proposed_delta) ?? null;
               const editableValue = editableValues[itemId] ?? (defaultEditable == null ? "" : `${defaultEditable}`);
               const isExpanded = expandedItems[itemId] || false;
+              const requiresPreview = itemType === "assumption_change_pack" && activeProposals.length > 0;
+              const previewReady = previewedSet.has(itemId);
+              const previewForItem = previewPayload?.item_id === itemId ? previewPayload : null;
+              const previewSkippedFields = previewForItem?.skipped_fields ?? asTextArray(asRecord(item.adapter_links)?.skipped_fields);
+              const approvedValues = asRows(approvedPack?.proposals);
+              const observationId = asText(asRecord(item.metadata)?.observation_id);
+              const relatedObservations = relatedPackets.flatMap((packet) =>
+                (packet.observations ?? []).filter((observation) => {
+                  if (observationId && observation.observation_id === observationId) {
+                    return true;
+                  }
+                  return observation.evidence_anchor_ids.some((anchor) => anchorList.includes(anchor));
+                }),
+              );
+              const decisionHistory = item.decision_history ?? [];
+              const previewResolvedValues = asRecord(previewForItem?.preview?.resolved_values);
+              const previewConflicts = asRows(previewForItem?.preview?.conflicts);
+              const adapterLinks = asRecord(item.adapter_links);
 
               return (
                 <article
@@ -1652,104 +2030,272 @@ function PMQueuePanel({
                   className="mini-card"
                   style={{
                     position: "relative",
-                    background: "rgba(255, 255, 255, 0.015)",
-                    border: "1px solid rgba(255, 255, 255, 0.08)",
+                    background: "rgba(255,255,255,0.015)",
+                    border: "1px solid rgba(255,255,255,0.08)",
                     padding: "20px",
-                    borderRadius: "12px",
-                    transition: "transform 0.2s ease, border-color 0.2s ease",
+                    borderRadius: "14px",
+                    overflow: "hidden",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px", marginBottom: "8px" }}>
-                    <strong style={{ fontSize: "16px" }}>{formatText(asText(item.title))}</strong>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <span style={getImportanceBadgeStyle(importance)}>
-                        {importance}
-                      </span>
-                      <span style={getStatusBadgeStyle(status)}>
-                        {status}
-                      </span>
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: "10px",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    <div style={{ maxWidth: "720px" }}>
+                      <strong style={{ fontSize: "16px" }}>{formatText(asText(item.title))}</strong>
+                      <p style={{ fontSize: "14px", opacity: 0.9, lineHeight: "1.45", margin: "8px 0 0 0" }}>
+                        {formatText(asText(item.summary))}
+                      </p>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                      {sourceQuality ? <span style={sourceQualityBadgeStyle(sourceQuality)}>{sourceQuality}</span> : null}
+                      <span style={getImportanceBadgeStyle(importance)}>{importance}</span>
+                      <span style={getQueueStatusBadgeStyle(status)}>{status}</span>
                     </div>
                   </div>
 
-                  <p style={{ fontSize: "14px", opacity: 0.9, lineHeight: "1.4", margin: "0 0 12px 0" }}>
-                    {formatText(asText(item.summary))}
-                  </p>
-
-                  <div style={{ fontSize: "12px", opacity: 0.7, display: "flex", flexDirection: "column", gap: "4px", marginBottom: "16px" }}>
-                    <div>
-                      <strong style={{ opacity: 0.5 }}>Profile:</strong> {titleize(asText(item.profile_name))}
-                    </div>
-                    <div>
-                      <strong style={{ opacity: 0.5 }}>Item Type:</strong> {titleize(itemType)}
-                    </div>
-                    <div>
-                      <strong style={{ opacity: 0.5 }}>Target Driver:</strong> {proposals.map((proposal) => String(proposal.assumption_name ?? "—")).join(", ") || "—"}
-                    </div>
-                  </div>
-
-                  {/* Evidence anchors with expandable snippet drawer */}
-                  <div style={{ marginBottom: "16px" }}>
-                    <button
-                      type="button"
-                      className="ghost-button"
-                      style={{ fontSize: "12px", padding: "4px 8px", height: "auto" }}
-                      onClick={() => toggleExpand(itemId)}
-                    >
-                      {isExpanded ? "Hide Evidence Details" : `Show Evidence Details (${anchorList.length})`}
-                    </button>
-
-                    {isExpanded && (
-                      <div style={{
-                        marginTop: "12px",
-                        padding: "12px",
-                        background: "rgba(0, 0, 0, 0.2)",
-                        border: "1px solid rgba(255, 255, 255, 0.08)",
-                        borderRadius: "8px",
-                        fontSize: "13px",
-                      }}>
-                        <h4 style={{ margin: "0 0 8px 0", fontSize: "12px", opacity: 0.7, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                          Anchored Facts & Context
-                        </h4>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                          {anchorList.map((anchor) => {
-                            const match = anchorMap.get(anchor);
-                            return (
-                              <div key={anchor} style={{ padding: "8px", background: "rgba(255,255,255,0.02)", borderRadius: "4px", borderLeft: "3px solid #60a5fa" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px", fontSize: "11px" }}>
-                                  <span style={{ fontWeight: "600", color: "#60a5fa" }}>{match?.label || anchor}</span>
-                                  <span style={{ opacity: 0.5, fontStyle: "italic" }}>{match?.type || "Reference"}</span>
-                                </div>
-                                <p style={{ margin: 0, fontStyle: match?.type === "Snippet" ? "italic" : "normal", opacity: 0.9 }}>
-                                  {match?.content || "Default anchoring reference value."}
-                                </p>
-                              </div>
-                            );
-                          })}
+                  {relatedObservations.length ? (
+                    <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
+                      <div style={{ fontSize: "12px", opacity: 0.62, textTransform: "uppercase", letterSpacing: "0.08em" }}>Observation Context</div>
+                      {relatedObservations.slice(0, 3).map((observation) => (
+                        <div key={`${itemId}-${observation.observation_id}`} style={{ padding: "10px 12px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "10px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", flexWrap: "wrap", fontSize: "12px", marginBottom: "6px" }}>
+                            <strong>{titleize(observation.observation_type)}</strong>
+                            <span style={{ opacity: 0.68 }}>
+                              {observation.observation_kind} · {observation.agent_confidence ?? "unknown"} confidence · {observation.qualitative_importance ?? "unknown"} importance
+                            </span>
+                          </div>
+                          <div style={{ opacity: 0.9 }}>{formatText(observation.claim)}</div>
+                          {observation.evidence_rationale ? <div style={{ marginTop: "6px", opacity: 0.72 }}>Evidence: {formatText(observation.evidence_rationale)}</div> : null}
+                          {observation.what_would_change_mind ? <div style={{ marginTop: "6px", opacity: 0.72 }}>Would change mind: {formatText(observation.what_would_change_mind)}</div> : null}
                         </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                      gap: "10px",
+                      fontSize: "12px",
+                      opacity: 0.78,
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <div>
+                      <strong style={{ opacity: 0.52 }}>Profile</strong>
+                      <div>{titleize(asText(item.profile_name))}</div>
+                    </div>
+                    <div>
+                      <strong style={{ opacity: 0.52 }}>Item Type</strong>
+                      <div>{titleize(itemType)}</div>
+                    </div>
+                    <div>
+                      <strong style={{ opacity: 0.52 }}>Target Drivers</strong>
+                      <div>{activeProposals.map((proposal) => String(proposal.assumption_name ?? "—")).join(", ") || "—"}</div>
+                    </div>
+                    <div>
+                      <strong style={{ opacity: 0.52 }}>Evidence Packets</strong>
+                      <div>{packetIds.join(", ") || "—"}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
+                    <div style={{ fontSize: "12px", opacity: 0.62, textTransform: "uppercase", letterSpacing: "0.08em" }}>Inline Evidence</div>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                        gap: "10px",
+                      }}
+                    >
+                      {previewAnchors.map((anchor) => {
+                        const match = anchorMap.get(anchor);
+                        return (
+                          <div
+                            key={`${itemId}-${anchor}`}
+                            style={{
+                              padding: "10px 12px",
+                              background: "rgba(255,255,255,0.025)",
+                              border: "1px solid rgba(255,255,255,0.06)",
+                              borderRadius: "10px",
+                              borderLeft: "3px solid #60a5fa",
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", fontSize: "11px", marginBottom: "6px" }}>
+                              <span style={{ color: "#7dd3fc", fontWeight: "700" }}>{match?.label || anchor}</span>
+                              <span style={{ opacity: 0.55 }}>{match?.type || "Reference"}</span>
+                            </div>
+                            <div style={{ opacity: 0.88, fontStyle: match?.type === "Snippet" ? "italic" : "normal" }}>
+                              {match?.content || "Linked evidence reference."}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {anchorList.length > 2 ? (
+                      <button
+                        type="button"
+                        className="ghost-button"
+                        style={{ justifySelf: "flex-start", fontSize: "12px", padding: "4px 8px", height: "auto" }}
+                        onClick={() => toggleExpand(itemId)}
+                      >
+                        {isExpanded ? "Hide More Evidence" : `Show ${extraAnchorCount} More Evidence Anchors`}
+                      </button>
+                    ) : null}
+                    {isExpanded ? (
+                      <div style={{ display: "grid", gap: "8px" }}>
+                        {anchorList.slice(2).map((anchor) => {
+                          const match = anchorMap.get(anchor);
+                          return (
+                            <div key={`${itemId}-expanded-${anchor}`} style={{ padding: "10px 12px", background: "rgba(0,0,0,0.2)", borderRadius: "10px" }}>
+                              <strong>{match?.label || anchor}</strong>
+                              <div style={{ marginTop: "6px", opacity: 0.82 }}>{match?.content || "Linked evidence reference."}</div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    )}
+                    ) : null}
+                  </div>
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                      gap: "12px",
+                      marginBottom: "16px",
+                    }}
+                  >
+                    <ProposalPackCard title="Original Proposal" pack={proposalPack} accentColor="#f59e0b" />
+                    <ProposalPackCard title="PM Edited Proposal" pack={editedPack} accentColor="#38bdf8" />
+                    <ProposalPackCard title="Approved Override" pack={approvedPack} accentColor="#34d399" />
                   </div>
 
                   {firstProposal ? (
                     <label className="field-input" style={{ marginBottom: "16px" }}>
                       <span>PM Edit Proposed Value</span>
                       <input
+                        aria-label={`PM edit proposed value for item ${itemId}`}
                         type="number"
                         step="0.001"
                         value={editableValue}
-                        style={{
-                          background: "rgba(0, 0, 0, 0.4)",
-                          border: "1px solid rgba(255, 255, 255, 0.15)",
-                          color: "#fff",
-                        }}
-                        onChange={(event) =>
-                          setEditableValues((current) => ({ ...current, [itemId]: event.target.value }))
-                        }
+                        style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.15)", color: "#fff" }}
+                        onChange={(event) => setEditableValues((current) => ({ ...current, [itemId]: event.target.value }))}
                       />
                     </label>
                   ) : null}
 
-                  <div className="action-controls" style={{ gap: "8px" }}>
+                  {previewForItem?.preview ? (
+                    <div style={{ display: "grid", gap: "10px", marginBottom: "16px" }}>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                          gap: "10px",
+                        }}
+                      >
+                      <div className="mini-card" style={{ background: "rgba(56, 189, 248, 0.08)", border: "1px solid rgba(56, 189, 248, 0.2)" }}>
+                        <strong>Previewed Base IV</strong>
+                        <p style={{ fontSize: "22px", margin: "6px 0 2px 0", color: "#7dd3fc" }}>
+                          {formatCurrency(asNumber((previewForItem.preview.proposed_iv ?? {}).base))}
+                        </p>
+                        <span style={{ opacity: 0.75 }}>Preview Item #{previewForItem.item_id}</span>
+                      </div>
+                      <div className="mini-card" style={{ background: "rgba(16, 185, 129, 0.08)", border: "1px solid rgba(16, 185, 129, 0.2)" }}>
+                        <strong>Preview Delta</strong>
+                        <p
+                          style={{
+                            fontSize: "22px",
+                            margin: "6px 0 2px 0",
+                            color: asNumber((previewForItem.preview.delta_pct ?? {}).base) >= 0 ? "#86efac" : "#fca5a5",
+                          }}
+                        >
+                          {formatPercent(asNumber((previewForItem.preview.delta_pct ?? {}).base))}
+                        </p>
+                        <span style={{ opacity: 0.75 }}>Approval stays disabled until this preview exists.</span>
+                      </div>
+                      {approvedValues.length ? (
+                        <div className="mini-card" style={{ background: "rgba(52, 211, 153, 0.08)", border: "1px solid rgba(52, 211, 153, 0.2)" }}>
+                          <strong>Approved Target Values</strong>
+                          <div style={{ display: "grid", gap: "4px", marginTop: "8px" }}>
+                            {approvedValues.map((proposal, index) => (
+                              <span key={`approved-target-${itemId}-${index}`}>
+                                {titleize(asText(proposal.assumption_name))}: {proposalSummaryValue(proposal)}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      </div>
+                      {previewResolvedValues ? (
+                        <div style={{ padding: "10px 12px", borderRadius: "10px", background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.06)", fontSize: "12px" }}>
+                          <strong>Field-Level Resolved Values</strong>
+                          <div style={{ display: "grid", gap: "6px", marginTop: "8px" }}>
+                            {Object.entries(previewResolvedValues).map(([field, meta]) => {
+                              const record = asRecord(meta);
+                              return (
+                                <div key={`${itemId}-resolved-${field}`} style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+                                  <span>{titleize(field)}</span>
+                                  <span style={{ opacity: 0.78 }}>{asText(record?.proposed_value) ?? asText(record?.value) ?? JSON.stringify(meta)}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div style={{ marginTop: "8px", opacity: 0.58 }}>Fingerprint: {previewForItem.preview_fingerprint ?? "—"} · {formatDateLabel(previewForItem.previewed_at)}</div>
+                        </div>
+                      ) : null}
+                      {previewConflicts.length ? (
+                        <div style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid rgba(245, 158, 11, 0.35)", background: "rgba(245, 158, 11, 0.08)", color: "#fcd34d", fontSize: "12px" }}>
+                          Preview conflicts: {previewConflicts.map((conflict) => asText(conflict.assumption_name) ?? asText(conflict.reason) ?? "conflict").join(", ")}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {previewSkippedFields.length ? (
+                    <div
+                      style={{
+                        marginBottom: "16px",
+                        padding: "10px 12px",
+                        borderRadius: "10px",
+                        border: "1px solid rgba(245, 158, 11, 0.35)",
+                        background: "rgba(245, 158, 11, 0.08)",
+                        color: "#fcd34d",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Skipped fields need manual follow-up before approval certainty improves: {previewSkippedFields.join(", ")}
+                    </div>
+                  ) : null}
+
+                  {requiresPreview && !previewReady ? (
+                    <div style={{ marginBottom: "12px", fontSize: "12px", opacity: 0.74 }}>
+                      Preview this assumption change after the latest edit before approval unlocks.
+                    </div>
+                  ) : null}
+
+                  {decisionHistory.length || adapterLinks?.approval_ref ? (
+                    <div style={{ display: "grid", gap: "8px", marginBottom: "16px", fontSize: "12px" }}>
+                      <div style={{ opacity: 0.62, textTransform: "uppercase", letterSpacing: "0.08em" }}>Decision Audit Trail</div>
+                      {adapterLinks?.approval_ref ? <div style={{ color: "#86efac" }}>Approval Ref: {String(adapterLinks.approval_ref)}</div> : null}
+                      {decisionHistory.slice(-4).map((event, index) => (
+                        <div key={`${itemId}-history-${index}`} style={{ padding: "8px 10px", borderRadius: "8px", background: "rgba(0,0,0,0.18)" }}>
+                          <strong>{titleize(asText(event.event) ?? "event")}</strong>
+                          <span style={{ marginLeft: "8px", opacity: 0.65 }}>{formatDateLabel(asText(event.event_ts))} · {asText(event.actor) ?? "unknown"}</span>
+                          {asText(event.reason) ? <div style={{ opacity: 0.78 }}>Reason: {formatText(asText(event.reason))}</div> : null}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <div className="action-controls" style={{ gap: "8px", flexWrap: "wrap" }}>
                     <button type="button" className="ghost-button" onClick={() => onPreview(itemId)} disabled={actionPending}>
                       Preview
                     </button>
@@ -1768,10 +2314,9 @@ function PMQueuePanel({
                             proposed_target_value: editedNumber,
                             proposed_delta: undefined,
                           };
-                          const remainingProposals = proposals.slice(1);
                           onEdit(itemId, {
-                            pack_id: String(pack?.pack_id ?? `pack:edited:${itemId}`),
-                            proposals: [editedProposal, ...remainingProposals],
+                            pack_id: String(activePack?.pack_id ?? `pack:edited:${itemId}`),
+                            proposals: [editedProposal, ...activeProposals.slice(1)],
                           });
                         }}
                         disabled={actionPending}
@@ -1779,13 +2324,38 @@ function PMQueuePanel({
                         Save Edit
                       </button>
                     ) : null}
-                    <button type="button" className="primary-button" onClick={() => onApprove(itemId)} disabled={actionPending}>
+                    <button
+                      type="button"
+                      className="primary-button"
+                      onClick={() => onApprove(itemId)}
+                      disabled={actionPending || (requiresPreview && !previewReady)}
+                    >
                       Approve
                     </button>
-                    <button type="button" className="ghost-button" onClick={() => onReject(itemId)} disabled={actionPending}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        const reason = window.prompt("Reason for rejecting this queue item?");
+                        if (reason?.trim()) {
+                          onReject(itemId, reason.trim());
+                        }
+                      }}
+                      disabled={actionPending}
+                    >
                       Reject
                     </button>
-                    <button type="button" className="ghost-button" onClick={() => onDefer(itemId)} disabled={actionPending}>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      onClick={() => {
+                        const reason = window.prompt("Reason for deferring this queue item?");
+                        if (reason?.trim()) {
+                          onDefer(itemId, reason.trim());
+                        }
+                      }}
+                      disabled={actionPending}
+                    >
                       Defer
                     </button>
                   </div>
@@ -1796,36 +2366,70 @@ function PMQueuePanel({
         )}
       </section>
 
-      {previewPayload ? (
-        <section className="panel" style={{
-          border: "1px solid rgba(96, 165, 250, 0.2)",
-          background: "linear-gradient(135deg, rgba(96, 165, 250, 0.05) 0%, rgba(0,0,0,0) 100%)",
-        }}>
-          <h2>Queue Preview Impact Analysis</h2>
-          <div style={{ display: "flex", gap: "24px", flexWrap: "wrap", marginTop: "12px" }}>
+      {previewPayload?.preview ? (
+        <section
+          className="panel"
+          style={{
+            border: "1px solid rgba(96, 165, 250, 0.2)",
+            background: "linear-gradient(135deg, rgba(96, 165, 250, 0.06) 0%, rgba(0,0,0,0) 100%)",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "flex-end" }}>
             <div>
-              <span style={{ fontSize: "12px", opacity: 0.6 }}>Proposed Base Case IV</span>
-              <p style={{ fontSize: "24px", fontWeight: "700", margin: "4px 0", color: "#60a5fa" }}>
-                {formatCurrency(asNumber((asRecord(asRecord(previewPayload.preview)?.proposed_iv) ?? {}).base))}
+              <h2>Queue Preview Impact Analysis</h2>
+              <p style={{ marginBottom: 0, opacity: 0.76 }}>
+                Previewed queue values must match the deterministic overrides you approve. Item #{previewPayload.item_id}.
               </p>
             </div>
-            <div>
-              <span style={{ fontSize: "12px", opacity: 0.6 }}>IV Impact % Delta</span>
-              <p style={{
-                fontSize: "24px",
-                fontWeight: "700",
-                margin: "4px 0",
-                color: asNumber((asRecord(asRecord(previewPayload.preview)?.delta_pct) ?? {}).base) >= 0 ? "#10b981" : "#ef4444",
-              }}>
-                {formatPercent(asNumber((asRecord(asRecord(previewPayload.preview)?.delta_pct) ?? {}).base))}
+            <span style={runStatusBadgeStyle("completed_with_items")}>Preview Ready</span>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+              gap: "14px",
+              marginTop: "16px",
+            }}
+          >
+            <div className="mini-card" style={{ background: "rgba(255,255,255,0.03)" }}>
+              <span style={{ fontSize: "12px", opacity: 0.6 }}>Current Base IV</span>
+              <p style={{ fontSize: "24px", fontWeight: "700", margin: "4px 0" }}>
+                {formatCurrency(asNumber((previewPayload.preview.current_iv ?? {}).base))}
+              </p>
+            </div>
+            <div className="mini-card" style={{ background: "rgba(56, 189, 248, 0.08)" }}>
+              <span style={{ fontSize: "12px", opacity: 0.6 }}>Previewed Base IV</span>
+              <p style={{ fontSize: "24px", fontWeight: "700", margin: "4px 0", color: "#7dd3fc" }}>
+                {formatCurrency(asNumber((previewPayload.preview.proposed_iv ?? {}).base))}
+              </p>
+            </div>
+            <div className="mini-card" style={{ background: "rgba(16, 185, 129, 0.08)" }}>
+              <span style={{ fontSize: "12px", opacity: 0.6 }}>Impact Delta</span>
+              <p
+                style={{
+                  fontSize: "24px",
+                  fontWeight: "700",
+                  margin: "4px 0",
+                  color: asNumber((previewPayload.preview.delta_pct ?? {}).base) >= 0 ? "#86efac" : "#fca5a5",
+                }}
+              >
+                {formatPercent(asNumber((previewPayload.preview.delta_pct ?? {}).base))}
               </p>
             </div>
           </div>
-          {Array.isArray(previewPayload.skipped_fields) && previewPayload.skipped_fields.length > 0 && (
-            <div style={{ marginTop: "12px", fontSize: "12px", opacity: 0.6, color: "#f59e0b" }}>
-              * Delta preview skipped for unresolvable field(s): {previewPayload.skipped_fields.join(", ")}
+          {previewPayload.skipped_fields?.length ? (
+            <div
+              style={{
+                marginTop: "14px",
+                fontSize: "12px",
+                color: "#fcd34d",
+                borderLeft: "3px solid rgba(245, 158, 11, 0.7)",
+                paddingLeft: "10px",
+              }}
+            >
+              Preview skipped unresolvable fields: {previewPayload.skipped_fields.join(", ")}
             </div>
-          )}
+          ) : null}
         </section>
       ) : null}
     </section>
@@ -1854,7 +2458,9 @@ export function ValuationPage() {
   const [selectedRecommendationFields, setSelectedRecommendationFields] = useState<string[]>([]);
   const [pmQueueStatusFilter, setPmQueueStatusFilter] = useState("all");
   const [pmQueueEditableValues, setPmQueueEditableValues] = useState<Record<number, string>>({});
-  const [pmQueuePreviewPayload, setPmQueuePreviewPayload] = useState<Record<string, unknown> | null>(null);
+  const [pmQueuePreviewPayload, setPmQueuePreviewPayload] = useState<PMDecisionQueuePreviewPayload | null>(null);
+  const [pmQueuePreviewedItemIds, setPmQueuePreviewedItemIds] = useState<number[]>([]);
+  const [profileRunResults, setProfileRunResults] = useState<Record<string, PMQueueRunCard>>({});
   const [assumptionsRunId, setAssumptionsRunId] = useState<string | null>(null);
   const [waccRunId, setWaccRunId] = useState<string | null>(null);
   const [recommendationsRunId, setRecommendationsRunId] = useState<string | null>(null);
@@ -1999,25 +2605,56 @@ export function ValuationPage() {
   });
   const runAgenticHandoffMutation = useMutation({
     mutationFn: (profileName: string) => runAgenticHandoffProfile(ticker, profileName),
-    onSuccess: () => {
+    onSuccess: (payload) => {
+      setProfileRunResults((current) => ({
+        ...current,
+        [payload.profile_name]: {
+          profile_name: payload.profile_name,
+          status: payload.status,
+          reason: payload.reason ?? null,
+          observation_count: payload.observation_count ?? 0,
+          queue_item_count: payload.queue_item_count ?? 0,
+          errors: payload.errors ?? [],
+          source_quality: payload.evidence_packet?.run_metadata?.source_quality ?? null,
+        },
+      }));
       queryClient.invalidateQueries({ queryKey: ["ticker-evidence-packets", ticker] }).catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
+    },
+    onError: (error, profileName) => {
+      setProfileRunResults((current) => ({
+        ...current,
+        [profileName]: {
+          profile_name: profileName,
+          status: "failed",
+          reason: "request_failed",
+          observation_count: 0,
+          queue_item_count: 0,
+          errors: [{ code: "request_failed", message: error instanceof Error ? error.message : "Unknown run failure" }],
+        },
+      }));
     },
   });
   const pmQueuePreviewMutation = useMutation({
     mutationFn: (itemId: number) => previewPmDecisionQueueItem(ticker, itemId),
-    onSuccess: (payload) => setPmQueuePreviewPayload(payload as unknown as Record<string, unknown>),
+    onSuccess: (payload) => {
+      setPmQueuePreviewPayload(payload);
+      setPmQueuePreviewedItemIds((current) => (current.includes(payload.item_id) ? current : [...current, payload.item_id]));
+    },
   });
   const pmQueueEditMutation = useMutation({
     mutationFn: ({ itemId, proposalPack }: { itemId: number; proposalPack: Record<string, unknown> }) =>
       editPmDecisionQueueItem(ticker, itemId, proposalPack),
-    onSuccess: () => {
+    onSuccess: (payload) => {
+      setPmQueuePreviewedItemIds((current) => current.filter((value) => value !== payload.item_id));
+      setPmQueuePreviewPayload((current) => (current?.item_id === payload.item_id ? null : current));
       queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
     },
   });
   const pmQueueApproveMutation = useMutation({
     mutationFn: (itemId: number) => approvePmDecisionQueueItem(ticker, itemId),
-    onSuccess: () => {
+    onSuccess: (payload) => {
+      setPmQueuePreviewedItemIds((current) => current.filter((value) => value !== payload.item_id));
       queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["ticker-valuation-assumptions", ticker] }).catch(() => undefined);
       queryClient.invalidateQueries({ queryKey: ["ticker-valuation-summary", ticker] }).catch(() => undefined);
@@ -2025,13 +2662,13 @@ export function ValuationPage() {
     },
   });
   const pmQueueRejectMutation = useMutation({
-    mutationFn: (itemId: number) => rejectPmDecisionQueueItem(ticker, itemId, "Rejected from PM Queue UI"),
+    mutationFn: ({ itemId, reason }: { itemId: number; reason: string }) => rejectPmDecisionQueueItem(ticker, itemId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
     },
   });
   const pmQueueDeferMutation = useMutation({
-    mutationFn: (itemId: number) => deferPmDecisionQueueItem(ticker, itemId, "Deferred from PM Queue UI"),
+    mutationFn: ({ itemId, reason }: { itemId: number; reason: string }) => deferPmDecisionQueueItem(ticker, itemId, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["ticker-pm-decision-queue", ticker] }).catch(() => undefined);
     },
@@ -2111,6 +2748,29 @@ export function ValuationPage() {
   const summary = summaryQuery.data;
   const dcf = dcfQuery.data as Record<string, unknown> | undefined;
   const comps = compsQuery.data as Record<string, unknown> | undefined;
+  const evidencePackets = evidencePacketsQuery.data?.evidence_packets ?? [];
+  const pmQueueProfileRunCards = useMemo(() => {
+    const packetCards = new Map<string, PMQueueRunCard>();
+    for (const packet of evidencePackets) {
+      const metadata = packet.run_metadata ?? {};
+      if (!metadata.status) {
+        continue;
+      }
+      packetCards.set(packet.profile_name, {
+        profile_name: packet.profile_name,
+        status: metadata.status,
+        reason: metadata.reason ?? null,
+        observation_count: packet.observations?.length ?? metadata.observation_count ?? 0,
+        queue_item_count: metadata.queue_item_count ?? 0,
+        errors: metadata.errors ?? [],
+        source_quality: metadata.source_quality ?? null,
+      });
+    }
+    for (const [profileName, runCard] of Object.entries(profileRunResults)) {
+      packetCards.set(profileName, runCard);
+    }
+    return Array.from(packetCards.values());
+  }, [evidencePackets, profileRunResults]);
 
   const activePanel = useMemo(() => {
     switch (selected) {
@@ -2181,17 +2841,19 @@ export function ValuationPage() {
         return pmQueueQuery.isPending && !pmQueueQuery.data ? renderLoadingPanel("PM Queue / Insights") : (
           <PMQueuePanel
             queuePayload={pmQueueQuery.data}
-            evidencePackets={(evidencePacketsQuery.data?.evidence_packets as Record<string, unknown>[] | undefined) ?? []}
+            evidencePackets={evidencePackets}
             statusFilter={pmQueueStatusFilter}
             setStatusFilter={setPmQueueStatusFilter}
             editableValues={pmQueueEditableValues}
             setEditableValues={setPmQueueEditableValues}
+            profileRunCards={pmQueueProfileRunCards}
+            previewedItemIds={pmQueuePreviewedItemIds}
             onRunProfile={(profileName) => runAgenticHandoffMutation.mutate(profileName)}
             onPreview={(itemId) => pmQueuePreviewMutation.mutate(itemId)}
             onEdit={(itemId, proposalPack) => pmQueueEditMutation.mutate({ itemId, proposalPack })}
             onApprove={(itemId) => pmQueueApproveMutation.mutate(itemId)}
-            onReject={(itemId) => pmQueueRejectMutation.mutate(itemId)}
-            onDefer={(itemId) => pmQueueDeferMutation.mutate(itemId)}
+            onReject={(itemId, reason) => pmQueueRejectMutation.mutate({ itemId, reason })}
+            onDefer={(itemId, reason) => pmQueueDeferMutation.mutate({ itemId, reason })}
             previewPayload={pmQueuePreviewPayload}
             actionPending={
               runAgenticHandoffMutation.isPending ||
@@ -2230,15 +2892,18 @@ export function ValuationPage() {
     pmQueueEditableValues,
     pmQueuePreviewMutation,
     pmQueuePreviewPayload,
+    pmQueuePreviewedItemIds,
     pmQueueQuery.data,
     pmQueueQuery.isPending,
+    pmQueueProfileRunCards,
     pmQueueRejectMutation,
     pmQueueStatusFilter,
+    profileRunResults,
     selected,
     selectedRecommendationFields,
     summary,
     summaryQuery.isPending,
-    evidencePacketsQuery.data?.evidence_packets,
+    evidencePackets,
     waccApplyMutation,
     waccMode,
     waccPreviewMutation,

@@ -62,6 +62,10 @@ def build_comps_dashboard_view(*args, **kwargs):
     from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view as _impl
     return _impl(*args, **kwargs)
 
+def build_professional_finance_review(*args, **kwargs):
+    from src.stage_04_pipeline.valuation_quality import build_professional_finance_review as _impl
+    return _impl(*args, **kwargs)
+
 def build_override_workbench(*args, **kwargs):
     from src.stage_04_pipeline.override_workbench import build_override_workbench as _impl
     return _impl(*args, **kwargs)
@@ -105,6 +109,21 @@ def _fraction_to_percent_points(value: Any) -> float | None:
     if amount is None:
         return None
     return amount * 100.0
+
+
+def _scenario_summary_row(summary: dict[str, Any], scenario_name: str) -> dict[str, Any]:
+    for row in summary.get("scenario_summary") or []:
+        if isinstance(row, dict) and str(row.get("scenario") or "").lower() == scenario_name:
+            return row
+    return {}
+
+
+def _relative_gap(a: Any, b: Any) -> float | None:
+    left = safe_float(a)
+    right = safe_float(b)
+    if left is None or right is None or right == 0:
+        return None
+    return abs(left / right - 1.0)
 
 def load_latest_ticker_dossier_payload(ticker: str, source_mode: str | None = None) -> dict[str, Any] | None:
     from db.ticker_dossier import load_latest_ticker_dossier
@@ -385,14 +404,20 @@ def build_overview_payload(ticker: str) -> dict[str, Any]:
         payload["workspace"] = workspace
     return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
 
-def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
+def build_valuation_summary_payload(ticker: str, source_mode: str | None = None) -> dict[str, Any]:
     ticker = coerce_ticker(ticker)
-    dossier_payload = _load_api_ticker_dossier_payload(ticker)
+    dossier_payload = _load_api_ticker_dossier_payload(ticker, source_mode=source_mode)
     watchlist_row = _watchlist_row_for_ticker(ticker)
     snapshot = _snapshot_payload(ticker)
     memo = _memo_payload(snapshot)
     valuation = _valuation_payload(snapshot)
     summary = build_dcf_audit_view(ticker)
+    dcf_base = _scenario_summary_row(summary, "base")
+    dcf_bear = _scenario_summary_row(summary, "bear")
+    dcf_bull = _scenario_summary_row(summary, "bull")
+    dcf_expected = _scenario_summary_row(summary, "expected")
+    dcf_current_price = safe_float(summary.get("current_price"))
+    dcf_base_iv = safe_float(dcf_base.get("intrinsic_value"))
 
     analyst_target = watchlist_row.get("analyst_target")
     if analyst_target is None:
@@ -404,23 +429,23 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
     payload = {
         "ticker": ticker,
         "current_price": safe_float(
-            _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
+            _pick_value(dcf_current_price, (snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
         ),
-        "base_iv": safe_float(_pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base"))),
-        "bear_iv": safe_float(_pick_value(valuation.get("bear"), watchlist_row.get("iv_bear"))),
-        "bull_iv": safe_float(_pick_value(valuation.get("bull"), watchlist_row.get("iv_bull"))),
-        "weighted_iv": safe_float(_pick_value(watchlist_row.get("expected_iv"), watchlist_row.get("weighted_iv"))),
+        "base_iv": safe_float(_pick_value(dcf_base_iv, (snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base"))),
+        "bear_iv": safe_float(_pick_value(dcf_bear.get("intrinsic_value"), valuation.get("bear"), watchlist_row.get("iv_bear"))),
+        "bull_iv": safe_float(_pick_value(dcf_bull.get("intrinsic_value"), valuation.get("bull"), watchlist_row.get("iv_bull"))),
+        "weighted_iv": safe_float(_pick_value(dcf_expected.get("intrinsic_value"), watchlist_row.get("expected_iv"), watchlist_row.get("weighted_iv"))),
         "upside_pct_base": safe_float(
-            _pick_value(_fraction_to_percent_points(valuation.get("upside_pct_base")), watchlist_row.get("upside_base_pct"))
+            _pick_value(dcf_base.get("upside_pct"), _fraction_to_percent_points(valuation.get("upside_pct_base")), watchlist_row.get("upside_base_pct"))
         ),
         "analyst_target": safe_float(analyst_target),
         "conviction": _pick_value((snapshot or {}).get("conviction"), memo.get("conviction"), watchlist_row.get("latest_conviction")),
         "memo_date": _pick_value((snapshot or {}).get("created_at"), memo.get("date"), watchlist_row.get("latest_snapshot_date")),
         "why_it_matters": (
-            f"Base IV ${safe_float(_pick_value((snapshot or {}).get('base_iv'), valuation.get('base'), watchlist_row.get('iv_base'))) or 0:,.2f}"
-            f" versus current price ${safe_float(_pick_value((snapshot or {}).get('current_price'), valuation.get('current_price'), watchlist_row.get('price'))) or 0:,.2f}."
-            if _pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base")) is not None
-            and _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price")) is not None
+            f"Base IV ${safe_float(_pick_value(dcf_base_iv, (snapshot or {}).get('base_iv'), valuation.get('base'), watchlist_row.get('iv_base'))) or 0:,.2f}"
+            f" versus current price ${safe_float(_pick_value(dcf_current_price, (snapshot or {}).get('current_price'), valuation.get('current_price'), watchlist_row.get('price'))) or 0:,.2f}."
+            if _pick_value(dcf_base_iv, (snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base")) is not None
+            and _pick_value(dcf_current_price, (snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price")) is not None
             else None
         ),
         "readiness": summary.get("model_integrity") or {},
@@ -448,6 +473,38 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
                 "ticker_dossier_contract_version",
             ],
         )
+    readiness = dict(payload.get("readiness") or {})
+    dcf_drift_flags: list[str] = []
+    price_gap = _relative_gap(payload.get("current_price"), dcf_current_price)
+    base_iv_gap = _relative_gap(payload.get("base_iv"), dcf_base_iv)
+    if price_gap is not None and price_gap > 0.01:
+        dcf_drift_flags.append("current_price")
+    if base_iv_gap is not None and base_iv_gap > 0.01:
+        dcf_drift_flags.append("base_iv")
+    payload["deterministic_freshness"] = {
+        "canonical_summary_drift_flag": bool(dcf_drift_flags),
+        "canonical_summary_drift_fields": dcf_drift_flags,
+        "fresh_dcf_current_price": dcf_current_price,
+        "fresh_dcf_base_iv": dcf_base_iv,
+    }
+    if dcf_drift_flags:
+        payload["deterministic_freshness"]["note"] = "Canonical summary fields differ from fresh DCF output."
+    payload["readiness"] = readiness
+    try:
+        assumptions_payload = build_valuation_assumptions_payload(ticker)
+    except Exception:
+        assumptions_payload = {}
+    try:
+        comps_payload = build_valuation_comps_payload(ticker)
+    except Exception:
+        comps_payload = {}
+    payload["finance_quality"] = build_professional_finance_review(
+        summary=payload,
+        dcf=summary,
+        assumptions=assumptions_payload,
+        comps=comps_payload,
+        batch_row={},
+    )
     return _attach_api_ticker_dossier(payload, ticker, dossier_payload=dossier_payload)
 
 def build_valuation_dcf_payload(ticker: str) -> dict[str, Any]:

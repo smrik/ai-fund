@@ -1,17 +1,21 @@
 import sqlite3
+from types import SimpleNamespace
+
+import pytest
 
 from db.loader import (
     insert_pm_decision_queue_item,
     list_pm_decision_queue_items,
+    load_approved_assumption_entries,
     load_pending_assumption_changes,
 )
 from db.schema import create_tables
 from src.stage_04_pipeline.pm_decision_queue import (
-    preview_pm_decision_queue_item,
-    edit_pm_decision_queue_item,
     approve_pm_decision_queue_item,
-    reject_pm_decision_queue_item,
     defer_pm_decision_queue_item,
+    edit_pm_decision_queue_item,
+    preview_pm_decision_queue_item,
+    reject_pm_decision_queue_item,
 )
 
 
@@ -29,6 +33,10 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
             "change_ids": change_ids,
             "manual_values": manual_values or {},
         },
+    )
+    monkeypatch.setattr(
+        "src.stage_02_valuation.input_assembler.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(drivers=SimpleNamespace(revenue_growth_near=0.07)),
     )
 
     item_id = insert_pm_decision_queue_item(
@@ -72,9 +80,61 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
     assert preview["preview"]["ticker"] == "IBM"
     assert preview["preview"]["manual_values"]["revenue_growth_near"] == 0.08
 
+    approved = approve_pm_decision_queue_item("IBM", item_id, actor="pm")
+    assert approved["status"] == "approved"
+    assert approved["approved_proposal_pack"]["pack_id"] == "pack:1"
+    proposal = approved["approved_proposal_pack"]["proposals"][0]
+    assert proposal["proposal_mode"] == "target"
+    assert proposal["proposed_target_value"] == 0.08
+    assert approved["adapter_links"]["pending_assumption_change_ids"]
+    assert approved["adapter_links"]["skipped_fields"] == []
+
+    pending_rows = load_pending_assumption_changes(conn, ticker="IBM", status=None)
+    approved_rows = load_approved_assumption_entries(conn, ticker="IBM")
+    assert len(pending_rows) >= 1
+    assert approved_rows[0]["assumption_name"] == "revenue_growth_near"
+    assert approved_rows[0]["value"] == 0.08
+
+    edited_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:00Z",
+            "updated_at": "2026-05-21T00:00:00Z",
+            "ticker": "ibm",
+            "profile_name": "company_analysis",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Margin target updated",
+            "summary": "Target changed.",
+            "evidence_anchor_ids": ["fact:margin:1"],
+            "evidence_packet_ids": ["2"],
+            "proposal_pack": {
+                "pack_id": "pack:orig",
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "delta",
+                        "proposed_delta": -0.01,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {},
+        },
+    )
+
     edited = edit_pm_decision_queue_item(
         "IBM",
-        item_id,
+        edited_item_id,
         {
             "pack_id": "pack:edited",
             "proposals": [
@@ -90,13 +150,96 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
     assert edited["status"] == "pending"
     assert edited["pm_edited_proposal_pack"]["pack_id"] == "pack:edited"
 
-    approved = approve_pm_decision_queue_item("IBM", item_id, actor="pm")
-    assert approved["status"] == "approved"
-    assert approved["approved_proposal_pack"]["pack_id"] == "pack:edited"
-    assert approved["adapter_links"]["pending_assumption_change_ids"]
+    edited_preview = preview_pm_decision_queue_item("IBM", edited_item_id)
+    assert edited_preview["preview"]["manual_values"]["revenue_growth_near"] == 0.07
+    approved_edited = approve_pm_decision_queue_item("IBM", edited_item_id, actor="pm")
+    assert approved_edited["approved_proposal_pack"]["pack_id"] == "pack:edited"
+    edited_proposal = approved_edited["approved_proposal_pack"]["proposals"][0]
+    assert edited_proposal["proposal_mode"] == "target"
+    assert edited_proposal["proposed_target_value"] == 0.07
 
-    pending_rows = load_pending_assumption_changes(conn, ticker="IBM", status=None)
-    assert len(pending_rows) >= 1
+    skipped_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:00Z",
+            "updated_at": "2026-05-21T00:00:00Z",
+            "ticker": "ibm",
+            "profile_name": "industry_analysis",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "medium",
+            "valuation_impact_bucket": "medium",
+            "title": "Unknown field change",
+            "summary": "Proposal cannot be resolved.",
+            "evidence_anchor_ids": ["fact:unknown:1"],
+            "evidence_packet_ids": ["3"],
+            "proposal_pack": {
+                "pack_id": "pack:skip",
+                "proposals": [
+                    {
+                        "assumption_name": "unknown_driver_field",
+                        "proposal_mode": "delta",
+                        "proposed_delta": 0.01,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "medium",
+            "translator_confidence": "medium",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {},
+        },
+    )
+
+    skipped_preview = preview_pm_decision_queue_item("IBM", skipped_item_id)
+    assert skipped_preview["preview"]["manual_values"] == {}
+    assert skipped_preview["skipped_fields"] == ["unknown_driver_field"]
+
+    with pytest.raises(ValueError, match="unresolvable proposal fields"):
+        approve_pm_decision_queue_item("IBM", skipped_item_id, actor="pm")
+
+    unpreviewed_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:00Z",
+            "updated_at": "2026-05-21T00:00:00Z",
+            "ticker": "ibm",
+            "profile_name": "earnings_update",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Unpreviewed proposal",
+            "summary": "Requires preview.",
+            "evidence_anchor_ids": ["fact:preview:1"],
+            "evidence_packet_ids": ["4"],
+            "proposal_pack": {
+                "pack_id": "pack:unpreviewed",
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "delta",
+                        "proposed_delta": 0.01,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {},
+        },
+    )
+    with pytest.raises(ValueError, match="must be previewed"):
+        approve_pm_decision_queue_item("IBM", unpreviewed_item_id, actor="pm")
 
     rejected_item_id = insert_pm_decision_queue_item(
         conn,
@@ -161,5 +304,8 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
 
     statuses = {item["item_id"]: item["status"] for item in list_pm_decision_queue_items(conn, ticker="IBM", status=None)}
     assert statuses[item_id] == "approved"
+    assert statuses[edited_item_id] == "approved"
+    assert statuses[skipped_item_id] == "previewed"
+    assert statuses[unpreviewed_item_id] == "pending"
     assert statuses[rejected_item_id] == "rejected"
     assert statuses[deferred_item_id] == "deferred"

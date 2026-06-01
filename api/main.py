@@ -104,6 +104,18 @@ def api_coerce_ticker(value: str) -> str:
         raise HTTPException(status_code=400, detail=str(e))
 
 
+def _raise_pm_queue_http_error(exc: Exception) -> None:
+    detail = str(exc)
+    lower_detail = detail.lower()
+    if "queue item not found" in lower_detail:
+        status_code = 404
+    elif "previewed after the latest edit" in lower_detail:
+        status_code = 409
+    else:
+        status_code = 400
+    raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
 def load_saved_watchlist(shortlist_size: int = 10) -> dict[str, Any]:
     from src.stage_04_pipeline.batch_funnel import load_saved_watchlist as _impl
 
@@ -426,39 +438,208 @@ def apply_pending_assumptions_payload(
     return apply_pending_assumption_stack(ticker, change_ids, actor=actor)
 
 
-def run_agentic_handoff_profile_payload(ticker: str, profile_name: str) -> dict[str, Any]:
-    from db.loader import insert_pm_decision_queue_item
+def run_agentic_handoff_profile_payload(
+    ticker: str,
+    profile_name: str,
+    *,
+    include_agent_artifact: bool = False,
+) -> dict[str, Any]:
+    from db.loader import insert_pm_decision_queue_item, update_evidence_packet_run
     from db.schema import create_tables, get_connection
-    from src.stage_03_judgment.earnings_agent import EarningsAgent
-    from src.stage_03_judgment.filings_agent import FilingsAgent
-    from src.stage_03_judgment.industry_agent import IndustryAgent
-    from src.stage_03_judgment.valuation_agent import ValuationAgent
+    from src.contracts.evidence_packet import EvidencePacket, EvidenceSourceQuality
+    from src.stage_03_judgment.grounded_observation_agent import GroundedObservationAgent
+    from src.stage_04_pipeline.agentic_handoff_profiles import (
+        GROUNDED_OBSERVATION_RUNNER_KEY,
+        get_agentic_handoff_profile,
+    )
     from src.stage_04_pipeline.evidence_packets import build_evidence_packet
     from src.stage_04_pipeline.observation_translator import translate_observations_to_queue_items
 
     ticker = ticker.upper().strip()
+    try:
+        profile = get_agentic_handoff_profile(profile_name)
+    except KeyError:
+        return {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "status": "not_runnable",
+            "reason": "unknown_profile",
+            "evidence_packet": None,
+            "observation_count": 0,
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+            "errors": [{"code": "unknown_profile", "message": f"Unknown profile: {profile_name}"}],
+        }
+
     packet = build_evidence_packet(ticker, profile_name)
 
-    agent_map = {
-        "earnings_update": EarningsAgent,
-        "company_analysis": FilingsAgent,
-        "industry_analysis": IndustryAgent,
-        "comps_analysis": ValuationAgent,
-        "risk_review": ValuationAgent,
-        "valuation_review": ValuationAgent,
-    }
-    agent_cls = agent_map.get(profile_name, ValuationAgent)
+    def _persist_packet(
+        *,
+        observations: list[Any],
+        status: str,
+        errors: list[dict[str, Any]],
+        queue_item_count: int,
+        reason: str | None = None,
+        agent_observation_artifact: dict[str, Any] | None = None,
+    ) -> EvidencePacket:
+        if packet.packet_id is None:
+            run_metadata = dict(packet.run_metadata or {})
+            run_metadata.update(
+                {
+                    "handoff_run_status": status,
+                    "handoff_errors": errors,
+                    "observation_count": len(observations),
+                    "queue_item_count": queue_item_count,
+                }
+            )
+            if reason:
+                run_metadata["reason"] = reason
+            if agent_observation_artifact is not None:
+                run_metadata["agent_observation_artifact"] = agent_observation_artifact
+            return packet.model_copy(update={"observations": observations, "run_metadata": run_metadata})
+
+        updates = {
+            "handoff_run_status": status,
+            "handoff_errors": errors,
+            "observation_count": len(observations),
+            "queue_item_count": queue_item_count,
+        }
+        if reason:
+            updates["reason"] = reason
+        if agent_observation_artifact is not None:
+            updates["agent_observation_artifact"] = agent_observation_artifact
+        with get_connection() as conn:
+            create_tables(conn)
+            updated = update_evidence_packet_run(
+                conn,
+                int(packet.packet_id),
+                updated_at=packet.generated_at,
+                observations=[observation.model_dump() for observation in observations],
+                run_metadata_updates=updates,
+            )
+        return EvidencePacket(
+            packet_id=updated.get("packet_id"),
+            ticker=updated["ticker"],
+            profile_name=updated["profile_name"],
+            packet_kind=updated["packet_kind"],
+            bundle_id=updated.get("bundle_id"),
+            generated_at=updated["generated_at"],
+            source_refs=updated.get("source_refs") or [],
+            facts=updated.get("facts") or [],
+            snippets=updated.get("snippets") or [],
+            observations=updated.get("observations") or [],
+            run_metadata=updated.get("run_metadata") or {},
+        )
+
+    source_quality = str(
+        (packet.run_metadata or {}).get("source_quality") or EvidenceSourceQuality.placeholder.value
+    ).strip().lower()
+
+    if not profile.runnable:
+        reason = profile.not_runnable_reason or "profile_not_runnable"
+        packet = _persist_packet(
+            observations=[],
+            status="not_runnable",
+            errors=[],
+            queue_item_count=0,
+            reason=reason,
+        )
+        return {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "status": "not_runnable",
+            "reason": reason,
+            "evidence_packet": packet.model_dump(),
+            "observation_count": 0,
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+            "errors": [],
+        }
+
+    if source_quality != EvidenceSourceQuality.real.value:
+        packet = _persist_packet(
+            observations=[],
+            status="blocked",
+            errors=[],
+            queue_item_count=0,
+            reason="insufficient_real_evidence",
+        )
+        return {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "status": "blocked",
+            "reason": "insufficient_real_evidence",
+            "evidence_packet": packet.model_dump(),
+            "observation_count": 0,
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+            "errors": [],
+        }
+
+    if profile.runner_key != GROUNDED_OBSERVATION_RUNNER_KEY:
+        reason = "runner_not_registered"
+        packet = _persist_packet(
+            observations=[],
+            status="not_runnable",
+            errors=[],
+            queue_item_count=0,
+            reason=reason,
+        )
+        return {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "status": "not_runnable",
+            "reason": reason,
+            "evidence_packet": packet.model_dump(),
+            "observation_count": 0,
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+            "errors": [],
+        }
     observations = []
+    agent = GroundedObservationAgent(profile_name=profile_name)
     try:
-        observations = agent_cls().analyze_evidence_packet(packet, profile_name)
-    except Exception:
-        observations = []
-    packet = packet.model_copy(update={"observations": observations})
+        observations = agent.analyze_evidence_packet(packet, profile_name)
+    except Exception as exc:
+        errors = [
+            {
+                "code": "agent_execution_failed",
+                "agent": agent.name,
+                "profile_name": profile_name,
+                "message": str(exc) or exc.__class__.__name__,
+            }
+        ]
+        packet = _persist_packet(
+            observations=[],
+            status="failed",
+            errors=errors,
+            queue_item_count=0,
+            reason="agent_execution_failed",
+            agent_observation_artifact=getattr(agent, "last_agentic_observation_artifact", None),
+        )
+        return {
+            "ticker": ticker,
+            "profile_name": profile_name,
+            "status": "failed",
+            "reason": "agent_execution_failed",
+            "evidence_packet": packet.model_dump(),
+            "observation_count": 0,
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+            "errors": errors,
+            **(
+                {"agent_observation_artifact": getattr(agent, "last_agentic_observation_artifact", None)}
+                if include_agent_artifact
+                else {}
+            ),
+        }
     queue_items = translate_observations_to_queue_items(
         ticker=ticker,
         profile_name=profile_name,
         evidence_packet_id=int(packet.packet_id or 0),
         observations=observations,
+        evidence_packet=packet,
+        require_evidence_packet=True,
     )
 
     saved_queue_item_ids: list[int] = []
@@ -491,13 +672,28 @@ def run_agentic_handoff_profile_payload(ticker: str, profile_name: str) -> dict[
             )
             saved_queue_item_ids.append(item_id)
 
+    status = "completed_with_items" if saved_queue_item_ids else "completed_no_items"
+    packet = _persist_packet(
+        observations=observations,
+        status=status,
+        errors=[],
+        queue_item_count=len(saved_queue_item_ids),
+        agent_observation_artifact=getattr(agent, "last_agentic_observation_artifact", None),
+    )
     return {
         "ticker": ticker,
         "profile_name": profile_name,
+        "status": status,
         "evidence_packet": packet.model_dump(),
         "observation_count": len(observations),
         "queue_item_count": len(saved_queue_item_ids),
         "queue_item_ids": saved_queue_item_ids,
+        "errors": [],
+        **(
+            {"agent_observation_artifact": getattr(agent, "last_agentic_observation_artifact", None)}
+            if include_agent_artifact
+            else {}
+        ),
     }
 
 
@@ -522,10 +718,12 @@ def list_pm_decision_queue_payload(
 ) -> dict[str, Any]:
     from db.loader import list_pm_decision_queue_items
     from db.schema import create_tables, get_connection
+    from src.stage_04_pipeline.pm_decision_queue import build_pm_decision_queue_conflict_groups
 
     ticker = ticker.upper().strip()
     with get_connection() as conn:
         create_tables(conn)
+        all_items = list_pm_decision_queue_items(conn, ticker=ticker, status=None)
         items = list_pm_decision_queue_items(
             conn,
             ticker=ticker,
@@ -534,37 +732,83 @@ def list_pm_decision_queue_payload(
             qualitative_importance=qualitative_importance,
             valuation_impact_bucket=valuation_impact_bucket,
         )
-    return {"ticker": ticker, "items": items}
+    return {
+        "ticker": ticker,
+        "items": items,
+        "conflict_groups": build_pm_decision_queue_conflict_groups(all_items),
+        "filters": {
+            "status": status,
+            "item_type": item_type,
+            "qualitative_importance": qualitative_importance,
+            "valuation_impact_bucket": valuation_impact_bucket,
+        },
+    }
 
 
 def preview_pm_decision_queue_payload(ticker: str, item_id: int) -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import preview_pm_decision_queue_item
 
-    return preview_pm_decision_queue_item(ticker, item_id)
+    payload = preview_pm_decision_queue_item(ticker, item_id)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "item": payload.get("item"),
+        "preview": payload.get("preview"),
+        "skipped_fields": payload.get("skipped_fields") or [],
+        "preview_fingerprint": payload.get("preview_fingerprint"),
+        "previewed_at": payload.get("previewed_at"),
+    }
 
 
 def edit_pm_decision_queue_payload(ticker: str, item_id: int, proposal_pack: dict[str, Any], actor: str = "api") -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import edit_pm_decision_queue_item
 
-    return edit_pm_decision_queue_item(ticker, item_id, proposal_pack, actor=actor)
+    item = edit_pm_decision_queue_item(ticker, item_id, proposal_pack, actor=actor)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "status": item.get("status"),
+        "item": item,
+        "pm_edited_proposal_pack": item.get("pm_edited_proposal_pack"),
+    }
 
 
 def approve_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api") -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import approve_pm_decision_queue_item
 
-    return approve_pm_decision_queue_item(ticker, item_id, actor=actor)
+    item = approve_pm_decision_queue_item(ticker, item_id, actor=actor)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "status": item.get("status"),
+        "item": item,
+    }
 
 
 def reject_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import reject_pm_decision_queue_item
 
-    return reject_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+    item = reject_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "status": item.get("status"),
+        "reason": reason,
+        "item": item,
+    }
 
 
 def defer_pm_decision_queue_payload(ticker: str, item_id: int, actor: str = "api", reason: str | None = None) -> dict[str, Any]:
     from src.stage_04_pipeline.pm_decision_queue import defer_pm_decision_queue_item
 
-    return defer_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+    item = defer_pm_decision_queue_item(ticker, item_id, actor=actor, reason=reason)
+    return {
+        "ticker": ticker.upper().strip(),
+        "item_id": int(item_id),
+        "status": item.get("status"),
+        "reason": reason,
+        "item": item,
+    }
 
 
 build_ticker_overview_payload = build_overview_payload
@@ -586,6 +830,10 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=[
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            "http://127.0.0.1:5174",
+            "http://localhost:5174",
             "http://127.0.0.1:4173",
             "http://localhost:4173",
             "http://127.0.0.1:8000",
@@ -686,8 +934,10 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/tickers/{ticker}/valuation/summary")
-    def get_ticker_valuation_summary(ticker: str) -> dict[str, Any]:
-        return build_valuation_summary_payload(ticker)
+    def get_ticker_valuation_summary(ticker: str, source_mode: str | None = None) -> dict[str, Any]:
+        if source_mode is None:
+            return build_valuation_summary_payload(ticker)
+        return build_valuation_summary_payload(ticker, source_mode=source_mode)
 
     @app.get("/api/tickers/{ticker}/valuation/dcf")
     def get_ticker_valuation_dcf(ticker: str) -> dict[str, Any]:
@@ -885,7 +1135,10 @@ def create_app() -> FastAPI:
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/preview")
     def preview_ticker_pm_decision_queue_item(ticker: str, item_id: int) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
-        return preview_pm_decision_queue_payload(ticker, item_id)
+        try:
+            return preview_pm_decision_queue_payload(ticker, item_id)
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
 
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/edit")
     def edit_ticker_pm_decision_queue_item(
@@ -894,12 +1147,18 @@ def create_app() -> FastAPI:
         payload: PMDecisionQueueEditRequest,
     ) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
-        return edit_pm_decision_queue_payload(ticker, item_id, payload.proposal_pack, actor="api")
+        try:
+            return edit_pm_decision_queue_payload(ticker, item_id, payload.proposal_pack, actor="api")
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
 
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/approve")
     def approve_ticker_pm_decision_queue_item(ticker: str, item_id: int) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
-        return approve_pm_decision_queue_payload(ticker, item_id, actor="api")
+        try:
+            return approve_pm_decision_queue_payload(ticker, item_id, actor="api")
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
 
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/reject")
     def reject_ticker_pm_decision_queue_item(
@@ -909,7 +1168,10 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
         request_payload = payload or PMDecisionQueueActionRequest()
-        return reject_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+        try:
+            return reject_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
 
     @app.post("/api/tickers/{ticker}/pm-decision-queue/{item_id}/defer")
     def defer_ticker_pm_decision_queue_item(
@@ -919,7 +1181,10 @@ def create_app() -> FastAPI:
     ) -> dict[str, Any]:
         ticker = api_coerce_ticker(ticker)
         request_payload = payload or PMDecisionQueueActionRequest()
-        return defer_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+        try:
+            return defer_pm_decision_queue_payload(ticker, item_id, actor="api", reason=request_payload.reason)
+        except ValueError as exc:
+            _raise_pm_queue_http_error(exc)
 
     @app.get("/api/tickers/{ticker}/market")
     def get_ticker_market(ticker: str) -> dict[str, Any]:

@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import os
+from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
+from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
 from src.stage_02_valuation.templates.ic_memo import (
@@ -162,3 +164,14 @@ Return your analysis as JSON:
                 suggested_stop_loss_pct=0.20,
                 rationale=raw,
             )
+
+    def analyze_evidence_packet(
+        self,
+        packet: EvidencePacket,
+        profile_name: str = "risk_review",
+    ) -> list[EvidencePacketObservation]:
+        return analyze_evidence_packet_with_agent(
+            agent=self,
+            packet=packet,
+            profile_name=profile_name,
+        )

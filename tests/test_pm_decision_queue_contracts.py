@@ -166,3 +166,48 @@ def test_pm_edited_proposal_preserves_original_and_final_approved_values():
     assert item.proposal_pack.proposals[0].proposed_delta == pytest.approx(0.01)
     assert item.pm_edited_proposal_pack.proposals[0].proposed_target_value == pytest.approx(0.065)
     assert item.approved_proposal_pack.proposals[0].proposed_target_value == pytest.approx(0.065)
+
+
+def test_advisory_findings_must_not_include_approved_proposal_pack():
+    with pytest.raises(ValidationError):
+        PMDecisionQueueItem(
+            ticker="ibm",
+            profile_name="risk_review",
+            item_type=PMDecisionQueueItemType.advisory_finding,
+            title="Execution risk increased",
+            evidence_anchor_ids=["snippet:risk:1"],
+            evidence_packet_ids=["1"],
+            approved_proposal_pack=AssumptionChangePack(
+                pack_id="pack:approved",
+                proposals=[
+                    AssumptionChangeProposal(
+                        assumption_name="revenue_growth_near",
+                        proposal_mode=ProposalMode.target,
+                        proposed_target_value=0.05,
+                    )
+                ],
+            ),
+        )
+
+
+def test_observation_backed_queue_item_requires_evidence_packet_id():
+    with pytest.raises(ValidationError):
+        PMDecisionQueueItem(
+            ticker="ibm",
+            profile_name="earnings_update",
+            item_type=PMDecisionQueueItemType.assumption_change_pack,
+            title="Guidance changed",
+            evidence_anchor_ids=["fact:guidance_rev_midpoint"],
+            evidence_packet_ids=[],
+            proposal_pack=AssumptionChangePack(
+                pack_id="pack:1",
+                proposals=[
+                    AssumptionChangeProposal(
+                        assumption_name="revenue_growth_near",
+                        proposal_mode=ProposalMode.delta,
+                        proposed_delta=0.01,
+                    )
+                ],
+            ),
+            metadata={"observation_id": "obs:guidance:1"},
+        )

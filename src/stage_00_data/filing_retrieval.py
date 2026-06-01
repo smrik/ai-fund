@@ -19,9 +19,9 @@ from db.schema import create_tables
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
-_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v1"
-_CHUNK_VERSION = "v1"
-_QUERY_VERSION = "v1"
+_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v2"
+_CHUNK_VERSION = "v2"
+_QUERY_VERSION = "v2"
 _EMBEDDING_MODEL = PEER_SIMILARITY_MODEL
 _CHUNK_SIZE = 1400
 _CHUNK_OVERLAP = 200
@@ -31,12 +31,13 @@ _MODEL_CACHE: dict[str, object] = {}
 _PROFILE_CONFIGS: dict[str, dict[str, Any]] = {
     "filings": {
         "priorities": [
-            "notes_to_financials",
+            "business",
             "mda",
             "mda_q",
-            "notes_to_financials_q",
             "risk_factors",
             "risk_factors_q",
+            "notes_to_financials",
+            "notes_to_financials_q",
         ],
         "queries": [
             "revenue growth drivers pricing volume geography segment",
@@ -95,6 +96,38 @@ _PROFILE_CONFIGS: dict[str, dict[str, Any]] = {
             "pension obligation postretirement underfunded status",
             "minority interest noncontrolling preferred stock equity investment affiliate",
             "debt contingencies taxes fair value bridge one time ebit adjustment",
+        ],
+    },
+    "industry": {
+        "priorities": [
+            "business",
+            "mda",
+            "mda_q",
+            "risk_factors",
+            "risk_factors_q",
+            "notes_to_financials",
+            "notes_to_financials_q",
+        ],
+        "queries": [
+            "industry demand growth drivers market trends competitive position",
+            "pricing power competition customer spending macro headwinds tailwinds",
+            "segment demand backlog bookings renewal cloud artificial intelligence services",
+        ],
+    },
+    "risk": {
+        "priorities": [
+            "risk_factors",
+            "risk_factors_q",
+            "mda",
+            "mda_q",
+            "note_debt",
+            "note_contingencies",
+            "notes_to_financials",
+        ],
+        "queries": [
+            "execution risk transformation integration customer demand cyclicality",
+            "debt liquidity covenant interest rate refinancing balance sheet risk",
+            "litigation regulatory cybersecurity competition operational disruption",
         ],
     },
 }
@@ -215,23 +248,35 @@ def _normalize_heading_text(text: str) -> str:
 
 def _extract_section(text: str, start_patterns: list[str], end_patterns: list[str]) -> str:
     haystack = _normalize_heading_text(text)
-    start_match = None
+    start_matches: list[re.Match[str]] = []
     for pattern in start_patterns:
-        match = re.search(pattern, haystack, flags=re.IGNORECASE | re.MULTILINE)
-        if match and (start_match is None or match.start() < start_match.start()):
-            start_match = match
-    if start_match is None:
+        start_matches.extend(re.finditer(pattern, haystack, flags=re.IGNORECASE | re.MULTILINE))
+    start_matches.sort(key=lambda match: match.start())
+    if not start_matches:
         return ""
 
-    start = start_match.start()
-    end = len(haystack)
-    for pattern in end_patterns:
-        match = re.search(pattern, haystack[start_match.end() :], flags=re.IGNORECASE | re.MULTILINE)
-        if match:
-            candidate = start_match.end() + match.start()
-            if candidate > start and candidate < end:
-                end = candidate
-    return haystack[start:end].strip()
+    candidates: list[tuple[int, int, str]] = []
+    for start_match in start_matches:
+        start = start_match.start()
+        end = len(haystack)
+        for pattern in end_patterns:
+            match = re.search(pattern, haystack[start_match.end() :], flags=re.IGNORECASE | re.MULTILINE)
+            if match:
+                candidate = start_match.end() + match.start()
+                if candidate > start and candidate < end:
+                    end = candidate
+        section_text = haystack[start:end].strip()
+        normalized = " ".join(section_text.split())
+        if len(normalized) < 120:
+            continue
+        candidates.append((len(normalized), start, section_text))
+
+    if not candidates:
+        return ""
+    # SEC filings often contain a table of contents that matches Item headings.
+    # The substantive body is usually the longest candidate span between headings.
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return candidates[0][2]
 
 
 def _extract_note_subsections(form_type: str, notes_text: str) -> list[tuple[str, str]]:

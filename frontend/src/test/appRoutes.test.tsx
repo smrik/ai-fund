@@ -1,7 +1,7 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { queryClient } from "@/app/queryClient";
 import { router } from "@/app/router";
@@ -125,6 +125,27 @@ beforeEach(() => {
             memo_date: "2026-03-28",
             why_it_matters: "Base case still implies upside with a controlled terminal value contribution.",
             readiness: { tv_high_flag: false, revenue_data_quality_flag: "company", nwc_driver_quality_flag: false },
+            finance_quality: {
+              status: "review_required",
+              high_count: 2,
+              medium_count: 1,
+              flags: [
+                {
+                  code: "terminal_value_dominance",
+                  severity: "high",
+                  title: "Terminal value dominates enterprise value",
+                  detail: "Terminal value is 77.0% of EV.",
+                  pm_check: "Stress terminal growth, exit multiple, and WACC before relying on upside.",
+                },
+                {
+                  code: "dcf_comps_divergence",
+                  severity: "high",
+                  title: "DCF and comps disagree materially",
+                  detail: "DCF base IV differs from comps base by +191.0%.",
+                  pm_check: "Reconcile the DCF story against market multiples.",
+                },
+              ],
+            },
             ticker_dossier: canonicalDossier,
             ticker_dossier_contract_version: "1.0.0",
           }),
@@ -356,6 +377,201 @@ beforeEach(() => {
             current_iv: { bear: 90, base: 120, bull: 150 },
             proposed_iv: { bear: 92, base: 126, bull: 155 },
             delta_pct: { bear: 2.2, base: 5.0, bull: 3.3 },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (url.endsWith("/api/tickers/IBM/evidence-packets")) {
+        return new Response(
+          JSON.stringify({
+            ticker: "IBM",
+            evidence_packets: [
+              {
+                packet_id: 10,
+                ticker: "IBM",
+                profile_name: "valuation_review",
+                packet_kind: "valuation_review",
+                generated_at: "2026-03-28T10:00:00+00:00",
+                source_refs: [{ source_ref_id: "source:wacc", source_kind: "filing", source_label: "10-K", source_locator: "md&a" }],
+                facts: [{ fact_id: "fact:wacc", fact_name: "wacc", value: 0.08, unit: "pct" }],
+                snippets: [{ snippet_id: "snippet:wacc", source_ref_id: "source:wacc", text: "Management guided to lower financing costs." }],
+                observations: [
+                  {
+                    observation_id: "obs-1",
+                    observation_kind: "numeric",
+                    observation_type: "assumption_change",
+                    claim: "WACC can compress modestly.",
+                    evidence_anchor_ids: ["fact:wacc", "snippet:wacc"],
+                    text_snippet_ids: ["snippet:wacc"],
+                    qualitative_importance: "high",
+                    agent_confidence: "high",
+                    evidence_rationale: "Debt repricing evidence directly supports the lower WACC assumption.",
+                    what_would_change_mind: "A refinancing update showing higher spreads would weaken this observation.",
+                  },
+                ],
+                run_metadata: {
+                  source_quality: "real",
+                  status: "completed_with_items",
+                  observation_count: 1,
+                  queue_item_count: 1,
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (url.endsWith("/api/tickers/IBM/pm-decision-queue")) {
+        return new Response(
+          JSON.stringify({
+            ticker: "IBM",
+            items: [
+              {
+                item_id: 44,
+                ticker: "IBM",
+                profile_name: "valuation_review",
+                item_type: "assumption_change_pack",
+                status: "pending",
+                qualitative_importance: "high",
+                valuation_impact_bucket: "medium",
+                title: "Margin normalization pack",
+                summary: "Lower WACC slightly after debt repricing evidence.",
+                evidence_anchor_ids: ["snippet:wacc", "fact:wacc"],
+                evidence_packet_ids: ["10"],
+                proposal_pack: {
+                  pack_id: "pack-original",
+                  proposals: [{ assumption_name: "wacc", proposal_mode: "delta", proposed_delta: -0.01, rationale: "Original delta proposal" }],
+                },
+                pm_edited_proposal_pack: {
+                  pack_id: "pack-edited",
+                  proposals: [{ assumption_name: "wacc", proposal_mode: "target", proposed_target_value: 0.08, rationale: "PM narrowed the target" }],
+                },
+                approved_proposal_pack: null,
+                agent_confidence: "high",
+                translator_confidence: "high",
+                pm_confidence: null,
+                adapter_links: {},
+                decision_history: [],
+                metadata: { observation_id: "obs-1", packet_provenance: { source_quality: "real", packet_kind: "valuation_review" } },
+                created_at: "2026-03-28T10:00:00+00:00",
+                updated_at: "2026-03-28T10:00:00+00:00",
+              },
+              {
+                item_id: 45,
+                ticker: "IBM",
+                profile_name: "industry_analysis",
+                item_type: "assumption_change_pack",
+                status: "pending",
+                qualitative_importance: "medium",
+                valuation_impact_bucket: "medium",
+                title: "Industry discount-rate cluster",
+                summary: "Industry profile also touches WACC.",
+                evidence_anchor_ids: ["fact:wacc"],
+                evidence_packet_ids: ["10"],
+                proposal_pack: {
+                  pack_id: "pack-conflict",
+                  proposals: [{ assumption_name: "wacc", proposal_mode: "target", proposed_target_value: 0.09, rationale: "Higher risk premium" }],
+                },
+                pm_edited_proposal_pack: null,
+                approved_proposal_pack: null,
+                agent_confidence: "medium",
+                translator_confidence: "medium",
+                pm_confidence: null,
+                adapter_links: {},
+                decision_history: [{ event: "defer", actor: "api", event_ts: "2026-03-28T10:01:00+00:00", reason: "Wait for market update" }],
+                metadata: { observation_id: "obs-1", packet_provenance: { source_quality: "real", packet_kind: "industry_analysis" } },
+                created_at: "2026-03-28T10:01:00+00:00",
+                updated_at: "2026-03-28T10:01:00+00:00",
+              },
+            ],
+            conflict_groups: [
+              {
+                group_id: "IBM:wacc",
+                ticker: "IBM",
+                assumption_name: "wacc",
+                profile_names: ["industry_analysis", "valuation_review"],
+                item_ids: [44, 45],
+                proposal_count: 2,
+                distinct_value_count: 2,
+                conflict_level: "conflict",
+                review_note: "Multiple profiles propose different values for this driver.",
+                entries: [
+                  { item_id: 44, profile_name: "valuation_review", status: "pending", assumption_name: "wacc", proposal_mode: "target", proposed_value: 0.08 },
+                  { item_id: 45, profile_name: "industry_analysis", status: "pending", assumption_name: "wacc", proposal_mode: "target", proposed_value: 0.09 },
+                ],
+              },
+            ],
+            filters: { status: null, item_type: null, qualitative_importance: null, valuation_impact_bucket: null },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (url.endsWith("/api/tickers/IBM/pm-decision-queue/44/preview")) {
+        return new Response(
+          JSON.stringify({
+            ticker: "IBM",
+            item_id: 44,
+            item: {
+              item_id: 44,
+              ticker: "IBM",
+              profile_name: "valuation_review",
+              item_type: "assumption_change_pack",
+              status: "pending",
+              qualitative_importance: "high",
+              valuation_impact_bucket: "medium",
+              title: "Margin normalization pack",
+              summary: "Lower WACC slightly after debt repricing evidence.",
+              evidence_anchor_ids: ["snippet:wacc", "fact:wacc"],
+              evidence_packet_ids: ["10"],
+            },
+            preview: {
+              ticker: "IBM",
+              current_iv: { base: 126 },
+              proposed_iv: { base: 133 },
+              delta_pct: { base: 5.6 },
+              resolved_values: { wacc: { proposed_value: 0.08, source: "pm_queue" } },
+              conflicts: [{ assumption_name: "terminal_growth_rate", reason: "manual follow-up" }],
+            },
+            skipped_fields: ["terminal_growth_rate"],
+            preview_fingerprint: "preview-fingerprint-44",
+            previewed_at: "2026-03-28T10:02:00+00:00",
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (url.endsWith("/api/tickers/IBM/pm-decision-queue/44/edit")) {
+        return new Response(
+          JSON.stringify({
+            ticker: "IBM",
+            item_id: 44,
+            status: "pending",
+            item: {
+              item_id: 44,
+              ticker: "IBM",
+              profile_name: "valuation_review",
+              item_type: "assumption_change_pack",
+              status: "pending",
+              title: "Margin normalization pack",
+              summary: "Lower WACC slightly after debt repricing evidence.",
+              evidence_anchor_ids: ["snippet:wacc", "fact:wacc"],
+              evidence_packet_ids: ["10"],
+              proposal_pack: {
+                pack_id: "pack-original",
+                proposals: [{ assumption_name: "wacc", proposal_mode: "delta", proposed_delta: -0.01 }],
+              },
+              pm_edited_proposal_pack: {
+                pack_id: "pack-edited",
+                proposals: [{ assumption_name: "wacc", proposal_mode: "target", proposed_target_value: 0.081 }],
+              },
+            },
+            pm_edited_proposal_pack: {
+              pack_id: "pack-edited",
+              proposals: [{ assumption_name: "wacc", proposal_mode: "target", proposed_target_value: 0.081 }],
+            },
           }),
           { status: 200 },
         );
@@ -814,6 +1030,10 @@ describe("frontend routes", () => {
     const { container } = renderRoute("/ticker/IBM/valuation?view=Summary");
 
     expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
+    expect(await screen.findByText("Professional Finance Review Gates")).toBeInTheDocument();
+    expect(screen.getByText("Terminal value dominates enterprise value")).toBeInTheDocument();
+    expect(screen.getByText("Review State:")).toBeInTheDocument();
+    expect(screen.getByText("Review Required")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Latest Snapshot" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run Deep Analysis" })).toBeInTheDocument();
     expect(container.querySelector(".ticker-strip")).not.toBeInTheDocument();
@@ -895,6 +1115,137 @@ describe("frontend routes", () => {
     expect(await screen.findByRole("button", { name: "Preview IV with selected approvals" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Preview IV with selected approvals" }));
     expect(await screen.findByText("Bear IV")).toBeInTheDocument();
+  });
+
+  it("renders the PM Queue empty state and keeps failed or blocked profile runs visible", async () => {
+    vi.unstubAllGlobals();
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+
+        if (url.endsWith("/api/tickers/IBM/workspace")) {
+          return new Response(JSON.stringify(workspacePayload), { status: 200 });
+        }
+
+        if (url.endsWith("/api/tickers/IBM/evidence-packets")) {
+          return new Response(JSON.stringify({ ticker: "IBM", evidence_packets: [] }), { status: 200 });
+        }
+
+        if (url.endsWith("/api/tickers/IBM/pm-decision-queue")) {
+          return new Response(
+            JSON.stringify({
+              ticker: "IBM",
+              items: [],
+              filters: { status: null, item_type: null, qualitative_importance: null, valuation_impact_bucket: null },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (url.endsWith("/api/tickers/IBM/agentic-handoff/valuation_review/run")) {
+          return new Response(
+            JSON.stringify({
+              ticker: "IBM",
+              profile_name: "valuation_review",
+              status: "failed",
+              reason: "agent_execution_failed",
+              observation_count: 0,
+              queue_item_count: 0,
+              queue_item_ids: [],
+              errors: [{ agent: "ValuationAgent", code: "agent_execution_failed", message: "Local fixture exploded." }],
+              evidence_packet: {
+                packet_id: 50,
+                ticker: "IBM",
+                profile_name: "valuation_review",
+                packet_kind: "valuation_review",
+                generated_at: "2026-03-28T10:00:00+00:00",
+                run_metadata: { source_quality: "real", status: "failed" },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (url.endsWith("/api/tickers/IBM/agentic-handoff/earnings_update/run")) {
+          return new Response(
+            JSON.stringify({
+              ticker: "IBM",
+              profile_name: "earnings_update",
+              status: "blocked",
+              reason: "insufficient_real_evidence",
+              observation_count: 0,
+              queue_item_count: 0,
+              queue_item_ids: [],
+              errors: [],
+              evidence_packet: {
+                packet_id: 51,
+                ticker: "IBM",
+                profile_name: "earnings_update",
+                packet_kind: "earnings_update",
+                generated_at: "2026-03-28T10:00:00+00:00",
+                run_metadata: { source_quality: "partial", status: "blocked" },
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (url.endsWith("/api/tickers/IBM/snapshot/open-latest") || url.endsWith("/api/tickers/IBM/analysis/run")) {
+          return new Response(JSON.stringify({ ok: true }), { status: 200 });
+        }
+
+        return new Response(JSON.stringify({ ok: true }), { status: 200 });
+      }) as unknown as typeof fetch,
+    );
+
+    renderRoute("/ticker/IBM/valuation?view=PM%20Queue");
+
+    expect(await screen.findByText("No evidence packets yet. Run a profile with real local data to materialize a reviewable packet.")).toBeInTheDocument();
+    expect(screen.getByText("No queue items match the active filters. Real evidence without approved translator output will keep the queue empty by design.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Valuation Review" }));
+    expect(await screen.findByText("Failed")).toBeInTheDocument();
+    expect(screen.getByText("Local fixture exploded.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Earnings Update" }));
+    expect(await screen.findByText("Blocked")).toBeInTheDocument();
+    expect(screen.getByText("Insufficient Real Evidence")).toBeInTheDocument();
+  });
+
+  it("shows PM Queue evidence, proposal comparisons, and preview-gated approvals", async () => {
+    renderRoute("/ticker/IBM/valuation?view=PM%20Queue");
+
+    expect(await screen.findByRole("heading", { name: "Evidence Packets" })).toBeInTheDocument();
+    expect(screen.getAllByText("real").length).toBeGreaterThan(0);
+    expect(screen.getByText("Management guided to lower financing costs.")).toBeInTheDocument();
+    expect(screen.getByText("Conflicts / Shared Drivers")).toBeInTheDocument();
+    expect(screen.getByText("Multiple profiles propose different values for this driver.")).toBeInTheDocument();
+    expect(screen.getAllByText(/Debt repricing evidence directly supports the lower WACC assumption/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/A refinancing update showing higher spreads would weaken this observation/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Original Proposal").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("PM Edited Proposal").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Approved Override").length).toBeGreaterThan(0);
+
+    const itemCard = screen.getByText("Margin normalization pack").closest("article");
+    expect(itemCard).not.toBeNull();
+    const itemScope = within(itemCard as HTMLElement);
+    const approveButton = itemScope.getByRole("button", { name: "Approve" });
+    expect(approveButton).toBeDisabled();
+
+    fireEvent.click(itemScope.getByRole("button", { name: "Preview" }));
+    await waitFor(() => expect(screen.getAllByText("Previewed Base IV").length).toBeGreaterThan(0));
+    expect(screen.getByText("Field-Level Resolved Values")).toBeInTheDocument();
+    expect(screen.getByText(/Fingerprint: preview-fingerprint-44/)).toBeInTheDocument();
+    expect(screen.getByText("Preview conflicts: terminal_growth_rate")).toBeInTheDocument();
+    expect(await screen.findByText("Preview skipped unresolvable fields: terminal_growth_rate")).toBeInTheDocument();
+    await waitFor(() => expect(itemScope.getByRole("button", { name: "Approve" })).toBeEnabled());
+
+    const editInput = itemScope.getByLabelText("PM edit proposed value for item 44");
+    fireEvent.change(editInput, { target: { value: "0.081" } });
+    fireEvent.click(itemScope.getByRole("button", { name: "Save Edit" }));
+    await waitFor(() => expect(itemScope.getByRole("button", { name: "Approve" })).toBeDisabled());
   });
 
   it("sends the selected recommendation fields when applying approvals", async () => {

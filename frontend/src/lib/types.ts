@@ -155,6 +155,18 @@ export interface ValuationSummaryPayload {
   memo_date?: string | null;
   why_it_matters?: string | null;
   readiness?: Record<string, unknown> | null;
+  finance_quality?: {
+    status?: string | null;
+    high_count?: number | null;
+    medium_count?: number | null;
+    flags?: Array<{
+      code?: string | null;
+      severity?: string | null;
+      title?: string | null;
+      detail?: string | null;
+      pm_check?: string | null;
+    }>;
+  } | null;
   summary?: Record<string, unknown> | null;
   ticker_dossier_contract_version?: string | null;
   ticker_dossier?: TickerDossierPayload;
@@ -313,13 +325,40 @@ export interface RecommendationsPreviewPayload {
   delta_pct?: Record<string, number | null>;
 }
 
+export type AgenticHandoffRunStatus =
+  | "blocked"
+  | "failed"
+  | "completed_no_items"
+  | "completed_with_items"
+  | "not_runnable";
+
+export type EvidenceSourceQuality = "real" | "partial" | "placeholder";
+
+export interface AgenticHandoffRunError extends Record<string, unknown> {
+  code?: string | null;
+  agent?: string | null;
+  message?: string | null;
+}
+
+export interface EvidencePacketRunMetadata extends Record<string, unknown> {
+  source_quality?: EvidenceSourceQuality | null;
+  status?: AgenticHandoffRunStatus | null;
+  reason?: string | null;
+  errors?: AgenticHandoffRunError[];
+  observation_count?: number | null;
+  queue_item_count?: number | null;
+}
+
 export interface AgenticHandoffRunPayload {
   ticker: string;
   profile_name: string;
+  status: AgenticHandoffRunStatus;
+  reason?: string | null;
   evidence_packet?: EvidencePacketSummary;
   observation_count?: number;
   queue_item_count?: number;
   queue_item_ids?: number[];
+  errors?: AgenticHandoffRunError[];
 }
 
 export interface AssumptionChangeProposal {
@@ -328,6 +367,7 @@ export interface AssumptionChangeProposal {
   proposed_delta?: number | null;
   proposed_target_value?: number | null;
   rationale?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 export interface AssumptionChangePack {
@@ -340,7 +380,7 @@ export interface PMDecisionQueueItem {
   ticker: string;
   profile_name: string;
   item_type: "advisory_finding" | "assumption_change_pack";
-  status: "pending" | "approved" | "rejected" | "deferred";
+  status: "pending" | "previewed" | "approved" | "rejected" | "deferred";
   qualitative_importance?: "low" | "medium" | "high" | null;
   valuation_impact_bucket?: "low" | "medium" | "high" | null;
   title: string;
@@ -355,8 +395,43 @@ export interface PMDecisionQueueItem {
   pm_confidence?: "low" | "medium" | "high" | null;
   adapter_links?: Record<string, unknown>;
   decision_history?: Array<Record<string, unknown>>;
+  metadata?: Record<string, unknown>;
   created_at?: string | null;
   updated_at?: string | null;
+}
+
+export interface PMDecisionQueueConflictEntry {
+  item_id?: number | null;
+  profile_name?: string | null;
+  status?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  assumption_name: string;
+  proposal_mode?: string | null;
+  proposed_value?: number | null;
+  proposal?: AssumptionChangeProposal | null;
+  qualitative_importance?: string | null;
+  agent_confidence?: string | null;
+  translator_confidence?: string | null;
+  valuation_impact_bucket?: string | null;
+  source_quality?: EvidenceSourceQuality | null;
+  evidence_packet_ids?: string[];
+  evidence_anchor_ids?: string[];
+  last_preview_at?: string | null;
+  last_preview_fingerprint?: string | null;
+}
+
+export interface PMDecisionQueueConflictGroup {
+  group_id: string;
+  ticker: string;
+  assumption_name: string;
+  profile_names: string[];
+  item_ids: number[];
+  proposal_count: number;
+  distinct_value_count: number;
+  conflict_level: "cluster" | "conflict";
+  review_note: string;
+  entries: PMDecisionQueueConflictEntry[];
 }
 
 export interface EvidencePacketSummary {
@@ -378,7 +453,15 @@ export interface EvidencePacketSummary {
     text_snippet_ids: string[];
     qualitative_importance?: "low" | "medium" | "high" | null;
     agent_confidence?: "low" | "medium" | "high" | null;
+    materiality?: "low" | "medium" | "high" | null;
+    thesis_implication?: string | null;
+    driver_implication?: string | null;
+    evidence_rationale?: string | null;
+    pm_question?: string | null;
+    what_would_change_mind?: string | null;
+    metadata?: Record<string, unknown>;
   }>;
+  run_metadata?: EvidencePacketRunMetadata;
 }
 
 export interface EvidencePacketsPayload {
@@ -389,9 +472,18 @@ export interface EvidencePacketsPayload {
 export interface PMDecisionQueueListPayload {
   ticker: string;
   items: PMDecisionQueueItem[];
+  conflict_groups?: PMDecisionQueueConflictGroup[];
+  filters?: {
+    status?: string | null;
+    item_type?: string | null;
+    qualitative_importance?: string | null;
+    valuation_impact_bucket?: string | null;
+  };
 }
 
 export interface PMDecisionQueuePreviewPayload {
+  ticker: string;
+  item_id: number;
   item?: PMDecisionQueueItem;
   preview?: {
     ticker: string;
@@ -402,6 +494,17 @@ export interface PMDecisionQueuePreviewPayload {
     conflicts?: Array<Record<string, unknown>>;
   };
   skipped_fields?: string[];
+  preview_fingerprint?: string | null;
+  previewed_at?: string | null;
+}
+
+export interface PMDecisionQueueActionPayload {
+  ticker: string;
+  item_id: number;
+  status: PMDecisionQueueItem["status"];
+  reason?: string | null;
+  item: PMDecisionQueueItem;
+  pm_edited_proposal_pack?: AssumptionChangePack | null;
 }
 
 export interface MarketPayload {

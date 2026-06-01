@@ -4,6 +4,7 @@ Provides prices, valuation multiples, analyst ratings, and news.
 """
 
 import json
+import os
 import sqlite3
 from datetime import datetime, timezone
 from typing import Optional
@@ -29,7 +30,15 @@ def _get_ticker(ticker: str) -> yf.Ticker:
 # ── SQLite result cache helpers ────────────────────────────────────────────────
 _MARKET_DATA_TTL_HOURS = 4  # How long to trust cached market data
 
-def _db_cache_get(ticker: str, data_type: str, ttl_hours: float = _MARKET_DATA_TTL_HOURS) -> dict | None:
+
+def _allow_stale_cache() -> bool:
+    return os.getenv("ALPHA_POD_ALLOW_STALE_MARKET_CACHE", "0").strip().lower() in {"1", "true", "yes"}
+
+
+def _market_cache_only() -> bool:
+    return os.getenv("ALPHA_POD_MARKET_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}
+
+def _db_cache_get(ticker: str, data_type: str, ttl_hours: float | None = _MARKET_DATA_TTL_HOURS) -> dict | None:
     """Return cached JSON result if fresh enough, else None."""
     try:
         from config import DB_PATH
@@ -46,7 +55,7 @@ def _db_cache_get(ticker: str, data_type: str, ttl_hours: float = _MARKET_DATA_T
             return None
         fetched_at = datetime.fromisoformat(row["fetched_at"])
         age_hours = (datetime.now(timezone.utc) - fetched_at.replace(tzinfo=timezone.utc)).total_seconds() / 3600
-        if age_hours > ttl_hours:
+        if ttl_hours is not None and age_hours > ttl_hours:
             return None
         return json.loads(row["data_json"])
     except Exception:
@@ -83,10 +92,13 @@ def get_market_data(ticker: str, use_cache: bool = False) -> dict:
     Return current market snapshot: price, market cap, multiples, 52w range.
     Pass use_cache=True to enable SQLite result cache (TTL 4h). Used by refresh.py.
     """
-    if use_cache:
-        cached = _db_cache_get(ticker, "market_data")
+    cache_only = _market_cache_only()
+    if use_cache or cache_only:
+        cached = _db_cache_get(ticker, "market_data", ttl_hours=None if _allow_stale_cache() else _MARKET_DATA_TTL_HOURS)
         if cached is not None:
             return cached
+        if cache_only:
+            raise RuntimeError(f"No cached market_data row available for {ticker}")
 
     t = yf.Ticker(ticker)
     info = t.info or {}
@@ -134,6 +146,8 @@ def get_market_data(ticker: str, use_cache: bool = False) -> dict:
 
 def get_price_history(ticker: str, period: str = "1y") -> list[dict]:
     """Return OHLCV price history. period: 1mo, 3mo, 6mo, 1y, 2y, 5y."""
+    if _market_cache_only():
+        return []
     t = yf.Ticker(ticker)
     hist = t.history(period=period)
     if hist.empty:
@@ -151,6 +165,8 @@ def get_price_history(ticker: str, period: str = "1y") -> list[dict]:
 
 def get_volatility(ticker: str) -> Optional[float]:
     """Return annualized 1-year historical volatility."""
+    if _market_cache_only():
+        return None
     t = yf.Ticker(ticker)
     hist = t.history(period="1y")
     if hist.empty or len(hist) < 20:
@@ -166,6 +182,8 @@ def get_peer_multiples(tickers: list[str]) -> list[dict]:
     ev_ebitda, pe_trailing, ev_revenue.
     Never raises — skips tickers that fail.
     """
+    if _market_cache_only():
+        return []
     results = []
     for t in tickers:
         try:
@@ -346,8 +364,13 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
     Pass use_cache=True to enable SQLite result cache (TTL 4h). Used by refresh.py.
     NWC sign: positive nwc_change means working capital consumed cash (use in FCF as negative).
     """
-    if use_cache:
-        cached = _db_cache_get(ticker, "historical_financials")
+    cache_only = _market_cache_only()
+    if use_cache or cache_only:
+        cached = _db_cache_get(
+            ticker,
+            "historical_financials",
+            ttl_hours=None if _allow_stale_cache() else _MARKET_DATA_TTL_HOURS,
+        )
         if cached is not None:
             return cached
 
@@ -378,6 +401,9 @@ def get_historical_financials(ticker: str, use_cache: bool = False) -> dict:
         "cogs_pct_of_revenue": None,
         "invested_capital_derived": None,
     }
+
+    if cache_only:
+        return _none_result
 
     try:
         t = yf.Ticker(ticker)

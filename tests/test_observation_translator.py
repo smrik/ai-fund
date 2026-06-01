@@ -1,10 +1,15 @@
 import pytest
 
 from src.contracts.evidence_packet import (
+    EvidenceConfidence,
+    EvidenceImportance,
+    EvidencePacket,
+    EvidencePacketFact,
+    EvidencePacketKind,
     EvidencePacketObservation,
     EvidencePacketObservationKind,
 )
-from src.contracts.pm_decision_queue import PMDecisionQueueItemType, ProposalMode
+from src.contracts.pm_decision_queue import PMDecisionQueueItemType, ProposalMode, QueueConfidence
 import src.stage_04_pipeline.observation_translator as translator
 
 
@@ -136,3 +141,191 @@ def test_translator_enforces_assumption_whitelist(monkeypatch):
         ],
     )
     assert items == []
+
+
+def test_translator_preserves_confidence_from_enum_values(monkeypatch):
+    monkeypatch.setitem(
+        translator.TRANSLATOR_RULES["earnings_update"],
+        "test_enum_confidence",
+        {
+            "rule_type": "assumption_change_pack",
+            "proposals": [
+                {"assumption_name": "revenue_growth_near", "proposal_mode": "delta", "proposed_delta": 0.01}
+            ],
+            "translator_confidence": EvidenceConfidence.high,
+        },
+    )
+
+    observation = EvidencePacketObservation(
+        observation_id="obs:enum",
+        observation_kind=EvidencePacketObservationKind.numeric,
+        observation_type="test_enum_confidence",
+        claim="claim for enum confidence",
+        evidence_anchor_ids=["fact:enum:1"],
+        agent_confidence=EvidenceConfidence.high,
+        qualitative_importance=EvidenceImportance.high,
+    )
+
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="earnings_update",
+        evidence_packet_id=6,
+        observations=[observation],
+    )
+
+    assert len(items) == 1
+    assert items[0].agent_confidence == QueueConfidence.high
+    assert items[0].translator_confidence == QueueConfidence.high
+    assert items[0].qualitative_importance.value == "high"
+
+
+def test_translator_preserves_qualitative_importance_for_advisory_findings():
+    observation = EvidencePacketObservation(
+        observation_id="obs:advisory",
+        observation_kind=EvidencePacketObservationKind.qualitative,
+        observation_type="execution_risk_increased",
+        claim="execution risk increased",
+        evidence_anchor_ids=["snippet:risk:1"],
+        text_snippet_ids=["snippet:risk:1"],
+        agent_confidence=EvidenceConfidence.medium,
+        qualitative_importance=EvidenceImportance.medium,
+    )
+
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="risk_review",
+        evidence_packet_id=7,
+        observations=[observation],
+    )
+
+    assert len(items) == 1
+    assert items[0].item_type == PMDecisionQueueItemType.advisory_finding
+    assert items[0].qualitative_importance.value == "medium"
+    assert items[0].proposal_pack is None
+
+
+def test_translator_evidence_weighted_growth_delta_scales_with_facts():
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="earnings_update",
+        evidence_packet_id=8,
+        observations=[
+            _observation(
+                observation_type="demand_strength_broad",
+                anchors=["fact:earnings:1"],
+                metadata={"facts_snapshot": {"latest_quarter_revenue_yoy_pct": 9.1}},
+            )
+        ],
+    )
+
+    assert len(items) == 1
+    proposal = items[0].proposal_pack.proposals[0]
+    assert proposal.assumption_name == "revenue_growth_near"
+    assert proposal.proposal_mode == ProposalMode.delta
+    assert proposal.proposed_delta > 0.01
+    assert proposal.proposed_delta <= 0.03
+    assert proposal.metadata.get("sizing_mode") == "evidence_weighted"
+    assert proposal.metadata.get("base_delta") == pytest.approx(0.01)
+
+
+def test_translator_evidence_weighted_comps_delta_is_capped():
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="comps_analysis",
+        evidence_packet_id=9,
+        observations=[
+            _observation(
+                observation_type="multiple_premium_supported",
+                anchors=["fact:comps:1"],
+                metadata={
+                    "facts_snapshot": {
+                        "tev_ebitda_fwd_target_minus_peer_median": 9.0,
+                        "pe_ltm_target_minus_peer_median": 8.5,
+                    }
+                },
+            )
+        ],
+    )
+
+    assert len(items) == 1
+    proposal = items[0].proposal_pack.proposals[0]
+    assert proposal.assumption_name == "exit_multiple"
+    assert proposal.proposed_delta == pytest.approx(1.5)
+    assert proposal.metadata.get("sizing_mode") == "evidence_weighted"
+
+
+def test_translator_deduplicates_assumption_change_fields_within_profile_run():
+    observations = [
+        _observation(
+            observation_type="multiple_premium_supported",
+            anchors=["fact:comps:fwd"],
+            metadata={"facts_snapshot": {"tev_ebitda_fwd_target_minus_peer_median": 6.8}},
+        ),
+        _observation(
+            observation_type="multiple_premium_supported",
+            anchors=["fact:comps:pe"],
+            metadata={"facts_snapshot": {"pe_ltm_target_minus_peer_median": 5.8}},
+        ),
+    ]
+
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="comps_analysis",
+        evidence_packet_id=10,
+        observations=observations,
+    )
+
+    assert len(items) == 1
+    assert items[0].proposal_pack is not None
+    assert [proposal.assumption_name for proposal in items[0].proposal_pack.proposals] == ["exit_multiple"]
+
+
+def test_translator_uses_packet_facts_for_live_observation_sizing():
+    packet = EvidencePacket(
+        ticker="IBM",
+        profile_name="comps_analysis",
+        packet_kind=EvidencePacketKind.comps_analysis,
+        facts=[
+            EvidencePacketFact(
+                fact_id="fact:comps:spread",
+                fact_name="tev_ebitda_fwd_target_minus_peer_median",
+                value=6.8,
+            )
+        ],
+    )
+    observation = _observation(
+        observation_type="multiple_premium_supported",
+        anchors=["fact:comps:spread"],
+    )
+
+    items = translator.translate_observations_to_queue_items(
+        ticker="IBM",
+        profile_name="comps_analysis",
+        evidence_packet_id=11,
+        observations=[observation],
+        evidence_packet=packet,
+    )
+
+    proposal = items[0].proposal_pack.proposals[0]
+    assert proposal.assumption_name == "exit_multiple"
+    assert proposal.proposed_delta > 0.5
+    assert proposal.metadata["reasons"]
+    assert items[0].metadata["packet_provenance"]["packet_kind"] == "comps_analysis"
+    assert items[0].metadata["packet_provenance"]["fact_ids"] == ["fact:comps:spread"]
+    assert items[0].metadata["packet_provenance"]["packet_hash"]
+
+
+def test_translator_can_fail_closed_when_public_handoff_omits_packet():
+    with pytest.raises(ValueError, match="evidence_packet is required"):
+        translator.translate_observations_to_queue_items(
+            ticker="IBM",
+            profile_name="comps_analysis",
+            evidence_packet_id=12,
+            observations=[
+                _observation(
+                    observation_type="multiple_premium_supported",
+                    anchors=["fact:comps:spread"],
+                )
+            ],
+            require_evidence_packet=True,
+        )

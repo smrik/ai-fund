@@ -36,18 +36,59 @@ class BaseAgent:
 	"""
 
 	def __init__(self, model: str | None = None):
-		api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or os.getenv("OPENAI_API_KEY", "")
+		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+		if openrouter_key and "openrouter.ai" in (LLM_BASE_URL or ""):
+			api_key = openrouter_key
+		else:
+			api_key = (
+				os.getenv("GEMINI_API_KEY")
+				or os.getenv("GOOGLE_API_KEY")
+				or os.getenv("OPENAI_API_KEY")
+				or openrouter_key
+				or ""
+			)
 		kwargs: dict = {"api_key": api_key}
 		if LLM_BASE_URL:
 			kwargs["base_url"] = LLM_BASE_URL
 		self.client = OpenAI(**kwargs)
 		self.model = model or LLM_MODEL
+		self.last_used_model = self.model
 		self.name = "BaseAgent"
 		self.prompt_version = "v1"
 		self.system_prompt = "You are a financial research assistant."
 		self.tools: list[ToolDefinition] = []
 		self.tool_handlers: dict[str, ToolHandler] = {}
 		self.last_run_artifact: dict[str, Any] = {}
+
+	@staticmethod
+	def _dedupe_models(models: list[str]) -> list[str]:
+		ordered: list[str] = []
+		seen: set[str] = set()
+		for raw in models:
+			value = str(raw or "").strip()
+			if not value or value in seen:
+				continue
+			seen.add(value)
+			ordered.append(value)
+		return ordered
+
+	@staticmethod
+	def _split_models(raw: str | None) -> list[str]:
+		if not raw:
+			return []
+		return [part.strip() for part in str(raw).split(",") if part.strip()]
+
+	def _agent_fallback_env_name(self) -> str:
+		class_name = self.__class__.__name__
+		parts = re.findall(r"[A-Z][a-z0-9]*", class_name) or [class_name]
+		return "_".join(part.upper() for part in parts) + "_FALLBACK_MODELS"
+
+	def candidate_models(self, primary_model: str | None = None) -> list[str]:
+		primary = str(primary_model or self.model or "").strip()
+		models = [primary] if primary else []
+		models.extend(self._split_models(os.getenv(self._agent_fallback_env_name())))
+		models.extend(self._split_models(os.getenv("LLM_FALLBACK_MODELS")))
+		return self._dedupe_models(models)
 
 	def _execute_tool(self, tool_name: str, tool_input: dict) -> str:
 		"""Dispatch a tool call to the registered handler."""
@@ -65,30 +106,87 @@ class BaseAgent:
 	def _create_with_retry(self, **kwargs) -> Any:
 		"""Call the OpenAI API with exponential backoff on transient errors."""
 		last_exc: Exception | None = None
-		for attempt in range(_MAX_RETRIES + 1):
-			try:
-				return self.client.chat.completions.create(**kwargs)
-			except RateLimitError as e:
-				last_exc = e
-				if attempt < _MAX_RETRIES:
-					_logger.warning(
-						f"{self.name} rate limited — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
-					)
-					time.sleep(_RETRY_BACKOFF[attempt])
-				else:
-					_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: RateLimitError")
-					raise
-			except (APITimeoutError, APIConnectionError) as e:
-				last_exc = e
-				if attempt < _MAX_RETRIES:
-					_logger.warning(
-						f"{self.name} {type(e).__name__} — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
-					)
-					time.sleep(_RETRY_BACKOFF[attempt])
-				else:
-					_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: {type(e).__name__}")
+		primary_model = str(kwargs.pop("model", self.model) or self.model)
+		candidates = self.candidate_models(primary_model)
+		if not candidates:
+			candidates = [self.model]
+		for idx, model_name in enumerate(candidates):
+			for attempt in range(_MAX_RETRIES + 1):
+				try:
+					response = self.client.chat.completions.create(model=model_name, **kwargs)
+					self.last_used_model = model_name
+					return response
+				except RateLimitError as e:
+					last_exc = e
+					if attempt < _MAX_RETRIES:
+						_logger.warning(
+							f"{self.name} rate limited on {model_name} — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
+						)
+						time.sleep(_RETRY_BACKOFF[attempt])
+					else:
+						if idx < len(candidates) - 1:
+							_logger.warning(f"{self.name} exhausted retries on {model_name}; trying fallback model")
+						else:
+							_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: RateLimitError")
+				except (APITimeoutError, APIConnectionError) as e:
+					last_exc = e
+					if attempt < _MAX_RETRIES:
+						_logger.warning(
+							f"{self.name} {type(e).__name__} on {model_name} — retry {attempt + 1}/{_MAX_RETRIES}, sleeping {_RETRY_BACKOFF[attempt]}s"
+						)
+						time.sleep(_RETRY_BACKOFF[attempt])
+					else:
+						if idx < len(candidates) - 1:
+							_logger.warning(f"{self.name} exhausted retries on {model_name}; trying fallback model")
+						else:
+							_logger.error(f"{self.name} failed after {_MAX_RETRIES} retries: {type(e).__name__}")
+				except Exception as e:
+					last_exc = e
+					if idx < len(candidates) - 1:
+						_logger.warning(
+							f"{self.name} non-retryable error on {model_name} ({type(e).__name__}); trying fallback model"
+						)
+						break
 					raise
 		raise last_exc  # unreachable, satisfies type checkers
+
+	def run_structured_payload(self, user_message: str, response_format: Any, max_tokens: int = 8192) -> tuple[dict[str, Any] | None, str | None]:
+		"""
+		Try strict structured output via chat.completions.parse.
+		Returns (payload_dict_or_none, model_used_or_none).
+		"""
+		parser = getattr(self.client.chat.completions, "parse", None)
+		if parser is None:
+			return None, None
+		messages = [
+			{"role": "system", "content": self.system_prompt},
+			{"role": "user", "content": user_message},
+		]
+		last_exc: Exception | None = None
+		for model_name in self.candidate_models(self.model):
+			try:
+				completion = parser(
+					model=model_name,
+					messages=messages,
+					max_tokens=max_tokens,
+					response_format=response_format,
+				)
+				message = completion.choices[0].message
+				parsed = getattr(message, "parsed", None)
+				if parsed is None:
+					continue
+				self.last_used_model = model_name
+				if hasattr(parsed, "model_dump"):
+					return parsed.model_dump(), model_name
+				if isinstance(parsed, dict):
+					return parsed, model_name
+				return None, model_name
+			except Exception as exc:
+				last_exc = exc
+				continue
+		if last_exc is not None:
+			_logger.warning(f"{self.name} structured parse unavailable: {last_exc}")
+		return None, None
 
 	@staticmethod
 	def _serialize_tool_call(tool_call: Any) -> dict[str, Any]:
@@ -145,6 +243,8 @@ class BaseAgent:
 		artifact: dict[str, Any] = {
 			"system_prompt": self.system_prompt,
 			"user_prompt": user_message,
+			"requested_model": self.model,
+			"candidate_models": self.candidate_models(self.model),
 			"tool_schema": self.tools,
 			"api_trace": [],
 			"raw_final_output": "",
@@ -174,6 +274,7 @@ class BaseAgent:
 			trace_row: dict[str, Any] = {
 				"request_messages": json.loads(json.dumps(messages)),
 				"finish_reason": choice.finish_reason,
+				"model": getattr(response, "model", self.last_used_model),
 				"assistant_message": self._serialize_assistant_message(choice.message),
 			}
 

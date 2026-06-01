@@ -126,4 +126,13 @@ class PMDecisionQueueItem(ContractModel):
     def _validate_item_type_payload(self) -> "PMDecisionQueueItem":
         if self.item_type == PMDecisionQueueItemType.assumption_change_pack and self.proposal_pack is None:
             raise ValueError("assumption_change_pack items require proposal_pack")
+        if self.item_type == PMDecisionQueueItemType.advisory_finding:
+            if self.proposal_pack is not None:
+                raise ValueError("advisory_finding items must not include proposal_pack")
+            if self.pm_edited_proposal_pack is not None:
+                raise ValueError("advisory_finding items must not include pm_edited_proposal_pack")
+            if self.approved_proposal_pack is not None:
+                raise ValueError("advisory_finding items must not include approved_proposal_pack")
+        if self.metadata.get("observation_id") and not self.evidence_packet_ids:
+            raise ValueError("observation-backed queue items require at least one evidence_packet_id")
         return self

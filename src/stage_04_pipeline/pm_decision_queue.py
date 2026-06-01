@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -11,6 +12,10 @@ from src.stage_04_pipeline.pending_assumption_changes import (
     create_pending_assumption_change,
     preview_pending_assumption_stack,
 )
+
+
+class PMDecisionQueuePreviewRequiredError(ValueError):
+    """Raised when approval is attempted before a fresh deterministic preview."""
 
 
 def _now() -> str:
@@ -37,19 +42,112 @@ def _append_decision_history(item: dict[str, Any], event: dict[str, Any]) -> lis
     return history
 
 
-def _pack_to_manual_values(
+def _preview_fingerprint(resolved_pack: dict[str, Any] | None, skipped_fields: list[str]) -> str:
+    payload = {
+        "resolved_pack": resolved_pack or {},
+        "skipped_fields": sorted(skipped_fields),
+    }
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"))
+
+
+def _proposal_value(proposal: dict[str, Any]) -> float | None:
+    if proposal.get("proposed_target_value") is not None:
+        return float(proposal["proposed_target_value"])
+    if proposal.get("proposed_delta") is not None:
+        return float(proposal["proposed_delta"])
+    return None
+
+
+def _active_proposals(item: dict[str, Any]) -> list[dict[str, Any]]:
+    pack = _active_pack(item)
+    proposals = pack.get("proposals") if isinstance(pack, dict) else []
+    return [proposal for proposal in proposals if isinstance(proposal, dict)]
+
+
+def build_pm_decision_queue_conflict_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group pending assumption-change items that touch the same model driver."""
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in items:
+        if item.get("status") not in {"pending", "previewed"}:
+            continue
+        if item.get("item_type") != "assumption_change_pack":
+            continue
+        ticker = str(item.get("ticker") or "").upper()
+        for proposal in _active_proposals(item):
+            assumption_name = str(proposal.get("assumption_name") or "").strip()
+            if not ticker or not assumption_name:
+                continue
+            grouped.setdefault((ticker, assumption_name), []).append(
+                {
+                    "item_id": item.get("item_id"),
+                    "profile_name": item.get("profile_name"),
+                    "status": item.get("status"),
+                    "title": item.get("title"),
+                    "summary": item.get("summary"),
+                    "assumption_name": assumption_name,
+                    "proposal_mode": proposal.get("proposal_mode"),
+                    "proposed_value": _proposal_value(proposal),
+                    "proposal": proposal,
+                    "qualitative_importance": item.get("qualitative_importance"),
+                    "agent_confidence": item.get("agent_confidence"),
+                    "translator_confidence": item.get("translator_confidence"),
+                    "valuation_impact_bucket": item.get("valuation_impact_bucket"),
+                    "source_quality": (item.get("metadata") or {}).get("packet_provenance", {}).get("source_quality"),
+                    "evidence_packet_ids": item.get("evidence_packet_ids") or [],
+                    "evidence_anchor_ids": item.get("evidence_anchor_ids") or [],
+                    "last_preview_at": (item.get("adapter_links") or {}).get("last_preview_at"),
+                    "last_preview_fingerprint": (item.get("adapter_links") or {}).get("last_preview_fingerprint"),
+                }
+            )
+
+    conflict_groups: list[dict[str, Any]] = []
+    for (ticker, assumption_name), entries in grouped.items():
+        if len(entries) < 2:
+            continue
+        profile_names = sorted({str(entry.get("profile_name")) for entry in entries if entry.get("profile_name")})
+        values = [entry.get("proposed_value") for entry in entries if entry.get("proposed_value") is not None]
+        distinct_values = sorted({round(float(value), 8) for value in values})
+        conflict_groups.append(
+            {
+                "group_id": f"{ticker}:{assumption_name}",
+                "ticker": ticker,
+                "assumption_name": assumption_name,
+                "profile_names": profile_names,
+                "item_ids": [entry.get("item_id") for entry in entries if entry.get("item_id") is not None],
+                "proposal_count": len(entries),
+                "distinct_value_count": len(distinct_values),
+                "conflict_level": "conflict" if len(distinct_values) > 1 else "cluster",
+                "review_note": (
+                    "Multiple profiles propose different values for this driver."
+                    if len(distinct_values) > 1
+                    else "Multiple profiles touch this driver; review as one assumption cluster."
+                ),
+                "entries": entries,
+            }
+        )
+    return sorted(
+        conflict_groups,
+        key=lambda group: (
+            0 if group["conflict_level"] == "conflict" else 1,
+            str(group["assumption_name"]),
+        ),
+    )
+
+
+def _resolve_active_pack(
     pack: dict[str, Any] | None,
     ticker: str,
-) -> tuple[dict[str, float], list[str]]:
-    """Convert an active proposal pack to absolute manual_values for preview_pending_assumption_stack.
+) -> tuple[dict[str, Any] | None, dict[str, float], list[str]]:
+    """Resolve an active proposal pack to absolute target values.
 
-    Returns (manual_values, skipped_fields) where skipped_fields contains assumption names
-    for delta proposals that could not be resolved (e.g. no valuation inputs).
+    Returns (resolved_pack, manual_values, skipped_fields) where skipped_fields contains
+    assumption names for delta proposals that could not be resolved (e.g. no valuation inputs).
     """
     if not pack:
-        return {}, []
+        return None, {}, []
     values: dict[str, float] = {}
     skipped: list[str] = []
+    resolved_proposals: list[dict[str, Any]] = []
 
     # Resolve current driver values for delta proposals (lazy import to avoid circular deps).
     _drivers: Any = None
@@ -74,17 +172,30 @@ def _pack_to_manual_values(
         mode = proposal.get("proposal_mode")
         if not name:
             continue
+        resolved_value: float | None = None
         if mode == "target" and proposal.get("proposed_target_value") is not None:
-            values[name] = float(proposal["proposed_target_value"])
+            resolved_value = float(proposal["proposed_target_value"])
         elif mode == "delta" and proposal.get("proposed_delta") is not None:
             drivers = _get_drivers()
             if drivers is not None and hasattr(drivers, name):
                 current = float(getattr(drivers, name))
-                values[name] = current + float(proposal["proposed_delta"])
+                resolved_value = current + float(proposal["proposed_delta"])
             else:
-                # Cannot resolve absolute value — skip from preview.
                 skipped.append(str(name))
-    return values, skipped
+                continue
+        else:
+            continue
+        values[str(name)] = resolved_value
+        resolved_proposals.append(
+            {
+                **proposal,
+                "proposal_mode": "target",
+                "proposed_target_value": resolved_value,
+                "proposed_delta": None,
+            }
+        )
+    resolved_pack = {**pack, "proposals": resolved_proposals}
+    return resolved_pack, values, skipped
 
 
 def preview_pm_decision_queue_item(
@@ -94,10 +205,32 @@ def preview_pm_decision_queue_item(
     ticker = ticker.upper().strip()
     with get_connection() as conn:
         create_tables(conn)
+        from db.loader import update_pm_decision_queue_item
+
         item = _load_queue_item_or_raise(conn, ticker, item_id)
-    manual_values, skipped_fields = _pack_to_manual_values(_active_pack(item), ticker)
+        resolved_pack, manual_values, skipped_fields = _resolve_active_pack(_active_pack(item), ticker)
+        adapter_links = dict(item.get("adapter_links") or {})
+        if item.get("item_type") == "assumption_change_pack":
+            previewed_at = _now()
+            preview_fingerprint = _preview_fingerprint(resolved_pack, skipped_fields)
+            adapter_links["last_preview_at"] = previewed_at
+            adapter_links["last_preview_fingerprint"] = preview_fingerprint
+            adapter_links["last_preview_skipped_fields"] = skipped_fields
+            adapter_links["last_preview_manual_values"] = manual_values
+            adapter_links["last_preview_conflicts"] = []
+            item = update_pm_decision_queue_item(
+                conn,
+                item_id=item_id,
+                updates={"status": "previewed", "adapter_links": adapter_links, "updated_at": previewed_at},
+            )
     preview = preview_pending_assumption_stack(ticker, change_ids=[], manual_values=manual_values)
-    return {"item": item, "preview": preview, "skipped_fields": skipped_fields}
+    return {
+        "item": item,
+        "preview": preview,
+        "skipped_fields": skipped_fields,
+        "preview_fingerprint": adapter_links.get("last_preview_fingerprint") if item.get("item_type") == "assumption_change_pack" else None,
+        "previewed_at": adapter_links.get("last_preview_at") if item.get("item_type") == "assumption_change_pack" else None,
+    }
 
 
 def edit_pm_decision_queue_item(
@@ -115,6 +248,14 @@ def edit_pm_decision_queue_item(
         from db.loader import insert_pm_decision_queue_event, update_pm_decision_queue_item
 
         item = _load_queue_item_or_raise(conn, ticker, item_id)
+        adapter_links = dict(item.get("adapter_links") or {})
+        for key in (
+            "last_preview_at",
+            "last_preview_fingerprint",
+            "last_preview_skipped_fields",
+            "last_preview_manual_values",
+        ):
+            adapter_links.pop(key, None)
         history = _append_decision_history(
             item,
             {
@@ -130,6 +271,7 @@ def edit_pm_decision_queue_item(
             updates={
                 "status": "pending",
                 "pm_edited_proposal_pack": edited_pack,
+                "adapter_links": adapter_links,
                 "decision_history": history,
                 "updated_at": ts,
             },
@@ -161,20 +303,30 @@ def approve_pm_decision_queue_item(
         from db.loader import insert_pm_decision_queue_event, update_pm_decision_queue_item
 
         item = _load_queue_item_or_raise(conn, ticker, item_id)
-        pack = _active_pack(item)
+        resolved_pack, _, skipped_fields = _resolve_active_pack(_active_pack(item), ticker)
+        if item.get("item_type") == "assumption_change_pack":
+            adapter_links = dict(item.get("adapter_links") or {})
+            expected_fingerprint = _preview_fingerprint(resolved_pack, skipped_fields)
+            if adapter_links.get("last_preview_fingerprint") != expected_fingerprint:
+                raise PMDecisionQueuePreviewRequiredError(
+                    "queue item must be previewed after the latest edit before approval"
+                )
+        if item.get("item_type") == "assumption_change_pack" and skipped_fields:
+            raise ValueError(
+                "queue item has unresolvable proposal fields; preview and edit before approval: "
+                + ", ".join(skipped_fields)
+            )
+        if item.get("item_type") == "assumption_change_pack" and not (
+            resolved_pack and resolved_pack.get("proposals")
+        ):
+            raise ValueError("queue item has no resolvable proposals to approve")
         pending_ids: list[int] = []
-        if pack:
-            for idx, proposal in enumerate(pack.get("proposals") or [], start=1):
+        if resolved_pack:
+            for idx, proposal in enumerate(resolved_pack.get("proposals") or [], start=1):
                 name = proposal.get("assumption_name")
                 if not name:
                     continue
-                mode = proposal.get("proposal_mode")
-                if mode == "target":
-                    proposed_value = proposal.get("proposed_target_value")
-                elif mode == "delta":
-                    proposed_value = proposal.get("proposed_delta")
-                else:
-                    proposed_value = None
+                proposed_value = proposal.get("proposed_target_value")
                 if proposed_value is None:
                     continue
                 created = create_pending_assumption_change(
@@ -191,9 +343,10 @@ def approve_pm_decision_queue_item(
                         metadata={
                             "queue_item_id": item_id,
                             "proposal_index": idx,
-                            "proposal_mode": mode,
+                            "proposal_mode": proposal.get("proposal_mode"),
                             "original_proposal_pack": item.get("proposal_pack"),
                             "pm_edited_proposal_pack": item.get("pm_edited_proposal_pack"),
+                            "approved_proposal_pack": resolved_pack,
                         },
                     )
                 )
@@ -208,10 +361,11 @@ def approve_pm_decision_queue_item(
             "actor": actor,
         }
 
-        approved_pack = pack
+        approved_pack = resolved_pack if resolved_pack and resolved_pack.get("proposals") else None
         adapter_links = dict(item.get("adapter_links") or {})
         adapter_links["pending_assumption_change_ids"] = pending_ids
         adapter_links["approval_ref"] = apply_result.get("approval_ref")
+        adapter_links["skipped_fields"] = skipped_fields
 
         history = _append_decision_history(
             item,
@@ -222,6 +376,7 @@ def approve_pm_decision_queue_item(
                 "pending_assumption_change_ids": pending_ids,
                 "approval_ref": apply_result.get("approval_ref"),
                 "approved_proposal_pack": approved_pack,
+                "skipped_fields": skipped_fields,
             },
         )
 

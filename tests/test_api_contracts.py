@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import tempfile
 import time
 from pathlib import Path
@@ -133,6 +134,24 @@ def _install_legacy_ticker_mocks(monkeypatch) -> None:
             "model_integrity": {"tv_high_flag": False, "revenue_data_quality_flag": "legacy"},
             "scenario_summary": [{"scenario": "base", "intrinsic_value": 25.0}],
         },
+    )
+    _mock_both(
+        "build_valuation_assumptions_payload",
+        lambda ticker: {
+            "fields": [
+                {
+                    "field": "revenue_growth_near",
+                    "effective_value": 0.04,
+                    "baseline_value": 0.035,
+                    "effective_source": "ciq",
+                }
+            ]
+        },
+    )
+    _mock_both("build_valuation_comps_payload", lambda ticker: {"valuation_range": {"blended_base": 24.0}})
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.workspace_views.build_professional_finance_review",
+        lambda **kwargs: {"status": "clean", "high_count": 0, "medium_count": 0, "flags": []},
     )
 
 
@@ -495,6 +514,7 @@ def test_ticker_api_consumers_prefer_canonical_dossier_facts_and_preserve_legacy
     assert summary["why_it_matters"] == "Base IV $155.00 versus current price $111.00."
     assert summary["conviction"] == "medium"
     assert summary["readiness"] == {"tv_high_flag": False, "revenue_data_quality_flag": "legacy"}
+    assert summary["finance_quality"]["status"] == "clean"
     assert summary["summary"]["scenario_summary"][0]["intrinsic_value"] == 25.0
     assert summary["ticker_dossier"] is dossier
 
@@ -869,23 +889,52 @@ def test_agentic_handoff_endpoints(monkeypatch):
     )
     monkeypatch.setattr(
         "api.main.preview_pm_decision_queue_payload",
-        lambda ticker, item_id: {"item": {"item_id": item_id}, "preview": {"proposed_iv": {"base": 110.0}}},
+        lambda ticker, item_id: {
+            "ticker": ticker,
+            "item_id": item_id,
+            "item": {"item_id": item_id},
+            "preview": {"proposed_iv": {"base": 110.0}},
+            "skipped_fields": [],
+        },
     )
     monkeypatch.setattr(
         "api.main.edit_pm_decision_queue_payload",
-        lambda ticker, item_id, proposal_pack, actor="api": {"item_id": item_id, "status": "pending", "pm_edited_proposal_pack": proposal_pack},
+        lambda ticker, item_id, proposal_pack, actor="api": {
+            "ticker": ticker,
+            "item_id": item_id,
+            "status": "pending",
+            "item": {"item_id": item_id, "status": "pending", "pm_edited_proposal_pack": proposal_pack},
+            "pm_edited_proposal_pack": proposal_pack,
+        },
     )
     monkeypatch.setattr(
         "api.main.approve_pm_decision_queue_payload",
-        lambda ticker, item_id, actor="api": {"item_id": item_id, "status": "approved"},
+        lambda ticker, item_id, actor="api": {
+            "ticker": ticker,
+            "item_id": item_id,
+            "status": "approved",
+            "item": {"item_id": item_id, "status": "approved"},
+        },
     )
     monkeypatch.setattr(
         "api.main.reject_pm_decision_queue_payload",
-        lambda ticker, item_id, actor="api", reason=None: {"item_id": item_id, "status": "rejected", "reason": reason},
+        lambda ticker, item_id, actor="api", reason=None: {
+            "ticker": ticker,
+            "item_id": item_id,
+            "status": "rejected",
+            "reason": reason,
+            "item": {"item_id": item_id, "status": "rejected"},
+        },
     )
     monkeypatch.setattr(
         "api.main.defer_pm_decision_queue_payload",
-        lambda ticker, item_id, actor="api", reason=None: {"item_id": item_id, "status": "deferred", "reason": reason},
+        lambda ticker, item_id, actor="api", reason=None: {
+            "ticker": ticker,
+            "item_id": item_id,
+            "status": "deferred",
+            "reason": reason,
+            "item": {"item_id": item_id, "status": "deferred"},
+        },
     )
 
     client = TestClient(app)
@@ -908,16 +957,347 @@ def test_agentic_handoff_endpoints(monkeypatch):
     assert packets_response.json()["evidence_packets"][0]["packet_kind"] == "earnings_update"
     assert queue_response.status_code == 200
     assert queue_response.json()["items"][0]["status"] == "pending"
+    assert queue_response.json()["filters"]["status"] == "pending"
     assert preview_response.status_code == 200
+    assert preview_response.json()["item_id"] == 11
     assert preview_response.json()["preview"]["proposed_iv"]["base"] == 110.0
     assert edit_response.status_code == 200
     assert edit_response.json()["pm_edited_proposal_pack"]["pack_id"] == "pack:edit"
+    assert edit_response.json()["item"]["status"] == "pending"
     assert approve_response.status_code == 200
     assert approve_response.json()["status"] == "approved"
+    assert approve_response.json()["item"]["status"] == "approved"
     assert reject_response.status_code == 200
     assert reject_response.json()["reason"] == "not enough evidence"
     assert defer_response.status_code == 200
     assert defer_response.json()["reason"] == "wait for next quarter"
+
+
+def test_pm_queue_endpoints_expose_stable_shapes_filters_and_searchability(monkeypatch):
+    from api.main import app
+    from db.loader import insert_pm_decision_queue_item
+    from db.schema import create_tables
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("db.schema.get_connection", lambda: conn)
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+    monkeypatch.setattr("src.stage_04_pipeline.pending_assumption_changes.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.pm_decision_queue.preview_pending_assumption_stack",
+        lambda ticker, change_ids, manual_values=None: {
+            "ticker": ticker,
+            "change_ids": change_ids,
+            "manual_values": manual_values or {},
+            "proposed_iv": {"base": 111.0},
+        },
+    )
+
+    target_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:00Z",
+            "updated_at": "2026-05-21T00:00:00Z",
+            "ticker": "ibm",
+            "profile_name": "earnings_update",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Target change",
+            "summary": "Direct target proposal.",
+            "evidence_anchor_ids": ["fact:1"],
+            "evidence_packet_ids": ["1"],
+            "proposal_pack": {
+                "pack_id": "pack:1",
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "target",
+                        "proposed_target_value": 0.08,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {"observation_id": "obs:1"},
+        },
+    )
+    conflict_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:00:30Z",
+            "updated_at": "2026-05-21T00:00:30Z",
+            "ticker": "ibm",
+            "profile_name": "industry_analysis",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "medium",
+            "valuation_impact_bucket": "medium",
+            "title": "Industry growth pressure",
+            "summary": "Industry work touches the same driver.",
+            "evidence_anchor_ids": ["fact:industry:1"],
+            "evidence_packet_ids": ["4"],
+            "proposal_pack": {
+                "pack_id": "pack:conflict",
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "target",
+                        "proposed_target_value": 0.06,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "medium",
+            "translator_confidence": "medium",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {
+                "observation_id": "obs:conflict",
+                "packet_provenance": {"source_quality": "real", "packet_kind": "industry_analysis"},
+            },
+        },
+    )
+    reject_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:01:00Z",
+            "updated_at": "2026-05-21T00:01:00Z",
+            "ticker": "ibm",
+            "profile_name": "company_analysis",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "medium",
+            "valuation_impact_bucket": "low",
+            "title": "Rejectable finding",
+            "summary": "Needs no action.",
+            "evidence_anchor_ids": ["snippet:1"],
+            "evidence_packet_ids": ["2"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "medium",
+            "translator_confidence": "medium",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {"observation_id": "obs:2"},
+        },
+    )
+    defer_item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-05-21T00:02:00Z",
+            "updated_at": "2026-05-21T00:02:00Z",
+            "ticker": "ibm",
+            "profile_name": "industry_analysis",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "low",
+            "valuation_impact_bucket": "low",
+            "title": "Deferred finding",
+            "summary": "Wait for more evidence.",
+            "evidence_anchor_ids": ["snippet:2"],
+            "evidence_packet_ids": ["3"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "low",
+            "translator_confidence": "low",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {"observation_id": "obs:3"},
+        },
+    )
+
+    client = TestClient(app)
+
+    filtered = client.get(
+        "/api/tickers/IBM/pm-decision-queue?status=pending&item_type=assumption_change_pack&qualitative_importance=high&valuation_impact_bucket=high"
+    )
+    preview = client.post(f"/api/tickers/IBM/pm-decision-queue/{target_item_id}/preview")
+    approve = client.post(f"/api/tickers/IBM/pm-decision-queue/{target_item_id}/approve")
+    reject = client.post(
+        f"/api/tickers/IBM/pm-decision-queue/{reject_item_id}/reject",
+        json={"reason": "not compelling"},
+    )
+    defer = client.post(
+        f"/api/tickers/IBM/pm-decision-queue/{defer_item_id}/defer",
+        json={"reason": "wait"},
+    )
+    approved_list = client.get("/api/tickers/IBM/pm-decision-queue?status=approved")
+    rejected_list = client.get("/api/tickers/IBM/pm-decision-queue?status=rejected")
+    deferred_list = client.get("/api/tickers/IBM/pm-decision-queue?status=deferred")
+    missing_preview = client.post("/api/tickers/IBM/pm-decision-queue/999/preview")
+    stale_approve = client.post(f"/api/tickers/IBM/pm-decision-queue/{conflict_item_id}/approve")
+
+    assert filtered.status_code == 200
+    assert filtered.json()["filters"] == {
+        "status": "pending",
+        "item_type": "assumption_change_pack",
+        "qualitative_importance": "high",
+        "valuation_impact_bucket": "high",
+    }
+    assert [item["item_id"] for item in filtered.json()["items"]] == [target_item_id]
+    assert filtered.json()["conflict_groups"][0]["assumption_name"] == "revenue_growth_near"
+    assert sorted(filtered.json()["conflict_groups"][0]["item_ids"]) == sorted([target_item_id, conflict_item_id])
+    assert filtered.json()["conflict_groups"][0]["conflict_level"] == "conflict"
+
+    assert preview.status_code == 200
+    assert preview.json()["ticker"] == "IBM"
+    assert preview.json()["item_id"] == target_item_id
+    assert preview.json()["preview"]["proposed_iv"]["base"] == 111.0
+    assert preview.json()["preview_fingerprint"]
+    assert preview.json()["previewed_at"]
+
+    assert approve.status_code == 200
+    assert approve.json()["status"] == "approved"
+    assert approve.json()["item"]["status"] == "approved"
+
+    assert reject.status_code == 200
+    assert reject.json()["status"] == "rejected"
+    assert reject.json()["item"]["status"] == "rejected"
+
+    assert defer.status_code == 200
+    assert defer.json()["status"] == "deferred"
+    assert defer.json()["item"]["status"] == "deferred"
+
+    assert [item["item_id"] for item in approved_list.json()["items"]] == [target_item_id]
+    assert [item["item_id"] for item in rejected_list.json()["items"]] == [reject_item_id]
+    assert [item["item_id"] for item in deferred_list.json()["items"]] == [defer_item_id]
+
+    assert missing_preview.status_code == 404
+    assert "queue item not found" in missing_preview.json()["detail"].lower()
+    assert stale_approve.status_code == 409
+    assert "previewed after the latest edit" in stale_approve.json()["detail"].lower()
+
+
+def test_agentic_handoff_run_returns_structured_failure(monkeypatch):
+    from api.main import app
+    from db.schema import create_tables
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr("db.schema.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets._collect_profile_inputs",
+        lambda ticker, profile_name: {
+            "source_refs": [
+                {
+                    "source_ref_id": f"src:{profile_name}:1",
+                    "source_kind": "stub",
+                    "source_label": "stub source",
+                    "source_locator": f"stub://{ticker}/{profile_name}",
+                }
+            ],
+            "facts": [{"fact_id": "fact:1", "fact_name": "stub_fact", "value": 1}],
+            "snippets": [],
+            "source_quality": "real",
+            "run_metadata": {"stubbed": True},
+        },
+    )
+    monkeypatch.setattr(
+        "src.stage_03_judgment.grounded_observation_agent.GroundedObservationAgent.analyze_evidence_packet",
+        lambda self, packet, profile_name: (_ for _ in ()).throw(RuntimeError("llm offline")),
+    )
+
+    client = TestClient(app)
+
+    run_response = client.post("/api/tickers/IBM/agentic-handoff/earnings_update/run")
+    packets_response = client.get("/api/tickers/IBM/evidence-packets")
+    queue_response = client.get("/api/tickers/IBM/pm-decision-queue?status=pending")
+
+    assert run_response.status_code == 200
+    payload = run_response.json()
+    assert payload["status"] == "failed"
+    assert payload["reason"] == "agent_execution_failed"
+    assert payload["observation_count"] == 0
+    assert payload["queue_item_count"] == 0
+    assert payload["errors"][0]["code"] == "agent_execution_failed"
+    assert payload["errors"][0]["agent"] == "GroundedObservationAgent"
+    assert payload["errors"][0]["profile_name"] == "earnings_update"
+    assert payload["errors"][0]["message"] == "llm offline"
+
+    assert packets_response.status_code == 200
+    packet = packets_response.json()["evidence_packets"][0]
+    assert packet["observations"] == []
+    assert packet["run_metadata"]["handoff_run_status"] == "failed"
+    assert packet["run_metadata"]["handoff_errors"][0]["code"] == "agent_execution_failed"
+
+    assert queue_response.status_code == 200
+    assert queue_response.json()["items"] == []
+
+
+def test_agentic_handoff_comps_profile_is_runnable_with_real_comps_packet(monkeypatch):
+    from api.main import app
+    from db.schema import create_tables
+    from src.contracts.evidence_packet import EvidencePacketObservation, EvidencePacketObservationKind
+
+    conn = sqlite3.connect(":memory:", check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr("db.schema.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_comps_dashboard_view",
+        lambda ticker: {
+            "available": True,
+            "peer_counts": {"raw": 8, "clean": 6},
+            "primary_metric": "tev_ebitda_ltm",
+            "target_vs_peers": {"peer_medians": {"tev_ebitda_ltm": 11.0}},
+            "source_lineage": {"as_of_date": "2026-05-10"},
+        },
+    )
+    monkeypatch.setattr(
+        "src.stage_03_judgment.grounded_observation_agent.GroundedObservationAgent.analyze_evidence_packet",
+        lambda self, packet, profile_name: [
+            EvidencePacketObservation(
+                observation_id="obs:comps:1",
+                observation_kind=EvidencePacketObservationKind.numeric,
+                observation_type="multiple_premium_supported",
+                claim="Peer median supports a higher exit multiple.",
+                evidence_anchor_ids=["fact:comps_analysis:tev_ebitda_ltm"],
+                text_snippet_ids=[],
+                agent_confidence="medium",
+                qualitative_importance="medium",
+            )
+        ],
+    )
+
+    client = TestClient(app)
+
+    run_response = client.post("/api/tickers/IBM/agentic-handoff/comps_analysis/run")
+    packets_response = client.get("/api/tickers/IBM/evidence-packets")
+
+    assert run_response.status_code == 200
+    payload = run_response.json()
+    assert payload["status"] == "completed_with_items"
+    assert payload["observation_count"] == 1
+    assert payload["queue_item_count"] == 1
+
+    assert packets_response.status_code == 200
+    packet = packets_response.json()["evidence_packets"][0]
+    assert packet["run_metadata"]["handoff_run_status"] == "completed_with_items"
+    assert packet["run_metadata"]["source_quality"] == "real"
 
 
 def test_open_latest_snapshot_returns_latest_payload(monkeypatch):

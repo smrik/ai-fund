@@ -427,6 +427,34 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
+.field-input {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.field-input span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.field-input select {
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  padding: 0.55rem 0.7rem;
+}
+
+.field-input select:focus {
+  outline: none;
+  border-color: var(--border-accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+
 .valuation-form-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -566,7 +594,8 @@ a { color: inherit; text-decoration: none; }
   top: 6rem;
   z-index: 9;
   padding: 0.18rem 0 0.3rem;
-  background: transparent;
+  background: rgba(5, 9, 17, 0.92);
+  backdrop-filter: blur(16px);
 }
 
 .ticker-tab,
@@ -592,7 +621,8 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   gap: 0;
   padding: 0.18rem 0 0.12rem;
-  background: transparent;
+  background: rgba(5, 9, 17, 0.92);
+  backdrop-filter: blur(16px);
 }
 
 /* ── Hero sections ───────────────────────────────────────────────── */
@@ -1040,6 +1070,11 @@ a { color: inherit; text-decoration: none; }
   .ticker-tabs,
   .section-nav {
     gap: 0.3rem;
+  }
+
+  .ticker-tabs,
+  .valuation-route-nav {
+    position: static;
   }
 
   .ticker-metrics,

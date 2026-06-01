@@ -27,7 +27,7 @@ flowchart TD
 ## File Roles
 
 - `config/config.yaml`: single source of truth for committed project configuration.
-- `.env`: secrets such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, and `FRED_API_KEY`, plus optional local overrides for runtime values such as CLI logging.
+- `.env`: secrets such as `GEMINI_API_KEY`, `GOOGLE_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`, `PERPLEXITY_API_KEY`, and `FRED_API_KEY`, plus optional local overrides for runtime values such as CLI logging.
 - `config/__init__.py`: loader/facade. This is code, not an independent config source.
 - `config/settings.py`: compatibility shim for older imports. New code should prefer `config` or `APP_CONFIG` directly.
 
@@ -61,6 +61,20 @@ Model defaults used by the judgment layer.
 Supported local overrides in `.env`:
 - `LLM_MODEL`
 - `LLM_MODEL_FAST`
+- `LLM_BASE_URL`
+- `OPENAI_BASE_URL` as an OpenAI-compatible alias when `LLM_BASE_URL` is unset
+- `OPENROUTER_FREE_MODEL` for the manual ticker-flow script when using OpenRouter free model variants
+
+For no/low-cost live agent testing through OpenRouter, set:
+
+```dotenv
+OPENROUTER_API_KEY=...
+LLM_BASE_URL=https://openrouter.ai/api/v1
+LLM_MODEL=openrouter/free
+LLM_MODEL_FAST=openrouter/free
+```
+
+OpenRouter free model variants often use the `:free` suffix; `openrouter/free` lets OpenRouter select an available free route. Availability and rate limits can vary by model.
 
 ### Logging Overrides
 
@@ -106,6 +120,14 @@ Supported local overrides in `.env`:
 - `EDGAR_BASE_URL`
 - `EDGAR_USER_AGENT`
 - `EDGAR_RATE_LIMIT_DELAY`
+- `EDGAR_LOCAL_DATA_DIR` for the underlying `edgartools` cache; prefer a workspace-local path such as `data/cache/edgar_tools` if the user-home cache has permission issues.
+- `ALPHA_POD_EDGAR_CACHE_ONLY=1` for manual/offline ticker-flow checks that should use `edgar_filing_cache` and local filing text instead of live EDGAR fetches.
+- `ALPHA_POD_MARKET_CACHE_ONLY=1` for manual/offline ticker-flow checks that should use `market_data_cache` instead of live Yahoo calls.
+- `ALPHA_POD_ALLOW_STALE_MARKET_CACHE=1` to allow cached market rows past the normal four-hour TTL in explicit offline rehearsals.
+
+### Manual DB Overrides
+
+Use `ALPHA_POD_DB_PATH` only for manual runs that should not write to the live SQLite database. The ticker-flow script exposes this as `--isolated-db`, which copies `data/alpha_pod.db` into `output/ticker_flows/_isolated_db/` and points the process at that copied database before importing the API and pipeline modules.
 
 ### `ibkr`
 

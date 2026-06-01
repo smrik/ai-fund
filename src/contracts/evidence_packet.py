@@ -38,6 +38,12 @@ class EvidenceConfidence(str, Enum):
     high = "high"
 
 
+class EvidenceSourceQuality(str, Enum):
+    real = "real"
+    partial = "partial"
+    placeholder = "placeholder"
+
+
 class EvidenceSourceRef(ContractModel):
     source_ref_id: str
     source_kind: str
@@ -96,6 +102,12 @@ class EvidencePacketObservation(ContractModel):
     direction: str | None = None
     qualitative_importance: EvidenceImportance | None = None
     agent_confidence: EvidenceConfidence | None = None
+    materiality: EvidenceImportance | None = None
+    thesis_implication: str | None = None
+    driver_implication: str | None = None
+    evidence_rationale: str | None = None
+    pm_question: str | None = None
+    what_would_change_mind: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("observation_id", "observation_type", "claim")

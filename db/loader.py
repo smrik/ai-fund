@@ -811,6 +811,42 @@ def load_evidence_packet(conn: sqlite3.Connection, packet_id: int) -> dict[str, 
     return item
 
 
+def update_evidence_packet_run(
+    conn: sqlite3.Connection,
+    packet_id: int,
+    *,
+    updated_at: str,
+    observations: list[dict[str, Any]] | None = None,
+    run_metadata_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = load_evidence_packet(conn, packet_id)
+    if existing is None:
+        raise ValueError(f"evidence packet not found: {packet_id}")
+
+    next_observations = observations if observations is not None else list(existing.get("observations") or [])
+    next_run_metadata = dict(existing.get("run_metadata") or {})
+    next_run_metadata.update(run_metadata_updates or {})
+
+    conn.execute(
+        """
+        UPDATE evidence_packets
+        SET updated_at = ?, observations_json = ?, run_metadata_json = ?
+        WHERE id = ?
+        """,
+        [
+            updated_at,
+            json.dumps(next_observations, separators=(",", ":")),
+            json.dumps(next_run_metadata, separators=(",", ":")),
+            int(packet_id),
+        ],
+    )
+    conn.commit()
+    updated = load_evidence_packet(conn, packet_id)
+    if updated is None:
+        raise ValueError(f"evidence packet not found after update: {packet_id}")
+    return updated
+
+
 def list_evidence_packets(
     conn: sqlite3.Connection,
     *,
@@ -876,9 +912,42 @@ def _pm_queue_row_to_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def _find_duplicate_pm_queue_item(conn: sqlite3.Connection, item: dict[str, Any]) -> dict[str, Any] | None:
+    observation_id = str((item.get("metadata") or {}).get("observation_id") or "").strip()
+    packet_ids = {str(value) for value in (item.get("evidence_packet_ids") or []) if str(value).strip()}
+    if not observation_id or not packet_ids:
+        return None
+    rows = conn.execute(
+        """
+        SELECT id, created_at, updated_at, ticker, profile_name, item_type, status,
+               qualitative_importance, valuation_impact_bucket, title, summary,
+               evidence_anchor_ids_json, evidence_packet_ids_json, proposal_pack_json,
+               pm_edited_proposal_pack_json, approved_proposal_pack_json,
+               agent_confidence, translator_confidence, pm_confidence, valuation_impact_json,
+               adapter_links_json, decision_history_json, metadata_json
+        FROM pm_decision_queue_items
+        WHERE ticker = ?
+        ORDER BY id DESC
+        """,
+        [str(item.get("ticker") or "").upper()],
+    ).fetchall()
+    for row in rows:
+        existing = _pm_queue_row_to_dict(row)
+        existing_observation_id = str((existing.get("metadata") or {}).get("observation_id") or "").strip()
+        existing_packet_ids = {
+            str(value) for value in (existing.get("evidence_packet_ids") or []) if str(value).strip()
+        }
+        if existing_observation_id == observation_id and packet_ids.intersection(existing_packet_ids):
+            return existing
+    return None
+
+
 def insert_pm_decision_queue_item(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
     item = dict(row)
     item["ticker"] = str(item["ticker"]).upper()
+    duplicate = _find_duplicate_pm_queue_item(conn, item)
+    if duplicate is not None:
+        return int(duplicate["item_id"])
     item["evidence_anchor_ids_json"] = json.dumps(item.get("evidence_anchor_ids") or [], separators=(",", ":"))
     item["evidence_packet_ids_json"] = json.dumps(item.get("evidence_packet_ids") or [], separators=(",", ":"))
     item["proposal_pack_json"] = (
@@ -965,7 +1034,15 @@ def list_pm_decision_queue_items(
                adapter_links_json, decision_history_json, metadata_json
         FROM pm_decision_queue_items
         {where_sql}
-        ORDER BY updated_at DESC, id DESC
+        ORDER BY
+            CASE qualitative_importance
+                WHEN 'high' THEN 0
+                WHEN 'medium' THEN 1
+                WHEN 'low' THEN 2
+                ELSE 3
+            END ASC,
+            updated_at DESC,
+            id DESC
         """,
         params,
     ).fetchall()

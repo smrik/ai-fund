@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from src.contracts.evidence_packet import EvidencePacketKind
 
 
+GROUNDED_OBSERVATION_RUNNER_KEY = "grounded_observation"
+
+
 AGENT_PROPOSABLE_ASSUMPTION_FIELDS = (
     "revenue_growth_near",
     "revenue_growth_mid",
@@ -23,18 +26,23 @@ AGENT_PROPOSABLE_ASSUMPTION_FIELDS = (
 @dataclass(frozen=True)
 class AgenticHandoffProfile:
     profile_name: str
-    primary_source: str
+    runner_key: str
+    runnable: bool
+    not_runnable_reason: str | None
     evidence_packet_kinds: tuple[EvidencePacketKind, ...]
     allowed_observation_types: tuple[str, ...]
     allowed_assumption_fields: tuple[str, ...]
     prompt_key: str
     translator_rule_group: str
+    prompt_guidance: tuple[str, ...]
 
 
 _PROFILES: dict[str, AgenticHandoffProfile] = {
     "earnings_update": AgenticHandoffProfile(
         profile_name="earnings_update",
-        primary_source="EarningsAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.earnings_update,),
         allowed_observation_types=(
             "guidance_revenue_raised",
@@ -53,14 +61,21 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
         ),
         prompt_key="earnings_update",
         translator_rule_group="earnings_update",
+        prompt_guidance=(
+            "Use recent 8-K earnings context first for guidance, tone, and management emphasis.",
+            "Use market snapshot facts only as supporting context, not as standalone evidence for new claims.",
+        ),
     ),
     "company_analysis": AgenticHandoffProfile(
         profile_name="company_analysis",
-        primary_source="FilingsAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.company_analysis,),
         allowed_observation_types=(
             "margin_target_disclosed",
             "revenue_growth_guidance_disclosed",
+            "historical_growth_quality",
             "execution_risk_increased",
             "pricing_pressure_worsened",
             "pricing_pressure_improved",
@@ -75,10 +90,16 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
         ),
         prompt_key="company_analysis",
         translator_rule_group="company_analysis",
+        prompt_guidance=(
+            "Prioritize note disclosures and filing snippets over narrative summaries.",
+            "Anchor every observation to filing facts or filing snippets already present in the packet.",
+        ),
     ),
     "industry_analysis": AgenticHandoffProfile(
         profile_name="industry_analysis",
-        primary_source="IndustryAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.industry_analysis,),
         allowed_observation_types=(
             "demand_strength_broad",
@@ -94,10 +115,16 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
         ),
         prompt_key="industry_analysis",
         translator_rule_group="industry_analysis",
+        prompt_guidance=(
+            "Treat packet evidence as company-grounded industry context, not a web-search freeform prompt.",
+            "Only emit industry observations that are supported by provided packet anchors.",
+        ),
     ),
     "comps_analysis": AgenticHandoffProfile(
         profile_name="comps_analysis",
-        primary_source="ValuationAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.comps_analysis,),
         allowed_observation_types=(
             "multiple_premium_supported",
@@ -107,19 +134,31 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
         allowed_assumption_fields=("exit_multiple",),
         prompt_key="comps_analysis",
         translator_rule_group="comps_analysis",
+        prompt_guidance=(
+            "Use deterministic comps dashboard facts only; do not invent peer multiples.",
+            "Treat peer-set drift as an advisory finding unless the packet supports a clear multiple signal.",
+        ),
     ),
     "risk_review": AgenticHandoffProfile(
         profile_name="risk_review",
-        primary_source="RiskAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.risk_review,),
         allowed_observation_types=("execution_risk_increased",),
         allowed_assumption_fields=("wacc",),
         prompt_key="risk_review",
         translator_rule_group="risk_review",
+        prompt_guidance=(
+            "Use deterministic valuation, market, and filing risk anchors only.",
+            "Raise execution or structural risk as PM-review advisory observations, not automatic model edits.",
+        ),
     ),
     "valuation_review": AgenticHandoffProfile(
         profile_name="valuation_review",
-        primary_source="ValuationAgent",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
         evidence_packet_kinds=(EvidencePacketKind.valuation_review,),
         allowed_observation_types=(
             "terminal_value_fragility",
@@ -135,6 +174,10 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
         ),
         prompt_key="valuation_review",
         translator_rule_group="valuation_review",
+        prompt_guidance=(
+            "Use deterministic valuation facts and scenario outputs already in the packet; do not invent new valuation numbers.",
+            "Raise structural valuation concerns as observations for PM review, not model edits.",
+        ),
     ),
 }
 

@@ -7,6 +7,7 @@ import type {
   EvidencePacketsPayload,
   ExportListPayload,
   PMDecisionQueueListPayload,
+  PMDecisionQueueActionPayload,
   PMDecisionQueuePreviewPayload,
   RunPayload,
   SavedExport,
@@ -213,28 +214,28 @@ export function previewPmDecisionQueueItem(ticker: string, itemId: number): Prom
   });
 }
 
-export function editPmDecisionQueueItem(ticker: string, itemId: number, proposalPack: unknown): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/edit`, {
+export function editPmDecisionQueueItem(ticker: string, itemId: number, proposalPack: unknown): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/edit`, {
     method: "POST",
     body: JSON.stringify({ proposal_pack: proposalPack }),
   });
 }
 
-export function approvePmDecisionQueueItem(ticker: string, itemId: number): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/approve`, {
+export function approvePmDecisionQueueItem(ticker: string, itemId: number): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/approve`, {
     method: "POST",
   });
 }
 
-export function rejectPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/reject`, {
+export function rejectPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/reject`, {
     method: "POST",
     body: JSON.stringify({ reason }),
   });
 }
 
-export function deferPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<Record<string, unknown>> {
-  return requestJSON<Record<string, unknown>>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/defer`, {
+export function deferPmDecisionQueueItem(ticker: string, itemId: number, reason?: string): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/defer`, {
     method: "POST",
     body: JSON.stringify({ reason }),
   });
