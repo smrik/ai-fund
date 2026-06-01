@@ -31,7 +31,7 @@ def _configure_workspace_edgar_cache() -> None:
 
 _configure_workspace_edgar_cache()
 
-from edgar import Company, set_identity
+from edgar import Company, set_identity  # noqa: E402
 
 # Set identity for SEC API
 user_agent_fallback = EDGAR_HEADERS.get("User-Agent", "AI Fund Manager ai@example.com")

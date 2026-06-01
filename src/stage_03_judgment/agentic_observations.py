@@ -507,13 +507,13 @@ def analyze_evidence_packet_with_agent(
         "model_used": None,
     }
     setattr(agent, "last_agentic_observation_artifact", artifact)
-    
+
     # Pass 1: Extraction
     extraction_prompt = build_extraction_prompt(packet, profile_name, agent_name)
     artifact["extraction_prompt"] = extraction_prompt
     raw_extraction = agent.run(extraction_prompt)
     artifact["raw_extraction"] = raw_extraction
-    
+
     # Pass 2: Formatting (strict parse first, raw-json fallback)
     formatting_prompt = build_formatting_prompt(packet, raw_extraction, profile_name, agent_name)
     artifact["formatting_prompt"] = formatting_prompt

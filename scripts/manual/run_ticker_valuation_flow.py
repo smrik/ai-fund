@@ -1201,7 +1201,7 @@ def main() -> int:
     print(f"Ticker flow complete for {args.ticker.upper()}")
     print(f"Markdown: {md_path}")
     print(f"JSON: {json_path}")
-    print(f"Profile statuses:")
+    print("Profile statuses:")
     for run in _as_list(result.get("profile_runs")):
         if isinstance(run, dict):
             print(

@@ -136,7 +136,6 @@ def build_professional_finance_review(
     baseline_growth = _float(near_growth.get("baseline_value"))
     agent_growth = _float(near_growth.get("agent_value"))
     growth_source = str(near_growth.get("effective_source") or batch_row.get("growth_source") or "unknown")
-    growth_gap = _gap_pct(effective_growth, baseline_growth)
     if effective_growth is not None and baseline_growth is not None:
         bps_gap = (effective_growth - baseline_growth) * 10_000.0
         if bps_gap >= 500.0 and growth_source in {"approved_assumption_register", "override_ticker"}:
