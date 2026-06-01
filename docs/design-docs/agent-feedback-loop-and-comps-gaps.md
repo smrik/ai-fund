@@ -4,6 +4,40 @@ _Session: 2026-03-14_
 
 ---
 
+## 0. Universal Agentic Handoff MVP (2026-05-21)
+
+The repo now includes a universal, profile-driven agentic handoff loop shared across judgment agents:
+
+```text
+Evidence Packet -> Agent Observation -> Translator -> PM Decision Queue -> Preview/Edit/Approve -> Deterministic Rerun
+```
+
+Key MVP implementation points:
+
+- `EvidencePacket` and `PMDecisionQueueItem` are explicit contracts in `src/contracts/`.
+- SQLite is canonical for queue/evidence state via:
+  - `evidence_packets`
+  - `pm_decision_queue_items`
+  - `pm_decision_queue_events`
+- Agentic Handoff Profiles (`earnings_update`, `company_analysis`, `industry_analysis`, `comps_analysis`, `risk_review`, `valuation_review`) share one framework and vary only profile config.
+- Agents now emit anchored observations through `analyze_evidence_packet(...)` + shared validation in `src/stage_03_judgment/agentic_observations.py`.
+- The deterministic observation translator (`src/stage_04_pipeline/observation_translator.py`) maps anchored observations into conservative proposal packs or advisory findings using fixed rules.
+- PM action semantics are canonicalized in `src/stage_04_pipeline/pm_decision_queue.py`:
+  - `preview`
+  - `edit`
+  - `approve`
+  - `reject`
+  - `defer`
+- Approval is still routed through existing pending/approved assumption plumbing to preserve deterministic valuation ownership.
+
+MVP non-goals still apply:
+
+- no direct agent write into deterministic model inputs
+- no scenario-overlay approval path in V1
+- no automatic stale-evidence invalidation in V1
+
+---
+
 ## 1. What was built — recommendations feedback loop
 
 ### Problem

@@ -809,16 +809,20 @@ def build_valuation_inputs(
             "comps_iv_base": (ciq_comps or {}).get("implied_price_base") if ciq_comps else None,
         },
         wacc_inputs={
-            "wacc": getattr(wacc_result, "wacc", None),
-            "cost_of_equity": getattr(wacc_result, "cost_of_equity", None),
+            # Top-level WACC values are the effective drivers used by DCF after
+            # story adjustments, PM overrides, or methodology selection.
+            "wacc": drivers.wacc,
+            "cost_of_equity": drivers.cost_of_equity,
             "beta_relevered": getattr(wacc_result, "beta_relevered", None),
             "beta_unlevered_median": getattr(wacc_result, "beta_unlevered_median", None),
             "size_premium": getattr(wacc_result, "size_premium", None),
             "equity_weight": getattr(wacc_result, "equity_weight", None),
-            "debt_weight": getattr(wacc_result, "debt_weight", None),
+            "debt_weight": drivers.debt_weight,
             "peers_used": getattr(wacc_result, "peers_used", None),
             "risk_free_rate": rf_override,
             "equity_risk_premium": policy_erp,
+            "selected_method_wacc": getattr(wacc_result, "wacc", None),
+            "selected_method_cost_of_equity": getattr(wacc_result, "cost_of_equity", None),
             "method_results": {
                 method: {
                     "wacc": getattr(result, "wacc", None),

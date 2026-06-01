@@ -1,37 +1,41 @@
 # Session State
 
-**Updated:** 2026-05-11 15:05:52 +02:00
+**Updated:** 2026-06-01T22:10:00+02:00
 **Agent:** Codex CLI
 **Project:** C:\Projects\03-Finance\ai-fund
 
 ## Current Task
-Implemented the next Assumption Register extension slice: editable valuation policy defaults, Damodaran drop-folder draft parsing, DB-canonical pending/approved assumption changes, stacked preview/apply APIs, React Pending Changes surface, and approved-register override wiring into input assembly.
+Finish PR #74 merge readiness for the v0.1 alpha Agentic PM Queue MVP.
 
 ## Recent Actions
-- Added `src/contracts/assumption_policy.py` with Pydantic V2 policy, Damodaran draft, pending-change, and stack-preview contracts.
-- Added DB tables/helpers for valuation policy versions, Damodaran policy drafts, pending assumption changes, and approved assumption entries.
-- Added `src/stage_04_pipeline/assumption_policy.py` and `src/stage_04_pipeline/pending_assumption_changes.py` services.
-- Wired FastAPI endpoints for valuation policy get/preview/save, Damodaran parse, pending-change list/preview/apply.
-- Wired `input_assembler.py` so approved DB register entries override legacy YAML values, and WACC now receives editable policy Rf/ERP at runtime.
-- Updated recommendation writes to queue numeric recommendations as pending register changes when using the canonical config path; legacy YAML remains a compatibility copy.
-- Added React Assumptions UI sections for policy defaults and pending changes.
-- Added focused tests in `tests/test_assumption_policy.py`, plus API and input-assembler coverage.
+- Merged current `origin/main` into `codex/mvp` and reconciled the newer pending-assumption decision flow with the alpha PM Queue.
+- Added dynamic cross-profile PM Queue conflict groups using the newest resolved target per profile and deterministic driver.
+- Hardened grounded translation with required evidence-packet handoff on the public path, packet fact carry-forward, and packet provenance snapshots.
+- Persisted agent observation artifacts and parser rejection reasons into evidence packet run metadata.
+- Exposed preview fingerprints/timestamps, included deterministic input snapshots in fingerprints, and mapped stale preview approval attempts to HTTP 409.
+- Split queue approval from deterministic apply, made apply idempotent, and exposed an explicit PM Queue apply action.
+- Added a deliberate raw agent-artifact fetch endpoint while keeping packet-list responses compact.
+- Cleared CI-specific gates: API-test dependencies include `openai`, offline agent construction uses a provider-failing placeholder, and pre-commit lint/architecture debt checks pass.
+- Expanded the React PM Queue into a decision-room view with shared-driver clusters, observation context, richer preview diffs, decision history, reject/defer reason capture, and additional filters.
+- Updated tests and operator docs for the v0.1 alpha workflow.
 
 ## Next Steps
-- Review the diff and commit if satisfied.
-- Optional: broaden React interaction tests for the new policy editor and pending-changes table.
-- Optional: decide whether to remove the legacy YAML mirror in a later PR once all consumers are migrated.
+- Verify GitHub reports PR #74 mergeable with no blocking checks after the final CI repair push.
 
 ## Known Issues
-- Untracked `course/` still exists and was intentionally left untouched.
-- `.pytest_cache` remains permission-restricted on this Windows checkout; pytest emits cache warnings but tests pass.
-- `tests/test_wacc.py` still has pre-existing size-premium expectation failures against the current WACC implementation when run outside the focused bundle.
+- `bash scripts/manual/launch-react-wsl.sh --status` failed with a shell line-ending/`pipefail` issue, so visual validation used the Windows FastAPI/Vite path.
+- `npx playwright screenshot` tried to fetch from npm and failed under sandbox/network permissions; `rtk python -m playwright` worked.
+- Pytest still reports a cache permission warning, but the documented backend gate passes.
+- Repository-wide `pytest tests -q` remains unsuitable as an offline gate: `tests/test_ciq_refresh.py` has a collection import-path issue and `tests/test_valuation_pipeline.py` performs a live Yahoo request during collection.
+- Live OpenRouter free-model testing was not rerun in this pass; the verified smoke script is fixture-backed/local.
 
 ## Notes
-- Verification passed:
-  - `rtk python -m pytest tests/test_assumption_policy.py tests/test_assumption_register.py tests/test_api_contracts.py tests/test_batch_runner_professional.py tests/test_json_exporter.py tests/test_override_workbench.py tests/test_recommendations.py tests/test_ticker_dossier_contract_runtime.py tests/test_valuation_input_assembler.py -q`
-  - `npm --prefix frontend run build`
-  - `rtk python -m mkdocs build --strict`
-  - `rtk git diff --check`
-- Focused pytest result: 123 passed, with existing json_exporter deprecation warnings and the `.pytest_cache` permission warning.
-- A broad extra probe of `tests/test_wacc.py` failed on pre-existing size-premium expectations; no changes were made there in this pass.
+- PR: `https://github.com/smrik/ai-fund/pull/74`
+- Verification passed: documented backend alpha gate including QoE regression coverage (95 passed; pytest cache warning only).
+- Verification passed: local pre-commit all-files scope.
+- Verification passed: backend/API CI lane with provider credentials blank (34 passed).
+- Verification passed: `rtk npm --prefix frontend run build`.
+- Verification passed: `rtk npm --prefix frontend test -- appRoutes.test.tsx` (13 passed).
+- Verification passed: `rtk python scripts/manual/smoke_agentic_handoff_mvp.py --ticker IBM` (PASS; 6 packets, 6 observations, 6 queue items).
+- Visual artifacts: `output/frontend-review/screenshots/pm-queue-v01-alpha-top-1440.png`, `pm-queue-v01-alpha-queue-1440.png`, `pm-queue-v01-alpha-top-390.png`, `pm-queue-v01-alpha-queue-390.png`, plus full-page captures.
+- Local dev servers were started on `127.0.0.1:8000` and `127.0.0.1:5174` for screenshot review.

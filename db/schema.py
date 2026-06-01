@@ -425,6 +425,59 @@ def create_tables(conn: sqlite3.Connection | None = None):
         active                INTEGER NOT NULL DEFAULT 1
     );
 
+    CREATE TABLE IF NOT EXISTS evidence_packets (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at            TEXT NOT NULL,
+        updated_at            TEXT NOT NULL,
+        ticker                TEXT NOT NULL,
+        profile_name          TEXT NOT NULL,
+        packet_kind           TEXT NOT NULL,
+        bundle_id             TEXT,
+        generated_at          TEXT NOT NULL,
+        source_refs_json      TEXT NOT NULL DEFAULT '[]',
+        facts_json            TEXT NOT NULL DEFAULT '[]',
+        snippets_json         TEXT NOT NULL DEFAULT '[]',
+        observations_json     TEXT NOT NULL DEFAULT '[]',
+        run_metadata_json     TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_decision_queue_items (
+        id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at                      TEXT NOT NULL,
+        updated_at                      TEXT NOT NULL,
+        ticker                          TEXT NOT NULL,
+        profile_name                    TEXT NOT NULL,
+        item_type                       TEXT NOT NULL,
+        status                          TEXT NOT NULL,
+        qualitative_importance          TEXT,
+        valuation_impact_bucket         TEXT,
+        title                           TEXT NOT NULL,
+        summary                         TEXT,
+        evidence_anchor_ids_json        TEXT NOT NULL DEFAULT '[]',
+        evidence_packet_ids_json        TEXT NOT NULL DEFAULT '[]',
+        proposal_pack_json              TEXT,
+        pm_edited_proposal_pack_json    TEXT,
+        approved_proposal_pack_json     TEXT,
+        agent_confidence                TEXT,
+        translator_confidence           TEXT,
+        pm_confidence                   TEXT,
+        valuation_impact_json           TEXT,
+        adapter_links_json              TEXT NOT NULL DEFAULT '{}',
+        decision_history_json           TEXT NOT NULL DEFAULT '[]',
+        metadata_json                   TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE TABLE IF NOT EXISTS pm_decision_queue_events (
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at            TEXT NOT NULL,
+        item_id               INTEGER NOT NULL,
+        ticker                TEXT NOT NULL,
+        event_type            TEXT NOT NULL,
+        actor                 TEXT NOT NULL,
+        payload_json          TEXT NOT NULL DEFAULT '{}',
+        FOREIGN KEY (item_id) REFERENCES pm_decision_queue_items(id)
+    );
+
     CREATE TABLE IF NOT EXISTS agent_run_cache (
         ticker          TEXT NOT NULL,
         agent_name      TEXT NOT NULL,
@@ -834,6 +887,13 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_damodaran_policy_drafts_status ON damodaran_policy_drafts(status, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_pending_assumption_changes_ticker_status ON pending_assumption_changes(ticker, status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_approved_assumption_entries_ticker_active ON approved_assumption_entries(ticker, active, applied_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_evidence_packets_ticker_kind ON evidence_packets(ticker, packet_kind, generated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_evidence_packets_kind ON evidence_packets(packet_kind, generated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_ticker_status ON pm_decision_queue_items(ticker, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_item_type ON pm_decision_queue_items(item_type, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_importance ON pm_decision_queue_items(qualitative_importance, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_impact_bucket ON pm_decision_queue_items(valuation_impact_bucket, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_events_item_ts ON pm_decision_queue_events(item_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_log_ticker_ts ON agent_run_log(ticker, run_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);

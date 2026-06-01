@@ -138,7 +138,7 @@ def test_after_approval_input_assembly_consumes_approved_entry(monkeypatch):
 
 def test_api_transition_rules_and_audit_writes_for_approve_reject():
     from db.loader import (
-        apply_pending_assumption_changes,
+        approve_pending_assumption_changes,
         insert_assumption_register_audit,
         insert_pending_assumption_change,
         load_assumption_register_audit_history,
@@ -161,7 +161,7 @@ def test_api_transition_rules_and_audit_writes_for_approve_reject():
     assert rejected == 1
 
     # cannot approve once rejected
-    applied = apply_pending_assumption_changes(conn, ticker="IBM", change_ids=[cid], actor="api", applied_at="2026-01-03T00:00:00Z", approval_ref="ref")
+    applied = approve_pending_assumption_changes(conn, ticker="IBM", change_ids=[cid], actor="api", applied_at="2026-01-03T00:00:00Z", approval_ref="ref")
     assert applied == []
 
     insert_assumption_register_audit(conn, [{

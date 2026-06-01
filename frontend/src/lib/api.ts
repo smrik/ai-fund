@@ -1,9 +1,14 @@
 import type {
+  AgenticHandoffRunPayload,
   AssumptionsPayload,
   AssumptionsPreviewPayload,
   ArchivedSnapshotPayload,
   AuditPayload,
+  EvidencePacketsPayload,
   ExportListPayload,
+  PMDecisionQueueListPayload,
+  PMDecisionQueueActionPayload,
+  PMDecisionQueuePreviewPayload,
   RunPayload,
   SavedExport,
   TickerExportRequest,
@@ -164,6 +169,81 @@ export function applyRecommendations(ticker: string, payload: unknown): Promise<
   return requestJSON<RunPayload>(`/tickers/${encodeURIComponent(ticker)}/valuation/recommendations/apply`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export function runAgenticHandoffProfile(ticker: string, profileName: string): Promise<AgenticHandoffRunPayload> {
+  return requestJSON<AgenticHandoffRunPayload>(`/tickers/${encodeURIComponent(ticker)}/agentic-handoff/${encodeURIComponent(profileName)}/run`, {
+    method: "POST",
+  });
+}
+
+export function getEvidencePackets(ticker: string): Promise<EvidencePacketsPayload> {
+  return requestJSON<EvidencePacketsPayload>(`/tickers/${encodeURIComponent(ticker)}/evidence-packets`);
+}
+
+export function getPmDecisionQueue(
+  ticker: string,
+  filters?: {
+    status?: string;
+    item_type?: string;
+    qualitative_importance?: string;
+    valuation_impact_bucket?: string;
+  },
+): Promise<PMDecisionQueueListPayload> {
+  const query = new URLSearchParams();
+  if (filters?.status) {
+    query.set("status", filters.status);
+  }
+  if (filters?.item_type) {
+    query.set("item_type", filters.item_type);
+  }
+  if (filters?.qualitative_importance) {
+    query.set("qualitative_importance", filters.qualitative_importance);
+  }
+  if (filters?.valuation_impact_bucket) {
+    query.set("valuation_impact_bucket", filters.valuation_impact_bucket);
+  }
+  const suffix = query.toString() ? `?${query.toString()}` : "";
+  return requestJSON<PMDecisionQueueListPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue${suffix}`);
+}
+
+export function previewPmDecisionQueueItem(ticker: string, itemId: number): Promise<PMDecisionQueuePreviewPayload> {
+  return requestJSON<PMDecisionQueuePreviewPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/preview`, {
+    method: "POST",
+  });
+}
+
+export function editPmDecisionQueueItem(ticker: string, itemId: number, proposalPack: unknown): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/edit`, {
+    method: "POST",
+    body: JSON.stringify({ proposal_pack: proposalPack }),
+  });
+}
+
+export function approvePmDecisionQueueItem(ticker: string, itemId: number): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/approve`, {
+    method: "POST",
+  });
+}
+
+export function applyPmDecisionQueueItem(ticker: string, itemId: number): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/apply`, {
+    method: "POST",
+  });
+}
+
+export function rejectPmDecisionQueueItem(ticker: string, itemId: number, reason: string): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export function deferPmDecisionQueueItem(ticker: string, itemId: number, reason: string): Promise<PMDecisionQueueActionPayload> {
+  return requestJSON<PMDecisionQueueActionPayload>(`/tickers/${encodeURIComponent(ticker)}/pm-decision-queue/${itemId}/defer`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }
 

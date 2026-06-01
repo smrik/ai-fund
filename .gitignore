@@ -33,6 +33,8 @@ data/valuations/
 data/exports/
 data/damodaran_drop/
 data/alpha_pod.db
+data/*.db-shm
+data/*.db-wal
 data/tracker-test-*.db
 data/stage1_survivors.csv
 data/regime_model.pkl
@@ -67,3 +69,6 @@ Thumbs.db
 
 # MkDocs build output
 site/
+output/
+course/
+py-yfinance/

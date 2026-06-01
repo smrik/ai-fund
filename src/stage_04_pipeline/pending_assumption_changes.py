@@ -260,7 +260,12 @@ def approve_pending_assumption_changes(ticker: str, change_ids: list[int], *, ac
                 for row in approved
             ],
         )
-    return {"ticker": ticker.upper(), "approved_count": len(approved), "change_ids": [r["change_id"] for r in approved]}
+    return {
+        "ticker": ticker.upper(),
+        "approved_count": len(approved),
+        "change_ids": [r["change_id"] for r in approved],
+        "approval_ref": approval_ref,
+    }
 
 
 def reject_pending_assumption_changes(ticker: str, change_ids: list[int], *, actor: str = "api") -> dict[str, Any]:

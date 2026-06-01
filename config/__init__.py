@@ -50,7 +50,8 @@ _screening_defaults = _RAW_CONFIG["screening_defaults"]
 _schedule = _RAW_CONFIG["schedule"]
 
 DATA_DIR = _resolve_path(_paths["data_dir"])
-DB_PATH = _resolve_path(_paths["db_path"])
+_db_path_override = os.getenv("ALPHA_POD_DB_PATH")
+DB_PATH = Path(_db_path_override).resolve() if _db_path_override else _resolve_path(_paths["db_path"])
 CIQ_TEMPLATES_DIR = _resolve_path(_paths["ciq_templates_dir"])
 CIQ_EXPORTS_DIR = _resolve_path(_paths["ciq_exports_dir"])
 CIQ_ARCHIVE_DIR = _resolve_path(_paths.get("ciq_archive_dir", "data/ciq_archive"))
@@ -68,7 +69,7 @@ SCREENING_RULES = copy.deepcopy(_RAW_CONFIG["screening"])
 LLM_MODEL = _env_str("LLM_MODEL", _llm["model"])
 LLM_MODEL_FAST = _env_str("LLM_MODEL_FAST", _llm["fast_model"])
 LLM_SYNTHESIS_MODEL = _env_str("LLM_SYNTHESIS_MODEL", _llm.get("synthesis_model", _llm["model"]))
-LLM_BASE_URL = _env_str("LLM_BASE_URL", _llm.get("base_url", ""))
+LLM_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or str(_llm.get("base_url", ""))
 
 PORTFOLIO_SIZE_USD = _env_float("PORTFOLIO_SIZE_USD", _portfolio["size_usd"])
 MAX_POSITION_PCT = _env_float("MAX_POSITION_PCT", _portfolio["max_position_pct"])

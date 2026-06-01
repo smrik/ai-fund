@@ -20,40 +20,16 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Agentic Handoff MVP Hardening](./active/2026-05-22-agentic-handoff-mvp-hardening.md)
 - [Valuation Methodology Hardening And CIQ Retrieval Requirements](./active/2026-04-04-spike-review-valuation-inputs-and-ciq-requirements.md)
 - [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)
 - [Internal Release Readiness And Mock Publish](./active/2026-04-01-internal-release-readiness-and-mock-publish.md)
-- [GitHub Hygiene And Repo Hardening](./active/2026-03-31-github-hygiene-and-repo-hardening.md)
-- [Structured Logging First Tranche](./active/2026-03-27-structured-logging-first-tranche.md)
-- [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md)
-
-## Future
-
-- [Alpha Pod Product Roadmap Dashboard](./future/2026-04-02-alpha-pod-roadmap-dashboard.md)
-- [Epic: Canonical Ticker Dossier And Export Integrity](./future/2026-04-02-epic-canonical-ticker-dossier-and-export-integrity.md)
-- [Epic: Research Retrieval And RAG Intelligence](./future/2026-04-02-epic-research-retrieval-and-rag-intelligence.md)
-- [Epic: PM Web Cockpit](./future/2026-04-02-epic-pm-web-cockpit.md)
-- [Epic: Solo PM State And Preferences](./future/2026-04-02-epic-solo-pm-state-and-preferences.md)
-- [Epic: Platform Reliability And DevOps](./future/2026-04-02-epic-platform-reliability-and-devops.md)
-- [Tech Debt Tracker](./future/tech-debt-tracker.md)
+- [Dashboard And AI Investing Feature Roadmap](./archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md)
+- [XBRL And RAG Chatbot](./archive/2026-03-15-xbrl-and-rag-chatbot.md)
 
 ## Completed
 
-- [Dashboard Shell And Dossier Companion Workspace](./completed/2026-03-23-dashboard-shell-and-dossier-companion.md)
-- [Thesis Tracker V2: PM Cockpit](./completed/2026-03-23-thesis-tracker-v2-pm-cockpit.md)
-- [Deep Dive Dashboard Refactor](./completed/2026-03-21-deep-dive-dashboard-refactor.md)
-- [Single-Ticker Deep Dive Dossier System](./completed/2026-03-18-single-ticker-deep-dive-dossier.md)
-- [Dashboard Research Surface Remediation And Auditability](./completed/2026-03-15-dashboard-research-program.md)
-- [Dashboard Override Workbench](./completed/2026-03-14-dashboard-override-workbench.md)
-- [DCF Audit And Agent Cache](./completed/2026-03-14-dcf-audit-agent-cache.md)
-- [Universe Watchlist Landing Page](./completed/2026-03-28-universe-watchlist-landing-page.md)
-
-## Archive
-
-- [2026-03-06 Config Consolidation](./archive/2026-03-06-config-consolidation.md)
-- [2026-03-06 DCF Pipeline](./archive/2026-03-06-dcf-pipeline.md)
-- [Dashboard And AI Investing Feature Roadmap](./archive/2026-03-18-dashboard-ai-investing-feature-roadmap.md)
-- [XBRL And RAG Chatbot](./archive/2026-03-15-xbrl-and-rag-chatbot.md)
+- [Universal Agentic Handoff MVP](./completed/2026-05-21-agentic-handoff-mvp.md)
 
 ## Historical Execution Artifacts
 

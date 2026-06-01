@@ -326,10 +326,10 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
         if as_of_date is None:
             latest = conn.execute(
                 """
-                SELECT as_of_date, run_id
+                SELECT as_of_date
                 FROM ciq_comps_snapshot
                 WHERE target_ticker = ?
-                ORDER BY as_of_date DESC, run_id DESC
+                ORDER BY as_of_date DESC
                 LIMIT 1
                 """,
                 [ticker.upper()],
@@ -337,32 +337,32 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
             if latest is None:
                 return []
             as_of_date = latest["as_of_date"]
-            run_id = int(latest["run_id"])
-        else:
-            latest_run = conn.execute(
-                """
-                SELECT run_id
-                FROM ciq_comps_snapshot
-                WHERE target_ticker = ? AND as_of_date = ?
-                ORDER BY run_id DESC
-                LIMIT 1
-                """,
-                [ticker.upper(), as_of_date],
-            ).fetchone()
-            if latest_run is None:
-                return []
-            run_id = int(latest_run["run_id"])
 
         rows = conn.execute(
             """
             SELECT target_ticker, peer_ticker, as_of_date, run_id, source_file,
                    metric_key, value_num, is_target
             FROM ciq_comps_snapshot
-            WHERE target_ticker = ? AND as_of_date = ? AND run_id = ?
+            WHERE target_ticker = ? AND as_of_date = ?
+            ORDER BY run_id DESC
             """,
-            [ticker.upper(), as_of_date, run_id],
+            [ticker.upper(), as_of_date],
         ).fetchall()
-        return [dict(r) for r in rows]
+
+        # CIQ imports can split the same as-of snapshot across runs (for example,
+        # one run has market caps while another has EBITDA/PE multiples). Build a
+        # single latest-as-of view by taking the newest row for each peer/metric.
+        merged: dict[tuple[str, str, int], dict[str, Any]] = {}
+        for row in rows:
+            data = dict(row)
+            key = (
+                str(data.get("peer_ticker") or "").upper(),
+                str(data.get("metric_key") or ""),
+                int(data.get("is_target") or 0),
+            )
+            if key not in merged:
+                merged[key] = data
+        return list(merged.values())
     except sqlite3.OperationalError:
         return []
     finally:

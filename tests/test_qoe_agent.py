@@ -69,7 +69,7 @@ def _stub_deterministic(monkeypatch, agent_module):
     )
 
 
-def _fake_agent_init(self):
+def _fake_agent_init(self, *args, **kwargs):
     self.client = None
     self.name = "QoEAgent"
     self.system_prompt = ""

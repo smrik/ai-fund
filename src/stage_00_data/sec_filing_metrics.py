@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -47,6 +48,8 @@ def _to_float(value: Any) -> float | None:
 
 
 def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[dict[str, float | str]]:
+    if os.getenv("ALPHA_POD_EDGAR_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}:
+        return []
     from edgar import Company
     try:
         facts = Company(ticker).get_facts()
@@ -165,6 +168,8 @@ def get_bridge_items_from_xbrl(ticker: str) -> dict:
         pension_deficit, sbc
     Returns {} on any failure — never raises.
     """
+    if os.getenv("ALPHA_POD_EDGAR_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}:
+        return {}
     try:
         from edgar import Company
         facts = Company(ticker.upper()).get_facts()

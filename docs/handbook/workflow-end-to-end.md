@@ -159,6 +159,78 @@ Guardrail:
 
 - Agent outputs should be treated as contextual overlays unless promoted through a deterministic acceptance rule.
 
+## Agentic Handoff MVP Workflow
+
+The valuation shell now includes a universal PM Queue / Insights path for judgment-agent handoffs.
+
+Primary operator handbook:
+
+- [`docs/handbook/agentic-handoff-mvp.md`](./agentic-handoff-mvp.md)
+
+Shared loop:
+
+```text
+Evidence Packet -> Agent Observation -> Translator -> PM Decision Queue -> Preview/Edit/Approve -> Deterministic Rerun
+```
+
+Operational semantics:
+
+1. Run one or more handoff profiles (`earnings_update`, `company_analysis`, `industry_analysis`, `comps_analysis`, `risk_review`, `valuation_review`).
+2. Inspect generated Evidence Packets and anchored observations.
+3. Review PM Decision Queue items:
+   - advisory findings
+   - assumption change packs
+4. Use PM actions per item:
+   - preview
+   - edit
+   - approve
+   - reject
+   - defer
+5. On approve, queue items are linked into the existing pending/approved assumption path; only approved values flow into deterministic valuation inputs.
+
+Guardrails:
+
+- agents are analysts, not model mutators
+- translator rules are deterministic policy
+- PM is the only approval authority
+- SQLite queue/evidence tables are canonical; exports are inspection copies only
+
+Recommended first check before manual PM testing:
+
+```powershell
+rtk python scripts/manual/smoke_agentic_handoff_mvp.py --ticker IBM
+```
+
+By default the smoke script runs against a temporary SQLite snapshot and uses fixture-backed collector shims plus local stub observations, so it verifies queue safety without mutating the live review state.
+
+For a single-command ticker review artifact, run:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --skip-agent-runs
+```
+
+This writes a markdown and JSON packet under `output/ticker_flows/` with deterministic valuation, DCF scenarios, comps diagnostics, assumption-review flags, evidence/profile statuses, and PM Queue preview impact when queue items exist.
+
+For a privacy-safe end-to-end handoff check that uses local deterministic heuristic observations instead of a live LLM, run:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --agent-mode heuristic
+```
+
+For manual rehearsals, prefer `--isolated-db` so generated Evidence Packets and PM Queue items are written to a copied SQLite snapshot instead of the live operator queue. If SEC/Yahoo network access is unavailable but the repo already has cached filings and market rows, add `--edgar-cache-only --market-cache-only` to force local cache reads:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --agent-mode heuristic --edgar-cache-only --market-cache-only --isolated-db
+```
+
+Treat heuristic queue items as workflow checks only. They are useful for verifying Evidence Packet -> Observation -> PM Queue -> Preview mechanics, but they are not investment-grade LLM insights.
+
+To test live agents with an OpenRouter free model, first confirm that sending the ticker evidence packet to OpenRouter is acceptable for the ticker/data being reviewed, then run:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model openrouter/free
+```
+
 ## Dashboard Shell
 
 The Streamlit dashboard remains available as a transitional review surface for the valuation workflow.

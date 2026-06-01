@@ -17,6 +17,7 @@ class ContractModel(BaseModel):
 class PendingAssumptionStatus(str, Enum):
     pending = "pending"
     approved = "approved"
+    applied = "applied"
     rejected = "rejected"
     deferred = "deferred"
     superseded = "superseded"

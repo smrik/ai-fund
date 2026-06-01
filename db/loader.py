@@ -765,6 +765,382 @@ def load_damodaran_policy_drafts(
     return out
 
 
+def insert_evidence_packet(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    item = dict(row)
+    item["ticker"] = str(item["ticker"]).upper()
+    item["source_refs_json"] = json.dumps(item.get("source_refs") or [], separators=(",", ":"))
+    item["facts_json"] = json.dumps(item.get("facts") or [], separators=(",", ":"))
+    item["snippets_json"] = json.dumps(item.get("snippets") or [], separators=(",", ":"))
+    item["observations_json"] = json.dumps(item.get("observations") or [], separators=(",", ":"))
+    item["run_metadata_json"] = json.dumps(item.get("run_metadata") or {}, separators=(",", ":"))
+    cursor = conn.execute(
+        """
+        INSERT INTO evidence_packets (
+            created_at, updated_at, ticker, profile_name, packet_kind, bundle_id, generated_at,
+            source_refs_json, facts_json, snippets_json, observations_json, run_metadata_json
+        ) VALUES (
+            :created_at, :updated_at, :ticker, :profile_name, :packet_kind, :bundle_id, :generated_at,
+            :source_refs_json, :facts_json, :snippets_json, :observations_json, :run_metadata_json
+        )
+        """,
+        item,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def load_evidence_packet(conn: sqlite3.Connection, packet_id: int) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, created_at, updated_at, ticker, profile_name, packet_kind, bundle_id, generated_at,
+               source_refs_json, facts_json, snippets_json, observations_json, run_metadata_json
+        FROM evidence_packets
+        WHERE id = ?
+        """,
+        [int(packet_id)],
+    ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    item["packet_id"] = item.pop("id")
+    item["source_refs"] = json.loads(item.pop("source_refs_json") or "[]")
+    item["facts"] = json.loads(item.pop("facts_json") or "[]")
+    item["snippets"] = json.loads(item.pop("snippets_json") or "[]")
+    item["observations"] = json.loads(item.pop("observations_json") or "[]")
+    item["run_metadata"] = json.loads(item.pop("run_metadata_json") or "{}")
+    return item
+
+
+def update_evidence_packet_run(
+    conn: sqlite3.Connection,
+    packet_id: int,
+    *,
+    updated_at: str,
+    observations: list[dict[str, Any]] | None = None,
+    run_metadata_updates: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    existing = load_evidence_packet(conn, packet_id)
+    if existing is None:
+        raise ValueError(f"evidence packet not found: {packet_id}")
+
+    next_observations = observations if observations is not None else list(existing.get("observations") or [])
+    next_run_metadata = dict(existing.get("run_metadata") or {})
+    next_run_metadata.update(run_metadata_updates or {})
+
+    conn.execute(
+        """
+        UPDATE evidence_packets
+        SET updated_at = ?, observations_json = ?, run_metadata_json = ?
+        WHERE id = ?
+        """,
+        [
+            updated_at,
+            json.dumps(next_observations, separators=(",", ":")),
+            json.dumps(next_run_metadata, separators=(",", ":")),
+            int(packet_id),
+        ],
+    )
+    conn.commit()
+    updated = load_evidence_packet(conn, packet_id)
+    if updated is None:
+        raise ValueError(f"evidence packet not found after update: {packet_id}")
+    return updated
+
+
+def list_evidence_packets(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    packet_kind: str | None = None,
+) -> list[dict[str, Any]]:
+    params: list[Any] = [str(ticker).upper()]
+    where = "WHERE ticker = ?"
+    if packet_kind:
+        where += " AND packet_kind = ?"
+        params.append(packet_kind)
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, updated_at, ticker, profile_name, packet_kind, bundle_id, generated_at,
+               source_refs_json, facts_json, snippets_json, observations_json, run_metadata_json
+        FROM evidence_packets
+        {where}
+        ORDER BY generated_at DESC, id DESC
+        """,
+        params,
+    ).fetchall()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        item["packet_id"] = item.pop("id")
+        item["source_refs"] = json.loads(item.pop("source_refs_json") or "[]")
+        item["facts"] = json.loads(item.pop("facts_json") or "[]")
+        item["snippets"] = json.loads(item.pop("snippets_json") or "[]")
+        item["observations"] = json.loads(item.pop("observations_json") or "[]")
+        item["run_metadata"] = json.loads(item.pop("run_metadata_json") or "{}")
+        out.append(item)
+    return out
+
+
+def _pm_queue_row_to_dict(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+    item = dict(row)
+    item["item_id"] = item.pop("id")
+    item["evidence_anchor_ids"] = json.loads(item.pop("evidence_anchor_ids_json") or "[]")
+    item["evidence_packet_ids"] = json.loads(item.pop("evidence_packet_ids_json") or "[]")
+    item["proposal_pack"] = (
+        json.loads(item.pop("proposal_pack_json"))
+        if item.get("proposal_pack_json")
+        else None
+    )
+    item["pm_edited_proposal_pack"] = (
+        json.loads(item.pop("pm_edited_proposal_pack_json"))
+        if item.get("pm_edited_proposal_pack_json")
+        else None
+    )
+    item["approved_proposal_pack"] = (
+        json.loads(item.pop("approved_proposal_pack_json"))
+        if item.get("approved_proposal_pack_json")
+        else None
+    )
+    item["valuation_impact"] = (
+        json.loads(item.pop("valuation_impact_json"))
+        if item.get("valuation_impact_json")
+        else None
+    )
+    item["adapter_links"] = json.loads(item.pop("adapter_links_json") or "{}")
+    item["decision_history"] = json.loads(item.pop("decision_history_json") or "[]")
+    item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+    return item
+
+
+def _find_duplicate_pm_queue_item(conn: sqlite3.Connection, item: dict[str, Any]) -> dict[str, Any] | None:
+    observation_id = str((item.get("metadata") or {}).get("observation_id") or "").strip()
+    packet_ids = {str(value) for value in (item.get("evidence_packet_ids") or []) if str(value).strip()}
+    if not observation_id or not packet_ids:
+        return None
+    rows = conn.execute(
+        """
+        SELECT id, created_at, updated_at, ticker, profile_name, item_type, status,
+               qualitative_importance, valuation_impact_bucket, title, summary,
+               evidence_anchor_ids_json, evidence_packet_ids_json, proposal_pack_json,
+               pm_edited_proposal_pack_json, approved_proposal_pack_json,
+               agent_confidence, translator_confidence, pm_confidence, valuation_impact_json,
+               adapter_links_json, decision_history_json, metadata_json
+        FROM pm_decision_queue_items
+        WHERE ticker = ?
+        ORDER BY id DESC
+        """,
+        [str(item.get("ticker") or "").upper()],
+    ).fetchall()
+    for row in rows:
+        existing = _pm_queue_row_to_dict(row)
+        existing_observation_id = str((existing.get("metadata") or {}).get("observation_id") or "").strip()
+        existing_packet_ids = {
+            str(value) for value in (existing.get("evidence_packet_ids") or []) if str(value).strip()
+        }
+        if existing_observation_id == observation_id and packet_ids.intersection(existing_packet_ids):
+            return existing
+    return None
+
+
+def insert_pm_decision_queue_item(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    item = dict(row)
+    item["ticker"] = str(item["ticker"]).upper()
+    duplicate = _find_duplicate_pm_queue_item(conn, item)
+    if duplicate is not None:
+        return int(duplicate["item_id"])
+    item["evidence_anchor_ids_json"] = json.dumps(item.get("evidence_anchor_ids") or [], separators=(",", ":"))
+    item["evidence_packet_ids_json"] = json.dumps(item.get("evidence_packet_ids") or [], separators=(",", ":"))
+    item["proposal_pack_json"] = (
+        json.dumps(item.get("proposal_pack"), separators=(",", ":"))
+        if item.get("proposal_pack") is not None
+        else None
+    )
+    item["pm_edited_proposal_pack_json"] = (
+        json.dumps(item.get("pm_edited_proposal_pack"), separators=(",", ":"))
+        if item.get("pm_edited_proposal_pack") is not None
+        else None
+    )
+    item["approved_proposal_pack_json"] = (
+        json.dumps(item.get("approved_proposal_pack"), separators=(",", ":"))
+        if item.get("approved_proposal_pack") is not None
+        else None
+    )
+    item["valuation_impact_json"] = (
+        json.dumps(item.get("valuation_impact"), separators=(",", ":"))
+        if item.get("valuation_impact") is not None
+        else None
+    )
+    item["adapter_links_json"] = json.dumps(item.get("adapter_links") or {}, separators=(",", ":"))
+    item["decision_history_json"] = json.dumps(item.get("decision_history") or [], separators=(",", ":"))
+    item["metadata_json"] = json.dumps(item.get("metadata") or {}, separators=(",", ":"))
+    cursor = conn.execute(
+        """
+        INSERT INTO pm_decision_queue_items (
+            created_at, updated_at, ticker, profile_name, item_type, status,
+            qualitative_importance, valuation_impact_bucket, title, summary,
+            evidence_anchor_ids_json, evidence_packet_ids_json, proposal_pack_json,
+            pm_edited_proposal_pack_json, approved_proposal_pack_json,
+            agent_confidence, translator_confidence, pm_confidence, valuation_impact_json,
+            adapter_links_json, decision_history_json, metadata_json
+        ) VALUES (
+            :created_at, :updated_at, :ticker, :profile_name, :item_type, :status,
+            :qualitative_importance, :valuation_impact_bucket, :title, :summary,
+            :evidence_anchor_ids_json, :evidence_packet_ids_json, :proposal_pack_json,
+            :pm_edited_proposal_pack_json, :approved_proposal_pack_json,
+            :agent_confidence, :translator_confidence, :pm_confidence, :valuation_impact_json,
+            :adapter_links_json, :decision_history_json, :metadata_json
+        )
+        """,
+        item,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
+def list_pm_decision_queue_items(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str | None = None,
+    status: str | None = None,
+    item_type: str | None = None,
+    qualitative_importance: str | None = None,
+    valuation_impact_bucket: str | None = None,
+) -> list[dict[str, Any]]:
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if ticker:
+        where_clauses.append("ticker = ?")
+        params.append(str(ticker).upper())
+    if status:
+        where_clauses.append("status = ?")
+        params.append(status)
+    if item_type:
+        where_clauses.append("item_type = ?")
+        params.append(item_type)
+    if qualitative_importance:
+        where_clauses.append("qualitative_importance = ?")
+        params.append(qualitative_importance)
+    if valuation_impact_bucket:
+        where_clauses.append("valuation_impact_bucket = ?")
+        params.append(valuation_impact_bucket)
+    where_sql = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, updated_at, ticker, profile_name, item_type, status,
+               qualitative_importance, valuation_impact_bucket, title, summary,
+               evidence_anchor_ids_json, evidence_packet_ids_json, proposal_pack_json,
+               pm_edited_proposal_pack_json, approved_proposal_pack_json,
+               agent_confidence, translator_confidence, pm_confidence, valuation_impact_json,
+               adapter_links_json, decision_history_json, metadata_json
+        FROM pm_decision_queue_items
+        {where_sql}
+        ORDER BY
+            CASE qualitative_importance
+                WHEN 'high' THEN 0
+                WHEN 'medium' THEN 1
+                WHEN 'low' THEN 2
+                ELSE 3
+            END ASC,
+            updated_at DESC,
+            id DESC
+        """,
+        params,
+    ).fetchall()
+    return [_pm_queue_row_to_dict(row) for row in rows]
+
+
+def update_pm_decision_queue_item(
+    conn: sqlite3.Connection,
+    *,
+    item_id: int,
+    updates: dict[str, Any],
+) -> dict[str, Any]:
+    if not updates:
+        row = conn.execute(
+            "SELECT * FROM pm_decision_queue_items WHERE id = ?",
+            [int(item_id)],
+        ).fetchone()
+        if row is None:
+            raise ValueError(f"queue item not found: {item_id}")
+        return _pm_queue_row_to_dict(row)
+
+    column_map: dict[str, str] = {
+        "updated_at": "updated_at",
+        "status": "status",
+        "qualitative_importance": "qualitative_importance",
+        "valuation_impact_bucket": "valuation_impact_bucket",
+        "title": "title",
+        "summary": "summary",
+        "agent_confidence": "agent_confidence",
+        "translator_confidence": "translator_confidence",
+        "pm_confidence": "pm_confidence",
+    }
+    json_column_map: dict[str, str] = {
+        "evidence_anchor_ids": "evidence_anchor_ids_json",
+        "evidence_packet_ids": "evidence_packet_ids_json",
+        "proposal_pack": "proposal_pack_json",
+        "pm_edited_proposal_pack": "pm_edited_proposal_pack_json",
+        "approved_proposal_pack": "approved_proposal_pack_json",
+        "valuation_impact": "valuation_impact_json",
+        "adapter_links": "adapter_links_json",
+        "decision_history": "decision_history_json",
+        "metadata": "metadata_json",
+    }
+    set_clauses: list[str] = []
+    params: list[Any] = []
+    for key, value in updates.items():
+        if key in column_map:
+            set_clauses.append(f"{column_map[key]} = ?")
+            params.append(value)
+        elif key in json_column_map:
+            set_clauses.append(f"{json_column_map[key]} = ?")
+            if value is None and key in {"proposal_pack", "pm_edited_proposal_pack", "approved_proposal_pack", "valuation_impact"}:
+                params.append(None)
+            else:
+                default_value: Any = {} if key in {"adapter_links", "metadata"} else []
+                params.append(json.dumps(value if value is not None else default_value, separators=(",", ":")))
+    if "updated_at" not in updates:
+        set_clauses.append("updated_at = ?")
+        params.append(_now())
+    if not set_clauses:
+        raise ValueError("no supported fields in updates")
+    params.append(int(item_id))
+    conn.execute(
+        f"""
+        UPDATE pm_decision_queue_items
+        SET {", ".join(set_clauses)}
+        WHERE id = ?
+        """,
+        params,
+    )
+    conn.commit()
+    row = conn.execute(
+        "SELECT * FROM pm_decision_queue_items WHERE id = ?",
+        [int(item_id)],
+    ).fetchone()
+    if row is None:
+        raise ValueError(f"queue item not found: {item_id}")
+    return _pm_queue_row_to_dict(row)
+
+
+def insert_pm_decision_queue_event(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    item = dict(row)
+    item["ticker"] = str(item["ticker"]).upper()
+    item["payload_json"] = json.dumps(item.get("payload") or {}, separators=(",", ":"))
+    cursor = conn.execute(
+        """
+        INSERT INTO pm_decision_queue_events (
+            created_at, item_id, ticker, event_type, actor, payload_json
+        ) VALUES (
+            :created_at, :item_id, :ticker, :event_type, :actor, :payload_json
+        )
+        """,
+        item,
+    )
+    conn.commit()
+    return int(cursor.lastrowid)
+
+
 def insert_pending_assumption_change(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
     item = dict(row)
     item["ticker"] = str(item["ticker"]).upper()
@@ -848,16 +1224,16 @@ def approve_pending_assumption_changes(
             conn.execute(
                 """
                 UPDATE pending_assumption_changes
-                SET status = 'approved', updated_at = ?, applied_at = ?, approval_ref = ?
+                SET status = 'approved', updated_at = ?, approval_ref = ?
                 WHERE id = ?
                 """,
-                [applied_at, applied_at, approval_ref, row["id"]],
+                [applied_at, approval_ref, row["id"]],
             )
     for row in approved:
         row["metadata"] = json.loads(row.pop("metadata_json") or "{}")
         row["change_id"] = row.pop("id")
         row["approval_ref"] = approval_ref
-        row["applied_at"] = applied_at
+        row["applied_at"] = None
     return approved
 
 
@@ -913,6 +1289,14 @@ def apply_approved_assumption_changes(
                     actor,
                     row["metadata_json"] or "{}",
                 ],
+            )
+            conn.execute(
+                """
+                UPDATE pending_assumption_changes
+                SET status = 'applied', updated_at = ?, applied_at = ?
+                WHERE id = ? AND status = 'approved'
+                """,
+                [applied_at, applied_at, row["id"]],
             )
     for row in approved:
         row["metadata"] = json.loads(row.pop("metadata_json") or "{}")

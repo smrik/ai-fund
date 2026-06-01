@@ -19,6 +19,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from db.schema import create_tables, get_connection
+from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
+from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.utils import utc_now_iso
 
@@ -342,6 +344,17 @@ class IndustryAgent(BaseAgent):
         payload["grounding"] = metadata
         payload["model"] = getattr(self.client_adapter, "model", DEFAULT_INDUSTRY_MODEL)
         return payload
+
+    def analyze_evidence_packet(
+        self,
+        packet: EvidencePacket,
+        profile_name: str = "industry_analysis",
+    ) -> list[EvidencePacketObservation]:
+        return analyze_evidence_packet_with_agent(
+            agent=self,
+            packet=packet,
+            profile_name=profile_name,
+        )
 
     def _normalize_company_report(
         self,
