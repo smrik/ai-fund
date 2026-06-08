@@ -1144,6 +1144,155 @@ def _collect_risk_review_inputs(ticker: str) -> dict[str, Any]:
     }
 
 
+def _collect_analyst_prep_synthesis_inputs(ticker: str) -> dict[str, Any]:
+    source_ref_id = f"analyst-prep:{ticker}"
+    source_refs = [
+        {
+            "source_ref_id": source_ref_id,
+            "source_kind": "analyst_prep_pack",
+            "source_label": f"{ticker} Analyst Prep Pack",
+            "source_locator": f"internal://{ticker}/analyst-prep",
+            "metadata": {"builder": "src.stage_04_pipeline.analyst_prep_pack"},
+        }
+    ]
+    statuses: list[dict[str, Any]] = []
+    try:
+        from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload
+
+        pack = build_analyst_prep_payload(ticker)
+    except Exception as exc:
+        return _missing_packet(
+            ticker,
+            "analyst_prep_synthesis",
+            reason="analyst_prep_pack_unavailable",
+            source_quality=EvidenceSourceQuality.placeholder,
+            collector_statuses=[_collector_status("analyst_prep_pack", "error", message=str(exc))],
+            source_refs=source_refs,
+        )
+
+    facts: list[dict[str, Any]] = [
+        {
+            "fact_id": "fact:analyst_prep:thesis_card_count",
+            "fact_name": "analyst_prep_thesis_card_count",
+            "value": len(pack.get("thesis_cards") or []),
+            "unit": "cards",
+            "metadata": {"source_ref_id": source_ref_id},
+        },
+        {
+            "fact_id": "fact:analyst_prep:driver_card_count",
+            "fact_name": "analyst_prep_driver_card_count",
+            "value": len(pack.get("driver_cards") or []),
+            "unit": "cards",
+            "metadata": {"source_ref_id": source_ref_id},
+        },
+        {
+            "fact_id": "fact:analyst_prep:missing_data_count",
+            "fact_name": "analyst_prep_missing_data_count",
+            "value": len(pack.get("missing_data") or []),
+            "unit": "flags",
+            "metadata": {"source_ref_id": source_ref_id},
+        },
+    ]
+    snippets: list[dict[str, Any]] = []
+
+    for idx, card in enumerate(pack.get("thesis_cards") or [], start=1):
+        claim = _clean_text(
+            " ".join(
+                str(card.get(key) or "")
+                for key in (
+                    "title",
+                    "claim",
+                    "business_evidence_summary",
+                    "model_implication",
+                    "counter_evidence",
+                    "what_would_change_mind",
+                )
+            ),
+            max_chars=700,
+        )
+        if claim:
+            snippets.append(
+                {
+                    "snippet_id": f"snippet:analyst_prep:thesis:{idx}",
+                    "source_ref_id": source_ref_id,
+                    "text": claim,
+                    "metadata": {
+                        "card_id": card.get("card_id"),
+                        "linked_assumption_fields": card.get("linked_assumption_fields") or [],
+                        "evidence_anchor_ids": card.get("evidence_anchor_ids") or [],
+                    },
+                }
+            )
+        if len(snippets) >= 5:
+            break
+
+    for idx, card in enumerate(pack.get("driver_cards") or [], start=1):
+        field = str(card.get("assumption_name") or "").strip()
+        if not field:
+            continue
+        facts.append(
+            {
+                "fact_id": f"fact:analyst_prep:driver:{field}",
+                "fact_name": f"analyst_prep_driver_{field}",
+                "value": card.get("proposed_or_effective_value"),
+                "unit": None,
+                "metadata": {
+                    "source_ref_id": source_ref_id,
+                    "current_value": card.get("current_value"),
+                    "pm_review_status": card.get("pm_review_status"),
+                    "source": card.get("source"),
+                    "rationale": card.get("rationale"),
+                },
+            }
+        )
+        if idx >= 8:
+            break
+
+    for idx, flag in enumerate(pack.get("missing_data") or [], start=1):
+        snippets.append(
+            {
+                "snippet_id": f"snippet:analyst_prep:missing:{idx}",
+                "source_ref_id": source_ref_id,
+                "text": _clean_text(
+                    f"{flag.get('label')}: {flag.get('reason')} Suggested check: {flag.get('suggested_check')}",
+                    max_chars=500,
+                ),
+                "metadata": {
+                    "flag_id": flag.get("flag_id"),
+                    "severity": flag.get("severity"),
+                    "source": flag.get("source"),
+                },
+            }
+        )
+        if idx >= 6:
+            break
+
+    source_quality = str(pack.get("source_quality") or "missing").lower()
+    if source_quality not in {item.value for item in EvidenceSourceQuality}:
+        source_quality = EvidenceSourceQuality.partial.value
+    statuses.append(
+        _collector_status(
+            "analyst_prep_pack",
+            "ok" if snippets or facts else "missing",
+            thesis_card_count=len(pack.get("thesis_cards") or []),
+            driver_card_count=len(pack.get("driver_cards") or []),
+            missing_data_count=len(pack.get("missing_data") or []),
+        )
+    )
+    return {
+        "source_refs": source_refs,
+        "facts": facts,
+        "snippets": snippets,
+        "source_quality": source_quality,
+        "run_metadata": {
+            "profile_name": "analyst_prep_synthesis",
+            "collector_statuses": statuses,
+            "analyst_prep_source_quality": pack.get("source_quality"),
+            "evidence_packet_ids": pack.get("evidence_packet_ids") or [],
+        },
+    }
+
+
 def _collect_profile_inputs(ticker: str, profile_name: str) -> dict[str, Any]:
     collectors: dict[str, Callable[[str], dict[str, Any]]] = {
         "company_analysis": _collect_company_analysis_inputs,
@@ -1152,6 +1301,7 @@ def _collect_profile_inputs(ticker: str, profile_name: str) -> dict[str, Any]:
         "valuation_review": _collect_valuation_review_inputs,
         "comps_analysis": _collect_comps_analysis_inputs,
         "risk_review": _collect_risk_review_inputs,
+        "analyst_prep_synthesis": _collect_analyst_prep_synthesis_inputs,
     }
     collector = collectors.get(profile_name)
     if collector is None:
@@ -1212,6 +1362,10 @@ def build_risk_review_packet(ticker: str) -> EvidencePacket:
     return _build_profile_packet(ticker, "risk_review")
 
 
+def build_analyst_prep_synthesis_packet(ticker: str) -> EvidencePacket:
+    return _build_profile_packet(ticker, "analyst_prep_synthesis")
+
+
 _PROFILE_BUILDERS: dict[str, Callable[[str], EvidencePacket]] = {
     "earnings_update": build_earnings_update_packet,
     "company_analysis": build_company_analysis_packet,
@@ -1219,6 +1373,7 @@ _PROFILE_BUILDERS: dict[str, Callable[[str], EvidencePacket]] = {
     "comps_analysis": build_comps_analysis_packet,
     "valuation_review": build_valuation_review_packet,
     "risk_review": build_risk_review_packet,
+    "analyst_prep_synthesis": build_analyst_prep_synthesis_packet,
 }
 
 

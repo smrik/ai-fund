@@ -7,7 +7,7 @@ from src.stage_02_valuation.templates.ic_memo import FilingsSummary
 from src.stage_03_judgment.valuation_agent import ValuationAgent
 
 
-def _fake_base_init(self):
+def _fake_base_init(self, *args, **kwargs):
     self.client = None
     self.name = "BaseAgent"
     self.system_prompt = ""

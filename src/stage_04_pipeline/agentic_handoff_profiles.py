@@ -179,6 +179,36 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
             "Raise structural valuation concerns as observations for PM review, not model edits.",
         ),
     ),
+    "analyst_prep_synthesis": AgenticHandoffProfile(
+        profile_name="analyst_prep_synthesis",
+        runner_key=GROUNDED_OBSERVATION_RUNNER_KEY,
+        runnable=True,
+        not_runnable_reason=None,
+        evidence_packet_kinds=(EvidencePacketKind.analyst_prep_synthesis,),
+        allowed_observation_types=(
+            "thesis_bridge_supported",
+            "model_driver_bridge_review",
+            "diligence_gap_identified",
+            "segment_bridge_missing",
+            "comps_judgment_review",
+        ),
+        allowed_assumption_fields=(
+            "revenue_growth_near",
+            "revenue_growth_mid",
+            "ebit_margin_start",
+            "ebit_margin_target",
+            "wacc",
+            "exit_multiple",
+            "terminal_growth",
+        ),
+        prompt_key="analyst_prep_synthesis",
+        translator_rule_group="analyst_prep_synthesis",
+        prompt_guidance=(
+            "Synthesize only from Analyst Prep packet facts, snippets, model-driver cards, comps diagnostics, and missing-data flags.",
+            "Do not propose model edits; explain what thesis claim or diligence question the PM should inspect.",
+            "If segment rows are missing, state that segment evidence is missing rather than inferring a mix-shift story.",
+        ),
+    ),
 }
 
 

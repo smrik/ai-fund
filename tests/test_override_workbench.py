@@ -58,10 +58,15 @@ def _inputs(drivers: ForecastDrivers, source_lineage: dict[str, str]) -> Valuati
         model_applicability_status="dcf_applicable",
         drivers=drivers,
         source_lineage=source_lineage,
-        ciq_lineage={},
+        ciq_lineage={
+            "public_comps_fallback_used": True,
+            "public_comps_fallback_source_file": "public_market_yfinance_fallback",
+            "public_comps_fallback_peer_count": 3,
+        },
         wacc_inputs={},
         story_profile=None,
         story_adjustments=None,
+        default_resolution={"status": "ok", "fields": []},
     )
 
 
@@ -138,6 +143,8 @@ def test_build_override_workbench_includes_default_effective_and_agent_values(mo
     assert row["agent_value"] == pytest.approx(0.12)
     assert row["effective_source"] == "override_ticker"
     assert row["initial_mode"] == "custom"
+    assert workbench["ciq_lineage"]["public_comps_fallback_used"] is True
+    assert workbench["default_resolution"]["status"] == "ok"
     assert workbench["assumption_register"]["ticker"] == "IBM"
     assert workbench["assumption_register_summary"]["model_trust_state"] in {"clean", "watch"}
 

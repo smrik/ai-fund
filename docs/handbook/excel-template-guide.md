@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Python pipeline writes a structured JSON per ticker. The staged Excel workbook (`templates/ticker_review.xlsx`) carries that JSON as a sidecar export payload and uses it to populate the review tabs. The DCF, WACC, and summary sheets remain workbook-native; the comps appendix is now written directly from the richer JSON payload during export staging.
+The Python pipeline writes a structured JSON per ticker. The staged Excel workbook (`templates/ticker_review.xlsx`) carries that JSON as a sidecar export payload and uses it to populate the review tabs. During export staging, the human-facing review sheets are rewritten from the payload so stale template values cannot survive into a ticker workbook. The comps appendix is also written directly from the richer JSON payload during export staging.
 
 The canonical payload target is the [TickerDossier contract](../design-docs/ticker-dossier-contract.md). This guide describes how the workbook consumes that contract, not how the runtime schema is implemented.
 
@@ -49,6 +49,8 @@ Current top-level sections and their Power Query navigation targets:
 | `comps_analysis` | workbook-ready comps appendix rows, diagnostics, and history |
 | `source_lineage` | data source tag for every assumption |
 | `ciq_lineage` | CIQ run / date / file audit trail |
+| `default_resolution` | audit rows for default-backed or prior-backed assumptions that need PM review |
+| `analyst_prep` | thesis cards, model-driver map, evidence map, comps judgment, and missing-data flags for senior review |
 | `qoe` | QoE signals (present only when `--qoe` flag used) |
 | `drivers_raw` | full ForecastDrivers dataclass (unrounded) |
 
@@ -65,7 +67,7 @@ For the shipped `templates/ticker_review.xlsx` workbook:
 - `Config!B2` stores the staged JSON path
 - the defined name `json_path` points at `Config!$B$2`
 
-When the React export flow stages a workbook, it copies `templates/ticker_review.xlsx`, writes a job-scoped `{TICKER}_latest.json` into the export bundle, and updates `Config!B2` to the absolute path of that staged JSON.
+When the React export flow stages a workbook, it copies `templates/ticker_review.xlsx`, writes a job-scoped `{TICKER}_latest.json` into the export bundle, updates `Config!B2` to the absolute path of that staged JSON, and rewrites the visible review sheets from that same payload.
 
 If you are building or repairing the template manually, enter the full path in `B2`:
 
@@ -157,6 +159,21 @@ Pull `market`, `valuation`, `scenarios`, and `health_flags`. Single-record layou
 - Additional column: **Source** (from `source_lineage`)
 
 ### Sheet 4 — WACC
+
+### Analyst Prep Sheets
+
+Ticker exports also rewrite the Analyst Prep review tabs from the same staged JSON payload:
+
+| Sheet | Purpose |
+|-------|---------|
+| `Analyst_Prep` | one-page status, source quality, counts, and missing-data flags |
+| `Thesis_Bridge` | anchored thesis cards linking claims to model drivers and evidence anchors |
+| `Model_Driver_Map` | current/proposed/effective assumption values, source, status, and rationale |
+| `Evidence_Map` | packet facts, observations, deterministic assumption anchors, and comps anchors |
+| `Comps_Judgment` | peer-set quality, primary metric, premium/discount argument, and warnings |
+| `Segment_Drivers` | deterministic segment rows when available; otherwise an explicit missing-evidence row |
+
+Analyst Prep sheets are reasoning artifacts. They do not change DCF formulas or approved assumptions. Model changes still flow through PM Queue preview/approve/apply.
 - Power Query loads `wacc` section
 - Override column on: Rf, ERP, beta, size premium, cost of debt, D/E weights
 - Live formula example (D column is "Active"):
@@ -223,12 +240,13 @@ Three scenario columns (Bear / Base / Bull) + expected IV column = weighted aver
   - football-field ranges by metric
   - historical multiple summary with current, median, quartiles, and percentile
 
-### Sheet 11 — QoE Signals
-- Power Query loads `qoe` section
-- Composite score banner at top (colour-coded)
-- Per-signal table: signal name | value | score | threshold
-- Conditional formatting: green (score=green), amber (score=amber), red (score=red)
-- NWC drift detail: current vs baseline per DSO/DIO/DPO
+### Sheet 11 — QoE / Data Quality
+- Export staging writes this tab directly from `ciq_lineage`, `health_flags`, and `source_lineage`
+- Purpose: make data freshness, fallback sources, and default-backed assumptions visible before PM approval
+
+### Sheet 12 — Review Checks
+- Export staging writes this tab directly from deterministic payload checks
+- Purpose: lightweight triage of high terminal-value dependence, DCF/comps disagreement, fallback comps, `default_resolution` findings, and missing optional market context
 
 ---
 
@@ -238,8 +256,8 @@ Three scenario columns (Bear / Base / Bull) + expected IV column = weighted aver
 2. The backend stages a copied workbook plus a job-scoped JSON bundle under `data/exports/generated/`
 3. Open the staged workbook in desktop Excel
 4. Run **Data → Refresh All** (or Ctrl+Alt+F5) for workbook-native assumption sheets if needed
-5. The staged workbook already writes the `Comps` and `Comps Diagnostics` tabs directly from the JSON payload; the assumption-driven tabs continue to use the workbook formulas
-6. Override any assumption in Col C and the workbook recalculates immediately
+5. The staged workbook writes `Cover`, `Output`, `Assumptions`, scenario DCF tabs, `Equity_Bridge`, `Sensitivity`, `QoE`, `Review Checks`, `Comps`, and `Comps Diagnostics` directly from the JSON payload
+6. If workbook-native override formulas are reintroduced, verify that exported copies still pass the no-stale-template-value regression test
 
 ---
 

@@ -178,6 +178,13 @@ export interface AssumptionsPayload {
   current_price?: number | null;
   current_iv_base?: number | null;
   current_expected_iv?: number | null;
+  ciq_lineage?: Record<string, unknown> | null;
+  default_resolution?: {
+    status?: string | null;
+    high_count?: number | null;
+    medium_count?: number | null;
+    fields?: Array<Record<string, unknown>>;
+  } | null;
   fields: Array<{
     field: string;
     label: string;
@@ -537,6 +544,81 @@ export interface ResearchPayload {
   tracker?: Record<string, unknown> | null;
   notebook?: Record<string, unknown> | null;
   publishable_memo_preview?: string | null;
+  analyst_prep?: AnalystPrepPack | null;
+}
+
+export interface MissingDataFlag {
+  flag_id: string;
+  label: string;
+  severity: "low" | "medium" | "high" | string;
+  reason: string;
+  suggested_check?: string | null;
+  source?: string | null;
+}
+
+export interface ThesisBridgeCard {
+  card_id: string;
+  title: string;
+  claim: string;
+  business_evidence_summary: string;
+  model_implication: string;
+  linked_assumption_fields: string[];
+  evidence_anchor_ids: string[];
+  numeric_fact_refs?: string[];
+  source_quality: string;
+  agent_confidence?: string | null;
+  deterministic_confidence?: string | null;
+  counter_evidence?: string | null;
+  what_would_change_mind?: string | null;
+}
+
+export interface ModelDriverBridgeCard {
+  assumption_name: string;
+  label: string;
+  current_value?: number | null;
+  proposed_or_effective_value?: number | null;
+  source?: string | null;
+  rationale: string;
+  valuation_impact?: Record<string, unknown> | null;
+  evidence_anchor_ids: string[];
+  pm_review_status: string;
+}
+
+export interface CompsJudgmentCard {
+  title: string;
+  peer_set_quality: string;
+  peer_count?: number | null;
+  primary_metric?: string | null;
+  target_vs_peer_median?: Record<string, unknown>;
+  premium_discount_argument?: string | null;
+  exit_multiple_support?: string | null;
+  warnings: string[];
+  evidence_anchor_ids: string[];
+}
+
+export interface SegmentDriverRow {
+  segment: string;
+  revenue_growth?: number | null;
+  margin?: number | null;
+  revenue_mix?: number | null;
+  source_ref?: string | null;
+  quality: "real" | "partial" | "missing" | string;
+}
+
+export interface AnalystPrepPack {
+  contract_version?: string;
+  ticker: string;
+  generated_at?: string | null;
+  source_quality: string;
+  thesis_cards: ThesisBridgeCard[];
+  driver_cards: ModelDriverBridgeCard[];
+  comps_card?: CompsJudgmentCard | null;
+  missing_data: MissingDataFlag[];
+  segment_driver_rows?: SegmentDriverRow[];
+  evidence_packet_ids: number[];
+  evidence_map?: Array<Record<string, unknown>>;
+  conflict_groups?: Array<Record<string, unknown>>;
+  export_metadata?: Record<string, unknown>;
 }
 
 export interface AuditPayload {

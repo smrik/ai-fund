@@ -661,6 +661,97 @@ def test_forward_comps_fall_back_to_ltm_when_fwd_missing(monkeypatch):
     assert out.source_lineage["exit_multiple"] == "ciq_comps_tev_ebitda_ltm"
 
 
+def test_exit_multiple_uses_comps_detail_median_before_sector_default(monkeypatch):
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(
+        ia,
+        "get_ciq_comps_detail",
+        lambda ticker, as_of_date=None: {
+            "medians": {"tev_ebitda_ltm": 13.25},
+            "source_lineage": {"source": "public_market_yfinance_fallback"},
+        },
+    )
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == pytest.approx(13.25)
+    assert out.source_lineage["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
+    exit_item = next(item for item in out.default_resolution["fields"] if item["field"] == "exit_multiple")
+    assert exit_item["needs_pm_review"] is False
+    assert exit_item["source_class"] == "public_market"
+
+
+def test_exit_multiple_uses_opt_in_public_peer_fallback_before_sector_default(monkeypatch):
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_detail", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_peer_multiples",
+        lambda peers: [
+            {"ticker": "AAA", "market_cap_mm": 1000.0, "ev_ebitda": 10.0, "pe_trailing": 18.0},
+            {"ticker": "BBB", "market_cap_mm": 1200.0, "ev_ebitda": 14.0, "pe_trailing": 20.0},
+            {"ticker": "CCC", "market_cap_mm": 1400.0, "ev_ebitda": 16.0, "pe_trailing": 22.0},
+        ],
+    )
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(
+        ia,
+        "load_valuation_overrides",
+        lambda: {"tickers": {"TEST": {"public_comps_fallback": True}}, "sectors": {}, "global": {}},
+    )
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.drivers.exit_multiple == pytest.approx(14.0)
+    assert out.source_lineage["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
+    assert out.ciq_lineage["public_comps_fallback_used"] is True
+    assert out.ciq_lineage["public_comps_fallback_peer_count"] == 3
+    assert out.default_resolution["status"] == "review_required"
+
+
+def test_default_resolution_flags_material_unresolved_defaults(monkeypatch):
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Technology"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_detail", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
+
+    out = build_valuation_inputs("TEST")
+
+    assert out is not None
+    assert out.default_resolution["status"] == "review_required_high"
+    assert out.source_lineage["default_resolution_status"] == "review_required_high"
+    exit_item = next(item for item in out.default_resolution["fields"] if item["field"] == "exit_multiple")
+    assert exit_item["needs_pm_review"] is True
+    assert exit_item["source_class"] == "missing_default"
+    dpo_item = next(item for item in out.default_resolution["fields"] if item["field"] == "dpo_start")
+    assert dpo_item["needs_pm_review"] is True
+
+
 def test_nwc_target_is_pure_sector_default_when_no_company_data(monkeypatch):
     """1.4 — No company-specific NWC → target stays pure sector default."""
     from src.stage_02_valuation import input_assembler as ia

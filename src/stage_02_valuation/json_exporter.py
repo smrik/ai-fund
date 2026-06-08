@@ -77,6 +77,7 @@ def build_nested_structure(
     forecast_bridge = _parse_json_field("forecast_bridge_json", [])
     story_profile = _parse_json_field("story_profile_json", {})
     story_adjustments = _parse_json_field("story_adjustments_json", {})
+    default_resolution = _parse_json_field("default_resolution_json", {})
     scenario_policy = _parse_json_field("context_scenario_policy_json", {})
     driver_consensus = _parse_json_field("driver_consensus_json", [])
     assumption_register = _parse_json_field("assumption_register_json", {})
@@ -311,6 +312,9 @@ def build_nested_structure(
         "comps_source_file": r.get("ciq_comps_source_file"),
         "comps_as_of_date": r.get("ciq_comps_as_of_date"),
         "peer_count": r.get("ciq_peer_count"),
+        "public_comps_fallback_used": r.get("public_comps_fallback_used"),
+        "public_comps_fallback_source_file": r.get("public_comps_fallback_source_file"),
+        "public_comps_fallback_peer_count": r.get("public_comps_fallback_peer_count"),
     }
 
     # ── Assemble final structure ──────────────────────────────────────────────
@@ -333,6 +337,7 @@ def build_nested_structure(
         "ciq_lineage": ciq_lineage,
         "story_profile": story_profile,
         "story_adjustments": story_adjustments,
+        "default_resolution": default_resolution,
         "scenario_policy": scenario_policy,
         "context_scenarios": context_scenarios,
         "driver_consensus": driver_consensus,

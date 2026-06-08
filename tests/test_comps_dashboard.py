@@ -207,6 +207,7 @@ def test_build_comps_dashboard_view_handles_missing_ciq_data(monkeypatch):
     from src.stage_04_pipeline import comps_dashboard
 
     monkeypatch.setattr(comps_dashboard, "get_ciq_comps_detail", lambda ticker: None)
+    monkeypatch.setattr(comps_dashboard, "_build_public_market_fallback_comps_detail", lambda ticker: None)
 
     view = comps_dashboard.build_comps_dashboard_view("ibm")
 
@@ -223,3 +224,59 @@ def test_build_comps_dashboard_view_handles_missing_ciq_data(monkeypatch):
     assert view["football_field"]["ranges"] == []
     assert view["football_field"]["markers"] == []
     assert view["audit_flags"] == ["No CIQ comps detail available"]
+
+
+def test_build_comps_dashboard_view_uses_public_market_fallback_when_ciq_missing(monkeypatch):
+    from src.stage_04_pipeline import comps_dashboard
+
+    monkeypatch.setattr(comps_dashboard, "get_ciq_comps_detail", lambda ticker: None)
+    monkeypatch.setattr(
+        comps_dashboard.market_data,
+        "get_market_data",
+        lambda ticker: {
+            "ticker": "MSFT",
+            "name": "Microsoft Corporation",
+            "sector": "Technology",
+            "industry": "Software - Infrastructure",
+            "current_price": 420.0,
+            "market_cap": 3_100_000_000_000,
+            "enterprise_value": 3_050_000_000_000,
+            "shares_outstanding": 7_400_000_000,
+            "ebitda_ttm": 160_000_000_000,
+            "revenue_ttm": 280_000_000_000,
+            "operating_margin": 0.44,
+            "revenue_growth": 0.13,
+            "pe_trailing": 35.0,
+            "ev_ebitda": 19.0,
+            "analyst_target_mean": 500.0,
+        },
+    )
+    monkeypatch.setattr(
+        comps_dashboard.market_data,
+        "get_peer_multiples",
+        lambda tickers: [
+            {"ticker": "AAPL", "market_cap_mm": 2_900_000.0, "ev_ebitda": 21.0, "pe_trailing": 32.0},
+            {"ticker": "GOOGL", "market_cap_mm": 2_100_000.0, "ev_ebitda": 17.0, "pe_trailing": 27.0},
+            {"ticker": "ORCL", "market_cap_mm": 430_000.0, "ev_ebitda": 18.0, "pe_trailing": 29.0},
+        ],
+    )
+    monkeypatch.setattr(
+        comps_dashboard.peer_similarity,
+        "score_peer_similarity",
+        lambda ticker, peers, embedding_model: {row["ticker"]: 0.5 for row in peers},
+    )
+    monkeypatch.setattr(
+        comps_dashboard,
+        "build_multiples_dashboard_view",
+        lambda ticker, period="5y": {"available": False, "metrics": {}, "audit_flags": []},
+    )
+
+    view = comps_dashboard.build_comps_dashboard_view("MSFT")
+
+    assert view["available"] is True
+    assert view["source_lineage"]["source"] == "public_market_yfinance_fallback"
+    assert view["peer_counts"]["raw"] == 3
+    assert view["primary_metric"] == "tev_ebitda_ltm"
+    assert view["target_vs_peers"]["peer_medians"]["tev_ebitda_ltm"] == 18.0
+    assert "No CIQ comps detail available; using public market yfinance fallback comps" in view["audit_flags"]
+    assert view["valuation_range"]["base"] is not None

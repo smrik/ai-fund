@@ -20,6 +20,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Analyst Prep Pack MVP](./active/2026-06-07-analyst-prep-pack.md)
 - [Agentic Handoff MVP Hardening](./active/2026-05-22-agentic-handoff-mvp-hardening.md)
 - [Valuation Methodology Hardening And CIQ Retrieval Requirements](./active/2026-04-04-spike-review-valuation-inputs-and-ciq-requirements.md)
 - [Dashboard Decomposition And Shell Normalization](./active/2026-03-26-dashboard-decomposition-and-shell-normalization.md)

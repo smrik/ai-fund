@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from contextlib import contextmanager
@@ -24,6 +25,8 @@ DEFAULT_PROFILES = (
     "risk_review",
     "valuation_review",
 )
+EDGAR_SOURCE_KINDS = {"8-K", "10-K", "10-Q", "SEC_XBRL"}
+EDGAR_SOURCE_PREFIXES = ("8k:", "10q:", "filing:", "risk-filing:", "sec-metrics:")
 
 AGENT_MODEL_ENV_VARS = (
     "GROUNDED_OBSERVATION_AGENT_MODEL",
@@ -125,6 +128,17 @@ def _as_int_or_none(value: Any) -> int | None:
         return None
 
 
+def _report_stat(report: Any, key: str) -> int:
+    if isinstance(report, dict):
+        value = report.get(key, 0)
+    else:
+        value = getattr(report, key, 0)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _collect_run_scope_ids(result: dict[str, Any]) -> tuple[set[int], set[int]]:
     packet_ids: set[int] = set()
     queue_item_ids: set[int] = set()
@@ -141,6 +155,72 @@ def _collect_run_scope_ids(result: dict[str, Any]) -> tuple[set[int], set[int]]:
             if queue_id is not None:
                 queue_item_ids.add(queue_id)
     return packet_ids, queue_item_ids
+
+
+def _source_ref_date(ref: dict[str, Any]) -> str | None:
+    metadata = _as_dict(ref.get("metadata"))
+    if metadata.get("filing_date"):
+        return str(metadata["filing_date"])
+    for value in (ref.get("source_label"), ref.get("source_locator")):
+        match = re.search(r"\b(20\d{2}-\d{2}-\d{2})\b", str(value or ""))
+        if match:
+            return match.group(1)
+    return None
+
+
+def collect_edgar_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
+    refs_by_profile: list[tuple[str, dict[str, Any]]] = []
+    for run in _as_list(result.get("profile_runs")):
+        if not isinstance(run, dict):
+            continue
+        profile = str(run.get("profile_name") or "unknown")
+        packet = _as_dict(run.get("evidence_packet"))
+        for ref in _as_list(packet.get("source_refs")):
+            if isinstance(ref, dict):
+                refs_by_profile.append((profile, ref))
+    for packet in _as_list(result.get("evidence_packets")):
+        if not isinstance(packet, dict):
+            continue
+        profile = str(_as_dict(packet.get("run_metadata")).get("profile_name") or packet.get("packet_kind") or "unknown")
+        for ref in _as_list(packet.get("source_refs")):
+            if isinstance(ref, dict):
+                refs_by_profile.append((profile, ref))
+
+    seen: set[str] = set()
+    unique_filing_refs: set[str] = set()
+    latest_dates: list[str] = []
+    forms: dict[str, int] = {}
+    profiles: dict[str, int] = {}
+
+    for profile, ref in refs_by_profile:
+        source_kind = str(ref.get("source_kind") or "").strip()
+        normalized_kind = source_kind.upper()
+        source_ref_id = str(ref.get("source_ref_id") or "").strip()
+        lower_ref_id = source_ref_id.lower()
+        is_edgar = normalized_kind in EDGAR_SOURCE_KINDS or lower_ref_id.startswith(EDGAR_SOURCE_PREFIXES)
+        if not is_edgar:
+            continue
+        dedupe_key = source_ref_id or str(ref.get("source_locator") or ref.get("source_label") or "")
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        forms[source_kind or "unknown"] = forms.get(source_kind or "unknown", 0) + 1
+        profiles[profile] = profiles.get(profile, 0) + 1
+        if not lower_ref_id.startswith("sec-metrics:"):
+            unique_filing_refs.add(dedupe_key)
+        ref_date = _source_ref_date(ref)
+        if ref_date:
+            latest_dates.append(ref_date)
+
+    if not seen:
+        return {}
+    return {
+        "source_ref_count": len(seen),
+        "filing_count": len(unique_filing_refs),
+        "latest_filing_date": max(latest_dates) if latest_dates else None,
+        "forms": dict(sorted(forms.items())),
+        "profiles": dict(sorted(profiles.items())),
+    }
 
 
 def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> None:
@@ -252,6 +332,37 @@ def collect_data_freshness(ticker: str) -> dict[str, Any]:
         "filing_context_cache": filing_context,
         "sec_filing_metrics": sec_metrics or {},
     }
+
+
+def _run_ciq_preflight(args: argparse.Namespace, ticker: str) -> dict[str, Any] | None:
+    if not getattr(args, "refresh_ciq", False):
+        return None
+
+    from ciq.ciq_refresh import refresh_and_ingest_single_ticker
+
+    return _jsonable(
+        refresh_and_ingest_single_ticker(
+            ticker=ticker,
+            ciq_symbol=args.ciq_symbol,
+            exchange=args.ciq_exchange,
+            as_of_date=args.ciq_date,
+            currency=args.ciq_currency,
+            template_path=args.ciq_template,
+            input_json_path=args.ciq_input_json,
+            output_folder=args.ciq_folder,
+            refresh=not args.ciq_no_refresh,
+            timeout_sec=args.ciq_timeout_sec,
+        )
+    )
+
+
+def _run_ciq_template_ingest(args: argparse.Namespace) -> dict[str, Any] | None:
+    if not getattr(args, "ingest_ciq_template", False):
+        return None
+
+    from ciq.ingest import ingest_ciq_folder
+
+    return _jsonable(ingest_ciq_folder(args.ciq_template_folder))
 
 
 def refresh_current_ticker_dossier(ticker: str) -> dict[str, Any]:
@@ -668,6 +779,24 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     if args.use_openrouter_free:
         configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
 
+    preflight_errors: list[dict[str, str]] = []
+    ciq_refresh_result: dict[str, Any] | None = None
+    ciq_template_ingest_result: dict[str, Any] | None = None
+    if args.refresh_ciq:
+        try:
+            print(f"[ticker-flow] Staging CIQ input and refreshing Excel for {ticker}...", file=sys.stderr)
+            ciq_refresh_result = _run_ciq_preflight(args, ticker)
+        except Exception as exc:
+            ciq_refresh_result = {"error": str(exc)}
+            preflight_errors.append({"step": "refresh_ciq", "message": str(exc)})
+    if args.ingest_ciq_template:
+        try:
+            print(f"[ticker-flow] Ingesting manually refreshed CIQ template workbook for {ticker}...", file=sys.stderr)
+            ciq_template_ingest_result = _run_ciq_template_ingest(args)
+        except Exception as exc:
+            ciq_template_ingest_result = {"error": str(exc)}
+            preflight_errors.append({"step": "ingest_ciq_template", "message": str(exc)})
+
     from api.main import (
         build_valuation_assumptions_payload,
         build_valuation_comps_payload,
@@ -699,7 +828,9 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         "evidence_packets": [],
         "queue_items": [],
         "previews": {},
-        "errors": [],
+        "errors": preflight_errors,
+        "ciq_refresh": ciq_refresh_result,
+        "ciq_template_ingest": ciq_template_ingest_result,
         "database": database_info or {
             "mode": "live",
             "path": str(ROOT / "data" / "alpha_pod.db"),
@@ -789,6 +920,7 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         result["evidence_packets"] = evidence_packets
     except Exception as exc:
         result["errors"].append({"step": "list_evidence_packets", "message": str(exc)})
+    result["data_freshness"]["edgar_evidence_sources"] = collect_edgar_evidence_summary(result)
 
     try:
         print("[ticker-flow] Loading PM Decision Queue items...", file=sys.stderr)
@@ -977,6 +1109,36 @@ def render_markdown(result: dict[str, Any]) -> str:
         )
     freshness = _as_dict(result.get("data_freshness"))
     lines.extend(["", "### Data Freshness", ""])
+    ciq_refresh = _as_dict(result.get("ciq_refresh"))
+    if ciq_refresh:
+        if ciq_refresh.get("error"):
+            lines.append(f"- CIQ preflight failed before refresh: {ciq_refresh.get('error')}")
+        else:
+            financials_input = _as_dict(ciq_refresh.get("financials_input"))
+            report = _as_dict(ciq_refresh.get("ingest_report"))
+            lines.append(
+                f"- CIQ input staged: {financials_input.get('ticker', 'n/a')} "
+                f"as_of={financials_input.get('date_year', 'n/a')}-"
+                f"{financials_input.get('date_month', 'n/a')}-"
+                f"{financials_input.get('date_day', 'n/a')} "
+                f"currency={financials_input.get('currency', 'n/a')}"
+            )
+            lines.append(
+                f"- CIQ refresh: refreshed={ciq_refresh.get('refreshed')} "
+                f"processed={_report_stat(report, 'processed')} skipped={_report_stat(report, 'skipped')} "
+                f"failed={_report_stat(report, 'failed')} archive={ciq_refresh.get('archive_path') or 'n/a'}"
+            )
+    ciq_template_ingest = _as_dict(result.get("ciq_template_ingest"))
+    if ciq_template_ingest:
+        if ciq_template_ingest.get("error"):
+            lines.append(f"- CIQ template ingest failed: {ciq_template_ingest.get('error')}")
+        else:
+            lines.append(
+                f"- CIQ template ingest: folder={ciq_template_ingest.get('folder')} "
+                f"processed={_report_stat(ciq_template_ingest, 'processed')} "
+                f"skipped={_report_stat(ciq_template_ingest, 'skipped')} "
+                f"failed={_report_stat(ciq_template_ingest, 'failed')}"
+            )
     if freshness.get("error"):
         lines.append(f"- Data freshness unavailable: {freshness.get('error')}")
     else:
@@ -988,6 +1150,17 @@ def render_markdown(result: dict[str, Any]) -> str:
             lines.append(
                 f"- EDGAR filing cache: {filing_cache.get('filing_count')} filings, "
                 f"latest filing date={filing_cache.get('latest_filing_date')}"
+            )
+        edgar_evidence = _as_dict(freshness.get("edgar_evidence_sources"))
+        if edgar_evidence:
+            lines.append(
+                f"- EDGAR evidence used this run: {edgar_evidence.get('filing_count')} filing refs, "
+                f"{edgar_evidence.get('source_ref_count')} source refs, "
+                f"latest filing date={edgar_evidence.get('latest_filing_date')}"
+            )
+            lines.append(
+                f"- EDGAR evidence by profile: "
+                f"{json.dumps(edgar_evidence.get('profiles') or {}, sort_keys=True)}"
             )
         sec_metrics = _as_dict(freshness.get("sec_filing_metrics"))
         if sec_metrics:
@@ -1173,6 +1346,55 @@ def main() -> int:
         "--market-cache-only",
         action="store_true",
         help="Use cached market/yfinance rows even if stale; avoids live Yahoo calls during manual rehearsals.",
+    )
+    parser.add_argument(
+        "--refresh-ciq",
+        action="store_true",
+        help="Before valuation, write ciq/templates/financials_input.json, refresh the CIQ Excel workbook, and ingest it.",
+    )
+    parser.add_argument("--ciq-symbol", type=str, help="Exact CIQ symbol for --refresh-ciq, e.g. NASDAQ:MSFT")
+    parser.add_argument("--ciq-exchange", type=str, help="Exchange prefix for --refresh-ciq, e.g. NASDAQ or NYSE")
+    parser.add_argument("--ciq-date", type=str, help="As-of date written to financials_input.json in YYYY-MM-DD format")
+    parser.add_argument("--ciq-currency", type=str, default="USD", help="Currency written to financials_input.json")
+    parser.add_argument(
+        "--ciq-template",
+        type=str,
+        default=str(ROOT / "ciq" / "templates" / "ciq_cleandata.xlsx"),
+        help="Template workbook used for --refresh-ciq staging.",
+    )
+    parser.add_argument(
+        "--ciq-input-json",
+        type=str,
+        default=str(ROOT / "ciq" / "templates" / "financials_input.json"),
+        help="financials_input.json path used by the CIQ template workbook.",
+    )
+    parser.add_argument(
+        "--ciq-folder",
+        type=str,
+        default=None,
+        help="CIQ workbook export/drop folder for the staged refreshed workbook.",
+    )
+    parser.add_argument(
+        "--ciq-timeout-sec",
+        type=int,
+        default=300,
+        help="Maximum seconds for the Excel/CIQ add-in validation loop during --refresh-ciq.",
+    )
+    parser.add_argument(
+        "--ciq-no-refresh",
+        action="store_true",
+        help="With --refresh-ciq, stage the input/workbook and ingest without triggering Excel refresh.",
+    )
+    parser.add_argument(
+        "--ingest-ciq-template",
+        action="store_true",
+        help="Before valuation, ingest the manually refreshed CIQ template workbook folder.",
+    )
+    parser.add_argument(
+        "--ciq-template-folder",
+        type=str,
+        default=str(ROOT / "ciq" / "templates"),
+        help="Folder containing manually refreshed ciq_cleandata.xlsx for --ingest-ciq-template.",
     )
     parser.add_argument("--use-openrouter-free", action="store_true")
     parser.add_argument(

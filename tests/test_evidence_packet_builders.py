@@ -268,6 +268,61 @@ def test_risk_review_packet_uses_valuation_market_and_filing_context(monkeypatch
     assert packet.snippets[0].source_ref_id == "risk-filing:risk-10k"
 
 
+def test_analyst_prep_synthesis_packet_uses_prep_pack_payload(monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.analyst_prep_pack.build_analyst_prep_payload",
+        lambda ticker: {
+            "ticker": ticker,
+            "source_quality": "real",
+            "thesis_cards": [
+                {
+                    "card_id": "IBM:valuation_setup",
+                    "title": "Valuation Setup",
+                    "claim": "Base DCF IV is above current price.",
+                    "business_evidence_summary": "Deterministic DCF bridge provides the starting valuation gap.",
+                    "model_implication": "Review revenue growth and WACC before trusting the spread.",
+                    "linked_assumption_fields": ["revenue_growth_near", "wacc"],
+                    "evidence_anchor_ids": ["deterministic:dcf:base_iv"],
+                    "what_would_change_mind": "A stale CIQ refresh or rejected PM Queue item would invalidate the spread.",
+                }
+            ],
+            "driver_cards": [
+                {
+                    "assumption_name": "wacc",
+                    "current_value": 0.09,
+                    "proposed_or_effective_value": 0.095,
+                    "pm_review_status": "review_required",
+                    "source": "wacc_peer_beta",
+                    "rationale": "Current deterministic model source: wacc_peer_beta.",
+                }
+            ],
+            "missing_data": [
+                {
+                    "flag_id": "segment_data_missing",
+                    "label": "Segment evidence missing",
+                    "severity": "medium",
+                    "reason": "No deterministic segment rows were found.",
+                    "suggested_check": "Refresh CIQ segment tabs.",
+                }
+            ],
+            "evidence_packet_ids": [7],
+        },
+    )
+
+    packet = build_evidence_packet("ibm", "analyst_prep_synthesis")
+
+    assert packet.packet_kind == EvidencePacketKind.analyst_prep_synthesis
+    assert packet.run_metadata["source_quality"] == "real"
+    assert packet.run_metadata["evidence_packet_ids"] == [7]
+    assert packet.source_refs[0].source_ref_id == "analyst-prep:ibm"
+    fact_names = {fact.fact_name for fact in packet.facts}
+    assert {"analyst_prep_thesis_card_count", "analyst_prep_driver_wacc"} <= fact_names
+    assert packet.snippets[0].snippet_id == "snippet:analyst_prep:thesis:1"
+    assert packet.snippets[1].snippet_id == "snippet:analyst_prep:missing:1"
+
+
 def test_industry_and_risk_packets_require_text_context_for_real_quality(monkeypatch):
     conn = _conn()
     monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)

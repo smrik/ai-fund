@@ -312,6 +312,12 @@ def build_research_board_view(ticker: str) -> dict[str, Any]:
     return _impl(ticker)
 
 
+def build_analyst_prep_api_payload(ticker: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload as _impl
+
+    return _impl(ticker)
+
+
 def build_thesis_tracker_view(ticker: str) -> dict[str, Any]:
     from src.stage_04_pipeline.dossier_view import build_thesis_tracker_view as _impl
 
@@ -1308,6 +1314,21 @@ def create_app() -> FastAPI:
     @app.get("/api/tickers/{ticker}/research")
     def get_ticker_research(ticker: str) -> dict[str, Any]:
         return build_research_payload(ticker)
+
+    @app.get("/api/tickers/{ticker}/analyst-prep")
+    def get_ticker_analyst_prep(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        return build_analyst_prep_api_payload(ticker)
+
+    @app.post("/api/tickers/{ticker}/analyst-prep/run", status_code=202)
+    def run_ticker_analyst_prep(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+
+        def _runner(_run_id: str) -> dict[str, Any]:
+            return build_analyst_prep_api_payload(ticker)
+
+        run_id = submit_background_run("analyst_prep_build", _runner, ticker=ticker)
+        return {"run_id": run_id, "status": "queued"}
 
     @app.get("/api/tickers/{ticker}/audit")
     def get_ticker_audit(ticker: str) -> dict[str, Any]:

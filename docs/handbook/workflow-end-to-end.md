@@ -163,6 +163,10 @@ Guardrail:
 
 The valuation shell now includes a universal PM Queue / Insights path for judgment-agent handoffs.
 
+Primary local operator runbook:
+
+- [`docs/handbook/local-mvp-testing.md`](./local-mvp-testing.md)
+
 Primary operator handbook:
 
 - [`docs/handbook/agentic-handoff-mvp.md`](./agentic-handoff-mvp.md)
@@ -211,6 +215,30 @@ rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --skip-agent
 
 This writes a markdown and JSON packet under `output/ticker_flows/` with deterministic valuation, DCF scenarios, comps diagnostics, assumption-review flags, evidence/profile statuses, and PM Queue preview impact when queue items exist.
 
+For a CIQ-backed daily ticker review, run the same flow with `--refresh-ciq` before agents run:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker MSFT --refresh-ciq --ciq-symbol NASDAQ:MSFT --agent-mode heuristic --isolated-db
+```
+
+The CIQ preflight writes `ciq/templates/financials_input.json` for the workbook Power Query, opens the staged workbook, refreshes workbook connections/Power Query, waits for async queries, validates the refreshed workbook for ticker mismatch and CIQ pending/error cells, ingests the workbook, and then builds valuation payloads from the updated database. The output artifact records the exact `financials_input.json` payload and refresh/ingest result. If CIQ comps are unavailable, the comps dashboard may use a clearly flagged public-market fallback so the PM Queue remains testable, but CIQ absence remains visible in `audit_flags`.
+
+If you refresh Excel manually, remember that the live S&P Capital IQ / Power Query data may be saved in the template workbook itself:
+
+```text
+ciq/templates/ciq_cleandata.xlsx
+```
+
+After manually refreshing and saving that workbook, ingest it intentionally before the valuation flow reads CIQ:
+
+```powershell
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker MSFT --ingest-ciq-template --agent-mode heuristic --profiles comps_analysis --isolated-db
+```
+
+The validated MSFT path on June 6, 2026 was: write `ciq/templates/financials_input.json` with `NASDAQ:MSFT`, manually refresh/save `ciq/templates/ciq_cleandata.xlsx`, ingest `ciq/templates`, then run the ticker flow. The resulting comps packet should show `source_quality=real` and source lineage like `source_file=ciq_cleandata.xlsx`.
+
+The artifact separates persistent cache coverage from live evidence coverage. `EDGAR filing cache: 0 filings` means the SQLite cache table had no rows; `EDGAR evidence used this run` reports SEC source refs actually carried by evidence packets.
+
 For a privacy-safe end-to-end handoff check that uses local deterministic heuristic observations instead of a live LLM, run:
 
 ```powershell
@@ -230,6 +258,52 @@ To test live agents with an OpenRouter free model, first confirm that sending th
 ```powershell
 rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model openrouter/free
 ```
+
+## Analyst Prep Pack MVP
+
+Analyst Prep is the junior-analyst prework layer. It does not replace PM judgment or mutate the model. It gathers deterministic valuation state, evidence packets, PM Queue items, comps diagnostics, default-resolution warnings, and source lineage into one review packet.
+
+Primary command:
+
+```powershell
+rtk python scripts/manual/run_analyst_prep_pack.py --ticker IBM --agent-mode heuristic --isolated-db --export-xlsx
+```
+
+CIQ-backed manual-refresh command:
+
+```powershell
+rtk python scripts/manual/run_analyst_prep_pack.py --ticker MSFT --ingest-ciq-template --agent-mode heuristic --isolated-db --export-xlsx
+```
+
+The command writes JSON and Markdown under `output/analyst_prep/<TICKER>/`. With `--export-xlsx`, it also creates a ticker review workbook under `data/exports/generated/ticker/<TICKER>/...`.
+
+By default, the command also runs the non-mutating `analyst_prep_synthesis` profile after the core profiles. It can add grounded observations from the prep payload, but it does not write model edits; PM Queue approval remains the only model-change path.
+
+Website review path:
+
+1. Start the local app with `scripts/manual/launch-mvp-app.ps1`.
+2. Open `/ticker/<TICKER>/research`.
+3. Review the `Analyst Prep` panel first:
+   - thesis cards
+   - model-driver map
+   - missing-data flags
+   - comps judgment
+4. Use linked valuation tabs for driver review:
+   - `wacc` -> WACC
+   - `exit_multiple` -> Comparables
+   - growth and margin fields -> Assumptions
+5. Use the PM Queue approval path for any model changes. Analyst Prep cards are explanatory only.
+
+Excel review sheets added by the ticker export:
+
+- `Analyst_Prep`
+- `Thesis_Bridge`
+- `Model_Driver_Map`
+- `Evidence_Map`
+- `Comps_Judgment`
+- `Segment_Drivers`
+
+Current limitation: segment rows fail closed. If the pack says segment evidence is missing, do not infer segment mix-shift margin support until CIQ or SEC segment data is refreshed and parsed.
 
 ## Dashboard Shell
 

@@ -81,6 +81,73 @@ const workspacePayload = {
   ticker_dossier_contract_version: "1.0.0",
 };
 
+const analystPrepPayload = {
+  ticker: "IBM",
+  generated_at: "2026-06-07T00:00:00Z",
+  source_quality: "real",
+  thesis_cards: [
+    {
+      card_id: "IBM:valuation_setup",
+      title: "Valuation Setup",
+      claim: "Base DCF IV is 120.00 versus current price 100.00.",
+      business_evidence_summary: "Deterministic DCF bridge provides the starting valuation gap.",
+      model_implication: "Review WACC and exit multiple before trusting the spread.",
+      linked_assumption_fields: ["wacc", "exit_multiple"],
+      evidence_anchor_ids: ["deterministic:dcf:base_iv"],
+      numeric_fact_refs: ["deterministic:dcf:base_iv"],
+      source_quality: "partial",
+      what_would_change_mind: "Fresh CIQ data.",
+    },
+  ],
+  driver_cards: [
+    {
+      assumption_name: "wacc",
+      label: "WACC",
+      current_value: 0.09,
+      proposed_or_effective_value: 0.095,
+      source: "wacc_peer_beta",
+      rationale: "Default-resolution layer flags this field for review.",
+      evidence_anchor_ids: ["deterministic:assumption:wacc"],
+      pm_review_status: "review_required",
+    },
+    {
+      assumption_name: "exit_multiple",
+      label: "Exit Multiple",
+      current_value: 11,
+      proposed_or_effective_value: 12,
+      source: "public_market_yfinance_fallback",
+      rationale: "Public fallback comps need review.",
+      evidence_anchor_ids: ["deterministic:assumption:exit_multiple"],
+      pm_review_status: "review_required",
+    },
+  ],
+  comps_card: {
+    title: "Comps Judgment",
+    peer_set_quality: "partial",
+    peer_count: 3,
+    primary_metric: "tev_ebitda_ltm",
+    target_vs_peer_median: {},
+    premium_discount_argument: "Target trades at a discount versus peer median.",
+    exit_multiple_support: "Review exit multiple.",
+    warnings: ["public fallback"],
+    evidence_anchor_ids: ["deterministic:comps:peer_set"],
+  },
+  missing_data: [
+    {
+      flag_id: "segment_data_missing",
+      label: "Segment evidence missing",
+      severity: "medium",
+      reason: "No deterministic segment rows were found.",
+      suggested_check: "Refresh CIQ segment tabs.",
+    },
+  ],
+  segment_driver_rows: [],
+  evidence_packet_ids: [7],
+  evidence_map: [],
+  conflict_groups: [],
+  export_metadata: {},
+};
+
 beforeEach(() => {
   vi.stubGlobal(
     "fetch",
@@ -93,6 +160,14 @@ beforeEach(() => {
 
       if (url.endsWith("/api/tickers/IBM/workspace")) {
         return new Response(JSON.stringify(workspacePayload), { status: 200 });
+      }
+
+      if (url.endsWith("/api/tickers/IBM/analyst-prep")) {
+        return new Response(JSON.stringify(analystPrepPayload), { status: 200 });
+      }
+
+      if (url.endsWith("/api/tickers/IBM/analyst-prep/run")) {
+        return new Response(JSON.stringify({ run_id: "run-123", status: "queued" }), { status: 202 });
       }
 
       if (url.endsWith("/api/tickers/IBM/overview")) {
@@ -204,6 +279,28 @@ beforeEach(() => {
             current_price: 100,
             current_iv_base: 120,
             current_expected_iv: 126,
+            ciq_lineage: {
+              snapshot_source_file: "ciq_cleandata.xlsx",
+              snapshot_as_of_date: "2026-03-31",
+              comps_source_file: "public_market_yfinance_fallback",
+              public_comps_fallback_used: true,
+              public_comps_fallback_peer_count: 3,
+            },
+            default_resolution: {
+              status: "review_required_high",
+              high_count: 1,
+              medium_count: 1,
+              fields: [
+                {
+                  field: "exit_multiple",
+                  source_class: "public_market_yfinance_fallback",
+                  severity: "high",
+                  needs_pm_review: true,
+                  preferred_sources: ["CIQ comps", "PM peer set"],
+                  reason: "Exit multiple was inferred from public fallback peers rather than a CIQ-selected peer set.",
+                },
+              ],
+            },
             fields: [
               {
                 field: "wacc",
@@ -715,18 +812,19 @@ beforeEach(() => {
                 missing_evidence_flags: ["legacy_pillar_fallback"],
               },
             },
-            notebook: {
-              available: true,
-              counts: {
-                all: 3,
-              },
+              notebook: {
+                available: true,
+                counts: {
+                  all: 3,
+                },
               blocks_by_type: {
                 thesis: [{ title: "Scale economics note", markdown_block: "Distribution density is compounding." }],
                 risk: [{ title: "Integration risk", markdown_block: "Execution risk still unproven." }],
                 catalyst: [{ title: "DOJ remedy update", markdown_block: "Key timing catalyst." }],
+                },
               },
-            },
-            publishable_memo_preview: `---
+              analyst_prep: analystPrepPayload,
+              publishable_memo_preview: `---
 ticker: IBM
 company_name: IBM
 note_slug: publishable_memo
@@ -1031,6 +1129,8 @@ describe("frontend routes", () => {
 
     expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
     expect(await screen.findByText("Professional Finance Review Gates")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Thesis Bridge" })).toBeInTheDocument();
+    expect(screen.getByText("Valuation Setup")).toBeInTheDocument();
     expect(screen.getByText("Terminal value dominates enterprise value")).toBeInTheDocument();
     expect(screen.getByText("Review State:")).toBeInTheDocument();
     expect(screen.getByText("Review Required")).toBeInTheDocument();
@@ -1078,6 +1178,11 @@ describe("frontend routes", () => {
     renderRoute("/ticker/IBM/valuation?view=Assumptions");
 
     expect(await screen.findByText("Tracked Fields")).toBeInTheDocument();
+    expect(screen.getByText("Default Resolution")).toBeInTheDocument();
+    expect(screen.getByText("Review Required High")).toBeInTheDocument();
+    expect(screen.getByText("exit_multiple")).toBeInTheDocument();
+    expect(screen.getByText("Public Fallback")).toBeInTheDocument();
+    expect(screen.getAllByText("public_market_yfinance_fallback").length).toBeGreaterThan(0);
     expect(screen.getByRole("heading", { name: "WACC" })).toBeInTheDocument();
     expect(screen.getByRole("combobox")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preview Assumptions" })).toBeInTheDocument();
@@ -1341,6 +1446,10 @@ describe("frontend routes", () => {
     cleanup();
     renderRoute("/ticker/IBM/research");
     expect(await screen.findByRole("heading", { name: "Canonical Machines" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Analyst Prep" })).toBeInTheDocument();
+    expect(await screen.findByText("Valuation Setup")).toBeInTheDocument();
+    expect(await screen.findByText(/Segment evidence missing/)).toBeInTheDocument();
+    expect(await screen.findByRole("link", { name: "WACC" })).toHaveAttribute("href", "/ticker/IBM/valuation?view=WACC");
     expect(await screen.findByText("Cost discipline improved, but acquisition execution still needs proof.")).toBeInTheDocument();
     expect(await screen.findByText("Draft memo available (7 sections: Summary, Business, Thesis, Valuation, Risks, Catalysts, Sources).")).toBeInTheDocument();
     expect(await screen.findByText("WATCH")).toBeInTheDocument();

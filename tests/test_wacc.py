@@ -33,16 +33,12 @@ def test_unlever_relever_round_trip():
 @pytest.mark.parametrize(
     "market_cap,expected",
     [
-        # >= 75B → interpolated floor (0.0)
-        (80_000_000_000.0, 0.000),
-        # 20B: between 6B (1.0%) and 30B (0.5%) → alpha=14/24 → ~0.7083%
-        (20_000_000_000.0, pytest.approx(0.007083, rel=1e-3)),
-        # 5B: between 1.25B (1.5%) and 6B (1.0%) → alpha=3.75/4.75 → ~1.105%
-        (5_000_000_000.0, pytest.approx(0.011053, rel=1e-3)),
-        # 1B: between 250M (2.5%) and 1.25B (1.5%) → alpha=0.75 → 1.75%
-        (1_000_000_000.0, pytest.approx(0.01750, rel=1e-3)),
-        # <= 250M → interpolated ceiling (2.5%)
-        (100_000_000.0, 0.025),
+        # CRSP decile interpolation, current as of the configured size-premia table.
+        (80_000_000_000.0, pytest.approx(0.004514, rel=1e-3)),
+        (20_000_000_000.0, pytest.approx(0.005740, rel=1e-3)),
+        (5_000_000_000.0, pytest.approx(0.009087, rel=1e-3)),
+        (1_000_000_000.0, pytest.approx(0.012196, rel=1e-3)),
+        (100_000_000.0, 0.047),
         (None, SIZE_PREMIA["mid"]),
         (-1.0, SIZE_PREMIA["mid"]),
     ],
@@ -63,10 +59,9 @@ def test_compute_wacc_with_peer_median_beta():
 
     assert result.beta_unlevered_median == pytest.approx(1.0364, rel=1e-3)
     assert result.beta_relevered == pytest.approx(1.2002, rel=1e-3)
-    # 10B target: size_premium = 0.010 + (4/24) * (0.005-0.010) = 0.009167 (interpolated)
-    # cost_of_equity = 0.045 + 1.2002 * 0.05 + 0.009167 = 0.11418
-    assert result.cost_of_equity == pytest.approx(0.11418, rel=1e-3)
-    assert result.wacc == pytest.approx(0.10305, rel=1e-3)
+    # 10B target uses CRSP decile interpolation for size premium.
+    assert result.cost_of_equity == pytest.approx(0.1113, rel=1e-3)
+    assert result.wacc == pytest.approx(0.10058, rel=1e-3)
 
 
 def test_compute_wacc_self_beta_fallback_when_no_peers():
