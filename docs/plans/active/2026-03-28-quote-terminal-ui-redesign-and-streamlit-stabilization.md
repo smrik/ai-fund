@@ -1,5 +1,7 @@
 # Quote-Terminal UI Redesign And Streamlit Migration
 
+> **2026-06-12 update:** Streamlit retirement is now a settled decision ([Vision](../../strategy/vision.md) Decision 7). This plan is the canonical workstream for Milestone 2 of the [Six-Month Execution Roadmap](../future/2026-06-12-six-month-execution-roadmap.md): React parity for loop-critical surfaces only (queue review, watchlist, valuation views, Analyst Prep, exports), then `dashboard/` is deleted. Any "keep both working" language below is superseded — Streamlit is bugfix-only.
+
 ## Summary
 
 This plan is the canonical workstream for the quote-terminal migration.

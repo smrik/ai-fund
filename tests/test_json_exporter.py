@@ -175,6 +175,18 @@ MINIMAL_RESULT: dict = {
     "options_value_source": "ciq_snapshot",
     "convertibles_value_source": "ciq_snapshot",
     "story_profile_source": "default",
+    "default_resolution_json": json.dumps({
+        "status": "review_required_high",
+        "fields": [
+            {
+                "field": "exit_multiple",
+                "value": 12.5,
+                "source": "default",
+                "source_class": "missing_default",
+                "needs_pm_review": True,
+            }
+        ],
+    }),
     "ciq_snapshot_used": True,
     "ciq_run_id": 42,
     "ciq_source_file": "IBM_ciq.xlsx",
@@ -184,6 +196,9 @@ MINIMAL_RESULT: dict = {
     "ciq_comps_source_file": "IBM_comps.xlsx",
     "ciq_comps_as_of_date": "2026-03-01",
     "ciq_peer_count": 4,
+    "public_comps_fallback_used": False,
+    "public_comps_fallback_source_file": None,
+    "public_comps_fallback_peer_count": None,
     "analyst_target": 310.0,
     "analyst_recommendation": "buy",
     "num_analysts": 20,
@@ -398,7 +413,7 @@ class TestBuildNestedStructure:
                     "scenarios", "scenario_policy", "context_scenarios",
                     "driver_consensus", "terminal", "health_flags", "forecast_bridge",
                     "source_lineage", "ciq_lineage", "story_profile", "story_adjustments",
-            "drivers_raw"):
+                    "default_resolution", "drivers_raw"):
             assert key in out, f"Missing top-level key: {key}"
         assert "assumption_register" in out
         assert "assumption_register_summary" in out
@@ -429,6 +444,11 @@ class TestBuildNestedStructure:
         out = build_nested_structure(MINIMAL_RESULT)
         assert isinstance(out["story_profile"], dict)
         assert out["story_profile"].get("narrative") == "AI transition"
+
+    def test_default_resolution_deserialised(self):
+        out = build_nested_structure(MINIMAL_RESULT)
+        assert out["default_resolution"]["status"] == "review_required_high"
+        assert out["default_resolution"]["fields"][0]["field"] == "exit_multiple"
 
     def test_market_section(self):
         out = build_nested_structure(MINIMAL_RESULT)
@@ -494,6 +514,7 @@ class TestBuildNestedStructure:
         out = build_nested_structure(MINIMAL_RESULT)
         assert out["ciq_lineage"]["snapshot_used"] is True
         assert out["ciq_lineage"]["peer_count"] == 4
+        assert out["ciq_lineage"]["public_comps_fallback_used"] is False
 
     def test_assumptions_growth_terminal(self):
         out = build_nested_structure(MINIMAL_RESULT)

@@ -61,9 +61,14 @@ The DCF terminal value uses an exit multiple on terminal-year EBIT or EBITDA. Pr
 **For EV/EBIT exit:**
 1. CIQ comps forward EBIT median (`peer_median_tev_ebit_fwd`)
 2. CIQ comps LTM EBIT median (`peer_median_tev_ebit_ltm`)
-3. Sector default
+3. Normalized comps-detail median when a richer comps payload is available, including opt-in public peer fallback medians
+4. Sector default
 
 Forward multiples are preferred because the terminal year is itself forward-looking.
+
+The input assembler also emits a `default_resolution` report. If the exit multiple falls through to a sector/default prior, the report marks it as a high-severity PM review item because it directly affects terminal value and equity value.
+
+Public peer fallback is policy-controlled through `config/valuation_overrides.yaml` via `public_comps_fallback: true` on a ticker, sector, or global block. This keeps full-universe runs from silently expanding into broad public peer fetches, while allowing active review names to use public peer medians before sector defaults when CIQ comps are absent.
 
 ### 1.4 Working Capital Drivers (DSO, DIO, DPO)
 
@@ -79,6 +84,8 @@ NWC is modelled as `delta_NWC / Revenue` using DSO, DIO, DPO day-counts to deriv
   - Source: `"default"`
 
 This blend reflects partial mean reversion — a company with structurally elevated DSO will not fully converge to sector average within 10 years.
+
+The `default_resolution` report classifies default-backed DSO/DIO/DPO as PM review items. DIO should be treated as potentially not applicable for businesses without inventory; until the statement parser can prove that explicitly, a pure default remains visible rather than silent.
 
 ### 1.5 Tax Rate
 
@@ -119,6 +126,27 @@ Every assembled set of inputs includes a `source_lineage` dict, e.g.:
   "revenue_growth_terminal": "default"
 }
 ```
+
+The assembled inputs also include `default_resolution`, which normalizes those source strings into audit-friendly rows:
+
+```json
+{
+  "status": "review_required_high",
+  "counts": {"resolved": 4, "review_required": 3},
+  "fields": [
+    {
+      "field": "exit_multiple",
+      "value": 11.0,
+      "source": "default|story_sector",
+      "source_class": "missing_default",
+      "severity": "high",
+      "needs_pm_review": true
+    }
+  ]
+}
+```
+
+Use this report in the UI and workbook when deciding which assumptions need CIQ refresh, filing validation, peer-median replacement, or PM override.
 Review this before taking any valuation at face value. `"default"` entries mean no company-specific data was found.
 
 ---

@@ -44,6 +44,8 @@ data/regime_model.pkl
 
 # Local automation and browser scratch
 .playwright-cli/
+.playwright-localappdata/
+.playwright-tmp/
 .playwright-*.png
 .playwright-*.log
 .playwright-*.err.log
@@ -72,3 +74,5 @@ site/
 output/
 course/
 py-yfinance/
+src/data/cache/
+nppBackup/

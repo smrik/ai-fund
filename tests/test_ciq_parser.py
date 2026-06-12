@@ -46,10 +46,11 @@ def test_parse_cleandata_workbook_contract_and_snapshots():
     workbook = Path("ciq/templates/ciq_cleandata.xlsx")
     payload = parse_ciq_workbook(workbook)
 
-    assert payload.ticker == "IBM"
+    assert payload.ticker
     assert payload.rows_parsed > 0
 
     snap = payload.valuation_snapshot
+    assert snap["ticker"] == payload.ticker
     assert snap["revenue_mm"] is not None
     assert snap["op_margin_avg_3yr"] is not None
     assert snap["revenue_cagr_3yr"] is not None
@@ -78,12 +79,21 @@ def test_parse_cleandata_ignores_trailing_formatted_columns():
     assert dc_cols and max(dc_cols) <= 86
 
 
-def test_parse_cleandata_disambiguates_duplicate_comps_metric_keys():
-    workbook = Path("ciq/templates/ciq_cleandata.xlsx")
+def test_parse_cleandata_disambiguates_duplicate_comps_metric_keys(tmp_path):
+    workbook = create_ibm_style_workbook(tmp_path / "DUPLICATE_COMPS.xlsx")
+    wb = load_workbook(workbook)
+    dc = wb["Detailed Comps"]
+    dc["F5"] = "EBITDA LTM"
+    dc["G5"] = "EBITDA LTM"
+    dc["F7"] = 50
+    dc["G7"] = 55
+    dc["F8"] = 60
+    dc["G8"] = 65
+    wb.save(workbook)
     payload = parse_ciq_workbook(workbook)
 
-    ibm_rows = [r for r in payload.comps_snapshot if r.get("peer_ticker") == "IBM"]
-    keys = {r.get("metric_key") for r in ibm_rows}
+    target_rows = [r for r in payload.comps_snapshot if r.get("peer_ticker") == "TEST"]
+    keys = {r.get("metric_key") for r in target_rows}
 
     assert "ebitda_ltm" in keys
     assert any(k and k.startswith("ebitda_ltm__") for k in keys)

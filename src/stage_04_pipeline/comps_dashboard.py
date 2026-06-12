@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.stage_00_data import market_data, peer_similarity
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
 from src.stage_02_valuation.comps_model import run_comps_model
+from src.stage_02_valuation.public_comps_fallback import build_public_market_fallback_comps_detail as build_public_fallback_detail
 from src.stage_04_pipeline.multiples_dashboard import build_multiples_dashboard_view
 
 DEFAULT_EMBEDDING_MODEL = "all-MiniLM-L6-v2"
@@ -62,6 +63,13 @@ def _median(values: list[float | None]) -> float | None:
     if len(cleaned) % 2:
         return cleaned[midpoint]
     return round((cleaned[midpoint - 1] + cleaned[midpoint]) / 2.0, 4)
+
+
+def _build_public_market_fallback_comps_detail(ticker: str) -> dict | None:
+    return build_public_fallback_detail(
+        ticker,
+        market_data_client=market_data,
+    )
 
 
 def _derive_target_net_debt_to_ebitda(target: dict) -> float | None:
@@ -390,34 +398,42 @@ def _metric_status_rows(peer_rows: list[dict], valuation_by_metric: dict[str, di
 def build_comps_dashboard_view(ticker: str) -> dict:
     ticker = ticker.upper().strip()
     comps_detail = get_ciq_comps_detail(ticker)
+    market = None
+    fallback_audit_flags: list[str] = []
     if not comps_detail:
-        return {
-            "ticker": ticker,
-            "available": False,
-            "target": {},
-            "peers": [],
-            "peer_table": [],
-            "metric_options": [],
-            "selected_metric_default": None,
-            "valuation_range": {},
-            "valuation_range_by_metric": {},
-            "valuation_by_metric_rows": [],
-            "target_vs_peers": {"target": {}, "peer_medians": {}, "deltas": {}},
-            "comparison_summary": [],
-            "metric_status_rows": [],
-            "football_field": {"ranges": [], "markers": [], "range_min": None, "range_max": None},
-            "historical_multiples_summary": {"available": False, "metrics": {}, "audit_flags": []},
-            "operating_context": {"target": {}, "peer_medians": {}, "peer_count": 0},
-            "support_data_quality": {
-                "target_missing_fields": [],
-                "peer_coverage": {},
-                "valuation_metric_count": 0,
-                "common_patchups_needed": [],
-            },
-            "audit_flags": ["No CIQ comps detail available"],
-        }
+        comps_detail = _build_public_market_fallback_comps_detail(ticker)
+        if comps_detail:
+            market = comps_detail.pop("_market", None)
+            fallback_audit_flags = list(comps_detail.pop("_fallback_audit_flags", []) or [])
+        else:
+            return {
+                "ticker": ticker,
+                "available": False,
+                "target": {},
+                "peers": [],
+                "peer_table": [],
+                "metric_options": [],
+                "selected_metric_default": None,
+                "valuation_range": {},
+                "valuation_range_by_metric": {},
+                "valuation_by_metric_rows": [],
+                "target_vs_peers": {"target": {}, "peer_medians": {}, "deltas": {}},
+                "comparison_summary": [],
+                "metric_status_rows": [],
+                "football_field": {"ranges": [], "markers": [], "range_min": None, "range_max": None},
+                "historical_multiples_summary": {"available": False, "metrics": {}, "audit_flags": []},
+                "operating_context": {"target": {}, "peer_medians": {}, "peer_count": 0},
+                "support_data_quality": {
+                    "target_missing_fields": [],
+                    "peer_coverage": {},
+                    "valuation_metric_count": 0,
+                    "common_patchups_needed": [],
+                },
+                "audit_flags": ["No CIQ comps detail available"],
+            }
 
-    market = market_data.get_market_data(ticker)
+    if market is None:
+        market = market_data.get_market_data(ticker)
     peer_rows_source = [row for row in comps_detail.get("peers", []) if row.get("ticker")]
     similarity_scores: dict[str, float] = {}
     similarity_warning: str | None = None
@@ -461,7 +477,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     )
 
     valuation_range = {}
-    audit_flags: list[str] = []
+    audit_flags: list[str] = list(fallback_audit_flags)
     primary_metric = None
     valuation_by_metric = _valuation_range_by_metric(comps_result)
     if comps_result is not None:
@@ -543,7 +559,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             market.get("analyst_target_mean"),
         ),
         "historical_multiples_summary": multiples_summary,
-        "source_lineage": {
+        "source_lineage": comps_detail.get("source_lineage") or {
             "as_of_date": target.get("as_of_date"),
             "source_file": target.get("source_file"),
         },

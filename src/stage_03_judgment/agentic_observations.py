@@ -85,6 +85,11 @@ _OBSERVATION_TYPE_GUIDANCE: dict[str, str] = {
     "terminal_value_fragility": "Valuation is highly sensitive to terminal value assumptions, using correctly cited scenario specs and outputs.",
     "wacc_method_disagreement": "WACC inputs or source lineage need PM review.",
     "assumption_inconsistency": "Deterministic assumptions conflict with each other or with source lineage.",
+    "thesis_bridge_supported": "Analyst Prep evidence supports a thesis bridge claim that links business evidence to model drivers.",
+    "model_driver_bridge_review": "Analyst Prep driver cards show a model assumption that needs PM review or source-quality inspection.",
+    "diligence_gap_identified": "Analyst Prep missing-data flags or warnings identify a concrete diligence question.",
+    "segment_bridge_missing": "Segment evidence is missing or partial, so segment mix-shift claims should not be made yet.",
+    "comps_judgment_review": "Comparable-company evidence supports reviewing peer quality, premium/discount, or exit multiple support.",
 }
 
 _TARGET_DISCLOSURE_OBSERVATION_TYPES = {

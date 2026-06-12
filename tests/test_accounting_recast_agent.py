@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.stage_03_judgment.accounting_recast_agent import AccountingRecastAgent
 
 
-def _fake_agent_init(self):
+def _fake_agent_init(self, *args, **kwargs):
     self.client = None
     self.model = "test-model"
     self.name = "AccountingRecastAgent"

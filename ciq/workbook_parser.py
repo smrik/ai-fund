@@ -404,20 +404,46 @@ def _parse_comps_sheet(
     return records, comps_rows
 
 
-def _series(records: list[dict[str, Any]], keys: set[str]) -> list[tuple[str, float]]:
-    out: list[tuple[str, float]] = []
+def _series(
+    records: list[dict[str, Any]],
+    keys: set[str],
+    *,
+    sheet_names: set[str] | None = None,
+    exclude_calc_types: set[str] | None = None,
+) -> list[tuple[str, float]]:
+    out_with_cols: list[tuple[str, int, float]] = []
+    excluded = {item.upper() for item in (exclude_calc_types or set())}
     for row in records:
         mk = row.get("metric_key")
         pd = row.get("period_date")
         val = row.get("value_num")
+        if sheet_names is not None and row.get("sheet_name") not in sheet_names:
+            continue
+        calc_type = _safe_str(row.get("calc_type")).upper()
+        if calc_type in excluded:
+            continue
         if mk in keys and pd and val is not None:
-            out.append((pd, float(val)))
-    out.sort(key=lambda x: x[0], reverse=True)
-    return out
+            out_with_cols.append((pd, int(row.get("column_index") or 0), float(val)))
+
+    out_with_cols.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    deduped: list[tuple[str, float]] = []
+    seen_periods: set[str] = set()
+    for period_date, _column_index, value in out_with_cols:
+        if period_date in seen_periods:
+            continue
+        seen_periods.add(period_date)
+        deduped.append((period_date, value))
+    return deduped
 
 
-def _latest_value(records: list[dict[str, Any]], keys: set[str]) -> float | None:
-    series = _series(records, keys)
+def _latest_value(
+    records: list[dict[str, Any]],
+    keys: set[str],
+    *,
+    sheet_names: set[str] | None = None,
+    exclude_calc_types: set[str] | None = None,
+) -> float | None:
+    series = _series(records, keys, sheet_names=sheet_names, exclude_calc_types=exclude_calc_types)
     return series[0][1] if series else None
 
 
@@ -432,49 +458,89 @@ def _build_valuation_snapshot(
     source_file: str,
     long_records: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    revenue = _series(long_records, {"revenue"})
-    operating_income = _series(long_records, {"operating_income"})
-    capex = _series(long_records, {"capex"})
-    da = _series(long_records, {"da"})
-    tax_exp = _series(long_records, {"tax", "income_tax_expense"})
-    ebt = _series(long_records, {"ebt_excl_unusual"})
+    fs_sheets = {"Financial Statements"}
+    annual_exclusions = {"LTM", "NTM"}
+
+    revenue = _series(long_records, {"revenue"}, sheet_names=fs_sheets)
+    operating_income = _series(long_records, {"operating_income"}, sheet_names=fs_sheets)
+    capex = _series(long_records, {"capex"}, sheet_names=fs_sheets)
+    da = _series(long_records, {"da"}, sheet_names=fs_sheets)
+
+    annual_revenue = _series(
+        long_records,
+        {"revenue"},
+        sheet_names=fs_sheets,
+        exclude_calc_types=annual_exclusions,
+    )
+    annual_operating_income = _series(
+        long_records,
+        {"operating_income"},
+        sheet_names=fs_sheets,
+        exclude_calc_types=annual_exclusions,
+    )
+    annual_capex = _series(long_records, {"capex"}, sheet_names=fs_sheets, exclude_calc_types=annual_exclusions)
+    annual_da = _series(long_records, {"da"}, sheet_names=fs_sheets, exclude_calc_types=annual_exclusions)
+    annual_tax_exp = _series(
+        long_records,
+        {"tax", "income_tax_expense"},
+        sheet_names=fs_sheets,
+        exclude_calc_types=annual_exclusions,
+    )
+    annual_ebt = _series(
+        long_records,
+        {"ebt_excl_unusual"},
+        sheet_names=fs_sheets,
+        exclude_calc_types=annual_exclusions,
+    )
 
     revenue_vals = [v for _, v in revenue[:4]]
     op_vals = [v for _, v in operating_income[:4]]
     capex_vals = [abs(v) for _, v in capex[:4]]
     da_vals = [abs(v) for _, v in da[:4]]
 
+    annual_revenue_by_period = dict(annual_revenue)
+    annual_op_by_period = dict(annual_operating_income)
+    annual_capex_by_period = {period: abs(value) for period, value in annual_capex}
+    annual_da_by_period = {period: abs(value) for period, value in annual_da}
+    annual_tax_by_period = {period: abs(value) for period, value in annual_tax_exp}
+    annual_ebt_by_period = dict(annual_ebt)
+
+    latest_margin = None
+    if revenue_vals and op_vals and revenue_vals[0] not in (0, None):
+        latest_margin = op_vals[0] / revenue_vals[0]
+
+    annual_periods = [period for period, revenue_value in annual_revenue if revenue_value not in (0, None)]
     op_margins = [
-        op_vals[i] / revenue_vals[i]
-        for i in range(min(len(op_vals), len(revenue_vals)))
-        if revenue_vals[i] not in (0, None)
+        annual_op_by_period[period] / annual_revenue_by_period[period]
+        for period in annual_periods
+        if period in annual_op_by_period
     ]
     capex_pct = [
-        capex_vals[i] / revenue_vals[i]
-        for i in range(min(len(capex_vals), len(revenue_vals)))
-        if revenue_vals[i] not in (0, None)
+        annual_capex_by_period[period] / annual_revenue_by_period[period]
+        for period in annual_periods
+        if period in annual_capex_by_period
     ]
     da_pct = [
-        da_vals[i] / revenue_vals[i]
-        for i in range(min(len(da_vals), len(revenue_vals)))
-        if revenue_vals[i] not in (0, None)
+        annual_da_by_period[period] / annual_revenue_by_period[period]
+        for period in annual_periods
+        if period in annual_da_by_period
     ]
 
     tax_rates = []
-    for i in range(min(len(tax_exp), len(ebt))):
-        _, t = tax_exp[i]
-        _, p = ebt[i]
-        if p > 0:
-            tax_rates.append(abs(t) / p)
+    for period, tax_value in annual_tax_by_period.items():
+        pretax_value = annual_ebt_by_period.get(period)
+        if pretax_value is not None and pretax_value > 0:
+            tax_rates.append(tax_value / pretax_value)
 
     revenue_cagr = None
-    if len(revenue_vals) >= 2 and revenue_vals[-1] > 0:
-        years = len(revenue_vals) - 1
-        revenue_cagr = (revenue_vals[0] / revenue_vals[-1]) ** (1 / years) - 1
+    annual_revenue_vals = [v for _, v in annual_revenue[:4]]
+    if len(annual_revenue_vals) >= 2 and annual_revenue_vals[-1] > 0:
+        years = len(annual_revenue_vals) - 1
+        revenue_cagr = (annual_revenue_vals[0] / annual_revenue_vals[-1]) ** (1 / years) - 1
 
-    roic = _percent_to_decimal(_latest_value(long_records, {"roic"}))
-    fcf_yield = _percent_to_decimal(_latest_value(long_records, {"fcf_yield"}))
-    debt_to_ebitda = _latest_value(long_records, {"debt_to_ebitda"})
+    roic = _percent_to_decimal(_latest_value(long_records, {"roic"}, sheet_names=fs_sheets))
+    fcf_yield = _percent_to_decimal(_latest_value(long_records, {"fcf_yield"}, sheet_names=fs_sheets))
+    debt_to_ebitda = _latest_value(long_records, {"debt_to_ebitda"}, sheet_names=fs_sheets)
 
     as_of_date = revenue[0][0] if revenue else None
 
@@ -486,10 +552,10 @@ def _build_valuation_snapshot(
         "operating_income_mm": op_vals[0] if op_vals else None,
         "capex_mm": capex_vals[0] if capex_vals else None,
         "da_mm": da_vals[0] if da_vals else None,
-        "total_debt_mm": _latest_value(long_records, {"debt", "total_debt"}),
-        "cash_mm": _latest_value(long_records, {"cash", "cash_and_equivalents"}),
-        "shares_out_mm": _latest_value(long_records, {"shares", "shares_diluted"}),
-        "ebit_margin": op_margins[0] if op_margins else None,
+        "total_debt_mm": _latest_value(long_records, {"debt", "total_debt"}, sheet_names=fs_sheets),
+        "cash_mm": _latest_value(long_records, {"cash", "cash_and_equivalents"}, sheet_names=fs_sheets),
+        "shares_out_mm": _latest_value(long_records, {"shares", "shares_diluted"}, sheet_names=fs_sheets),
+        "ebit_margin": latest_margin,
         "op_margin_avg_3yr": _avg(op_margins[:3]),
         "capex_pct_avg_3yr": _avg(capex_pct[:3]),
         "da_pct_avg_3yr": _avg(da_pct[:3]),

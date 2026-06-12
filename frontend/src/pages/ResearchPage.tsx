@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useOutletContext, useParams } from "react-router-dom";
+import { Link, useOutletContext, useParams } from "react-router-dom";
 
-import { createTickerExport, getResearch, getRunStatus } from "@/lib/api";
+import { createTickerExport, getAnalystPrep, getResearch, getRunStatus, runAnalystPrep } from "@/lib/api";
 import { downloadCompletedExport, getCompletedExportId } from "@/lib/exportJobs";
 import { formatCurrency, formatDateLabel, formatText } from "@/lib/format";
 import { PageHero } from "@/components/PageHero";
-import type { TickerWorkspace } from "@/lib/types";
+import type { AnalystPrepPack, ModelDriverBridgeCard, TickerWorkspace } from "@/lib/types";
 
 type TickerLayoutContext = {
   workspace?: TickerWorkspace;
@@ -73,6 +73,161 @@ function formatPublishablePreview(value: string | null): string | null {
   return withoutFrontmatter.replace(/^#+\s+/gmu, "").replace(/\s+/g, " ").trim();
 }
 
+function formatDriverValue(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (Math.abs(value) < 1) {
+    return `${(value * 100).toFixed(1)}%`;
+  }
+  return value.toFixed(2);
+}
+
+function driverLink(ticker: string, field: string): string {
+  if (field === "wacc") {
+    return `/ticker/${encodeURIComponent(ticker)}/valuation?view=WACC`;
+  }
+  if (field === "exit_multiple") {
+    return `/ticker/${encodeURIComponent(ticker)}/valuation?view=Comparables`;
+  }
+  return `/ticker/${encodeURIComponent(ticker)}/valuation?view=Assumptions`;
+}
+
+function AnalystPrepPanel({
+  ticker,
+  pack,
+  onRun,
+  runPending,
+}: {
+  ticker: string;
+  pack?: AnalystPrepPack | null;
+  onRun: () => void;
+  runPending: boolean;
+}) {
+  const thesisCards = pack?.thesis_cards ?? [];
+  const driverCards = pack?.driver_cards ?? [];
+  const missingData = pack?.missing_data ?? [];
+  const compsCard = pack?.comps_card;
+  const reviewDrivers = driverCards.filter((card) => card.pm_review_status !== "ok");
+
+  return (
+    <section className="panel">
+      <div className="section-heading-row">
+        <div>
+          <h2>Analyst Prep</h2>
+          <p className="table-note">
+            Junior analyst prework: thesis claims, driver map, comps judgment, and missing-data checks.
+          </p>
+        </div>
+        <button type="button" className="ghost-button" onClick={onRun} disabled={runPending || !ticker}>
+          {runPending ? "Running..." : "Run Analyst Prep"}
+        </button>
+      </div>
+
+      <div className="metric-grid">
+        <article>
+          <span className="metric-label">Source Quality</span>
+          <strong>{formatText(pack?.source_quality) ?? "Missing"}</strong>
+        </article>
+        <article>
+          <span className="metric-label">Thesis Cards</span>
+          <strong>{thesisCards.length}</strong>
+        </article>
+        <article>
+          <span className="metric-label">Review Drivers</span>
+          <strong>{reviewDrivers.length}</strong>
+        </article>
+        <article>
+          <span className="metric-label">Evidence Packets</span>
+          <strong>{pack?.evidence_packet_ids?.length ?? 0}</strong>
+        </article>
+      </div>
+
+      <div className="grid-cards">
+        <article>
+          <strong>Investment Thesis</strong>
+          <div className="stacked-cards">
+            {thesisCards.length ? (
+              thesisCards.slice(0, 5).map((card) => (
+                <div key={card.card_id} className="mini-card">
+                  <strong>{card.title}</strong>
+                  <p>{card.claim}</p>
+                  <p>{card.model_implication}</p>
+                  <span>
+                    {card.linked_assumption_fields.map((field) => (
+                      <Link key={field} to={driverLink(ticker, field)}>
+                        {field}
+                      </Link>
+                    ))}
+                  </span>
+                  <span>{card.evidence_anchor_ids.slice(0, 3).join(" · ")}</span>
+                </div>
+              ))
+            ) : (
+              <p className="table-note">No anchored thesis cards yet. Run the profile flow or refresh deterministic inputs.</p>
+            )}
+          </div>
+        </article>
+
+        <article>
+          <strong>Diligence Queue</strong>
+          <ul className="clean-list">
+            {missingData.length
+              ? missingData.slice(0, 6).map((flag) => (
+                  <li key={flag.flag_id}>
+                    <strong>{formatText(flag.severity)}</strong> {flag.label}: {flag.reason}
+                  </li>
+                ))
+              : [<li key="analyst-prep-no-missing">No missing-data flags in current pack.</li>]}
+          </ul>
+        </article>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Driver</th>
+              <th>Current</th>
+              <th>Proposed / Effective</th>
+              <th>Status</th>
+              <th>Source</th>
+              <th>Rationale</th>
+            </tr>
+          </thead>
+          <tbody>
+            {driverCards.length ? (
+              driverCards.map((card: ModelDriverBridgeCard) => (
+                <tr key={card.assumption_name}>
+                  <td>
+                    <Link to={driverLink(ticker, card.assumption_name)}>{card.label}</Link>
+                  </td>
+                  <td>{formatDriverValue(card.current_value)}</td>
+                  <td>{formatDriverValue(card.proposed_or_effective_value)}</td>
+                  <td>{formatText(card.pm_review_status)}</td>
+                  <td>{card.source ?? "—"}</td>
+                  <td>{card.rationale}</td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan={6}>No model-driver map available.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {compsCard ? (
+        <p className="table-note">
+          Comps: {formatText(compsCard.peer_set_quality)} peer set, {compsCard.peer_count ?? "—"} peers, primary metric{" "}
+          {compsCard.primary_metric ?? "—"}. {compsCard.premium_discount_argument ?? compsCard.exit_multiple_support}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
 export function ResearchPage() {
   const { ticker = "" } = useParams();
   const queryClient = useQueryClient();
@@ -84,6 +239,7 @@ export function ResearchPage() {
     runDeepAnalysisPending,
   } = useOutletContext<TickerLayoutContext>();
   const [exportRunId, setExportRunId] = useState<string | null>(null);
+  const [analystPrepRunId, setAnalystPrepRunId] = useState<string | null>(null);
   const [downloadedExportId, setDownloadedExportId] = useState<string | null>(null);
   const researchQuery = useQuery({
     queryKey: ["ticker-research", ticker],
@@ -94,6 +250,15 @@ export function ResearchPage() {
     mutationFn: () => createTickerExport(ticker, { format: "html", source_mode: "loaded_backend_state" }),
     onSuccess: (payload) => setExportRunId(payload.run_id),
   });
+  const analystPrepQuery = useQuery({
+    queryKey: ["ticker-analyst-prep", ticker],
+    queryFn: () => getAnalystPrep(ticker),
+    enabled: Boolean(ticker),
+  });
+  const analystPrepMutation = useMutation({
+    mutationFn: () => runAnalystPrep(ticker),
+    onSuccess: (payload) => setAnalystPrepRunId(payload.run_id),
+  });
   const exportRunStatusQuery = useQuery({
     queryKey: ["research-export-run", exportRunId],
     queryFn: () => getRunStatus(exportRunId ?? ""),
@@ -103,7 +268,17 @@ export function ResearchPage() {
       return status === "completed" || status === "failed" ? false : 1000;
     },
   });
+  const analystPrepRunStatusQuery = useQuery({
+    queryKey: ["analyst-prep-run", analystPrepRunId],
+    queryFn: () => getRunStatus(analystPrepRunId ?? ""),
+    enabled: Boolean(analystPrepRunId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      return status === "completed" || status === "failed" ? false : 1000;
+    },
+  });
   const research = (researchQuery.data ?? {}) as Record<string, unknown>;
+  const analystPrep = analystPrepQuery.data ?? (research.analyst_prep as AnalystPrepPack | undefined | null);
   const tracker = asRecord(research.tracker);
   const notebook = asRecord(research.notebook);
   const trackerState =
@@ -159,6 +334,13 @@ export function ResearchPage() {
       queryClient.invalidateQueries({ queryKey: ["ticker-exports", ticker] }).catch(() => undefined);
     }
   }, [exportRunStatusQuery.data?.status, queryClient, ticker]);
+
+  useEffect(() => {
+    if (analystPrepRunStatusQuery.data?.status === "completed") {
+      queryClient.invalidateQueries({ queryKey: ["ticker-analyst-prep", ticker] }).catch(() => undefined);
+      queryClient.invalidateQueries({ queryKey: ["ticker-research", ticker] }).catch(() => undefined);
+    }
+  }, [analystPrepRunStatusQuery.data?.status, queryClient, ticker]);
 
   useEffect(() => {
     if (!completedExportId || downloadedExportId === completedExportId) {
@@ -225,6 +407,20 @@ export function ResearchPage() {
           <span>{formatText(asText(exportRunStatusQuery.data.message)) ?? "Research memo export is running in the background."}</span>
         </div>
       ) : null}
+
+      {analystPrepRunStatusQuery.data ? (
+        <div className="run-status">
+          <strong>{formatText(asText(analystPrepRunStatusQuery.data.status))}</strong>
+          <span>{formatText(asText(analystPrepRunStatusQuery.data.message)) ?? "Analyst Prep is rebuilding."}</span>
+        </div>
+      ) : null}
+
+      <AnalystPrepPanel
+        ticker={ticker}
+        pack={analystPrep}
+        onRun={() => analystPrepMutation.mutate()}
+        runPending={analystPrepMutation.isPending}
+      />
 
       <section className="grid-cards">
         <article className="panel">

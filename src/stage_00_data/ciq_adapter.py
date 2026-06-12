@@ -349,16 +349,29 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
             [ticker.upper(), as_of_date],
         ).fetchall()
 
-        # CIQ imports can split the same as-of snapshot across runs (for example,
-        # one run has market caps while another has EBITDA/PE multiples). Build a
-        # single latest-as-of view by taking the newest row for each peer/metric.
+        if not rows:
+            return []
+
+        latest_run_id = max(int(row["run_id"] or 0) for row in rows)
+        active_peer_keys = {
+            (str(row["peer_ticker"] or "").upper(), int(row["is_target"] or 0))
+            for row in rows
+            if int(row["run_id"] or 0) == latest_run_id
+        }
+
+        # CIQ imports can split the same as-of snapshot across runs. The latest
+        # run defines the active peer universe; older same-date rows may only
+        # fill missing metrics for peers that are still present in that run.
         merged: dict[tuple[str, str, int], dict[str, Any]] = {}
         for row in rows:
             data = dict(row)
+            peer_key = (str(data.get("peer_ticker") or "").upper(), int(data.get("is_target") or 0))
+            if peer_key not in active_peer_keys:
+                continue
             key = (
-                str(data.get("peer_ticker") or "").upper(),
+                peer_key[0],
                 str(data.get("metric_key") or ""),
-                int(data.get("is_target") or 0),
+                peer_key[1],
             )
             if key not in merged:
                 merged[key] = data
@@ -572,8 +585,14 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
         "revenue_ltm_mm": ("total_revenue_ltm", "revenue_ltm", "total_revenue", "revenue_ttm"),
     }
 
-    def _build_row(ticker_str: str, m: dict) -> dict:
-        out: dict[str, Any] = {"ticker": ticker_str}
+    def _build_row(ticker_str: str, bucket: dict[str, Any]) -> dict:
+        m = bucket["metrics"]
+        out: dict[str, Any] = {
+            "ticker": ticker_str,
+            "run_id": bucket.get("run_id"),
+            "source_file": bucket.get("source_file"),
+            "as_of_date": bucket.get("as_of_date"),
+        }
         for field, aliases in _EXTRA_MM_ALIASES.items():
             out[field] = next((_to_float(m.get(a)) for a in aliases if m.get(a) is not None), None)
         out["ebitda_ltm_mm"] = _pick_metric(m, _METRIC_ALIASES["target_ebitda_ltm"])
@@ -595,7 +614,7 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
 
     for pt, bucket in peer_buckets:
         m = bucket["metrics"]
-        peer_rows.append(_build_row(pt, m))
+        peer_rows.append(_build_row(pt, bucket))
         tev_ebitda = _pick_metric(m, _METRIC_ALIASES["peer_tev_ebitda_ltm"])
         tev_ebitda_fwd_v = _pick_metric(m, _METRIC_ALIASES["peer_tev_ebitda_fwd"])
         tev_ebit = _pick_metric(m, _METRIC_ALIASES["peer_tev_ebit_ltm"])
@@ -615,8 +634,9 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
     def _rnd(v: float | None) -> float | None:
         return round(v, 4) if v is not None else None
 
+    target_row = _build_row(target_ticker, target_bucket)
     return {
-        "target": _build_row(target_ticker, target_bucket["metrics"]),
+        "target": target_row,
         "peers": peer_rows,
         "medians": {
             "tev_ebitda_ltm": _rnd(_median(peer_tev_ebitda)),
@@ -624,5 +644,10 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
             "tev_ebit_ltm": _rnd(_median(peer_tev_ebit)),
             "tev_ebit_fwd": _rnd(_median(peer_tev_ebit_fwd)),
             "pe_ltm": _rnd(_median(peer_pe)),
+        },
+        "source_lineage": {
+            "as_of_date": target_row.get("as_of_date"),
+            "run_id": target_row.get("run_id"),
+            "source_file": target_row.get("source_file"),
         },
     }

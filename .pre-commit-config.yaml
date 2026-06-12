@@ -14,7 +14,7 @@ repos:
     hooks:
       - id: ruff-check
         name: ruff check
-        entry: ruff check --fix
+        entry: ruff check
         language: python
         additional_dependencies:
           - ruff

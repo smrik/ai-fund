@@ -1239,6 +1239,7 @@ def test_agentic_handoff_run_returns_structured_failure(monkeypatch):
     payload = run_response.json()
     assert payload["status"] == "failed"
     assert payload["reason"] == "agent_execution_failed"
+
     assert payload["observation_count"] == 0
     assert payload["queue_item_count"] == 0
     assert payload["errors"][0]["code"] == "agent_execution_failed"
@@ -1254,6 +1255,49 @@ def test_agentic_handoff_run_returns_structured_failure(monkeypatch):
 
     assert queue_response.status_code == 200
     assert queue_response.json()["items"] == []
+
+
+def test_analyst_prep_endpoint_returns_stable_payload_and_queues_run(monkeypatch):
+    from api.main import app
+
+    prep_payload = {
+        "ticker": "IBM",
+        "source_quality": "real",
+        "sections": [],
+        "thesis_cards": [
+            {
+                "card_id": "IBM:valuation_setup",
+                "title": "Valuation Setup",
+                "claim": "Base IV is 150.",
+                "business_evidence_summary": "DCF support.",
+                "model_implication": "Review WACC.",
+                "linked_assumption_fields": ["wacc"],
+                "evidence_anchor_ids": ["deterministic:dcf:base_iv"],
+                "numeric_fact_refs": ["deterministic:dcf:base_iv"],
+                "source_quality": "partial",
+            }
+        ],
+        "driver_cards": [],
+        "comps_card": None,
+        "missing_data": [],
+        "segment_driver_rows": [],
+        "evidence_packet_ids": [],
+        "evidence_map": [],
+        "conflict_groups": [],
+        "export_metadata": {},
+    }
+    monkeypatch.setattr("api.main.build_analyst_prep_api_payload", lambda ticker: prep_payload)
+    client = TestClient(app)
+
+    get_response = client.get("/api/tickers/IBM/analyst-prep")
+    run_response = client.post("/api/tickers/IBM/analyst-prep/run")
+
+    assert get_response.status_code == 200
+    assert get_response.json()["ticker"] == "IBM"
+    assert get_response.json()["thesis_cards"][0]["title"] == "Valuation Setup"
+    assert run_response.status_code == 202
+    assert run_response.json()["status"] == "queued"
+    assert run_response.json()["run_id"]
 
 
 def test_agentic_handoff_comps_profile_is_runnable_with_real_comps_packet(monkeypatch):

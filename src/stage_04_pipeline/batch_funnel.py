@@ -15,6 +15,66 @@ logger = logging.getLogger(__name__)
 DEFAULT_SHORTLIST_SIZE = 10
 
 
+def run_batch(**kwargs):
+    from src.stage_02_valuation.batch_runner import run_batch as _run_batch
+
+    return _run_batch(**kwargs)
+
+
+def list_report_snapshots(ticker: str, limit: int = 1):
+    from src.stage_04_pipeline.report_archive import list_report_snapshots as _list_report_snapshots
+
+    return _list_report_snapshots(ticker, limit=limit)
+
+
+def load_report_snapshot(snapshot_id: int):
+    from src.stage_04_pipeline.report_archive import load_report_snapshot as _load_report_snapshot
+
+    return _load_report_snapshot(snapshot_id)
+
+
+def PipelineOrchestrator():
+    from src.stage_04_pipeline.orchestrator import PipelineOrchestrator as _PipelineOrchestrator
+
+    return _PipelineOrchestrator()
+
+
+def build_dcf_audit_view(ticker: str, risk_output=None):
+    from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view as _build_dcf_audit_view
+
+    return _build_dcf_audit_view(ticker, risk_output=risk_output)
+
+
+def build_filings_browser_view(ticker: str):
+    from src.stage_04_pipeline.filings_browser import build_filings_browser_view as _build_filings_browser_view
+
+    return _build_filings_browser_view(ticker)
+
+
+def build_comps_dashboard_view(ticker: str):
+    from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view as _build_comps_dashboard_view
+
+    return _build_comps_dashboard_view(ticker)
+
+
+def build_news_materiality_view(ticker: str):
+    from src.stage_04_pipeline.news_materiality import build_news_materiality_view as _build_news_materiality_view
+
+    return _build_news_materiality_view(ticker)
+
+
+def write_recommendations(payload: dict[str, Any]):
+    from src.stage_04_pipeline.recommendations import write_recommendations as _write_recommendations
+
+    return _write_recommendations(payload)
+
+
+def save_report_snapshot(ticker: str, memo: Any, **kwargs):
+    from src.stage_04_pipeline.report_archive import save_report_snapshot as _save_report_snapshot
+
+    return _save_report_snapshot(ticker, memo, **kwargs)
+
+
 def _score_row(row: dict[str, Any]) -> tuple[int, int, float, float, str]:
     expected_upside = safe_float(row.get("expected_upside_pct"))
     fallback_upside = safe_float(row.get("upside_base_pct"))
@@ -191,8 +251,6 @@ def run_deterministic_batch(
     export_xlsx: bool = False,
     progress_callback=None,
 ) -> dict[str, Any]:
-    from src.stage_02_valuation.batch_runner import run_batch
-
     results = run_batch(
         tickers=tickers,
         top_n=max(int(shortlist_size), 1),
@@ -211,8 +269,6 @@ def run_deterministic_batch(
 
 
 def load_latest_snapshot_for_ticker(ticker: str) -> dict[str, Any] | None:
-    from src.stage_04_pipeline.report_archive import list_report_snapshots, load_report_snapshot
-
     snapshots = list_report_snapshots(ticker, limit=1)
     if not snapshots:
         return None
@@ -231,14 +287,6 @@ def run_deep_analysis_for_tickers(
     use_cache: bool = True,
     force_refresh_agents: Iterable[str] | None = None,
 ) -> list[dict[str, Any]]:
-    from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
-    from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
-    from src.stage_04_pipeline.filings_browser import build_filings_browser_view
-    from src.stage_04_pipeline.news_materiality import build_news_materiality_view
-    from src.stage_04_pipeline.orchestrator import PipelineOrchestrator
-    from src.stage_04_pipeline.recommendations import write_recommendations
-    from src.stage_04_pipeline.report_archive import save_report_snapshot
-
     selected = [str(ticker).upper().strip() for ticker in tickers if str(ticker).strip()]
     forced = {item.strip() for item in (force_refresh_agents or []) if item and item.strip()}
     run_rows: list[dict[str, Any]] = []

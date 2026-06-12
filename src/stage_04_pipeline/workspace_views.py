@@ -83,7 +83,7 @@ def load_recommendations(*args, **kwargs):
     return _impl(*args, **kwargs)
 
 def build_research_board_view(*args, **kwargs):
-    from src.stage_04_pipeline.research_board import build_research_board_view as _impl
+    from src.stage_04_pipeline.dossier_view import build_research_board_view as _impl
     return _impl(*args, **kwargs)
 
 def build_filings_browser_view(*args, **kwargs):
@@ -628,6 +628,33 @@ def build_research_payload(ticker: str) -> dict[str, Any]:
     ticker = coerce_ticker(ticker)
     payload = build_research_board_view(ticker)
     payload["ticker"] = ticker
+    try:
+        from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload
+
+        payload["analyst_prep"] = build_analyst_prep_payload(ticker)
+    except Exception as exc:  # pragma: no cover - research page should survive local data gaps
+        payload["analyst_prep"] = {
+            "ticker": ticker,
+            "source_quality": "missing",
+            "sections": [],
+            "thesis_cards": [],
+            "driver_cards": [],
+            "comps_card": None,
+            "missing_data": [
+                {
+                    "flag_id": "analyst_prep_build_error",
+                    "label": "Analyst Prep unavailable",
+                    "severity": "high",
+                    "reason": str(exc),
+                    "suggested_check": "Run the Analyst Prep smoke script and inspect the deterministic inputs.",
+                    "source": "build_analyst_prep_payload",
+                }
+            ],
+            "evidence_packet_ids": [],
+            "evidence_map": [],
+            "conflict_groups": [],
+            "export_metadata": {"builder_error": str(exc)},
+        }
     return payload
 
 def build_audit_payload(ticker: str) -> dict[str, Any]:

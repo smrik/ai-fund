@@ -194,6 +194,221 @@ def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
     assert staged["Comps Diagnostics"]["A10"].value == "Ticker"
 
 
+def test_stage_power_query_workbook_populates_analyst_prep_sheets(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    tmp_path = _workspace_tempdir("export-workbook-analyst-prep")
+    template_path = tmp_path / "ticker_review.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Config"
+    ws["A2"] = "json_path"
+    ws["B2"] = "C:\\placeholder.json"
+    wb.save(template_path)
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    monkeypatch.setattr(export_service, "TICKER_EXPORT_TEMPLATE", template_path)
+
+    payload = {
+        "ticker": "IBM",
+        "company_name": "International Business Machines",
+        "analyst_prep": {
+            "ticker": "IBM",
+            "generated_at": "2026-06-07T00:00:00Z",
+            "source_quality": "real",
+            "thesis_cards": [
+                {
+                    "card_id": "IBM:valuation_setup",
+                    "title": "Valuation Setup",
+                    "claim": "Base IV is 150.",
+                    "business_evidence_summary": "DCF support.",
+                    "model_implication": "Review WACC.",
+                    "linked_assumption_fields": ["wacc"],
+                    "evidence_anchor_ids": ["deterministic:dcf:base_iv"],
+                    "what_would_change_mind": "Fresh CIQ.",
+                }
+            ],
+            "driver_cards": [
+                {
+                    "assumption_name": "wacc",
+                    "label": "WACC",
+                    "current_value": 0.09,
+                    "proposed_or_effective_value": 0.095,
+                    "source": "wacc_peer_beta",
+                    "pm_review_status": "review_required",
+                    "rationale": "Review method.",
+                    "evidence_anchor_ids": ["deterministic:assumption:wacc"],
+                }
+            ],
+            "comps_card": {
+                "peer_set_quality": "partial",
+                "peer_count": 3,
+                "primary_metric": "tev_ebitda_ltm",
+                "premium_discount_argument": "Target trades at a discount.",
+                "exit_multiple_support": "Review exit multiple.",
+                "warnings": ["public fallback"],
+                "evidence_anchor_ids": ["deterministic:comps:peer_set"],
+            },
+            "missing_data": [
+                {
+                    "flag_id": "segment_data_missing",
+                    "label": "Segment evidence missing",
+                    "severity": "medium",
+                    "reason": "No segment rows.",
+                    "suggested_check": "Refresh CIQ.",
+                }
+            ],
+            "segment_driver_rows": [],
+            "evidence_packet_ids": [7],
+            "evidence_map": [
+                {
+                    "anchor_id": "packet:7:fact:growth",
+                    "packet_id": 7,
+                    "profile_name": "company_analysis",
+                    "kind": "packet_fact",
+                    "label": "Growth",
+                    "value": 8.0,
+                    "unit": "%",
+                    "source_quality": "real",
+                    "source_ref": "ciq",
+                }
+            ],
+            "export_metadata": {"default_resolution_status": "review_required"},
+        },
+    }
+
+    result = export_service.stage_power_query_workbook("IBM", payload, bundle_dir)
+    staged = load_workbook(Path(result["primary_path"]))
+
+    for sheet_name in [
+        "Analyst_Prep",
+        "Thesis_Bridge",
+        "Model_Driver_Map",
+        "Evidence_Map",
+        "Comps_Judgment",
+        "Segment_Drivers",
+    ]:
+        assert sheet_name in staged.sheetnames
+    assert staged["Analyst_Prep"]["B5"].value == "real"
+    assert staged["Thesis_Bridge"]["B5"].value == "Valuation Setup"
+    assert staged["Model_Driver_Map"]["A5"].value == "wacc"
+    assert staged["Evidence_Map"]["A5"].value == "packet:7:fact:growth"
+    assert staged["Segment_Drivers"]["A5"].value == "Segment evidence missing"
+
+
+def test_stage_power_query_workbook_rewrites_visible_review_tabs(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    tmp_path = _workspace_tempdir("export-workbook-visible-tabs")
+    template_path = tmp_path / "ticker_review.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Config"
+    ws["A2"] = "json_path"
+    ws["B2"] = "C:\\placeholder.json"
+    wb.create_named_range("json_path", ws, "$B$2")
+    for sheet_name in [
+        "Cover",
+        "Output",
+        "Assumptions",
+        "DCF_Base",
+        "DCF_Bear",
+        "DCF_Bull",
+        "Equity_Bridge",
+        "Sensitivity",
+        "QoE",
+        "Comps",
+    ]:
+        sheet = wb.create_sheet(sheet_name)
+        sheet["A1"] = "IBM stale template value"
+    wb.save(template_path)
+
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    monkeypatch.setattr(export_service, "TICKER_EXPORT_TEMPLATE", template_path)
+
+    payload = {
+        "ticker": "VRRM",
+        "company_name": "Verra Mobility Corporation",
+        "sector": "Industrials",
+        "generated_at": "2026-06-07T08:00:00+00:00",
+        "market": {"price": 4.31, "analyst_price_target": None},
+        "valuation": {"current_price": 4.31, "iv_bear": 30.43, "iv_base": 59.49, "iv_bull": 244.94, "expected_iv": 59.49},
+        "scenarios": {"base": {"iv": 59.49, "upside_pct": 1280.3}},
+        "assumptions": {
+            "growth_near_pct": 10.76,
+            "growth_mid_pct": 7.53,
+            "ebit_margin_start_pct": 24.66,
+            "exit_multiple": 17.14,
+            "net_debt_mm": 123.0,
+        },
+        "wacc": {"wacc_pct": 5.68},
+        "terminal": {
+            "terminal_growth_pct": 3.5,
+            "ronic_terminal_pct": 15.0,
+            "tv_pct_of_ev": 77.9,
+            "pv_tv_blended_mm": 8367.76,
+            "method_used": "blend",
+        },
+        "forecast_bridge": [{"year": 1, "revenue_mm": 1084.8, "growth_pct": 10.76, "fcff_mm": 191.94}],
+        "sensitivity": {"summary": [{"grid": "wacc_x_terminal_growth", "cell_count": 9, "min_iv": 42.1, "max_iv": 143.38, "spread": 101.28}]},
+        "health_flags": {"tv_high_flag": True},
+        "source_lineage": {"revenue_growth_near": "yfinance|story_sector", "exit_multiple": "default|story_sector"},
+        "default_resolution": {
+            "status": "review_required_high",
+            "fields": [
+                {
+                    "field": "exit_multiple",
+                    "value": 17.14,
+                    "source": "default|story_sector",
+                    "source_class": "missing_default",
+                    "severity": "high",
+                    "needs_pm_review": True,
+                    "why_it_matters": "Directly affects terminal value and equity value.",
+                }
+            ],
+        },
+        "ciq_lineage": {"snapshot_source_file": "public_market_yfinance_fallback", "peer_count": 9},
+        "comps_analysis": {
+            "primary_metric": "tev_ebitda_ltm",
+            "peer_counts": {"raw": 9, "clean": 9},
+            "valuation_range": {"bear": 20.0, "base": 27.44, "bull": 38.0, "blended_base": 27.44},
+            "audit_flags": ["No CIQ comps detail available; using public market yfinance fallback comps"],
+        },
+    }
+
+    result = export_service.stage_power_query_workbook("VRRM", payload, bundle_dir)
+    staged = load_workbook(Path(result["primary_path"]))
+
+    visible_review_sheets = [
+        "Cover",
+        "Output",
+        "Assumptions",
+        "DCF_Base",
+        "DCF_Bear",
+        "DCF_Bull",
+        "Equity_Bridge",
+        "Sensitivity",
+        "QoE",
+        "Review Checks",
+    ]
+    for sheet_name in visible_review_sheets:
+        values = [str(cell.value) for row in staged[sheet_name].iter_rows() for cell in row if cell.value is not None]
+        assert any("VRRM" in value for value in values), sheet_name
+        assert all("IBM stale template value" not in value for value in values), sheet_name
+
+    assert staged["Cover"]["A1"].value == "VRRM - PM Review Workbook"
+    assert staged["Output"]["B7"].value == 1280.28
+    assert staged["Assumptions"]["A5"].value == "ebit_margin_start_pct"
+    assert staged["Review Checks"]["A5"].value == "High"
+    assert "Terminal value is 77.9% of EV" in staged["Review Checks"]["C6"].value
+    review_values = [cell.value for row in staged["Review Checks"].iter_rows() for cell in row if cell.value is not None]
+    assert "Default resolution" in review_values
+    qoe_values = [cell.value for row in staged["QoE"].iter_rows() for cell in row if cell.value is not None]
+    assert "Default Resolution" in qoe_values
+    assert "missing_default" in qoe_values
+
+
 def test_build_html_export_bundle_writes_primary_and_sidecar_assets():
     from src.stage_04_pipeline import export_service
 
@@ -266,6 +481,85 @@ def test_build_html_context_prefers_attached_canonical_dossier_for_current_and_s
     assert snapshot_id == 7
     assert current_context["source_mode"] == "loaded_backend_state"
     assert current_snapshot_id is None
+
+
+def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    monkeypatch.setattr(export_service, "_attach_ticker_dossier", lambda payload, source_mode, snapshot_id=None: payload)
+    monkeypatch.setattr(
+        export_service,
+        "build_override_workbench",
+        lambda ticker: {
+            "available": True,
+            "ticker": "IBM",
+            "company_name": "International Business Machines",
+            "sector": "Technology",
+            "current_price": 100.0,
+            "fields": [
+                {"field": "exit_multiple", "effective_value": 14.0, "effective_source": "public_market_yfinance_fallback_tev_ebitda_ltm"},
+                {"field": "revenue_growth_near", "effective_value": 0.08, "effective_source": "ciq_consensus"},
+            ],
+            "ciq_lineage": {
+                "public_comps_fallback_used": True,
+                "public_comps_fallback_source_file": "public_market_yfinance_fallback",
+                "public_comps_fallback_peer_count": 3,
+                "snapshot_source_file": None,
+            },
+            "default_resolution": {"status": "ok", "fields": []},
+        },
+    )
+    monkeypatch.setattr(
+        export_service,
+        "build_dcf_audit_view",
+        lambda ticker: {
+            "scenario_summary": [{"scenario": "Base", "intrinsic_value": 150.0, "upside_pct": 50.0, "probability": 0.6}],
+            "ev_bridge": {"intrinsic_value_per_share": 150.0},
+            "sensitivity": {},
+            "terminal_bridge": {},
+            "health_flags": {},
+            "forecast_bridge": [],
+        },
+    )
+    monkeypatch.setattr(
+        export_service,
+        "build_comps_dashboard_view",
+        lambda ticker: {
+            "source_lineage": {"source_file": "public_market_yfinance_fallback", "as_of_date": "2026-06-07"},
+            "peer_counts": {"clean": 3},
+            "target_vs_peers": {"target": {}, "peer_medians": {"tev_ebitda_ltm": 14.0}},
+            "peers": [],
+        },
+    )
+    monkeypatch.setattr(export_service, "build_wacc_workbench", lambda ticker, apply_overrides=True: {"effective_preview": {}})
+    monkeypatch.setattr(export_service, "build_research_board_view", lambda ticker: {"company_name": "IBM", "tracker": {}})
+    monkeypatch.setattr(
+        export_service,
+        "build_analyst_prep_export_payload",
+        lambda ticker: {
+            "ticker": ticker,
+            "generated_at": "2026-06-07T00:00:00+00:00",
+            "source_quality": "missing",
+            "sections": [],
+            "thesis_cards": [],
+            "driver_cards": [],
+            "comps_card": None,
+            "missing_data": [],
+            "segment_driver_rows": [],
+            "evidence_packet_ids": [],
+            "evidence_map": [],
+            "conflict_groups": [],
+            "export_metadata": {"status": "test"},
+        },
+    )
+
+    payload = export_service._build_current_ticker_payload("IBM")
+
+    assert payload["source_lineage"]["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
+    assert payload["ciq_lineage"]["public_comps_fallback_used"] is True
+    assert payload["ciq_lineage"]["public_comps_fallback_peer_count"] == 3
+    assert payload["ciq_lineage"]["comps_source_file"] == "public_market_yfinance_fallback"
+    assert payload["default_resolution"]["status"] == "ok"
 
 
 def test_register_export_bundle_persists_export_and_artifacts(monkeypatch):
