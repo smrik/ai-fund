@@ -34,7 +34,7 @@ The loop runs end-to-end with the PM pressing the buttons. Goal is proving the w
 | --- | --- |
 | Weekly ritual | Screen → batch valuation → pick 1-2 names → Analyst Prep Pack → evidence → queue → decisions → exported note. Every week, real tickers |
 | Friction log | Each session logs friction in a running note (`docs/reviews/`); top friction items become the next week's fixes |
-| Finish handoff hardening | Complete [Agentic Handoff MVP Hardening](../active/2026-05-22-agentic-handoff-mvp-hardening.md): no synthetic evidence, visible agent failures, delta/target preview-approve parity |
+| Finish handoff hardening | ✅ Shipped 2026-06-12 ([Agentic Handoff MVP Hardening](../completed/2026-05-22-agentic-handoff-mvp-hardening.md)): no synthetic evidence, visible agent failures, delta/target preview-approve parity. M1 execution continues in [Weekly Loop v1](../active/2026-06-12-weekly-loop-v1.md) |
 | Queue workflow in anger | PM-Edited Proposals, Advisory Findings, and Assumption Change Packs exercised on real names, not fixtures |
 
 **Exit criteria:** Four consecutive weekly sessions completed. One full ticker investigation fits in ≤1 PM-hour. Every manual-data-surgery incident is logged and has a fix or a ticket.
