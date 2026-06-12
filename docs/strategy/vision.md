@@ -59,7 +59,7 @@ Feature count, agent count, and data-source count are explicitly **not** success
 
 ## Standing Rules For Agents
 
-1. Read this document and [AGENTS.md](../../AGENTS.md) before proposing any plan; new plans must state which settled decision(s) they serve.
+1. Read this document and the repo-root `AGENTS.md` before proposing any plan; new plans must state which settled decision(s) they serve.
 2. Never propose work that contradicts a settled decision without explicitly naming the conflict and asking the PM.
 3. Interview-first (Decision 10): for non-trivial work, interview the PM to resolve ambiguity before writing the plan.
 4. Split-by-domain (Decision 11): finance questions block on the PM; engineering questions get a conservative decision plus a logged rationale.

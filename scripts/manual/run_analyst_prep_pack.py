@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.manual.run_ticker_valuation_flow import DEFAULT_PROFILES, render_markdown, run_flow
-from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload, render_analyst_prep_markdown
+from scripts.manual.run_ticker_valuation_flow import DEFAULT_PROFILES, render_markdown, run_flow  # noqa: E402
+from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload, render_analyst_prep_markdown  # noqa: E402
 
 DEFAULT_ANALYST_PREP_PROFILES = (*DEFAULT_PROFILES, "analyst_prep_synthesis")
 

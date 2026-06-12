@@ -54,7 +54,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Archive
 
-Superseded planning material lives in [`archive/`](./archive/): legacy roadmaps, the XBRL/RAG chatbot plan, and early pipeline/config plans.
+Superseded planning material lives in `docs/plans/archive/`: legacy roadmaps, the XBRL/RAG chatbot plan, and early pipeline/config plans.
 
 ## Historical Execution Artifacts
 
