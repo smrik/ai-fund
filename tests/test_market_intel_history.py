@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from db.schema import create_tables
@@ -52,12 +53,16 @@ def test_market_intel_history_builds_timeline_from_archives_and_recent_news(monk
         conn.commit()
 
     monkeypatch.setattr(news_materiality, "DB_PATH", db_path)
+    # Relative dates keep both items inside the 120-day quarterly_headlines window
+    # regardless of when the test runs.
+    recent = (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    older = (datetime.now(timezone.utc) - timedelta(days=100)).strftime("%Y-%m-%dT%H:%M:%SZ")
     monkeypatch.setattr(
         news_materiality.market_data,
         "get_news",
         lambda ticker, limit=25: [
-            {"title": "IBM raises guidance after earnings", "publisher": "Reuters", "link": "https://example.com/1", "summary": "Demand improved", "published": "2026-03-10T10:00:00Z"},
-            {"title": "IBM launches new AI platform", "publisher": "Bloomberg", "link": "https://example.com/2", "summary": "Platform update", "published": "2026-02-10T10:00:00Z"},
+            {"title": "IBM raises guidance after earnings", "publisher": "Reuters", "link": "https://example.com/1", "summary": "Demand improved", "published": recent},
+            {"title": "IBM launches new AI platform", "publisher": "Bloomberg", "link": "https://example.com/2", "summary": "Platform update", "published": older},
         ],
     )
     monkeypatch.setattr(

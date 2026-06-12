@@ -38,7 +38,7 @@ def test_release_metadata_files_exist():
 		".github/release.yml",
 		"SECURITY.md",
 		"docs/reference/release-process.md",
-		"docs/plans/active/2026-04-01-internal-release-readiness-and-mock-publish.md",
+		"docs/plans/completed/2026-04-01-internal-release-readiness-and-mock-publish.md",
 	]
 
 	for file_path in required_files:
