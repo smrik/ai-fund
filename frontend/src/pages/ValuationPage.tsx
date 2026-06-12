@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useOutletContext, useParams, useSearchParams } from "react-router-dom";
+import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 
 import { PageHero } from "@/components/PageHero";
 import {
@@ -13,6 +13,7 @@ import {
   deferPmDecisionQueueItem,
   editPmDecisionQueueItem,
   getEvidencePackets,
+  getAnalystPrep,
   getPmDecisionQueue,
   getRecommendations,
   getRunStatus,
@@ -35,6 +36,7 @@ import { formatCurrency, formatDateLabel, formatPercent, formatText } from "@/li
 import type {
   AgenticHandoffRunError,
   AgenticHandoffRunPayload,
+  AnalystPrepPack,
   EvidencePacketRunMetadata,
   EvidencePacketSummary,
   EvidenceSourceQuality,
@@ -108,6 +110,31 @@ function formatMaybeNumber(value: unknown, digits = 1): string {
     return "—";
   }
   return amount.toFixed(digits);
+}
+
+function formatUnknownValue(value: unknown): string {
+  if (value == null) {
+    return "—";
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+  }
+  if (typeof value === "string") {
+    return formatText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((entry) => formatUnknownValue(entry)).filter((entry) => entry !== "—").join(", ") || "—";
+  }
+  const record = asRecord(value);
+  if (record) {
+    return Object.entries(record)
+      .map(([key, entry]) => `${titleize(key)}: ${formatUnknownValue(entry)}`)
+      .join(" · ");
+  }
+  return String(value);
 }
 
 function formatMetricValue(value: unknown, kind: "currency" | "percent" | "multiple" | "count" | "text" | "number" = "number"): string {
@@ -480,7 +507,7 @@ function renderTimeSeriesChart(
                   <circle
                     key={`${series.key}-${point.label}`}
                     className="chart-point"
-                    cx={toX(index)}
+                    cx={toX(point.sortValue)}
                     cy={toY(value)}
                     r={index === points.length - 1 ? 4.8 : denseSeries ? 2.2 : 3}
                     fill={series.color}
@@ -491,7 +518,7 @@ function renderTimeSeriesChart(
           );
         })}
         {xTickIndexes.map((index) => (
-          <text key={`${points[index]?.label ?? index}-${index}`} className="time-series-axis-label" x={toX(index)} y={height - 14} textAnchor="middle">
+          <text key={`${points[index]?.label ?? index}-${index}`} className="time-series-axis-label" x={toX(points[index]?.sortValue ?? index)} y={height - 14} textAnchor="middle">
             {points[index]?.label}
           </text>
         ))}
@@ -561,12 +588,85 @@ function buildSensitivityRows(table: unknown): Record<string, unknown>[] {
   });
 }
 
+function formatPrepDriverValue(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "—";
+  }
+  if (Math.abs(value) < 1) {
+    return `${(value * 100).toFixed(1)}%`;
+  }
+  return value.toFixed(2);
+}
+
+function prepDriverLink(ticker: string, field: string): string {
+  if (field === "wacc") {
+    return `/ticker/${encodeURIComponent(ticker)}/valuation?view=WACC`;
+  }
+  if (field === "exit_multiple") {
+    return `/ticker/${encodeURIComponent(ticker)}/valuation?view=Comparables`;
+  }
+  return `/ticker/${encodeURIComponent(ticker)}/valuation?view=Assumptions`;
+}
+
+function CompactThesisBridge({ ticker, pack }: { ticker: string; pack?: AnalystPrepPack | null }) {
+  const thesisCards = pack?.thesis_cards ?? [];
+  const reviewDrivers = (pack?.driver_cards ?? []).filter((card) => card.pm_review_status !== "ok").slice(0, 5);
+  if (!pack || (!thesisCards.length && !reviewDrivers.length)) {
+    return null;
+  }
+  return (
+    <section className="panel subtle">
+      <h2>Thesis Bridge</h2>
+      <div className="grid-cards grid-cards--tight">
+        {thesisCards.slice(0, 2).map((card) => (
+          <article key={card.card_id} className="mini-card">
+            <strong>{card.title}</strong>
+            <p>{card.claim}</p>
+            <p>{card.model_implication}</p>
+            <span>{card.evidence_anchor_ids.slice(0, 3).join(" · ")}</span>
+          </article>
+        ))}
+      </div>
+      {reviewDrivers.length ? (
+        <div className="table-wrap">
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>Driver</th>
+                <th>Value</th>
+                <th>Status</th>
+                <th>Source</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reviewDrivers.map((card) => (
+                <tr key={card.assumption_name}>
+                  <td>
+                    <Link to={prepDriverLink(ticker, card.assumption_name)}>{card.label}</Link>
+                  </td>
+                  <td>{formatPrepDriverValue(card.proposed_or_effective_value)}</td>
+                  <td>{formatText(card.pm_review_status)}</td>
+                  <td>{card.source ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function SummaryPanel({
   summary,
   workspace,
+  analystPrep,
+  ticker,
 }: {
   summary: Record<string, unknown> | null | undefined;
   workspace?: TickerWorkspace;
+  analystPrep?: AnalystPrepPack | null;
+  ticker: string;
 }) {
   const readiness = asRecord(summary?.readiness);
   const financeQuality = asRecord(summary?.finance_quality);
@@ -642,11 +742,20 @@ function SummaryPanel({
           <p>{formatText(asText(summary.why_it_matters))}</p>
         </section>
       ) : null}
+      <CompactThesisBridge ticker={ticker} pack={analystPrep} />
     </section>
   );
 }
 
-function DcfPanel({ dcf }: { dcf: Record<string, unknown> | null | undefined }) {
+function DcfPanel({
+  dcf,
+  analystPrep,
+  ticker,
+}: {
+  dcf: Record<string, unknown> | null | undefined;
+  analystPrep?: AnalystPrepPack | null;
+  ticker: string;
+}) {
   const scenarioRows = asRows(dcf?.scenario_summary);
   const forecastRows = asRows(dcf?.forecast_bridge);
   const driverRows = asRows(dcf?.driver_rows);
@@ -659,6 +768,7 @@ function DcfPanel({ dcf }: { dcf: Record<string, unknown> | null | undefined }) 
 
   return (
     <section className="page-stack">
+      <CompactThesisBridge ticker={ticker} pack={analystPrep} />
       <section className="panel">
         <h2>Scenario Summary</h2>
         {renderValueTable(scenarioRows, [
@@ -988,6 +1098,7 @@ function AssumptionsPanel({
         <article className="panel"><h2>Tracked Fields</h2><p>{fields.length}</p></article>
         <article className="panel"><h2>Current Expected IV</h2><p>{formatCurrency(asNumber(assumptions?.current_expected_iv))}</p></article>
       </section>
+      <DefaultResolutionPanel assumptions={assumptions} />
       <section className="panel">
         <div className="panel-toolbar">
           <div>
@@ -1162,6 +1273,71 @@ function AssumptionsPanel({
         <div className="run-status">
           <strong>{formatText(asText(runStatus.status))}</strong>
           <span>{formatText(asText(runStatus.message))}</span>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DefaultResolutionPanel({ assumptions }: { assumptions: Record<string, unknown> | null | undefined }) {
+  const defaultResolution = asRecord(assumptions?.default_resolution);
+  const ciqLineage = asRecord(assumptions?.ciq_lineage) ?? {};
+  const fields = asRows(defaultResolution?.fields);
+  const status = asText(defaultResolution?.status) ?? "unknown";
+  const publicFallbackUsed = ciqLineage.public_comps_fallback_used === true;
+  const lineageRows = [
+    { label: "Snapshot Source", value: ciqLineage.snapshot_source_file ?? ciqLineage.source_file },
+    { label: "Snapshot As Of", value: ciqLineage.snapshot_as_of_date ?? ciqLineage.as_of_date },
+    { label: "Comps Source", value: ciqLineage.comps_source_file ?? ciqLineage.public_comps_fallback_source_file },
+    { label: "Public Fallback", value: publicFallbackUsed },
+    { label: "Fallback Peers", value: ciqLineage.public_comps_fallback_peer_count ?? ciqLineage.peer_count },
+  ].filter((row) => row.value != null);
+
+  if (!defaultResolution && !lineageRows.length) {
+    return null;
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-toolbar">
+        <div>
+          <h2>Default Resolution</h2>
+          <p className="table-note">Review assumptions that came from priors, public fallback comps, or unresolved defaults before trusting the DCF.</p>
+        </div>
+        <span className={`status-pill ${status.includes("high") ? "status-pill--sell" : status.includes("review") ? "status-pill--watch" : "status-pill--buy"}`}>
+          {titleize(status)}
+        </span>
+      </div>
+      {fields.length ? (
+        renderValueTable(
+          fields.map((field) => ({
+            field: field.field,
+            source: field.source_class ?? field.source,
+            severity: field.severity,
+            needs_review: formatUnknownValue(field.needs_pm_review),
+            preferred_sources: formatUnknownValue(field.preferred_sources),
+            reason: formatUnknownValue(field.reason ?? field.note),
+          })),
+          [
+            { key: "field", label: "Field", kind: "text" },
+            { key: "source", label: "Source Class", kind: "text" },
+            { key: "severity", label: "Severity", kind: "text" },
+            { key: "needs_review", label: "PM Review", kind: "text" },
+            { key: "preferred_sources", label: "Preferred Sources", kind: "text" },
+            { key: "reason", label: "Reason", kind: "text" },
+          ],
+        )
+      ) : (
+        <p className="table-note">No material unresolved defaults were flagged in the current valuation inputs.</p>
+      )}
+      {lineageRows.length ? (
+        <div className="grid-cards grid-cards--tight" style={{ marginTop: "0.75rem" }}>
+          {lineageRows.map((row) => (
+            <div key={row.label} className="mini-card">
+              <strong>{row.label}</strong>
+              <p>{formatUnknownValue(row.value)}</p>
+            </div>
+          ))}
         </div>
       ) : null}
     </section>
@@ -2486,6 +2662,11 @@ export function ValuationPage() {
     queryFn: () => getValuationDcf(ticker),
     enabled: Boolean(ticker) && selected === "DCF",
   });
+  const analystPrepQuery = useQuery({
+    queryKey: ["ticker-analyst-prep", ticker],
+    queryFn: () => getAnalystPrep(ticker),
+    enabled: Boolean(ticker) && (selected === "Summary" || selected === "DCF"),
+  });
   const compsQuery = useQuery({
     queryKey: ["ticker-valuation-comps", ticker],
     queryFn: () => getValuationComps(ticker),
@@ -2765,6 +2946,7 @@ export function ValuationPage() {
 
   const summary = summaryQuery.data;
   const dcf = dcfQuery.data as Record<string, unknown> | undefined;
+  const analystPrep = analystPrepQuery.data;
   const comps = compsQuery.data as Record<string, unknown> | undefined;
   const evidencePackets = evidencePacketsQuery.data?.evidence_packets ?? [];
   const pmQueueProfileRunCards = useMemo(() => {
@@ -2793,9 +2975,22 @@ export function ValuationPage() {
   const activePanel = useMemo(() => {
     switch (selected) {
       case "Summary":
-        return summaryQuery.isPending && !summary ? renderLoadingPanel("Scenario Summary") : <SummaryPanel summary={summary as Record<string, unknown> | undefined} workspace={workspace} />;
+        return summaryQuery.isPending && !summary ? (
+          renderLoadingPanel("Scenario Summary")
+        ) : (
+          <SummaryPanel
+            summary={summary as Record<string, unknown> | undefined}
+            workspace={workspace}
+            analystPrep={analystPrep}
+            ticker={ticker}
+          />
+        );
       case "DCF":
-        return dcfQuery.isPending && !dcf ? renderLoadingPanel("DCF") : <DcfPanel dcf={dcf} />;
+        return dcfQuery.isPending && !dcf ? (
+          renderLoadingPanel("DCF")
+        ) : (
+          <DcfPanel dcf={dcf} analystPrep={analystPrep} ticker={ticker} />
+        );
       case "Comparables":
         return compsQuery.isPending && !comps ? renderLoadingPanel("Comparables") : <ComparablesPanel comps={comps} />;
       case "Multiples":
@@ -2891,6 +3086,7 @@ export function ValuationPage() {
   }, [
     assumptionCustomValues,
     assumptionSelections,
+    analystPrep,
     assumptionsApplyMutation,
     assumptionsPreviewMutation,
     assumptionsQuery.data,
@@ -2923,6 +3119,7 @@ export function ValuationPage() {
     selectedRecommendationFields,
     summary,
     summaryQuery.isPending,
+    ticker,
     evidencePackets,
     waccApplyMutation,
     waccMode,

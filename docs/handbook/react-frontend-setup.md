@@ -123,6 +123,13 @@ Routing rules:
 
 ### Local runtime scripts
 
+- `scripts/manual/launch-mvp-app.ps1`
+  - canonical host-Windows one-command launcher for local MVP testing
+  - starts FastAPI and Vite with `VITE_API_BASE=http://127.0.0.1:8000/api`
+  - auto-detects the `ai-fund` conda Python on this machine
+  - keeps the PowerShell window open as a supervisor unless `-Detach` is used
+  - defaults to no uvicorn reload for cleaner shutdown; add `-Reload` for backend development
+  - reuses an already-running FastAPI backend on the target API port when `/docs` is reachable
 - `scripts/manual/launch-react-wsl.sh`
   - canonical one-command WSL review launcher
   - creates `.venv-wsl`
@@ -138,7 +145,24 @@ Routing rules:
 
 There are two valid local run modes.
 
-### 1. Inner-loop development mode
+### 1. Host-Windows MVP operator mode
+
+Use this when operating the practical PM workflow on the laptop with Excel, CIQ, FastAPI, and the React app.
+
+```powershell
+pwsh -File .\scripts\manual\launch-mvp-app.ps1
+```
+
+Default URLs:
+
+- frontend: `http://127.0.0.1:5173/watchlist`
+- API: `http://127.0.0.1:8000`
+
+See the full runbook:
+
+- [Local MVP Testing Runbook](./local-mvp-testing.md)
+
+### 2. Inner-loop development mode
 
 Use this when editing frontend code rapidly and you want the standard Vite workflow.
 
@@ -161,7 +185,7 @@ Notes:
 - it depends on Vite staying healthy in your shell
 - in WSL/Codex environments, it is more fragile than the review launcher
 
-### 2. Stable WSL review mode
+### 3. Stable WSL review mode
 
 Use this when you want a reliable same-side stack for visual review, Playwright, and end-to-end verification.
 

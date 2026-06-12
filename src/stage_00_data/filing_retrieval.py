@@ -19,7 +19,7 @@ from db.schema import create_tables
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
-_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v2"
+_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v3"
 _CHUNK_VERSION = "v2"
 _QUERY_VERSION = "v2"
 _EMBEDDING_MODEL = PEER_SIMILARITY_MODEL
@@ -267,7 +267,7 @@ def _extract_section(text: str, start_patterns: list[str], end_patterns: list[st
                     end = candidate
         section_text = haystack[start:end].strip()
         normalized = " ".join(section_text.split())
-        if len(normalized) < 120:
+        if len(normalized) < 40:
             continue
         candidates.append((len(normalized), start, section_text))
 

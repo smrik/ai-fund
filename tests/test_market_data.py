@@ -12,21 +12,30 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from src.stage_00_data.market_data import get_historical_financials
 
 
+def _mocked_historical_financials(ticker: str = "FAKE") -> dict:
+    ticker_mock = mock.MagicMock()
+    ticker_mock.financials = _make_financials()
+    ticker_mock.cashflow = _make_cashflow()
+    ticker_mock.balance_sheet = _make_balance()
+    with mock.patch("yfinance.Ticker", return_value=ticker_mock):
+        return get_historical_financials(ticker)
+
+
 def test_historical_financials_returns_revenue_series():
-    result = get_historical_financials("MSFT")
+    result = _mocked_historical_financials()
     assert "revenue" in result
     assert isinstance(result["revenue"], list)
     assert len(result["revenue"]) >= 1  # at least 1 year
 
 
 def test_historical_financials_returns_cagr():
-    result = get_historical_financials("MSFT")
+    result = _mocked_historical_financials()
     # Either a float or None (None if only 1 year of data)
     assert result["revenue_cagr_3yr"] is None or isinstance(result["revenue_cagr_3yr"], float)
 
 
 def test_historical_financials_returns_averages():
-    result = get_historical_financials("MSFT")
+    result = _mocked_historical_financials()
     for key in ["op_margin_avg_3yr", "capex_pct_avg_3yr", "da_pct_avg_3yr", "effective_tax_rate_avg"]:
         assert key in result
         # Must be None or a float in plausible range
@@ -44,13 +53,13 @@ def test_historical_financials_never_raises():
 
 
 def test_capex_is_positive():
-    result = get_historical_financials("MSFT")
+    result = _mocked_historical_financials()
     for v in result.get("capex", []):
         assert v >= 0, "capex should be positive"
 
 
 def test_cost_of_debt_in_bounds():
-    result = get_historical_financials("JPM")  # high debt company
+    result = _mocked_historical_financials()
     kd = result.get("cost_of_debt_derived")
     if kd is not None:
         assert 0.02 <= kd <= 0.15

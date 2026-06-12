@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT_PATH = Path("scripts/manual/capture_react_dev_pages.py")
 FRONTEND_README = Path("frontend/README.md")
@@ -76,6 +78,10 @@ def test_react_dev_capture_docs_explain_quiet_modes():
 
 
 def test_claude_playwright_skill_recommends_repo_capture_helper():
+    if not CLAUDE_SKILL.exists():
+        # .claude/ is gitignored, so the skill file only exists on configured
+        # local machines, never in fresh checkouts or CI.
+        pytest.skip("local-only .claude playwright skill not present in this checkout")
     source = CLAUDE_SKILL.read_text(encoding="utf-8")
 
     assert "capture_react_dev_pages.py" in source

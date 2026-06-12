@@ -4,7 +4,15 @@ This file is the short map, not the full manual.
 
 Read this first, then follow the canonical docs it points to. Keep this file concise and keep the detailed truth in `docs/`.
 
-## Tone
+## Vision Compliance (mandatory)
+
+The PM's settled product decisions live in [`docs/strategy/vision.md`](./docs/strategy/vision.md). They are not suggestions:
+
+1. **Never re-litigate a settled decision.** If your task seems to conflict with one, stop and name the conflict to the PM instead of working around it.
+2. **Every new plan names the Vision decision(s) it serves** in its header. A plan that serves none is backlog, not work.
+3. **Interview-first (Decision 10):** for non-trivial features, interview the PM until ambiguity is resolved before writing the plan. Do not draft specs cold from a one-line idea.
+4. **Split-by-domain ambiguity rule (Decision 11):** finance semantics (thresholds, accepted ranges, valuation logic, what a metric means) always block on the PM. Engineering details get a conservative decision logged in the plan or PR.
+5. **Current sequencing** is the [Six-Month Execution Roadmap](./docs/plans/future/2026-06-12-six-month-execution-roadmap.md). Real weekly-loop usage outranks feature work.
 
 ## Human-in-the-loop thinking protocol
 
@@ -44,15 +52,16 @@ The hard rule is unchanged: LLM code never touches the deterministic computation
 
 ## Read These In Order
 
-1. [`docs/PLANS.md`](./docs/PLANS.md) — repository guidance, docs taxonomy, and planning rules
-2. [`docs/index.md`](./docs/index.md) — docs home
-3. [`docs/design-docs/architecture-overview.md`](./docs/design-docs/architecture-overview.md) — architecture and boundaries
-4. [`docs/design-docs/core-beliefs.md`](./docs/design-docs/core-beliefs.md) — design principles
-5. [`docs/handbook/workflow-end-to-end.md`](./docs/handbook/workflow-end-to-end.md) — operator workflow
-6. [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) — React/API runtime map
-7. [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) — canonical UI review workflow
-8. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
-9. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
+1. [`docs/strategy/vision.md`](./docs/strategy/vision.md) — the PM's settled decisions; plans must serve these and must not re-litigate them
+2. [`docs/PLANS.md`](./docs/PLANS.md) — repository guidance, docs taxonomy, and planning rules
+3. [`docs/index.md`](./docs/index.md) — docs home
+4. [`docs/design-docs/architecture-overview.md`](./docs/design-docs/architecture-overview.md) — architecture and boundaries
+5. [`docs/design-docs/core-beliefs.md`](./docs/design-docs/core-beliefs.md) — design principles
+6. [`docs/handbook/workflow-end-to-end.md`](./docs/handbook/workflow-end-to-end.md) — operator workflow
+7. [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) — React/API runtime map
+8. [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) — canonical UI review workflow
+9. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
+10. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
 
 If you are touching `dashboard/`, `frontend/`, `api/`, or browser validation, also read:
 
@@ -99,7 +108,7 @@ For any multi-step change:
 When working on the React shell:
 
 1. Prefer the documented React stack and review workflow in [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) and [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) over inventing a new local run path.
-2. `dashboard/` is still the operator-facing shell today. `frontend/` + `api/` is the strategic migration path. Keep both working during the transition.
+2. `dashboard/` (Streamlit) is frozen to bugfix-only and will be deleted once React covers the loop-critical surfaces (Vision Decision 7). Do not add Streamlit features. `frontend/` + `api/` is the one surface going forward.
 3. `api/` is transport only. New business logic belongs in `src/stage_04_pipeline/`, `src/stage_03_judgment/`, `src/stage_02_valuation/`, `db/`, or `config/`.
 4. Preserve the current route invariants unless the active plan explicitly changes them: `/watchlist` as the landing route, selected-row focus pane on watchlist, compact non-`Overview` ticker strip, and visible valuation subviews.
 5. For React route review in WSL, prefer [`scripts/manual/launch-react-wsl.sh`](./scripts/manual/launch-react-wsl.sh). For Streamlit + Playwright, host PowerShell remains canonical.
@@ -142,7 +151,7 @@ src/
   stage_02_valuation/   Deterministic valuation and portfolio math
   stage_03_judgment/    LLM agents only
   stage_04_pipeline/    Orchestration, dashboard helpers, refresh flows
-dashboard/      Streamlit app
+dashboard/      Streamlit app (frozen, bugfix-only, retiring per Vision Decision 7)
 frontend/       React + TypeScript + Vite quote-terminal scaffold
 tests/          Offline-first test suite
 docs/           Canonical documentation

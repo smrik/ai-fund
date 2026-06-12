@@ -388,6 +388,34 @@ def test_get_ciq_comps_valuation_fwd_multiples_none_when_absent(monkeypatch):
     assert out["peer_median_tev_ebit_fwd"] is None
 
 
+def test_get_ciq_comps_detail_preserves_source_lineage(monkeypatch):
+    fake_rows = [
+        {"peer_ticker": "MSFT", "metric_key": "ebitda_ltm", "value_num": 160000.0, "is_target": 1,
+         "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
+        {"peer_ticker": "MSFT", "metric_key": "shares_out", "value_num": 7400.0, "is_target": 1,
+         "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
+        {"peer_ticker": "ORCL", "metric_key": "tev_ebitda_cy_1", "value_num": 18.0, "is_target": 0,
+         "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
+        {"peer_ticker": "CRM", "metric_key": "tev_ebitda_cy_1", "value_num": 20.0, "is_target": 0,
+         "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
+    ]
+
+    monkeypatch.setattr(ciq_adapter, "_fetch_ciq_comps_rows", lambda ticker, as_of_date=None: fake_rows)
+
+    out = ciq_adapter.get_ciq_comps_detail("MSFT")
+
+    assert out is not None
+    assert out["target"]["source_file"] == "ciq_cleandata.xlsx"
+    assert out["target"]["as_of_date"] == "2026-03-31"
+    assert out["target"]["run_id"] == 10
+    assert out["source_lineage"] == {
+        "as_of_date": "2026-03-31",
+        "run_id": 10,
+        "source_file": "ciq_cleandata.xlsx",
+    }
+    assert out["peers"][0]["source_file"] == "ciq_cleandata.xlsx"
+
+
 def test_get_ciq_snapshot_includes_forward_revenue_from_comps(monkeypatch):
     """revenue_fy1 / revenue_fy2 are extracted from comps target row and added to snapshot."""
     db_path = _workspace_tempdir("snapshot-forward-revenue") / "ciq_fwd_rev.sqlite"

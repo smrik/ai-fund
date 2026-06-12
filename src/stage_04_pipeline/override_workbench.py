@@ -160,6 +160,8 @@ def build_override_workbench(ticker: str) -> dict[str, Any]:
         "current_iv_base": round(current_result.scenario_results["base"].intrinsic_value_per_share, 2),
         "current_expected_iv": round(current_result.expected_iv, 2),
         "fields": _field_rows(ticker, baseline_inputs, effective_inputs),
+        "ciq_lineage": getattr(effective_inputs, "ciq_lineage", {}) or {},
+        "default_resolution": getattr(effective_inputs, "default_resolution", {}) or {},
         "assumption_register": assumption_register.model_dump(mode="json"),
         "assumption_register_summary": summarize_assumption_register(assumption_register),
     }

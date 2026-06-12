@@ -365,17 +365,17 @@ for arg in "$@"; do
   esac
 done
 
+if [[ "$PREVIEW" -eq 1 ]]; then
+  show_preview
+  exit 0
+fi
+
 require_command python3
 require_command npm
 require_command curl
 require_command lsof
 
 mkdir -p "$STATE_DIR"
-
-if [[ "$PREVIEW" -eq 1 ]]; then
-  show_preview
-  exit 0
-fi
 
 if [[ "$STOP" -eq 1 ]]; then
   stop_all

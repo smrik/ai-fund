@@ -38,6 +38,14 @@ def _ensure_schema(conn) -> None:
     create_tables(conn)
 
 
+def _coerce_ticker(ticker: str) -> str:
+    return coerce_ticker(ticker)
+
+
+def _now() -> str:
+    return utc_now_iso()
+
+
 def _json_dump(path: Path, payload: Any) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
@@ -112,6 +120,51 @@ def _normalise_comps_analysis(comps: dict[str, Any] | None) -> dict[str, Any]:
         "similarity_model": comps.get("similarity_model"),
         "weighting_formula": comps.get("weighting_formula"),
     }
+
+
+def _empty_analyst_prep_payload(ticker: str, *, reason: str | None = None) -> dict[str, Any]:
+    missing_data = []
+    export_metadata: dict[str, Any] = {"status": "missing"}
+    if reason:
+        missing_data.append(
+            {
+                "flag_id": "analyst_prep_export_build_error",
+                "label": "Analyst Prep unavailable",
+                "severity": "high",
+                "reason": reason,
+                "suggested_check": "Run scripts/manual/run_analyst_prep_pack.py for diagnostics.",
+                "source": "export_service",
+            }
+        )
+        export_metadata["builder_error"] = reason
+    return {
+        "ticker": coerce_ticker(ticker),
+        "generated_at": _now(),
+        "source_quality": "missing",
+        "sections": [],
+        "thesis_cards": [],
+        "driver_cards": [],
+        "comps_card": None,
+        "missing_data": missing_data,
+        "segment_driver_rows": [],
+        "evidence_packet_ids": [],
+        "evidence_map": [],
+        "conflict_groups": [],
+        "export_metadata": export_metadata,
+    }
+
+
+def build_analyst_prep_export_payload(ticker: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.analyst_prep_pack import build_analyst_prep_payload
+
+    return build_analyst_prep_payload(ticker)
+
+
+def _safe_analyst_prep_export_payload(ticker: str) -> dict[str, Any]:
+    try:
+        return build_analyst_prep_export_payload(ticker)
+    except Exception as exc:
+        return _empty_analyst_prep_payload(ticker, reason=str(exc))
 
 
 def _attach_ticker_dossier(
@@ -217,6 +270,450 @@ def _write_table(ws, start_row: int, headers: list[str], rows: list[list[Any]]) 
 def _autosize_columns(ws, widths: dict[int, float]) -> None:
     for idx, width in widths.items():
         ws.column_dimensions[get_column_letter(idx)].width = width
+
+
+def _set_title(ws, title: str, merge_range: str = "A1:H1") -> None:
+    ws["A1"] = title
+    ws["A1"].font = TITLE_FONT
+    if ":" in merge_range:
+        ws.merge_cells(merge_range)
+
+
+def _write_kv_rows(ws, start_row: int, rows: list[tuple[Any, Any]], *, label_col: int = 1, value_col: int = 2) -> int:
+    row_idx = start_row
+    for label, value in rows:
+        ws.cell(row=row_idx, column=label_col, value=label).font = SECTION_FONT
+        ws.cell(row=row_idx, column=label_col).fill = SUBTLE_FILL
+        ws.cell(row=row_idx, column=value_col, value=value)
+        row_idx += 1
+    return row_idx
+
+
+def _as_percent_change(numerator: Any, denominator: Any) -> float | None:
+    try:
+        numerator_float = float(numerator)
+        denominator_float = float(denominator)
+    except (TypeError, ValueError):
+        return None
+    if denominator_float == 0:
+        return None
+    return round((numerator_float / denominator_float - 1) * 100, 2)
+
+
+def _review_identity(payload: dict[str, Any]) -> tuple[str, str]:
+    ticker = coerce_ticker(str(payload.get("ticker") or ""))
+    return ticker, str(payload.get("company_name") or ticker)
+
+
+def _review_checks(payload: dict[str, Any], comps_analysis: dict[str, Any]) -> list[list[Any]]:
+    market = payload.get("market") or {}
+    valuation = payload.get("valuation") or {}
+    terminal = payload.get("terminal") or {}
+    ciq_lineage = payload.get("ciq_lineage") or {}
+    source_lineage = payload.get("source_lineage") or {}
+    assumptions = payload.get("assumptions") or {}
+    default_resolution = payload.get("default_resolution") or {}
+
+    rows: list[list[Any]] = []
+    for flag, active in sorted((payload.get("health_flags") or {}).items()):
+        if active:
+            rows.append(["High", "DCF health", flag, "Inspect before relying on the valuation output."])
+
+    tv_pct = terminal.get("tv_pct_of_ev")
+    if tv_pct is not None:
+        try:
+            if float(tv_pct) >= 70:
+                rows.append(["High", "Terminal value", f"Terminal value is {tv_pct}% of EV", "Pressure-test WACC, terminal growth, and exit multiple."])
+        except (TypeError, ValueError):
+            pass
+
+    current_price = market.get("price") if market.get("price") is not None else valuation.get("current_price")
+    base_iv = valuation.get("iv_base") if valuation.get("iv_base") is not None else valuation.get("base_iv")
+    upside = _as_percent_change(base_iv, current_price)
+    if upside is not None and abs(upside) >= 100:
+        rows.append(["High", "Valuation range", f"Base IV differs from price by {upside}%", "Treat as a hypothesis until data quality and drivers are reviewed."])
+
+    comps_base = (comps_analysis.get("valuation_range") or {}).get("base")
+    comps_gap = _as_percent_change(base_iv, comps_base)
+    if comps_gap is not None and abs(comps_gap) >= 50:
+        rows.append(["High", "DCF vs comps", f"DCF base differs from comps base by {comps_gap}%", "Review whether the multiple set or terminal assumptions are driving the gap."])
+
+    for flag in comps_analysis.get("audit_flags") or []:
+        rows.append(["Medium", "Comps", flag, "Review peer set and source quality before using comps as a valuation anchor."])
+
+    source_file = str(ciq_lineage.get("snapshot_source_file") or "")
+    if "fallback" in source_file.lower():
+        rows.append(["Medium", "Data source", f"Using {source_file}", "Refresh CIQ workbook if Cap IQ detail should be the source of record."])
+
+    for field, source in sorted(source_lineage.items()):
+        source_text = str(source or "")
+        if "default" in source_text.lower():
+            rows.append(["Medium", "Assumption source", f"{field}: {source_text}", "Replace default-backed fields with CIQ, filing, or PM-approved assumptions."])
+
+    for item in default_resolution.get("fields") or []:
+        if not item.get("needs_pm_review"):
+            continue
+        severity = str(item.get("severity") or "medium").title()
+        rows.append(
+            [
+                severity,
+                "Default resolution",
+                f"{item.get('field')}: {item.get('source')} ({item.get('source_class')})",
+                item.get("why_it_matters") or "Review before relying on the valuation output.",
+            ]
+        )
+
+    missing_market = [field for field in ("analyst_price_target", "analyst_recommendation") if market.get(field) is None]
+    if missing_market:
+        rows.append(["Low", "Market data", f"Missing: {', '.join(missing_market)}", "Optional context gap; does not block deterministic valuation."])
+
+    if not assumptions:
+        rows.append(["High", "Assumptions", "No assumptions payload found", "Do not use workbook until exporter payload is fixed."])
+
+    return rows or [["Info", "Review", "No active review checks generated", "Still inspect source lineage and assumptions manually."]]
+
+
+def _populate_cover_sheet(workbook, payload: dict[str, Any], comps_analysis: dict[str, Any]) -> None:
+    ws = workbook["Cover"] if "Cover" in workbook.sheetnames else workbook.create_sheet("Cover")
+    _clear_sheet(ws)
+    ticker, company_name = _review_identity(payload)
+    valuation = payload.get("valuation") or {}
+    market = payload.get("market") or {}
+    ciq_lineage = payload.get("ciq_lineage") or {}
+
+    _set_title(ws, f"{ticker} - PM Review Workbook")
+    ws["A2"] = "Generated from the export JSON payload. Visible review tabs are rewritten during export to avoid stale template values."
+    ws["A2"].alignment = Alignment(wrap_text=True)
+
+    _style_section_title(ws, "A4", "Identity")
+    _write_kv_rows(
+        ws,
+        5,
+        [
+            ("Company", company_name),
+            ("Sector", payload.get("sector")),
+            ("Generated At", payload.get("generated_at")),
+            ("Current Price", market.get("price") if market.get("price") is not None else valuation.get("current_price")),
+            ("Base IV", valuation.get("iv_base") if valuation.get("iv_base") is not None else valuation.get("base_iv")),
+            ("Bear / Bull IV", f"{valuation.get('iv_bear')} / {valuation.get('iv_bull')}"),
+            ("Snapshot Source", ciq_lineage.get("snapshot_source_file")),
+            ("Peer Count", ciq_lineage.get("peer_count")),
+        ],
+    )
+
+    _style_section_title(ws, "D4", "Top Review Checks")
+    for row_idx, row in enumerate(_review_checks(payload, comps_analysis)[:8], start=5):
+        ws.cell(row=row_idx, column=4, value=row[0]).font = SECTION_FONT
+        ws.cell(row=row_idx, column=5, value=row[1])
+        ws.cell(row=row_idx, column=6, value=row[2])
+        ws.cell(row=row_idx, column=6).alignment = Alignment(wrap_text=True)
+
+    _autosize_columns(ws, {1: 24, 2: 24, 4: 14, 5: 22, 6: 52})
+
+
+def _populate_output_sheet(workbook, payload: dict[str, Any], comps_analysis: dict[str, Any]) -> None:
+    ws = workbook["Output"] if "Output" in workbook.sheetnames else workbook.create_sheet("Output")
+    _clear_sheet(ws)
+    ticker, company_name = _review_identity(payload)
+    market = payload.get("market") or {}
+    valuation = payload.get("valuation") or {}
+    terminal = payload.get("terminal") or {}
+    assumptions = payload.get("assumptions") or {}
+    scenarios = payload.get("scenarios") or {}
+
+    _set_title(ws, f"{ticker} - Valuation Summary")
+    ws["A2"] = company_name
+    _style_section_title(ws, "A4", "Headline")
+    current_price = market.get("price") if market.get("price") is not None else valuation.get("current_price")
+    base_iv = valuation.get("iv_base") if valuation.get("iv_base") is not None else valuation.get("base_iv")
+    _write_kv_rows(
+        ws,
+        5,
+        [
+            ("Current Price", current_price),
+            ("Base IV", base_iv),
+            ("Base Upside %", _as_percent_change(base_iv, current_price)),
+            ("Expected IV", valuation.get("expected_iv")),
+            ("Bear IV", valuation.get("iv_bear")),
+            ("Bull IV", valuation.get("iv_bull")),
+        ],
+    )
+
+    _style_section_title(ws, "D4", "Scenario Summary")
+    _write_table(
+        ws,
+        5,
+        ["Scenario", "IV", "Upside %", "Probability"],
+        [
+            [name.title(), scenario.get("iv"), scenario.get("upside_pct"), scenario.get("probability")]
+            for name, scenario in scenarios.items()
+            if isinstance(scenario, dict)
+        ],
+    )
+
+    _style_section_title(ws, "A13", "Core Drivers")
+    _write_kv_rows(
+        ws,
+        14,
+        [
+            ("Growth Near %", assumptions.get("growth_near_pct")),
+            ("Growth Mid %", assumptions.get("growth_mid_pct")),
+            ("EBIT Margin Start %", assumptions.get("ebit_margin_start_pct")),
+            ("EBIT Margin Target %", assumptions.get("ebit_margin_target_pct")),
+            ("WACC %", (payload.get("wacc") or {}).get("wacc_pct")),
+            ("Terminal Growth %", terminal.get("terminal_growth_pct")),
+            ("Terminal ROIC %", terminal.get("ronic_terminal_pct")),
+            ("Exit Multiple", assumptions.get("exit_multiple")),
+            ("TV % of EV", terminal.get("tv_pct_of_ev")),
+        ],
+    )
+
+    valuation_range = comps_analysis.get("valuation_range") or {}
+    _style_section_title(ws, "D13", "Comps Cross-Check")
+    _write_kv_rows(
+        ws,
+        14,
+        [
+            ("Primary Metric", comps_analysis.get("primary_metric")),
+            ("Comps Bear / Base / Bull", f"{valuation_range.get('bear')} / {valuation_range.get('base')} / {valuation_range.get('bull')}"),
+            ("Comps Blended Base", valuation_range.get("blended_base")),
+            ("DCF vs Comps Base %", _as_percent_change(base_iv, valuation_range.get("base"))),
+            ("Peer Counts Raw / Clean", f"{(comps_analysis.get('peer_counts') or {}).get('raw')} / {(comps_analysis.get('peer_counts') or {}).get('clean')}"),
+        ],
+    )
+    _autosize_columns(ws, {1: 24, 2: 18, 4: 24, 5: 24, 6: 16, 7: 16})
+
+
+def _populate_assumptions_sheet(workbook, payload: dict[str, Any]) -> None:
+    ws = workbook["Assumptions"] if "Assumptions" in workbook.sheetnames else workbook.create_sheet("Assumptions")
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    assumptions = payload.get("assumptions") or {}
+    source_lineage = payload.get("source_lineage") or {}
+    wacc = payload.get("wacc") or {}
+
+    _set_title(ws, f"{ticker} - Assumptions Register")
+    rows = []
+    for field, value in sorted(assumptions.items()):
+        lineage_key = field
+        if field == "growth_near_pct":
+            lineage_key = "revenue_growth_near"
+        elif field == "growth_mid_pct":
+            lineage_key = "revenue_growth_mid"
+        elif field == "ebit_margin_start_pct":
+            lineage_key = "ebit_margin_start"
+        elif field == "ebit_margin_target_pct":
+            lineage_key = "ebit_margin_target"
+        rows.append([field, value, source_lineage.get(lineage_key), ""])
+    if wacc:
+        rows.append(["wacc_pct", wacc.get("wacc_pct"), source_lineage.get("wacc"), ""])
+    _write_table(ws, 4, ["Field", "Value", "Source", "PM Notes"], rows)
+    _autosize_columns(ws, {1: 28, 2: 18, 3: 30, 4: 42})
+
+
+def _populate_dcf_sheet(workbook, payload: dict[str, Any], scenario_name: str) -> None:
+    sheet_name = f"DCF_{scenario_name.title()}"
+    ws = workbook[sheet_name] if sheet_name in workbook.sheetnames else workbook.create_sheet(sheet_name)
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    scenarios = payload.get("scenarios") or {}
+    scenario = scenarios.get(scenario_name.lower()) if isinstance(scenarios.get(scenario_name.lower()), dict) else {}
+    forecast_rows = payload.get("forecast_bridge") if isinstance(payload.get("forecast_bridge"), list) else []
+
+    _set_title(ws, f"{ticker} - DCF {scenario_name.title()}")
+    _write_kv_rows(
+        ws,
+        3,
+        [
+            ("Scenario IV", scenario.get("iv") or (payload.get("valuation") or {}).get(f"iv_{scenario_name.lower()}")),
+            ("Upside %", scenario.get("upside_pct")),
+            ("Probability", scenario.get("probability")),
+            ("Forecast Detail", "Base forecast bridge only" if scenario_name.lower() != "base" else "Base forecast bridge"),
+        ],
+    )
+    _style_section_title(ws, "A9", "Forecast Bridge")
+    _write_table(
+        ws,
+        10,
+        ["Year", "Revenue", "Growth %", "EBIT Margin %", "EBIT", "NOPAT", "D&A", "Capex", "Delta NWC", "FCFF", "ROIC %"],
+        [
+            [
+                row.get("year"),
+                row.get("revenue_mm"),
+                row.get("growth_pct"),
+                row.get("ebit_margin_pct"),
+                row.get("ebit_mm"),
+                row.get("nopat_mm"),
+                row.get("da_mm"),
+                row.get("capex_mm"),
+                row.get("delta_nwc_mm"),
+                row.get("fcff_mm"),
+                row.get("roic_pct"),
+            ]
+            for row in forecast_rows
+        ],
+    )
+    _autosize_columns(ws, {1: 10, 2: 14, 3: 12, 4: 14, 5: 14, 6: 14, 7: 14, 8: 14, 9: 14, 10: 14, 11: 12})
+
+
+def _populate_equity_bridge_sheet(workbook, payload: dict[str, Any]) -> None:
+    ws = workbook["Equity_Bridge"] if "Equity_Bridge" in workbook.sheetnames else workbook.create_sheet("Equity_Bridge")
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    assumptions = payload.get("assumptions") or {}
+    terminal = payload.get("terminal") or {}
+    valuation = payload.get("valuation") or {}
+
+    _set_title(ws, f"{ticker} - Equity Bridge")
+    _style_section_title(ws, "A4", "Equity Adjustments")
+    _write_kv_rows(
+        ws,
+        5,
+        [
+            ("Net Debt", assumptions.get("net_debt_mm")),
+            ("Lease Liabilities", assumptions.get("lease_liabilities_mm")),
+            ("Non-Operating Assets", assumptions.get("non_operating_assets_mm")),
+            ("Preferred Equity", assumptions.get("preferred_equity_mm")),
+            ("Minority Interest", assumptions.get("minority_interest_mm")),
+            ("Pension Deficit", assumptions.get("pension_deficit_mm")),
+        ],
+    )
+
+    _style_section_title(ws, "D4", "Terminal Bridge")
+    _write_kv_rows(
+        ws,
+        5,
+        [
+            ("PV TV Blended", terminal.get("pv_tv_blended_mm")),
+            ("PV TV Gordon", terminal.get("pv_tv_gordon_mm")),
+            ("PV TV Exit", terminal.get("pv_tv_exit_mm")),
+            ("TV % of EV", terminal.get("tv_pct_of_ev")),
+            ("Terminal Method", terminal.get("method_used")),
+            ("Gordon Formula Mode", terminal.get("gordon_formula_mode")),
+        ],
+        label_col=4,
+        value_col=5,
+    )
+
+    _style_section_title(ws, "A14", "Per Share Output")
+    _write_kv_rows(
+        ws,
+        15,
+        [
+            ("Current Price", valuation.get("current_price")),
+            ("Bear IV", valuation.get("iv_bear")),
+            ("Base IV", valuation.get("iv_base") if valuation.get("iv_base") is not None else valuation.get("base_iv")),
+            ("Bull IV", valuation.get("iv_bull")),
+            ("Expected IV", valuation.get("expected_iv")),
+        ],
+    )
+    _autosize_columns(ws, {1: 24, 2: 18, 4: 24, 5: 18})
+
+
+def _populate_sensitivity_sheet(workbook, payload: dict[str, Any]) -> None:
+    ws = workbook["Sensitivity"] if "Sensitivity" in workbook.sheetnames else workbook.create_sheet("Sensitivity")
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    sensitivity = payload.get("sensitivity") or {}
+    _set_title(ws, f"{ticker} - Sensitivity Analysis")
+
+    next_row = 4
+    _style_section_title(ws, f"A{next_row}", "Sensitivity Summary")
+    next_row = _write_table(
+        ws,
+        next_row + 1,
+        ["Grid", "Cell Count", "Min IV", "Max IV", "Spread"],
+        [
+            [row.get("grid"), row.get("cell_count"), row.get("min_iv"), row.get("max_iv"), row.get("spread")]
+            for row in sensitivity.get("summary") or []
+        ],
+    )
+
+    for grid_name in ("wacc_x_terminal_growth", "wacc_x_exit_multiple"):
+        grid_rows = sensitivity.get(grid_name) if isinstance(sensitivity.get(grid_name), list) else []
+        next_row += 2
+        _style_section_title(ws, f"A{next_row}", grid_name.replace("_", " ").title())
+        if not grid_rows:
+            ws.cell(row=next_row + 1, column=1, value="No grid data available")
+            next_row += 2
+            continue
+        headers = list(grid_rows[0].keys())
+        next_row = _write_table(ws, next_row + 1, headers, [[row.get(header) for header in headers] for row in grid_rows])
+    _autosize_columns(ws, {1: 26, 2: 14, 3: 14, 4: 14, 5: 14, 6: 14})
+
+
+def _populate_qoe_sheet(workbook, payload: dict[str, Any]) -> None:
+    ws = workbook["QoE"] if "QoE" in workbook.sheetnames else workbook.create_sheet("QoE")
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    _set_title(ws, f"{ticker} - Quality Of Earnings / Data Quality")
+    ciq_lineage = payload.get("ciq_lineage") or {}
+    health_flags = payload.get("health_flags") or {}
+    source_lineage = payload.get("source_lineage") or {}
+    default_resolution = payload.get("default_resolution") or {}
+
+    _style_section_title(ws, "A4", "Data Lineage")
+    _write_kv_rows(
+        ws,
+        5,
+        [
+            ("Snapshot As Of", ciq_lineage.get("snapshot_as_of_date")),
+            ("Snapshot Source", ciq_lineage.get("snapshot_source_file")),
+            ("Peer Count", ciq_lineage.get("peer_count")),
+            ("CIQ Source File", ciq_lineage.get("ciq_source_file")),
+            ("CIQ Comps Source File", ciq_lineage.get("ciq_comps_source_file")),
+        ],
+    )
+
+    _style_section_title(ws, "D4", "Health Flags")
+    for row_idx, (flag, active) in enumerate(sorted(health_flags.items()), start=5):
+        ws.cell(row=row_idx, column=4, value=flag).font = SECTION_FONT
+        ws.cell(row=row_idx, column=5, value=active)
+
+    _style_section_title(ws, "A13", "Default-Backed Sources")
+    defaults = [[field, source] for field, source in sorted(source_lineage.items()) if "default" in str(source).lower()]
+    next_row = _write_table(ws, 14, ["Field", "Source"], defaults)
+
+    next_row += 2
+    _style_section_title(ws, f"A{next_row}", "Default Resolution")
+    _write_table(
+        ws,
+        next_row + 1,
+        ["Field", "Value", "Source Class", "Severity", "Needs PM Review", "Why It Matters"],
+        [
+            [
+                row.get("field"),
+                row.get("value"),
+                row.get("source_class"),
+                row.get("severity"),
+                row.get("needs_pm_review"),
+                row.get("why_it_matters"),
+            ]
+            for row in default_resolution.get("fields") or []
+        ],
+    )
+    _autosize_columns(ws, {1: 26, 2: 18, 3: 20, 4: 14, 5: 18, 6: 52})
+
+
+def _populate_review_checks_sheet(workbook, payload: dict[str, Any], comps_analysis: dict[str, Any]) -> None:
+    ws = workbook["Review Checks"] if "Review Checks" in workbook.sheetnames else workbook.create_sheet("Review Checks")
+    _clear_sheet(ws)
+    ticker, _ = _review_identity(payload)
+    _set_title(ws, f"{ticker} - Review Checks")
+    _write_table(ws, 4, ["Severity", "Area", "Finding", "Suggested PM Check"], _review_checks(payload, comps_analysis))
+    _autosize_columns(ws, {1: 14, 2: 22, 3: 56, 4: 62})
+
+
+def _populate_review_workbook_tabs(workbook, payload: dict[str, Any], comps_analysis: dict[str, Any]) -> None:
+    _populate_cover_sheet(workbook, payload, comps_analysis)
+    _populate_output_sheet(workbook, payload, comps_analysis)
+    _populate_assumptions_sheet(workbook, payload)
+    for scenario_name in ("base", "bear", "bull"):
+        _populate_dcf_sheet(workbook, payload, scenario_name)
+    _populate_equity_bridge_sheet(workbook, payload)
+    _populate_sensitivity_sheet(workbook, payload)
+    _populate_qoe_sheet(workbook, payload)
+    _populate_review_checks_sheet(workbook, payload, comps_analysis)
 
 
 def _populate_comps_sheet(workbook, ticker: str, company_name: str | None, market: dict[str, Any], comps_analysis: dict[str, Any]) -> None:
@@ -422,6 +919,166 @@ def _populate_comps_diagnostics_sheet(workbook, ticker: str, comps_analysis: dic
     _autosize_columns(ws, {1: 18, 2: 24, 3: 18, 4: 18, 5: 18, 6: 18})
 
 
+def _sheet(workbook, title: str):
+    ws = workbook[title] if title in workbook.sheetnames else workbook.create_sheet(title)
+    _clear_sheet(ws)
+    return ws
+
+
+def _populate_analyst_prep_sheets(workbook, payload: dict[str, Any]) -> None:
+    pack = payload.get("analyst_prep") or {}
+    ticker = str(pack.get("ticker") or payload.get("ticker") or "")
+
+    ws = _sheet(workbook, "Analyst_Prep")
+    _set_title(ws, f"{ticker} - Analyst Prep Pack")
+    _write_kv_rows(
+        ws,
+        4,
+        [
+            ("Generated At", pack.get("generated_at")),
+            ("Source Quality", pack.get("source_quality")),
+            ("Thesis Cards", len(pack.get("thesis_cards") or [])),
+            ("Driver Cards", len(pack.get("driver_cards") or [])),
+            ("Evidence Packets", len(pack.get("evidence_packet_ids") or [])),
+            ("Missing Flags", len(pack.get("missing_data") or [])),
+            ("Default Resolution Status", (pack.get("export_metadata") or {}).get("default_resolution_status")),
+        ],
+    )
+    _style_section_title(ws, "A12", "Missing Data")
+    _write_table(
+        ws,
+        13,
+        ["Severity", "Label", "Reason", "Suggested Check"],
+        [
+            [
+                row.get("severity"),
+                row.get("label"),
+                row.get("reason"),
+                row.get("suggested_check"),
+            ]
+            for row in pack.get("missing_data") or []
+        ]
+        or [["Info", "No missing-data flags", "", ""]],
+    )
+    _autosize_columns(ws, {1: 24, 2: 26, 4: 14, 5: 26, 6: 56, 7: 42})
+
+    ws = _sheet(workbook, "Thesis_Bridge")
+    _set_title(ws, f"{ticker} - Thesis Bridge")
+    _write_table(
+        ws,
+        4,
+        [
+            "Card ID",
+            "Title",
+            "Claim",
+            "Business Evidence",
+            "Model Implication",
+            "Linked Fields",
+            "Anchors",
+            "What Would Change Mind",
+        ],
+        [
+            [
+                card.get("card_id"),
+                card.get("title"),
+                card.get("claim"),
+                card.get("business_evidence_summary"),
+                card.get("model_implication"),
+                ", ".join(card.get("linked_assumption_fields") or []),
+                ", ".join(card.get("evidence_anchor_ids") or []),
+                card.get("what_would_change_mind"),
+            ]
+            for card in pack.get("thesis_cards") or []
+        ],
+    )
+    _autosize_columns(ws, {1: 24, 2: 24, 3: 56, 4: 56, 5: 56, 6: 30, 7: 40, 8: 56})
+
+    ws = _sheet(workbook, "Model_Driver_Map")
+    _set_title(ws, f"{ticker} - Model Driver Map")
+    _write_table(
+        ws,
+        4,
+        ["Assumption", "Label", "Current", "Proposed / Effective", "Source", "Review Status", "Rationale", "Anchors"],
+        [
+            [
+                card.get("assumption_name"),
+                card.get("label"),
+                card.get("current_value"),
+                card.get("proposed_or_effective_value"),
+                card.get("source"),
+                card.get("pm_review_status"),
+                card.get("rationale"),
+                ", ".join(card.get("evidence_anchor_ids") or []),
+            ]
+            for card in pack.get("driver_cards") or []
+        ],
+    )
+    _autosize_columns(ws, {1: 24, 2: 26, 3: 14, 4: 18, 5: 28, 6: 18, 7: 60, 8: 42})
+
+    ws = _sheet(workbook, "Evidence_Map")
+    _set_title(ws, f"{ticker} - Evidence Map")
+    _write_table(
+        ws,
+        4,
+        ["Anchor", "Packet ID", "Profile", "Kind", "Label", "Value", "Unit", "Source Quality", "Source Ref"],
+        [
+            [
+                row.get("anchor_id"),
+                row.get("packet_id"),
+                row.get("profile_name"),
+                row.get("kind"),
+                row.get("label"),
+                row.get("value"),
+                row.get("unit"),
+                row.get("source_quality"),
+                row.get("source_ref"),
+            ]
+            for row in pack.get("evidence_map") or []
+        ],
+    )
+    _autosize_columns(ws, {1: 34, 2: 12, 3: 22, 4: 22, 5: 40, 6: 18, 7: 12, 8: 18, 9: 42})
+
+    ws = _sheet(workbook, "Comps_Judgment")
+    _set_title(ws, f"{ticker} - Comps Judgment")
+    comps_card = pack.get("comps_card") or {}
+    _write_kv_rows(
+        ws,
+        4,
+        [
+            ("Peer Set Quality", comps_card.get("peer_set_quality")),
+            ("Peer Count", comps_card.get("peer_count")),
+            ("Primary Metric", comps_card.get("primary_metric")),
+            ("Premium / Discount", comps_card.get("premium_discount_argument")),
+            ("Exit Multiple Support", comps_card.get("exit_multiple_support")),
+            ("Warnings", " | ".join(comps_card.get("warnings") or [])),
+            ("Anchors", ", ".join(comps_card.get("evidence_anchor_ids") or [])),
+        ],
+    )
+    _autosize_columns(ws, {1: 26, 2: 80})
+
+    ws = _sheet(workbook, "Segment_Drivers")
+    _set_title(ws, f"{ticker} - Segment Drivers")
+    segment_rows = pack.get("segment_driver_rows") or []
+    _write_table(
+        ws,
+        4,
+        ["Segment", "Revenue Growth", "Margin", "Revenue Mix", "Source Ref", "Quality"],
+        [
+            [
+                row.get("segment"),
+                row.get("revenue_growth"),
+                row.get("margin"),
+                row.get("revenue_mix"),
+                row.get("source_ref"),
+                row.get("quality"),
+            ]
+            for row in segment_rows
+        ]
+        or [["Segment evidence missing", None, None, None, "segment_driver_rows", "missing"]],
+    )
+    _autosize_columns(ws, {1: 30, 2: 18, 3: 18, 4: 18, 5: 42, 6: 16})
+
+
 def _copy_public_artifacts(artifacts: list[dict[str, Any]], bundle_dir: Path) -> list[dict[str, Any]]:
     copied: list[dict[str, Any]] = []
     assets_dir = bundle_dir / "assets"
@@ -517,6 +1174,8 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
         raise ValueError("Ticker export template must contain a Config sheet")
     workbook["Config"]["B2"] = str(json_path.resolve())
     comps_analysis = _normalise_comps_analysis(payload.get("comps_analysis"))
+    _populate_review_workbook_tabs(workbook, payload, comps_analysis)
+    _populate_analyst_prep_sheets(workbook, payload)
     _populate_comps_sheet(
         workbook,
         coerce_ticker(ticker),
@@ -656,7 +1315,7 @@ def register_export_bundle(
     bundle_dir = Path(bundle_dir)
     bundle_dir.mkdir(parents=True, exist_ok=True)
     ticker_value = coerce_ticker(ticker) if ticker else None
-    now = utc_now_iso()
+    now = _now()
 
     with get_connection() as conn:
         _ensure_schema(conn)
@@ -808,9 +1467,19 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
     }
     comps_target = (comps.get("target_vs_peers") or {}).get("target") or {}
     peer_medians = (comps.get("target_vs_peers") or {}).get("peer_medians") or {}
+    valuation_ciq_lineage = dict(workbench.get("ciq_lineage") or {})
+    comps_lineage = comps.get("source_lineage") or {}
+    ciq_lineage = {
+        **valuation_ciq_lineage,
+        "snapshot_source_file": comps_lineage.get("source_file") or valuation_ciq_lineage.get("snapshot_source_file"),
+        "snapshot_as_of_date": comps_lineage.get("as_of_date") or valuation_ciq_lineage.get("snapshot_as_of_date"),
+        "peer_count": (comps.get("peer_counts") or {}).get("clean") or valuation_ciq_lineage.get("peer_count"),
+        "comps_source_file": comps_lineage.get("source_file") or valuation_ciq_lineage.get("comps_source_file"),
+        "comps_as_of_date": comps_lineage.get("as_of_date") or valuation_ciq_lineage.get("comps_as_of_date"),
+    }
     payload = {
         "$schema_version": "1.0",
-        "generated_at": utc_now_iso(),
+        "generated_at": _now(),
         "ticker": ticker,
         "company_name": workbench.get("company_name") or research.get("company_name") or ticker,
         "sector": workbench.get("sector"),
@@ -861,11 +1530,8 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "health_flags": dcf.get("health_flags") or {},
         "forecast_bridge": dcf.get("forecast_bridge") or [],
         "source_lineage": source_lineage,
-        "ciq_lineage": {
-            "snapshot_source_file": (comps.get("source_lineage") or {}).get("source_file"),
-            "snapshot_as_of_date": (comps.get("source_lineage") or {}).get("as_of_date"),
-            "peer_count": (comps.get("peer_counts") or {}).get("clean"),
-        },
+        "default_resolution": workbench.get("default_resolution") or {},
+        "ciq_lineage": ciq_lineage,
         "comps_detail": {
             "target": comps_target,
             "peers": comps.get("peers") or [],
@@ -873,6 +1539,7 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         },
         "comps_analysis": _normalise_comps_analysis(comps),
         "research": research,
+        "analyst_prep": _safe_analyst_prep_export_payload(ticker),
     }
     return _attach_ticker_dossier(payload, source_mode="loaded_backend_state")
 
@@ -890,7 +1557,7 @@ def _build_snapshot_ticker_payload(ticker: str) -> tuple[dict[str, Any], int]:
     comps = dashboard_snapshot.get("comps_view") or {}
     payload = {
             "$schema_version": "1.0",
-            "generated_at": utc_now_iso(),
+            "generated_at": _now(),
             "ticker": ticker,
             "company_name": snapshot.get("company_name") or memo.get("company_name") or ticker,
             "sector": snapshot.get("sector") or memo.get("sector"),

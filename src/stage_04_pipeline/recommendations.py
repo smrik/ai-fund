@@ -215,7 +215,7 @@ def extract_recommendations(
                     rationale=rationale,
                     citation="; ".join(qoe_proposal.evidence_refs),
                     status=existing_statuses.get(key, "pending"),
-                    qoe_proposal=qoe_proposal.model_dump(),
+                    qoe_proposal=qoe_proposal.model_dump(mode="json"),
                 ))
 
     # ── AccountingRecast → EV bridge items + optional EBIT ───────────────────

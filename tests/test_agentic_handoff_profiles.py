@@ -17,6 +17,7 @@ def test_profile_registry_contains_required_profiles():
     assert "comps_analysis" in names
     assert "risk_review" in names
     assert "valuation_review" in names
+    assert "analyst_prep_synthesis" in names
 
 
 def test_earnings_profile_declares_allowed_packets_observations_and_proposals():
@@ -66,6 +67,18 @@ def test_not_runnable_profiles_are_explicitly_marked():
     assert risk_profile.runnable is True
     assert risk_profile.not_runnable_reason is None
     assert risk_profile.runner_key == GROUNDED_OBSERVATION_RUNNER_KEY
+
+
+def test_analyst_prep_synthesis_profile_uses_grounded_runner_without_model_edits():
+    profile = get_agentic_handoff_profile("analyst_prep_synthesis")
+
+    assert profile.runner_key == GROUNDED_OBSERVATION_RUNNER_KEY
+    assert profile.runnable is True
+    assert EvidencePacketKind.analyst_prep_synthesis in profile.evidence_packet_kinds
+    assert "thesis_bridge_supported" in profile.allowed_observation_types
+    assert "diligence_gap_identified" in profile.allowed_observation_types
+    assert profile.prompt_key == "analyst_prep_synthesis"
+    assert profile.translator_rule_group == "analyst_prep_synthesis"
 
 
 def test_unknown_profile_lookup_fails_closed():

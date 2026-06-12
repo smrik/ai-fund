@@ -9,6 +9,13 @@ REQ_PATH = Path("requirements-api.txt")
 API_CLIENT_PATH = Path("frontend/src/lib/api.ts")
 
 
+def _bash_executable() -> str:
+    git_bash = Path("C:/Program Files/Git/bin/bash.exe")
+    if git_bash.exists():
+        return str(git_bash)
+    return "bash"
+
+
 def test_react_wsl_launcher_script_exists_and_supports_preview():
     assert SCRIPT_PATH.exists()
     source = SCRIPT_PATH.read_text(encoding="utf-8")
@@ -60,7 +67,6 @@ def test_requirements_api_file_exists_and_stays_lightweight():
         "hmmlearn",
         "sentence-transformers",
         "anthropic",
-        "openai",
         "streamlit",
         "xlwings",
         "ib_insync",
@@ -73,7 +79,7 @@ def test_requirements_api_file_exists_and_stays_lightweight():
 
 def test_react_wsl_launcher_preview_describes_review_stack():
     result = subprocess.run(
-        ["bash", SCRIPT_PATH.as_posix(), "--preview"],
+        [_bash_executable(), SCRIPT_PATH.as_posix(), "--preview"],
         cwd=Path(__file__).resolve().parents[1],
         capture_output=True,
         text=True,

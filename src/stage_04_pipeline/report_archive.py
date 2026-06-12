@@ -14,6 +14,10 @@ def _ensure_schema(conn) -> None:
     create_tables(conn)
 
 
+def _now() -> str:
+    return utc_now_iso()
+
+
 def _serialize(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="python")
@@ -24,9 +28,6 @@ def _serialize(value: Any) -> Any:
     if isinstance(value, list):
         return [_serialize(item) for item in value]
     return value
-
-
-# _coerce_ticker removed — use coerce_ticker from src.utils
 
 
 def _extract_base_iv(memo_payload: dict[str, Any]) -> float | None:
@@ -98,7 +99,7 @@ def save_report_snapshot(
             conn,
             {
                 "ticker": archive_ticker,
-                "created_at": utc_now_iso(),
+                "created_at": _now(),
                 "run_group_ts": _extract_run_group_ts(trace_payload),
                 "company_name": memo_payload.get("company_name"),
                 "sector": memo_payload.get("sector"),

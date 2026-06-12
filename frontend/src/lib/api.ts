@@ -1,5 +1,6 @@
 import type {
   AgenticHandoffRunPayload,
+  AnalystPrepPack,
   AssumptionsPayload,
   AssumptionsPreviewPayload,
   ArchivedSnapshotPayload,
@@ -253,6 +254,14 @@ export function getMarket(ticker: string): Promise<MarketPayload> {
 
 export function getResearch(ticker: string): Promise<ResearchPayload> {
   return requestJSON<ResearchPayload>(`/tickers/${encodeURIComponent(ticker)}/research`);
+}
+
+export function getAnalystPrep(ticker: string): Promise<AnalystPrepPack> {
+  return requestJSON<AnalystPrepPack>(`/tickers/${encodeURIComponent(ticker)}/analyst-prep`);
+}
+
+export function runAnalystPrep(ticker: string): Promise<RunPayload> {
+  return requestJSON<RunPayload>(`/tickers/${encodeURIComponent(ticker)}/analyst-prep/run`, { method: "POST" });
 }
 
 export function getAudit(ticker: string): Promise<AuditPayload> {

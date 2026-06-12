@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import yaml
@@ -11,6 +11,7 @@ from config import ROOT_DIR
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail, get_ciq_comps_valuation, get_ciq_snapshot
 from src.stage_00_data.sec_filing_metrics import get_bridge_items_from_xbrl
+from src.stage_02_valuation.public_comps_fallback import build_public_market_fallback_comps_detail
 from src.stage_02_valuation.story_drivers import apply_story_driver_adjustments, resolve_story_driver_profile
 from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.stage_02_valuation.wacc import (
@@ -70,6 +71,7 @@ class ValuationInputsWithLineage:
     story_profile: dict[str, Any] | None = None
     story_adjustments: dict[str, Any] | None = None
     wacc_method_spread_high: bool = False
+    default_resolution: dict[str, Any] = field(default_factory=dict)
 
 
 def _mm(v: float | None) -> float | None:
@@ -88,6 +90,173 @@ def _pick(values: list[tuple[Any, str]], default_value: Any, default_source: str
         if value is not None:
             return value, source
     return default_value, default_source
+
+
+def _detail_median(comps_detail: dict[str, Any] | None, metric: str) -> Any:
+    medians = (comps_detail or {}).get("medians") or {}
+    return medians.get(metric)
+
+
+def _detail_source(comps_detail: dict[str, Any] | None, metric: str) -> str:
+    source_lineage = (comps_detail or {}).get("source_lineage") or {}
+    source = source_lineage.get("source") or source_lineage.get("source_file") or "comps_detail"
+    return f"{source}_{metric}"
+
+
+def _public_comps_fallback_enabled(ticker: str, sector: str) -> bool:
+    overrides = load_valuation_overrides()
+    ticker_blob = overrides.get("tickers", {}).get(ticker.upper(), {}) or {}
+    sector_blob = overrides.get("sectors", {}).get(sector, {}) or {}
+    global_blob = overrides.get("global", {}) or {}
+    return bool(
+        ticker_blob.get("public_comps_fallback")
+        or ticker_blob.get("peers")
+        or sector_blob.get("public_comps_fallback")
+        or global_blob.get("public_comps_fallback")
+    )
+
+
+def _public_comps_fallback_peers(ticker: str) -> list[str] | None:
+    overrides = load_valuation_overrides()
+    ticker_blob = overrides.get("tickers", {}).get(ticker.upper(), {}) or {}
+    peers = ticker_blob.get("peers")
+    return [str(peer).upper() for peer in peers] if peers is not None else None
+
+
+def _build_public_market_fallback_comps_detail(ticker: str, sector: str, market: dict[str, Any]) -> dict[str, Any] | None:
+    if not _public_comps_fallback_enabled(ticker, sector):
+        return None
+    comps_detail = build_public_market_fallback_comps_detail(
+        ticker,
+        market=market,
+        sector=sector,
+        explicit_peers=_public_comps_fallback_peers(ticker),
+        market_data_client=md_client,
+    )
+    return comps_detail
+
+
+def _classify_source(source: Any) -> str:
+    text = str(source or "").lower()
+    if not text:
+        return "missing"
+    if "override" in text or "approved" in text:
+        return "pm_override"
+    if "ciq" in text:
+        return "ciq"
+    if "edgar" in text or "xbrl" in text:
+        return "filing"
+    if "yfinance" in text:
+        return "public_market"
+    if "comps" in text or "peer" in text:
+        return "peer_prior"
+    if "story" in text:
+        return "story_prior"
+    if "default" in text:
+        return "missing_default"
+    return "other"
+
+
+def _default_resolution_report(
+    *,
+    drivers: ForecastDrivers,
+    source_lineage: dict[str, str],
+    defaults: dict[str, float],
+    ciq_comps_detail: dict[str, Any] | None,
+) -> dict[str, Any]:
+    field_specs: dict[str, dict[str, Any]] = {
+        "exit_multiple": {
+            "value": drivers.exit_multiple,
+            "fallback_value": defaults["exit_multiple"],
+            "severity": "high",
+            "preferred_sources": ["ciq_comps_forward", "ciq_comps_ltm", "comps_detail_median", "pm_override"],
+            "why_it_matters": "Directly affects terminal value and equity value.",
+        },
+        "dso_start": {
+            "value": drivers.dso_start,
+            "fallback_value": defaults["dso"],
+            "severity": "medium",
+            "preferred_sources": ["ciq", "statement_derived", "yfinance", "peer_prior"],
+            "why_it_matters": "Affects working-capital cash drag.",
+        },
+        "dio_start": {
+            "value": drivers.dio_start,
+            "fallback_value": defaults["dio"],
+            "severity": "medium",
+            "preferred_sources": ["ciq", "statement_derived", "yfinance", "peer_prior", "not_applicable"],
+            "why_it_matters": "Affects inventory investment and working-capital cash drag.",
+        },
+        "dpo_start": {
+            "value": drivers.dpo_start,
+            "fallback_value": defaults["dpo"],
+            "severity": "medium",
+            "preferred_sources": ["ciq", "statement_derived", "yfinance", "peer_prior"],
+            "why_it_matters": "Affects supplier financing and working-capital cash drag.",
+        },
+        "pension_deficit": {
+            "value": drivers.pension_deficit,
+            "fallback_value": 0.0,
+            "severity": "medium",
+            "preferred_sources": ["ciq", "edgar_xbrl", "explicit_structural_zero"],
+            "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        },
+        "minority_interest": {
+            "value": drivers.minority_interest,
+            "fallback_value": 0.0,
+            "severity": "low",
+            "preferred_sources": ["ciq", "yfinance", "edgar_xbrl", "explicit_structural_zero"],
+            "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        },
+        "preferred_equity": {
+            "value": drivers.preferred_equity,
+            "fallback_value": 0.0,
+            "severity": "low",
+            "preferred_sources": ["ciq", "yfinance", "edgar_xbrl", "explicit_structural_zero"],
+            "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        },
+    }
+
+    fields: list[dict[str, Any]] = []
+    counts = {"resolved": 0, "review_required": 0}
+    high_review = 0
+    fallback_medians = (ciq_comps_detail or {}).get("medians") or {}
+    for name, spec in field_specs.items():
+        source = source_lineage.get(name)
+        source_class = _classify_source(source)
+        source_text = str(source or "")
+        is_default = source_class == "missing_default" or "default" in source_text.lower()
+        is_story_only = source_class == "story_prior" and name in {"exit_multiple"}
+        needs_review = bool(is_default or is_story_only)
+        if source_text == "default" and spec["fallback_value"] == 0.0 and float(spec["value"] or 0.0) == 0.0:
+            source_class = "unproven_zero"
+        if needs_review and spec["severity"] == "high":
+            high_review += 1
+        counts["review_required" if needs_review else "resolved"] += 1
+        fields.append(
+            {
+                "field": name,
+                "value": spec["value"],
+                "source": source,
+                "source_class": source_class,
+                "fallback_value": spec["fallback_value"],
+                "severity": spec["severity"],
+                "needs_pm_review": needs_review,
+                "preferred_sources": spec["preferred_sources"],
+                "why_it_matters": spec["why_it_matters"],
+                "available_comps_medians": fallback_medians if name == "exit_multiple" and fallback_medians else None,
+            }
+        )
+
+    status = "ok"
+    if high_review:
+        status = "review_required_high"
+    elif counts["review_required"]:
+        status = "review_required"
+    return {
+        "status": status,
+        "counts": counts,
+        "fields": fields,
+    }
 
 
 def _canonical_source(source_detail: str) -> str:
@@ -267,6 +436,10 @@ def build_valuation_inputs(
     sector = mkt.get("sector", "") or ""
     industry = mkt.get("industry", "") or ""
     defaults = SECTOR_DEFAULTS.get(sector, SECTOR_DEFAULTS["_default"])
+    public_comps_fallback_used = False
+    if not ciq_comps and not ciq_comps_detail:
+        ciq_comps_detail = _build_public_market_fallback_comps_detail(ticker, sector, mkt)
+        public_comps_fallback_used = bool(ciq_comps_detail)
 
     # FRED live Rf override (best-effort — falls back to config if unavailable)
     _fred_rf: float | None = None
@@ -444,8 +617,12 @@ def build_valuation_inputs(
             [
                 ((ciq_comps or {}).get("peer_median_tev_ebit_fwd"), "ciq_comps_tev_ebit_fwd"),
                 ((ciq_comps or {}).get("peer_median_tev_ebit_ltm"), "ciq_comps_tev_ebit_ltm"),
+                (_detail_median(ciq_comps_detail, "tev_ebit_fwd"), _detail_source(ciq_comps_detail, "tev_ebit_fwd")),
+                (_detail_median(ciq_comps_detail, "tev_ebit_ltm"), _detail_source(ciq_comps_detail, "tev_ebit_ltm")),
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_fwd"), "ciq_comps_tev_ebitda_fwd_fallback"),
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_ltm"), "ciq_comps_tev_ebitda_fallback"),
+                (_detail_median(ciq_comps_detail, "tev_ebitda_fwd"), _detail_source(ciq_comps_detail, "tev_ebitda_fwd_fallback")),
+                (_detail_median(ciq_comps_detail, "tev_ebitda_ltm"), _detail_source(ciq_comps_detail, "tev_ebitda_ltm_fallback")),
             ],
             defaults["exit_multiple"],
             "default",
@@ -455,8 +632,12 @@ def build_valuation_inputs(
             [
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_fwd"), "ciq_comps_tev_ebitda_fwd"),
                 ((ciq_comps or {}).get("peer_median_tev_ebitda_ltm"), "ciq_comps_tev_ebitda_ltm"),
+                (_detail_median(ciq_comps_detail, "tev_ebitda_fwd"), _detail_source(ciq_comps_detail, "tev_ebitda_fwd")),
+                (_detail_median(ciq_comps_detail, "tev_ebitda_ltm"), _detail_source(ciq_comps_detail, "tev_ebitda_ltm")),
                 ((ciq_comps or {}).get("peer_median_tev_ebit_fwd"), "ciq_comps_tev_ebit_fwd_fallback"),
                 ((ciq_comps or {}).get("peer_median_tev_ebit_ltm"), "ciq_comps_tev_ebit_fallback"),
+                (_detail_median(ciq_comps_detail, "tev_ebit_fwd"), _detail_source(ciq_comps_detail, "tev_ebit_fwd_fallback")),
+                (_detail_median(ciq_comps_detail, "tev_ebit_ltm"), _detail_source(ciq_comps_detail, "tev_ebit_ltm_fallback")),
             ],
             defaults["exit_multiple"],
             "default",
@@ -780,6 +961,14 @@ def build_valuation_inputs(
             except Exception:
                 pass
 
+    default_resolution = _default_resolution_report(
+        drivers=drivers,
+        source_lineage=source_lineage,
+        defaults=defaults,
+        ciq_comps_detail=ciq_comps_detail,
+    )
+    source_lineage["default_resolution_status"] = default_resolution["status"]
+
     return ValuationInputsWithLineage(
         ticker=ticker,
         company_name=mkt.get("name", ""),
@@ -807,6 +996,9 @@ def build_valuation_inputs(
             "comps_iv_ev_ebit": (ciq_comps or {}).get("implied_price_ev_ebit") if ciq_comps else None,
             "comps_iv_pe": (ciq_comps or {}).get("implied_price_pe") if ciq_comps else None,
             "comps_iv_base": (ciq_comps or {}).get("implied_price_base") if ciq_comps else None,
+            "public_comps_fallback_used": public_comps_fallback_used,
+            "public_comps_fallback_source_file": ((ciq_comps_detail or {}).get("source_lineage") or {}).get("source_file") if public_comps_fallback_used else None,
+            "public_comps_fallback_peer_count": len((ciq_comps_detail or {}).get("peers") or []) if public_comps_fallback_used else None,
         },
         wacc_inputs={
             # Top-level WACC values are the effective drivers used by DCF after
@@ -839,4 +1031,5 @@ def build_valuation_inputs(
         story_profile=asdict(story_profile),
         story_adjustments=story_adjustments,
         wacc_method_spread_high=_wacc_spread_high,
+        default_resolution=default_resolution,
     )
