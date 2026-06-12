@@ -26,9 +26,9 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
-- [Analyst Prep Pack MVP](./active/2026-06-07-analyst-prep-pack.md)
-- [Agentic Handoff MVP Hardening](./active/2026-05-22-agentic-handoff-mvp-hardening.md)
-- [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md) — now the canonical Streamlit-retirement workstream (Vision Decision 7)
+- [Weekly Loop v1 (Milestone 1)](./active/2026-06-12-weekly-loop-v1.md) — session runbook, preflight, friction log, full-suite CI, queue-in-anger verification
+- [Evidence Acquisition: EDGAR End-To-End And Quartr Transcripts](./active/2026-06-13-evidence-acquisition-edgar-quartr.md) — unblocks 4 of 6 agent profiles; transcript contract with REST/import dual transport
+- [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md) — canonical Streamlit-retirement workstream; full parity push starts with Milestone 2 (Vision Decision 7)
 
 ## Future / Queued
 
@@ -38,6 +38,8 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Completed
 
+- [Analyst Prep Pack MVP](./completed/2026-06-07-analyst-prep-pack.md)
+- [Agentic Handoff MVP Hardening](./completed/2026-05-22-agentic-handoff-mvp-hardening.md)
 - [Internal Release Readiness And Mock Publish](./completed/2026-04-01-internal-release-readiness-and-mock-publish.md)
 - [GitHub Hygiene And Repo Hardening](./completed/2026-03-31-github-hygiene-and-repo-hardening.md)
 - [Universe Watchlist Landing Page](./completed/2026-03-28-universe-watchlist-landing-page.md)
