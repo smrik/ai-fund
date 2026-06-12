@@ -75,3 +75,4 @@ output/
 course/
 py-yfinance/
 src/data/cache/
+nppBackup/

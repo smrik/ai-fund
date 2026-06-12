@@ -59,6 +59,8 @@ Use these buckets consistently:
   - `future/` for queued work and backlog docs
   - `completed/` for shipped plans that still matter as historical implementation records
   - `archive/` for superseded or legacy plans that are no longer canonical
+- `docs/reviews/`
+  - dated review artifacts: workbook gap logs, weekly-loop friction logs, audit findings
 - `docs/exec-plans/`
   - archived execution artifacts and older status trackers
   - this is not the primary planning system anymore
@@ -161,6 +163,7 @@ These rules are mandatory:
 - [Reference Index](./reference/index.md)
 - [Strategy Docs](./strategy/index.md)
 - [Plan Registry](./plans/index.md)
+- [Six-Month Execution Roadmap](./plans/future/2026-06-12-six-month-execution-roadmap.md)
 - [Alpha Pod Product Roadmap Dashboard](./plans/future/2026-04-02-alpha-pod-roadmap-dashboard.md)
 - [Execution Artifact Archive](./exec-plans/index.md)
 - [General Archive](./archive/index.md)
