@@ -1,15 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import tempfile
+import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
+from openpyxl.utils import column_index_from_string, get_column_letter
 
 from db.schema import create_tables, get_connection
 from db.ticker_dossier import upsert_ticker_dossier_snapshot
@@ -26,12 +30,60 @@ from src.utils import coerce_ticker, utc_now_iso
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EXPORT_ROOT = PROJECT_ROOT / "data" / "exports" / "generated"
 TICKER_EXPORT_TEMPLATE = PROJECT_ROOT / "templates" / "ticker_review.xlsx"
+EXCEL_MODEL_TEMPLATE = PROJECT_ROOT / "templates" / "20260614_template-GPT.xlsx"
+VALUATION_JSON_DIR = PROJECT_ROOT / "data" / "valuations" / "json"
 TITLE_FONT = Font(name="Calibri", size=14, bold=True, color="1F3864")
 SECTION_FONT = Font(name="Calibri", size=11, bold=True)
 HEADER_FONT = Font(name="Calibri", size=10, bold=True, color="FFFFFF")
 HEADER_FILL = PatternFill(fill_type="solid", start_color="1F3864", end_color="1F3864")
 SECTION_FILL = PatternFill(fill_type="solid", start_color="D9E1F2", end_color="D9E1F2")
 SUBTLE_FILL = PatternFill(fill_type="solid", start_color="F5F7FA", end_color="F5F7FA")
+HISTORICAL_DATA_TITLE_ROW = 66
+HISTORICAL_DATA_HEADER_ROW = 67
+HISTORICAL_DATA_FIRST_ROW = 68
+HISTORICAL_DATA_MAX_ROWS = 10
+HISTORICAL_DATA_HEADERS = [
+    "period",
+    "fiscal_year",
+    "revenue_mm",
+    "revenue_growth_pct",
+    "ebit_mm",
+    "ebit_margin_pct",
+    "ebitda_mm",
+    "ebitda_margin_pct",
+    "da_mm",
+    "da_pct",
+    "capex_mm",
+    "capex_pct",
+    "cfo_mm",
+    "debt_mm",
+    "cash_mm",
+    "net_debt_mm",
+    "total_assets_mm",
+    "total_equity_mm",
+    "source_file",
+]
+HISTORICAL_MODEL_ROWS = [
+    ("Revenue ($mm)", "C"),
+    ("Revenue Growth %", "D"),
+    ("EBIT ($mm)", "E"),
+    ("EBIT Margin %", "F"),
+    ("EBITDA ($mm)", "G"),
+    ("EBITDA Margin %", "H"),
+    ("D&A ($mm)", "I"),
+    ("D&A % Revenue", "J"),
+    ("Capex ($mm)", "K"),
+    ("Capex % Revenue", "L"),
+    ("CFO ($mm)", "M"),
+    ("Net Debt ($mm)", "P"),
+    ("Total Assets ($mm)", "Q"),
+    ("Total Equity ($mm)", "R"),
+]
+XLSX_MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+XLSX_REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
+ET.register_namespace("", XLSX_MAIN_NS)
+ET.register_namespace("r", XLSX_REL_NS)
 
 
 def _ensure_schema(conn) -> None:
@@ -252,6 +304,12 @@ def _style_section_title(ws, cell_ref: str, title: str) -> None:
     ws[cell_ref].fill = SECTION_FILL
 
 
+def _excel_cell_value(value: Any) -> Any:
+    if isinstance(value, (dict, list, tuple, set)):
+        return json.dumps(value, separators=(",", ":"), default=str)
+    return value
+
+
 def _write_table(ws, start_row: int, headers: list[str], rows: list[list[Any]]) -> int:
     for idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=start_row, column=idx, value=header)
@@ -261,10 +319,225 @@ def _write_table(ws, start_row: int, headers: list[str], rows: list[list[Any]]) 
     data_row = start_row + 1
     for row_values in rows:
         for idx, value in enumerate(row_values, start=1):
-            cell = ws.cell(row=data_row, column=idx, value=value)
+            cell = ws.cell(row=data_row, column=idx, value=_excel_cell_value(value))
             cell.alignment = Alignment(horizontal="left", vertical="center")
         data_row += 1
     return data_row
+
+
+def _xlsx_q(tag: str) -> str:
+    return f"{{{XLSX_MAIN_NS}}}{tag}"
+
+
+def _xlsx_sheet_paths(parts: dict[str, bytes]) -> dict[str, str]:
+    workbook_root = ET.fromstring(parts["xl/workbook.xml"])
+    rels_root = ET.fromstring(parts["xl/_rels/workbook.xml.rels"])
+    rels = {
+        rel.attrib["Id"]: rel.attrib["Target"]
+        for rel in rels_root.findall(f"{{{PACKAGE_REL_NS}}}Relationship")
+    }
+    paths: dict[str, str] = {}
+    for sheet in workbook_root.find(_xlsx_q("sheets")) or []:
+        name = sheet.attrib.get("name")
+        rid = sheet.attrib.get(f"{{{XLSX_REL_NS}}}id")
+        target = rels.get(rid or "")
+        if not name or not target:
+            continue
+        target = target.lstrip("/")
+        paths[name] = target if target.startswith("xl/") else f"xl/{target}"
+    return paths
+
+
+def _cell_ref(column: int, row: int) -> str:
+    return f"{get_column_letter(column)}{row}"
+
+
+def _cell_sort_key(cell) -> tuple[int, int]:
+    ref = cell.attrib.get("r", "A1")
+    col = "".join(ch for ch in ref if ch.isalpha()) or "A"
+    row = int("".join(ch for ch in ref if ch.isdigit()) or "1")
+    return row, column_index_from_string(col)
+
+
+def _ensure_xml_row(sheet_data, row_idx: int):
+    for row in sheet_data.findall(_xlsx_q("row")):
+        if int(row.attrib.get("r", "0")) == row_idx:
+            return row
+    row = ET.Element(_xlsx_q("row"), {"r": str(row_idx)})
+    sheet_data.append(row)
+    sheet_data[:] = sorted(sheet_data.findall(_xlsx_q("row")), key=lambda item: int(item.attrib.get("r", "0")))
+    return row
+
+
+def _ensure_xml_cell(row, column: int, row_idx: int):
+    ref = _cell_ref(column, row_idx)
+    for cell in row.findall(_xlsx_q("c")):
+        if cell.attrib.get("r") == ref:
+            return cell
+    cell = ET.Element(_xlsx_q("c"), {"r": ref})
+    row.append(cell)
+    row[:] = sorted(row.findall(_xlsx_q("c")), key=_cell_sort_key)
+    return cell
+
+
+def _clear_cell_children(cell) -> None:
+    for child in list(cell):
+        cell.remove(child)
+
+
+def _set_xml_cell_value(root, row_idx: int, column: int, value: Any) -> None:
+    sheet_data = root.find(_xlsx_q("sheetData"))
+    if sheet_data is None:
+        sheet_data = ET.SubElement(root, _xlsx_q("sheetData"))
+    row = _ensure_xml_row(sheet_data, row_idx)
+    cell = _ensure_xml_cell(row, column, row_idx)
+    _clear_cell_children(cell)
+    cell.attrib.pop("t", None)
+    value = _excel_cell_value(value)
+    if value is None:
+        cell.attrib.pop("t", None)
+        return
+    if isinstance(value, bool):
+        cell.attrib["t"] = "b"
+        ET.SubElement(cell, _xlsx_q("v")).text = "1" if value else "0"
+        return
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        ET.SubElement(cell, _xlsx_q("v")).text = str(value)
+        return
+    cell.attrib["t"] = "inlineStr"
+    inline = ET.SubElement(cell, _xlsx_q("is"))
+    ET.SubElement(inline, _xlsx_q("t")).text = str(value)
+
+
+def _set_xml_cell_formula(root, row_idx: int, column: int, formula: str) -> None:
+    sheet_data = root.find(_xlsx_q("sheetData"))
+    if sheet_data is None:
+        sheet_data = ET.SubElement(root, _xlsx_q("sheetData"))
+    row = _ensure_xml_row(sheet_data, row_idx)
+    cell = _ensure_xml_cell(row, column, row_idx)
+    _clear_cell_children(cell)
+    cell.attrib.pop("t", None)
+    ET.SubElement(cell, _xlsx_q("f")).text = formula.lstrip("=")
+
+
+def _patch_dimension(root, max_column: int, max_row: int) -> None:
+    dimension = root.find(_xlsx_q("dimension"))
+    if dimension is not None:
+        dimension.attrib["ref"] = f"A1:{get_column_letter(max_column)}{max_row}"
+
+
+def _patch_xml_config_sheet(xml_bytes: bytes, source_json: Path) -> bytes:
+    root = ET.fromstring(xml_bytes)
+    _set_xml_cell_value(root, 2, 2, str(source_json.resolve()))
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def _historical_rows_from_json(source_json: Path) -> list[dict[str, Any]]:
+    try:
+        payload = json.loads(Path(source_json).read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    rows = ((payload.get("excel_flat") or {}).get("historical_financials") or payload.get("historical_financials") or [])
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _patch_xml_data_sheet(xml_bytes: bytes, source_json: Path) -> bytes:
+    root = ET.fromstring(xml_bytes)
+    rows = _historical_rows_from_json(source_json)
+    _set_xml_cell_value(root, HISTORICAL_DATA_TITLE_ROW, 1, "HistoricalFinancials")
+    for col_idx, header in enumerate(HISTORICAL_DATA_HEADERS, start=1):
+        _set_xml_cell_value(root, HISTORICAL_DATA_HEADER_ROW, col_idx, header)
+    for offset, row in enumerate(rows[:HISTORICAL_DATA_MAX_ROWS]):
+        excel_row = HISTORICAL_DATA_FIRST_ROW + offset
+        for col_idx, header in enumerate(HISTORICAL_DATA_HEADERS, start=1):
+            _set_xml_cell_value(root, excel_row, col_idx, row.get(header))
+    _patch_dimension(root, len(HISTORICAL_DATA_HEADERS), HISTORICAL_DATA_FIRST_ROW + HISTORICAL_DATA_MAX_ROWS - 1)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def _patch_xml_historical_review_sheet(
+    xml_bytes: bytes,
+    *,
+    start_row: int,
+    label_col: int,
+    first_data_col: int,
+    last_data_col: int,
+) -> bytes:
+    root = ET.fromstring(xml_bytes)
+    _set_xml_cell_value(root, start_row, label_col, "HISTORICAL ACTUALS  ($mm / ratios)")
+    _set_xml_cell_value(root, start_row + 1, label_col, "Metric")
+    for col_idx in range(first_data_col, last_data_col + 1):
+        source_offset = col_idx - first_data_col + 1
+        _set_xml_cell_formula(
+            root,
+            start_row + 1,
+            col_idx,
+            f'IFERROR(INDEX(_Data!$B${HISTORICAL_DATA_FIRST_ROW}:'
+            f'$B${HISTORICAL_DATA_FIRST_ROW + HISTORICAL_DATA_MAX_ROWS - 1},'
+            f'{source_offset}),"")',
+        )
+    for row_offset, (label, source_col) in enumerate(HISTORICAL_MODEL_ROWS, start=2):
+        excel_row = start_row + row_offset
+        _set_xml_cell_value(root, excel_row, label_col, label)
+        for col_idx in range(first_data_col, last_data_col + 1):
+            source_offset = col_idx - first_data_col + 1
+            _set_xml_cell_formula(
+                root,
+                excel_row,
+                col_idx,
+                f'IFERROR(INDEX(_Data!${source_col}${HISTORICAL_DATA_FIRST_ROW}:'
+                f'${source_col}${HISTORICAL_DATA_FIRST_ROW + HISTORICAL_DATA_MAX_ROWS - 1},'
+                f'{source_offset}),"")',
+            )
+    source_row = start_row + len(HISTORICAL_MODEL_ROWS) + 2
+    _set_xml_cell_value(root, source_row, label_col, "Source file")
+    for col_idx in range(first_data_col, last_data_col + 1):
+        source_offset = col_idx - first_data_col + 1
+        _set_xml_cell_formula(
+            root,
+            source_row,
+            col_idx,
+            f'IFERROR(INDEX(_Data!$S${HISTORICAL_DATA_FIRST_ROW}:'
+            f'$S${HISTORICAL_DATA_FIRST_ROW + HISTORICAL_DATA_MAX_ROWS - 1},'
+            f'{source_offset}),"")',
+        )
+    _patch_dimension(root, max(last_data_col, 14), source_row)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
+def _patch_excel_model_package(workbook_path: Path, source_json: Path) -> None:
+    with ZipFile(workbook_path, "r") as zin:
+        parts = {name: zin.read(name) for name in zin.namelist()}
+    sheet_paths = _xlsx_sheet_paths(parts)
+    if "Config" not in sheet_paths:
+        raise ValueError("Excel model template must contain a Config sheet")
+
+    replacements: dict[str, bytes] = {
+        sheet_paths["Config"]: _patch_xml_config_sheet(parts[sheet_paths["Config"]], source_json)
+    }
+    if "_Data" in sheet_paths:
+        replacements[sheet_paths["_Data"]] = _patch_xml_data_sheet(parts[sheet_paths["_Data"]], source_json)
+    scenario_specs = {
+        "DCF_Base": {"start_row": 52, "label_col": 2, "first_data_col": 3, "last_data_col": 12},
+        "DCF_Bear": {"start_row": 54, "label_col": 1, "first_data_col": 2, "last_data_col": 11},
+        "DCF_Bull": {"start_row": 54, "label_col": 1, "first_data_col": 2, "last_data_col": 11},
+    }
+    for sheet_name, spec in scenario_specs.items():
+        path = sheet_paths.get(sheet_name)
+        if path:
+            replacements[path] = _patch_xml_historical_review_sheet(parts[path], **spec)
+
+    fd, tmp_name = tempfile.mkstemp(suffix=".xlsx", dir=str(workbook_path.parent))
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        with ZipFile(tmp_path, "w", ZIP_DEFLATED) as zout:
+            for name, content in parts.items():
+                zout.writestr(name, replacements.get(name, content))
+        os.replace(tmp_path, workbook_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
 
 
 def _autosize_columns(ws, widths: dict[int, float]) -> None:
@@ -284,7 +557,7 @@ def _write_kv_rows(ws, start_row: int, rows: list[tuple[Any, Any]], *, label_col
     for label, value in rows:
         ws.cell(row=row_idx, column=label_col, value=label).font = SECTION_FONT
         ws.cell(row=row_idx, column=label_col).fill = SUBTLE_FILL
-        ws.cell(row=row_idx, column=value_col, value=value)
+        ws.cell(row=row_idx, column=value_col, value=_excel_cell_value(value))
         row_idx += 1
     return row_idx
 
@@ -1218,6 +1491,67 @@ def stage_power_query_workbook(ticker: str, payload: dict[str, Any], bundle_dir:
                 artifact_role="sidecar_data",
                 title=f"{coerce_ticker(ticker)} export payload",
                 path=json_path,
+                mime_type="application/json",
+            ),
+        ],
+    }
+
+
+def stage_excel_model_workbook(
+    ticker: str,
+    bundle_dir: Path,
+    *,
+    json_path: Path | str | None = None,
+    template_path: Path | str | None = None,
+) -> dict[str, Any]:
+    """Stage the formula-driven PowerQuery model and seed flat JSON review tables."""
+    ticker = coerce_ticker(ticker)
+    bundle_dir = Path(bundle_dir)
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+
+    template = Path(template_path) if template_path else EXCEL_MODEL_TEMPLATE
+    if not template.exists():
+        raise FileNotFoundError(f"Excel model template not found: {template}")
+
+    source_json = Path(json_path) if json_path else VALUATION_JSON_DIR / f"{ticker}_latest.json"
+    if not source_json.exists():
+        raise FileNotFoundError(
+            f"Valuation JSON not found: {source_json}. Run batch_runner --ticker {ticker} --json first."
+        )
+
+    workbook_path = bundle_dir / f"{ticker}_excel_model.xlsx"
+    shutil.copy2(template, workbook_path)
+    _patch_excel_model_package(workbook_path, source_json)
+
+    manifest_path = bundle_dir / "manifest.json"
+    _json_dump(
+        manifest_path,
+        {
+            "ticker": ticker,
+            "format": "excel_model",
+            "template": str(template),
+            "json_path": str(source_json.resolve()),
+            "artifacts": ["excel_model_workbook", "valuation_json"],
+        },
+    )
+
+    return {
+        "primary_path": str(workbook_path),
+        "bundle_dir": str(bundle_dir),
+        "artifacts": [
+            _artifact_row(
+                artifact_key="excel_model_workbook",
+                artifact_role="primary",
+                title=f"{ticker} Excel model workbook",
+                path=workbook_path,
+                mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                is_primary=True,
+            ),
+            _artifact_row(
+                artifact_key="valuation_json",
+                artifact_role="source_data",
+                title=f"{ticker} valuation JSON",
+                path=source_json,
                 mime_type="application/json",
             ),
         ],
