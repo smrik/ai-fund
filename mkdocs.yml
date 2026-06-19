@@ -83,6 +83,7 @@ nav:
   - Handbook:
       - Index: handbook/index.md
       - End-to-End Workflow: handbook/workflow-end-to-end.md
+      - Weekly Loop Session: handbook/weekly-loop-session.md
       - Accounting Recast: handbook/accounting-recast.md
       - Finance Deep Dive: handbook/finance-deep-dive.md
       - Excel Template Guide: handbook/excel-template-guide.md

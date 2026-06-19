@@ -13,6 +13,7 @@ Use it for workflow guidance, local run paths, review loops, and implementation-
 ## Read First
 
 - [End-to-End Workflow](./workflow-end-to-end.md)
+- [Weekly Loop Session](./weekly-loop-session.md)
 - [Pipeline Glass-Box Walkthrough](./pipeline-glass-box.md)
 - [Operations Runbook](./operations-runbook.md)
 - [Quality And Verification](./quality-and-verification.md)

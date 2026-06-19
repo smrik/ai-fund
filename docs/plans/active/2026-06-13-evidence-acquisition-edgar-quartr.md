@@ -17,6 +17,25 @@
 
 **Architecture:** Acquisition is deterministic stage-00 work. LLM agents never fetch; they consume packets built from cached sources. Transcript ingestion is transport-pluggable: a normalized on-disk/DB contract that either the REST client (preferred, needs `QUARTR_API_KEY`) or a connector-assisted manual export can fill. Fail-closed stays: no real source, no observations.
 
+## Implementation Status
+
+| Task | Status | Evidence |
+| --- | --- | --- |
+| 1. EDGAR prefetch CLI | Completed 2026-06-13 | `scripts/manual/prefetch_filings.py --ticker MSFT` cached 12 filings; `--summary-only` confirmed 12 cache hits |
+| 2. Section extraction on real filings | Completed 2026-06-13 | MSFT cached corpus now extracts 10-K business/risk/MD&A/financials/notes plus two 10-Q financials/notes/MD&A/risk sections; regression fixtures added under `tests/fixtures/filings/` |
+| 3. Filing-backed profiles | Completed 2026-06-13 | MSFT glass-box run completed 6/6 profiles; generated JSON shows `source_quality=real` for all packets and filing-backed packets include source refs, facts, and snippets |
+| 4. Quartr transcript contract and client | Not started | Pending |
+| 5. Transcripts into `earnings_update` | Not started | Pending |
+| 6. Docs and runbook integration | Not started | Pending |
+
+Engineering notes from Tasks 1-3:
+
+- EDGAR cache rows are now populated by an explicit operator command; acquisition remains in `src/stage_00_data/` and `scripts/manual/`.
+- Section parser version moved to `v4` so prior partial parser output does not mask fixed real-filing extraction.
+- Cache-only filing lookup now prefers the most recently fetched cached CIK before ordering filings by date; this prevents stale synthetic rows from outranking real rows.
+- Filing-backed evidence packets emit deterministic filing coverage facts (`filing_source_count`, selected chunks, section counts), so `company_analysis`, `industry_analysis`, and `risk_review` can be real on filing evidence even when unrelated market/valuation cache rows are absent.
+- `ALPHA_POD_EDGAR_CACHE_ONLY=1` disables embedding downloads and uses the existing section-priority fallback, avoiding long Hugging Face retry loops in offline/operator cache-only runs.
+
 ---
 
 ## `/goals` Prompt

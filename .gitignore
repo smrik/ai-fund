@@ -75,4 +75,7 @@ output/
 course/
 py-yfinance/
 src/data/cache/
+# Stray artifacts created when a script runs with src/ as CWD (canonical paths are config/ and data/)
+src/data/
+src/config/
 nppBackup/

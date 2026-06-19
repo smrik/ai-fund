@@ -181,7 +181,48 @@ rtk npm --prefix frontend test -- --run
 
 **Commit message:** `docs: add pm queue review checklist with verified pass/fail state`
 
-## Task 6: First Session Dry Run (agent-assisted, PM present)
+## Task 6: Guided Full-Ticker Workup CLI
+
+**Why:** The separate commands now work, but the weekly loop needs one PM-driven operator shell that pauses after each analyst profile and routes every model mutation through the PM Decision Queue.
+
+**Files:**
+- Create: `scripts/manual/run_guided_ticker_workup.py`
+- Create: `scripts/manual/pm_decision_queue.py`
+- Test: `tests/test_guided_ticker_workup.py`
+- Modify: `docs/handbook/workflow-end-to-end.md`
+- Create/modify: `docs/handbook/weekly-loop-session.md`
+- Create/modify: `docs/reviews/weekly-loop/README.md`, `docs/reviews/weekly-loop/_template.md`
+
+**Steps:**
+
+1. Add a guided single-ticker CLI:
+   - stages the CIQ workbook and pauses for manual refresh/save;
+   - ingests the refreshed workbook;
+   - prefetches/checks EDGAR filings;
+   - builds the initial deterministic valuation;
+   - runs one Agentic Handoff Profile at a time;
+   - writes a per-profile review packet with Evidence Packet observations, PM questions, new Queue items, proposed changes, preview impact, and standalone queue decision commands before prompting for a decision;
+   - pauses after each profile for PM review of the packet and new Queue items;
+   - supports approve+apply, inline target edit, reject, defer, and skip;
+   - rebuilds valuation after approved/applied assumption changes;
+   - writes JSON, Markdown, per-profile review Markdown, Analyst Prep Markdown, optional Excel export, and a friction-log draft.
+2. Defaults are live-agent/live-DB for real use, but every apply requires explicit `APPLY` confirmation. `--isolated-db`, `--agent-mode heuristic`, and `--non-interactive` exist for safe rehearsal; non-interactive mode never approves or applies.
+3. Keep Quartr transcripts optional for this task. Core success is CIQ + EDGAR + live agents; transcript availability can enrich `earnings_update` once the evidence-acquisition plan's transcript tasks land.
+4. Document the command as the preferred CLI-first weekly ticker workup path; keep UI work out unless the CLI exposes a hard blocker.
+
+**Verification:**
+
+```powershell
+C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_guided_ticker_workup.py -q
+C:\Users\patri\miniconda3\envs\ai-fund\python.exe -m pytest tests/test_ciq_refresh.py tests/test_pm_decision_queue_adapter.py tests/test_agentic_handoff_mvp_flow.py tests/test_evidence_packet_builders.py -q
+C:\Users\patri\miniconda3\envs\ai-fund\python.exe scripts/manual/run_guided_ticker_workup.py --ticker MSFT --agent-mode heuristic --isolated-db --non-interactive --skip-ciq-stage --edgar-summary-only --market-cache-only --edgar-cache-only --no-export-xlsx
+```
+
+**Expected:** Tests pass; smoke run writes a guided workup bundle with per-profile review packets under `output/guided_workups/MSFT/` and a friction draft under `docs/reviews/weekly-loop/` without approving any queue item.
+
+**Commit message:** `feat: add guided ticker workup CLI for PM-driven weekly loop`
+
+## Task 7: First Session Dry Run (agent-assisted, PM present)
 
 **Why:** Before session 1 counts toward the exit criteria, one dry run shakes out runbook errors cheaply.
 
