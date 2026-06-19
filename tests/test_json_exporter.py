@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from src.stage_02_valuation.json_exporter import (
+    build_excel_flat_tables,
+    build_historical_financials_from_ciq_workbook,
     build_nested_structure,
     export_ticker_json,
     _json_default,
@@ -412,8 +414,9 @@ class TestBuildNestedStructure:
                     "sector", "market", "assumptions", "wacc", "valuation",
                     "scenarios", "scenario_policy", "context_scenarios",
                     "driver_consensus", "terminal", "health_flags", "forecast_bridge",
-                    "source_lineage", "ciq_lineage", "story_profile", "story_adjustments",
-                    "default_resolution", "drivers_raw"):
+                    "historical_financials", "source_lineage", "ciq_lineage",
+                    "story_profile", "story_adjustments", "default_resolution",
+                    "drivers_raw", "excel_flat"):
             assert key in out, f"Missing top-level key: {key}"
         assert "assumption_register" in out
         assert "assumption_register_summary" in out
@@ -428,6 +431,41 @@ class TestBuildNestedStructure:
         out = build_nested_structure(MINIMAL_RESULT)
         assert isinstance(out["forecast_bridge"], list)
         assert len(out["forecast_bridge"]) == 10
+        assert out["excel_flat"]["forecast"][0]["revenue_mm"] == pytest.approx(66_030.0)
+        assert out["excel_flat"]["forecast"][0]["fcff_mm"] == pytest.approx(5_000.0)
+
+    def test_excel_flat_forecast_money_units_reconcile_fcff(self):
+        r = dict(MINIMAL_RESULT)
+        r["forecast_bridge_json"] = json.dumps([
+            {
+                "year": 1,
+                "nopat": 900_000_000,
+                "da": 150_000_000,
+                "capex": 100_000_000,
+                "delta_nwc": 750_000,
+                "fcff": 949_250_000,
+            },
+            {
+                "year": 2,
+                "nopat": 920_000_000,
+                "da": 155_000_000,
+                "capex": 110_000_000,
+                "delta_nwc": -450_000,
+                "fcff": 965_450_000,
+            },
+        ])
+
+        forecast = build_nested_structure(r)["excel_flat"]["forecast"]
+
+        assert forecast[0]["delta_nwc_mm"] == pytest.approx(0.75)
+        assert forecast[1]["delta_nwc_mm"] == pytest.approx(-0.45)
+        for row in forecast:
+            assert (
+                row["nopat_mm"]
+                + row["da_mm"]
+                - row["capex_mm"]
+                - row["delta_nwc_mm"]
+            ) == pytest.approx(row["fcff_mm"], abs=0.001)
 
     def test_forecast_bridge_empty_on_bad_json(self):
         r = dict(MINIMAL_RESULT)
@@ -458,6 +496,7 @@ class TestBuildNestedStructure:
     def test_wacc_section(self):
         out = build_nested_structure(MINIMAL_RESULT)
         assert out["wacc"]["wacc"] == pytest.approx(0.085, rel=1e-3)
+        assert out["wacc"]["size_premium"] == pytest.approx(0.005)
         assert out["wacc"]["peers_used"] == ["ACN", "ORCL", "MSFT"]
         assert out["wacc"]["debt_weight"] == pytest.approx(0.30, rel=1e-2)
 
@@ -515,6 +554,28 @@ class TestBuildNestedStructure:
         assert out["ciq_lineage"]["snapshot_used"] is True
         assert out["ciq_lineage"]["peer_count"] == 4
         assert out["ciq_lineage"]["public_comps_fallback_used"] is False
+
+    def test_historical_financials_attached_and_flattened(self):
+        history = [
+            {
+                "period": "2025-12-31",
+                "fiscal_year": "FY25",
+                "revenue_mm": 100.0,
+                "ebit_mm": 12.0,
+                "ebit_margin_pct": 0.12,
+            }
+        ]
+        out = build_nested_structure(MINIMAL_RESULT, historical_financials=history)
+        assert out["historical_financials"] == history
+        assert out["excel_flat"]["historical_financials"] == history
+
+    def test_excel_flat_has_simple_power_query_tables(self):
+        out = build_nested_structure(MINIMAL_RESULT, comps_detail=MINIMAL_COMPS, comps_analysis=MINIMAL_COMPS_ANALYSIS)
+        flat = build_excel_flat_tables(out)
+        assert flat["assumptions"][0] == {"key": "revenue_mm", "value": 62000.0}
+        assert flat["scenarios"][0]["scenario"] == "bear"
+        assert flat["market"][0] == {"key": "price", "value": 260.0}
+        assert flat["comps_peers"][0]["ticker"] == "ACN"
 
     def test_assumptions_growth_terminal(self):
         out = build_nested_structure(MINIMAL_RESULT)
@@ -586,13 +647,87 @@ class TestExportTickerJson:
             qoe=MINIMAL_QOE,
             comps_detail=MINIMAL_COMPS,
             comps_analysis=MINIMAL_COMPS_ANALYSIS,
+            historical_financials=[{"period": "2025-12-31", "revenue_mm": 100.0}],
             output_dir=tmp_dir, date_str="2026-01-01",
         )
         content = json.loads(dated.read_text())
         for sec in ("market", "assumptions", "wacc", "valuation", "scenarios",
                     "terminal", "health_flags", "forecast_bridge",
-                    "source_lineage", "ciq_lineage", "comps_detail", "comps_analysis", "qoe"):
+                    "historical_financials", "source_lineage", "ciq_lineage",
+                    "comps_detail", "comps_analysis", "qoe", "excel_flat"):
             assert sec in content, f"Section {sec!r} missing from JSON"
+        assert content["excel_flat"]["historical_financials"][0]["period"] == "2025-12-31"
+
+    def test_ciq_workbook_history_extracts_annual_actuals(self, tmp_dir):
+        from openpyxl import Workbook
+
+        workbook_path = tmp_dir / "IBM_Standard.xlsx"
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Financial Statements"
+        ws["A1"] = "Period"
+        ws["B1"] = "FY24"
+        ws["C1"] = "FY25"
+        ws["D1"] = "LTM"
+        ws["A2"] = "Period Date"
+        ws["B2"] = "2024-12-31"
+        ws["C2"] = "2025-12-31"
+        ws["D2"] = "2025-12-31"
+        ws["A3"] = "Revenues"
+        ws["B3"] = 100.0
+        ws["C3"] = 110.0
+        ws["D3"] = 110.0
+        ws["A4"] = "Operating Income"
+        ws["B4"] = 10.0
+        ws["C4"] = 12.1
+        ws["D4"] = 12.1
+        ws["A5"] = "Capital Expenditure"
+        ws["B5"] = -5.0
+        ws["C5"] = -6.0
+        ws["D5"] = -6.0
+        ws["A6"] = "Depreciation & Amort."
+        ws["B6"] = 3.0
+        ws["C6"] = 3.3
+        ws["D6"] = 3.3
+        ws["A7"] = "Income Tax Expense"
+        ws["B7"] = -2.0
+        ws["C7"] = -2.5
+        ws["D7"] = -2.5
+        ws["A8"] = "EBT Excl Unusual Items"
+        ws["B8"] = 8.0
+        ws["C8"] = 9.6
+        ws["D8"] = 9.6
+        ws["A9"] = "Total Debt"
+        ws["B9"] = 40.0
+        ws["C9"] = 42.0
+        ws["D9"] = 42.0
+        ws["A10"] = "Cash and Equivalents"
+        ws["B10"] = 5.0
+        ws["C10"] = 7.0
+        ws["D10"] = 7.0
+        common = wb.create_sheet("Common Size")
+        common["A1"] = "Period"
+        common["B1"] = "FY24"
+        common["A2"] = "Period Date"
+        common["B2"] = "2024-12-31"
+        common["A3"] = "Revenues"
+        common["B3"] = 1.0
+        comps = wb.create_sheet("Detailed Comps")
+        comps["A1"] = "Ticker"
+        comps["B1"] = "Name"
+        comps["A2"] = "ACN"
+        comps["B2"] = "Accenture"
+        wb.save(workbook_path)
+
+        rows = build_historical_financials_from_ciq_workbook(workbook_path)
+
+        assert rows[-1]["period"] == "2025-12-31"
+        assert rows[-1]["revenue_mm"] == 110.0
+        assert rows[-1]["revenue_growth_pct"] == pytest.approx(0.10)
+        assert rows[-1]["ebit_margin_pct"] == pytest.approx(0.11)
+        assert rows[-1]["capex_mm"] == 6.0
+        assert rows[-1]["tax_rate_pct"] == pytest.approx(2.5 / 9.6)
+        assert rows[-1]["net_debt_mm"] == 35.0
 
     def test_dated_and_latest_identical(self, tmp_dir):
         dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")

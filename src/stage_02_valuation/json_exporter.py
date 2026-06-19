@@ -47,6 +47,233 @@ def _safe(d: dict, key: str) -> Any:
     return d.get(key)
 
 
+def _serialisable_scalar(value: Any) -> Any:
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    if isinstance(value, float):
+        return None if math.isnan(value) or math.isinf(value) else value
+    try:
+        return _json_default(value)
+    except TypeError:
+        return json.dumps(value, default=_json_default, sort_keys=True, separators=(",", ":"))
+
+
+def _kv_rows(section: dict[str, Any] | None) -> list[dict[str, Any]]:
+    return [
+        {"key": key, "value": _serialisable_scalar(value)}
+        for key, value in (section or {}).items()
+    ]
+
+
+def _money_to_mm(value: Any) -> Any:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return value
+    if math.isnan(numeric) or math.isinf(numeric):
+        return None
+    return round(numeric / 1_000_000.0, 3)
+
+
+_FORECAST_MONEY_FIELDS = {
+    "revenue",
+    "ebit",
+    "nopat",
+    "da",
+    "capex",
+    "ar",
+    "inventory",
+    "ap",
+    "nwc",
+    "delta_nwc",
+    "fcff",
+    "pv_fcff",
+    "reinvestment",
+    "invested_capital_start",
+    "invested_capital_end",
+    "economic_profit",
+    "pv_economic_profit",
+    "fcfe",
+    "pv_fcfe",
+}
+
+
+def _flatten_forecast_bridge(rows: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        flat: dict[str, Any] = {}
+        for key, value in row.items():
+            if key in _FORECAST_MONEY_FIELDS:
+                flat[f"{key}_mm"] = _money_to_mm(value)
+            else:
+                flat[key] = _serialisable_scalar(value)
+        out.append(flat)
+    return out
+
+
+def _scenario_rows(scenarios: dict[str, Any], valuation: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for name in ("bear", "base", "bull"):
+        scenario = scenarios.get(name) or {}
+        rows.append(
+            {
+                "scenario": name,
+                "probability": scenario.get("probability"),
+                "iv": scenario.get("iv"),
+                "upside_pct": scenario.get("upside_pct"),
+            }
+        )
+    rows.append(
+        {
+            "scenario": "expected",
+            "probability": None,
+            "iv": valuation.get("expected_iv"),
+            "upside_pct": valuation.get("expected_upside_pct"),
+        }
+    )
+    return rows
+
+
+def build_excel_flat_tables(nested: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
+    """Return PowerQuery-friendly tables while preserving the nested JSON contract."""
+    comps_detail = nested.get("comps_detail") or {}
+    comps_analysis = nested.get("comps_analysis") or {}
+    peer_rows = comps_detail.get("peers") or comps_analysis.get("peer_table") or []
+    if not isinstance(peer_rows, list):
+        peer_rows = []
+
+    return {
+        "metadata": _kv_rows(
+            {
+                "schema_version": nested.get("$schema_version"),
+                "generated_at": nested.get("generated_at"),
+                "ticker": nested.get("ticker"),
+                "company_name": nested.get("company_name"),
+                "sector": nested.get("sector"),
+                "industry": nested.get("industry"),
+            }
+        ),
+        "assumptions": _kv_rows(nested.get("assumptions")),
+        "wacc": _kv_rows(nested.get("wacc")),
+        "valuation": _kv_rows(nested.get("valuation")),
+        "scenarios": _scenario_rows(nested.get("scenarios") or {}, nested.get("valuation") or {}),
+        "market": _kv_rows(nested.get("market")),
+        "terminal": _kv_rows(nested.get("terminal")),
+        "health_flags": _kv_rows(nested.get("health_flags")),
+        "source_lineage": _kv_rows(nested.get("source_lineage")),
+        "ciq_lineage": _kv_rows(nested.get("ciq_lineage")),
+        "forecast": _flatten_forecast_bridge(nested.get("forecast_bridge")),
+        "historical_financials": list(nested.get("historical_financials") or []),
+        "comps_peers": [row for row in peer_rows if isinstance(row, dict)],
+        "comps_valuation": list(comps_analysis.get("valuation_by_metric_rows") or []),
+    }
+
+
+def build_historical_financials_from_ciq_workbook(
+    workbook_path: Path | str,
+    *,
+    max_years: int = 10,
+) -> list[dict[str, Any]]:
+    """Extract annual historical actuals from a refreshed CIQ standard workbook."""
+    from ciq.workbook_parser import parse_ciq_workbook
+
+    payload = parse_ciq_workbook(Path(workbook_path))
+    by_period: dict[str, dict[str, Any]] = {}
+
+    def _record_value(record: dict[str, Any]) -> float | None:
+        value = record.get("value_num")
+        if value is None:
+            return None
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return None
+        return None if math.isnan(numeric) or math.isinf(numeric) else numeric
+
+    def _set(period: str, key: str, value: Any, *, prefer_existing: bool = True) -> None:
+        row = by_period.setdefault(
+            period,
+            {
+                "period": period,
+                "fiscal_year": None,
+                "source": "ciq_standard_workbook",
+                "source_file": Path(workbook_path).name,
+            },
+        )
+        if prefer_existing and row.get(key) is not None:
+            return
+        row[key] = value
+
+    metric_field = {
+        "revenue": ("revenue_mm", False),
+        "operating_income": ("ebit_mm", False),
+        "ebit": ("ebit_mm", True),
+        "ebitda": ("ebitda_mm", False),
+        "da": ("da_mm", False),
+        "capex": ("capex_mm", False),
+        "tax": ("tax_expense_mm", False),
+        "ebt_excl_unusual": ("pretax_income_mm", False),
+        "cash_from_ops": ("cfo_mm", False),
+        "debt": ("debt_mm", False),
+        "cash": ("cash_mm", False),
+        "total_assets": ("total_assets_mm", False),
+        "total_equity": ("total_equity_mm", False),
+    }
+
+    for record in payload.long_form_records:
+        if record.get("sheet_name") != "Financial Statements":
+            continue
+        calc_type = str(record.get("calc_type") or "")
+        if not calc_type.startswith("FY"):
+            continue
+        metric = record.get("metric_key")
+        if metric not in metric_field:
+            continue
+        period = str(record.get("period_date") or record.get("column_label") or "")
+        if not period:
+            continue
+        field, prefer_existing = metric_field[metric]
+        value = _record_value(record)
+        if value is None:
+            continue
+        if field in {"capex_mm", "tax_expense_mm"}:
+            value = abs(value)
+        _set(period, field, value, prefer_existing=prefer_existing)
+        year_label = calc_type[2:]
+        _set(period, "fiscal_year", f"FY{year_label}", prefer_existing=True)
+
+    rows = [by_period[key] for key in sorted(by_period)]
+    for idx, row in enumerate(rows):
+        revenue = row.get("revenue_mm")
+        previous_revenue = rows[idx - 1].get("revenue_mm") if idx else None
+        ebit = row.get("ebit_mm")
+        ebitda = row.get("ebitda_mm")
+        da = row.get("da_mm")
+        capex = row.get("capex_mm")
+        tax = row.get("tax_expense_mm")
+        pretax = row.get("pretax_income_mm")
+        debt = row.get("debt_mm")
+        cash = row.get("cash_mm")
+        if revenue:
+            row["revenue_growth_pct"] = (
+                (revenue / previous_revenue - 1.0)
+                if previous_revenue
+                else None
+            )
+            row["ebit_margin_pct"] = ebit / revenue if ebit is not None else None
+            row["ebitda_margin_pct"] = ebitda / revenue if ebitda is not None else None
+            row["da_pct"] = da / revenue if da is not None else None
+            row["capex_pct"] = capex / revenue if capex is not None else None
+        row["tax_rate_pct"] = tax / pretax if tax is not None and pretax else None
+        row["net_debt_mm"] = debt - cash if debt is not None and cash is not None else None
+
+    return rows[-max_years:] if max_years and len(rows) > max_years else rows
+
+
 # ── Core transformation ───────────────────────────────────────────────────────
 
 def build_nested_structure(
@@ -54,6 +281,7 @@ def build_nested_structure(
     qoe: dict | None = None,
     comps_detail: dict | None = None,
     comps_analysis: dict | None = None,
+    historical_financials: list[dict[str, Any]] | None = None,
 ) -> dict:
     """
     Transform the flat ~120-key result dict from value_single_ticker() into
@@ -154,6 +382,13 @@ def build_nested_structure(
         f = float(v)
         return f / 100.0 if f > 1.0 else f
 
+    def _size_premium_to_dec(v: Any) -> float | None:
+        """Size premium is stored as percentage-points in legacy result rows."""
+        if v is None:
+            return None
+        f = float(v)
+        return f / 100.0 if abs(f) > 0.05 else f
+
     _dw = drivers_raw.get("debt_weight")
     if _dw is None:
         _eq_pct = r.get("equity_weight")
@@ -170,7 +405,7 @@ def build_nested_structure(
         "beta_raw": r.get("beta_raw"),
         "beta_unlevered": r.get("beta_unlevered"),
         "beta_relevered": r.get("beta_relevered"),
-        "size_premium": r.get("size_premium") or 0.0,
+        "size_premium": _size_premium_to_dec(r.get("size_premium")) or 0.0,
         "equity_weight": _eq_wt,
         "debt_weight": _dw,
         "peers_used": peers_list,
@@ -333,6 +568,7 @@ def build_nested_structure(
         "terminal": terminal,
         "health_flags": health_flags,
         "forecast_bridge": forecast_bridge,
+        "historical_financials": historical_financials or [],
         "source_lineage": source_lineage,
         "ciq_lineage": ciq_lineage,
         "story_profile": story_profile,
@@ -355,6 +591,8 @@ def build_nested_structure(
     if qoe is not None:
         out["qoe"] = qoe
 
+    out["excel_flat"] = build_excel_flat_tables(out)
+
     return out
 
 
@@ -365,6 +603,7 @@ def export_ticker_json(
     qoe: dict | None = None,
     comps_detail: dict | None = None,
     comps_analysis: dict | None = None,
+    historical_financials: list[dict[str, Any]] | None = None,
     output_dir: Path | str | None = None,
     date_str: str | None = None,
 ) -> Path:
@@ -391,6 +630,7 @@ def export_ticker_json(
         qoe=qoe,
         comps_detail=comps_detail,
         comps_analysis=comps_analysis,
+        historical_financials=historical_financials,
     )
 
     dated_path = output_dir / f"{ticker}_{date_str}.json"
