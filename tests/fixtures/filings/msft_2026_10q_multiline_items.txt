@@ -1,0 +1,54 @@
+MICROSOFT CORPORATION
+
+FORM 10-Q
+
+PART I.        FINANCIAL INFORMATION
+                 Item 1.                    Financial Statements
+                 Item 2.                    Management's Discussion and Analysis of Financial Condition and Results of Operations
+                 Item 3.                    Quantitative and Qualitative Disclosures About Market Risk
+
+PART II.       OTHER INFORMATION
+                 Item 1A.                   Risk Factors
+                 Item 2.                    Unregistered Sales of Equity Securities
+
+PART I.
+
+Item 1.
+
+FINANCIAL STATEMENTS
+
+Condensed consolidated statements begin here.
+
+Notes to Condensed Consolidated Financial Statements
+
+Note 1. Accounting Policies
+
+Revenue is recognized as performance obligations are satisfied.
+
+PART I.
+
+Item 2.
+
+MANAGEMENT' S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS
+
+Cloud revenue increased due to usage and seat growth. Operating income reflected continued AI infrastructure investment.
+
+PART I.
+
+Item 3.
+
+Quantitative and qualitative market risk disclosure begins here.
+
+PART II.
+
+Item 1A.
+
+RISK FACTORS
+
+There have been no material changes to the risk factors disclosed in the annual report except for updated macroeconomic and cybersecurity risks.
+
+PART II.
+
+Item 2.
+
+Issuer purchases of equity securities begin here.

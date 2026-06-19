@@ -51,6 +51,8 @@ Part II - Item 1A. Risk Factors
 Macro conditions remain uncertain.
 """
 
+FIXTURES_DIR = Path(__file__).parent / "fixtures" / "filings"
+
 
 def test_extract_sections_for_10k_and_note_subsections():
     sections = fr._extract_sections_for_filing("10-K", TEN_K_SAMPLE)
@@ -73,6 +75,46 @@ def test_extract_sections_for_10q():
     assert "notes_to_financials_q" in keys
     assert "mda_q" in keys
     assert "risk_factors_q" in keys
+
+
+def test_extract_sections_for_real_msft_10k_multiline_headings():
+    text = (FIXTURES_DIR / "msft_2025_10k_multiline_items.txt").read_text(encoding="utf-8")
+    sections = {key: section_text for key, _, section_text in fr._extract_sections_for_filing("10-K", text)}
+
+    assert "business" in sections
+    assert "risk_factors" in sections
+    assert "mda" in sections
+    assert "financial_statements" in sections
+    assert "Cloud provides integration" in sections["business"]
+    assert "Competition in cloud services" in sections["risk_factors"]
+    assert "Revenue increased due to cloud services growth" in sections["mda"]
+    assert "Consolidated statements" in sections["financial_statements"]
+    assert "INDEX" not in sections["business"]
+
+
+def test_extract_sections_for_real_msft_10q_multiline_headings():
+    text = (FIXTURES_DIR / "msft_2026_10q_multiline_items.txt").read_text(encoding="utf-8")
+    sections = {key: section_text for key, _, section_text in fr._extract_sections_for_filing("10-Q", text)}
+
+    assert "financial_statements_q" in sections
+    assert "notes_to_financials_q" in sections
+    assert "mda_q" in sections
+    assert "risk_factors_q" in sections
+    assert "Condensed consolidated statements" in sections["financial_statements_q"]
+    assert "Cloud revenue increased" in sections["mda_q"]
+    assert "no material changes to the risk factors" in sections["risk_factors_q"]
+
+
+def test_extract_sections_for_real_iesc_standard_headings():
+    text = (FIXTURES_DIR / "iesc_2025_10k_standard_items.txt").read_text(encoding="utf-8")
+    sections = {key: section_text for key, _, section_text in fr._extract_sections_for_filing("10-K", text)}
+
+    assert "business" in sections
+    assert "risk_factors" in sections
+    assert "mda" in sections
+    assert "notes_to_financials" in sections
+    assert "electrical contracting" in sections["business"]
+    assert "project execution" in sections["mda"]
 
 
 def test_build_filing_corpus_reports_statement_presence(monkeypatch):
