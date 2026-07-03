@@ -72,13 +72,14 @@ def summarise_cached_filings(
                 [ticker, form, int(limit)],
             ).fetchall()
             for row in cached_rows:
+                cached_chars = _cached_char_count(row["clean_path"]) or _cached_char_count(row["raw_path"])
                 rows.append(
                     FilingPrefetchRow(
                         form_type=row["form_type"],
                         accession_no=row["accession_no"],
                         filing_date=row["filing_date"],
-                        cached_chars=_cached_char_count(row["clean_path"]) or _cached_char_count(row["raw_path"]),
-                        cache_status="hit",
+                        cached_chars=cached_chars,
+                        cache_status="hit" if cached_chars > 0 else "missing",
                     )
                 )
     return FilingPrefetchResult(ticker=ticker, rows=rows, errors=[])

@@ -176,6 +176,51 @@ def test_summary_only_reports_cache_without_fetching(tmp_path, monkeypatch, caps
     assert "cached" in output.lower()
 
 
+def test_summary_only_marks_missing_cache_file(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    missing_path = tmp_path / "missing.txt"
+    _init_db(db_path)
+    monkeypatch.setattr(prefetch, "DB_PATH", db_path)
+    monkeypatch.setattr(
+        prefetch.edgar_client,
+        "get_cik",
+        lambda ticker: (_ for _ in ()).throw(AssertionError("summary should not fetch")),
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO edgar_filing_cache (
+                ticker, cik, form_type, accession_no, filing_date, doc_name,
+                source_url, raw_path, clean_path, raw_text_hash, clean_text_hash,
+                parser_version, fetched_at, cleaned_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "MSFT",
+                "0000789019",
+                "10-Q",
+                "0000789019-26-000088",
+                "2026-05-01",
+                "msft-10q.htm",
+                "https://sec.example/msft",
+                None,
+                str(missing_path),
+                "hash",
+                "hash",
+                "v1",
+                "2026-06-13T00:00:00+00:00",
+                "2026-06-13T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    result = prefetch.prefetch_filings("MSFT", forms=["10-Q"], limit=1, summary_only=True)
+
+    assert result.cached_count == 0
+    assert result.rows[0].cache_status == "missing"
+    assert result.rows[0].cached_chars == 0
+
+
 def test_prefetch_returns_actionable_error_when_cik_lookup_fails(monkeypatch):
     monkeypatch.setattr(prefetch.edgar_client, "get_cik", lambda ticker: (_ for _ in ()).throw(RuntimeError("network down")))
 
