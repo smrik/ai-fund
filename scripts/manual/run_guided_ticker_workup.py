@@ -31,6 +31,10 @@ from src.stage_04_pipeline.analyst_prep_pack import (  # noqa: E402
 GUIDED_OUTPUT_DIR = ROOT / "output" / "guided_workups"
 FRICTION_LOG_DIR = ROOT / "docs" / "reviews" / "weekly-loop"
 
+# Engineering display default aligned with scripts/manual/weekly_preflight.py.
+# M1 only warns in PM-facing markdown; staleness gating belongs to Milestone 3.
+MARKET_CACHE_STALE_WARN_DAYS = 1.0
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -91,6 +95,140 @@ def _fmt_pct(value: Any) -> str:
         return f"{float(value):+.1f}%"
     except Exception:
         return "n/a"
+
+
+def _parse_run_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _is_iso_date(value: str) -> bool:
+    if len(value) != 10:
+        return False
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    return value[4] == "-" and value[7] == "-"
+
+
+def _market_cache_age_days(fetched_at: Any, run_started_at: Any) -> float | None:
+    fetched_text = str(fetched_at or "").strip()
+    run_dt = _parse_run_datetime(run_started_at)
+    if not fetched_text or run_dt is None:
+        return None
+    if _is_iso_date(fetched_text):
+        fetched_date = datetime.fromisoformat(fetched_text).date()
+        return float(max(0, (run_dt.date() - fetched_date).days))
+    fetched_dt = _parse_run_datetime(fetched_text)
+    if fetched_dt is None:
+        return None
+    return max(0.0, (run_dt - fetched_dt).total_seconds() / 86400.0)
+
+
+def _fmt_warn_days(days: float) -> str:
+    return f"{int(days)}d" if float(days).is_integer() else f"{days:.1f}d"
+
+
+def _report_stat(report: Any, key: str) -> int:
+    if isinstance(report, dict):
+        value = report.get(key, 0)
+    else:
+        value = getattr(report, key, 0)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _render_ciq_freshness_line(ciq_info: Any, freshness: dict[str, Any]) -> str:
+    ciq = _as_dict(ciq_info) or _as_dict(freshness.get("ciq")) or _as_dict(freshness.get("ciq_ingest"))
+    if not ciq:
+        return "- CIQ ingest: not recorded"
+    if ciq.get("error"):
+        return f"- CIQ ingest: failed ({ciq.get('error')})"
+    if ciq.get("skipped"):
+        return f"- CIQ ingest: skipped ({ciq.get('reason') or 'no reason recorded'})"
+
+    report = _as_dict(ciq.get("ingest_report")) or ciq
+    parts = ["- CIQ ingest:"]
+    if ciq.get("ciq_symbol"):
+        parts.append(f"symbol={ciq.get('ciq_symbol')}")
+    if ciq.get("workbook_path"):
+        parts.append(f"workbook={ciq.get('workbook_path')}")
+    if report:
+        parts.append(f"processed={_report_stat(report, 'processed')}")
+        parts.append(f"skipped={_report_stat(report, 'skipped')}")
+        parts.append(f"failed={_report_stat(report, 'failed')}")
+    return " ".join(parts)
+
+
+def render_data_freshness_section(
+    freshness_value: Any,
+    *,
+    run_started_at: Any,
+    ciq_info: Any = None,
+) -> list[str]:
+    freshness = _as_dict(freshness_value)
+    lines = ["## Data Freshness", ""]
+    if freshness.get("db_path"):
+        lines.append(f"- Database: `{freshness.get('db_path')}`")
+
+    lines.append(_render_ciq_freshness_line(ciq_info, freshness))
+
+    if freshness.get("error"):
+        lines.append(f"- Data freshness unavailable: {freshness.get('error')}")
+        lines.append("")
+        return lines
+
+    market_rows = [row for row in _as_list(freshness.get("market_cache_rows")) if isinstance(row, dict)]
+    if market_rows:
+        warn_label = _fmt_warn_days(MARKET_CACHE_STALE_WARN_DAYS)
+        for row in market_rows:
+            data_type = row.get("data_type") or "unknown"
+            fetched_at = row.get("fetched_at") or "n/a"
+            age_days = _market_cache_age_days(fetched_at, run_started_at)
+            if age_days is None:
+                age_label = "n/a"
+                stale_prefix = ""
+            else:
+                age_label = f"{age_days:.1f}d"
+                stale_prefix = "[STALE] " if age_days > MARKET_CACHE_STALE_WARN_DAYS else ""
+            lines.append(
+                f"- {stale_prefix}{data_type} fetched {fetched_at} "
+                f"(age {age_label}, warn >{warn_label})"
+            )
+    else:
+        lines.append("- Market cache: no rows recorded")
+
+    filing_cache = _as_dict(freshness.get("edgar_filing_cache"))
+    if filing_cache:
+        lines.append(
+            f"- EDGAR filings: {filing_cache.get('filing_count', 0)} cached, "
+            f"latest filing date={filing_cache.get('latest_filing_date') or 'n/a'}"
+        )
+    else:
+        lines.append("- EDGAR filings: no cache summary recorded")
+
+    filing_context = [row for row in _as_list(freshness.get("filing_context_cache")) if isinstance(row, dict)]
+    if filing_context:
+        context_bits = [
+            f"{row.get('profile_name') or 'unknown'}={row.get('latest_context_at') or 'n/a'}"
+            for row in filing_context
+        ]
+        lines.append(f"- Filing context cache: {', '.join(context_bits)}")
+    lines.append("")
+    return lines
 
 
 @dataclass(slots=True)
@@ -515,9 +653,12 @@ def _render_profile_review_markdown(
     *,
     ticker: str,
     run_stamp: str,
+    run_started_at: Any,
     run_payload: dict[str, Any],
     queue_items: list[dict[str, Any]],
     previews: dict[int, dict[str, Any] | None],
+    data_freshness: Any = None,
+    ciq_info: Any = None,
 ) -> str:
     profile = str(run_payload.get("profile_name") or "unknown_profile")
     packet = _as_dict(run_payload.get("evidence_packet"))
@@ -531,9 +672,15 @@ def _render_profile_review_markdown(
         f"- Source quality: {packet_summary.get('source_quality') or 'unknown'}",
         f"- Facts / snippets / refs / observations: {packet_summary['facts']} / {packet_summary['snippets']} / {packet_summary['source_refs']} / {packet_summary['observations']}",
         "",
-        "## Observations",
-        "",
     ]
+    lines.extend(
+        render_data_freshness_section(
+            data_freshness,
+            run_started_at=run_started_at,
+            ciq_info=ciq_info,
+        )
+    )
+    lines.extend(["## Observations", ""])
     observations = [
         item for item in _as_list(packet.get("observations")) if isinstance(item, dict)
     ]
@@ -641,10 +788,13 @@ def write_profile_review_packet(
     *,
     ticker: str,
     run_stamp: str,
+    run_started_at: Any,
     output_dir: Path,
     run_payload: dict[str, Any],
     queue_items: list[dict[str, Any]],
     previews: dict[int, dict[str, Any] | None],
+    data_freshness: Any = None,
+    ciq_info: Any = None,
 ) -> ProfileReviewPacket:
     profile = str(run_payload.get("profile_name") or "unknown_profile")
     ticker_dir = output_dir / ticker
@@ -654,9 +804,12 @@ def write_profile_review_packet(
         _render_profile_review_markdown(
             ticker=ticker,
             run_stamp=run_stamp,
+            run_started_at=run_started_at,
             run_payload=run_payload,
             queue_items=queue_items,
             previews=previews,
+            data_freshness=data_freshness,
+            ciq_info=ciq_info,
         ),
         encoding="utf-8",
     )
@@ -820,19 +973,30 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
         f"- Queue decisions: {len(result.get('queue_decisions') or [])}",
         f"- Applied queue items: {sum(1 for row in result.get('queue_decisions') or [] if row.get('action') == 'approved_applied')}",
         "",
-        "## Final Model Snapshot",
-        "",
-        f"- Current price: {_fmt_money(batch_row.get('price'))}",
-        f"- Bear / Base / Bull IV: {_fmt_money(batch_row.get('iv_bear'))} / {_fmt_money(batch_row.get('iv_base'))} / {_fmt_money(batch_row.get('iv_bull'))}",
-        f"- Base upside: {_fmt_pct(batch_row.get('upside_base_pct'))}",
-        f"- Growth near/mid: {batch_row.get('growth_near', 'n/a')} / {batch_row.get('growth_mid', 'n/a')}",
-        f"- EBIT margin: {batch_row.get('ebit_margin_used', 'n/a')}",
-        f"- WACC: {batch_row.get('wacc', 'n/a')}",
-        f"- Exit multiple: {batch_row.get('exit_multiple_used', 'n/a')}",
-        "",
-        "## Profile Reviews",
-        "",
     ]
+    lines.extend(
+        render_data_freshness_section(
+            result.get("data_freshness"),
+            run_started_at=result.get("run_started_at"),
+            ciq_info=result.get("ciq"),
+        )
+    )
+    lines.extend(
+        [
+            "## Final Model Snapshot",
+            "",
+            f"- Current price: {_fmt_money(batch_row.get('price'))}",
+            f"- Bear / Base / Bull IV: {_fmt_money(batch_row.get('iv_bear'))} / {_fmt_money(batch_row.get('iv_base'))} / {_fmt_money(batch_row.get('iv_bull'))}",
+            f"- Base upside: {_fmt_pct(batch_row.get('upside_base_pct'))}",
+            f"- Growth near/mid: {batch_row.get('growth_near', 'n/a')} / {batch_row.get('growth_mid', 'n/a')}",
+            f"- EBIT margin: {batch_row.get('ebit_margin_used', 'n/a')}",
+            f"- WACC: {batch_row.get('wacc', 'n/a')}",
+            f"- Exit multiple: {batch_row.get('exit_multiple_used', 'n/a')}",
+            "",
+            "## Profile Reviews",
+            "",
+        ]
+    )
     for run in _as_list(result.get("profile_runs")):
         packet_summary = _summarize_packet(_as_dict(run.get("evidence_packet")))
         lines.extend(
@@ -1004,6 +1168,11 @@ def run_guided_workup(
     result["errors"].extend(initial_model.get("errors") or [])
 
     try:
+        result["data_freshness"] = deps.collect_freshness(ticker)
+    except Exception as exc:
+        result["data_freshness"] = {"error": str(exc)}
+
+    try:
         initial_queue_ids = {int(item["item_id"]) for item in _list_queue_items(deps, ticker) if item.get("item_id")}
     except Exception:
         initial_queue_ids = set()
@@ -1044,6 +1213,9 @@ def run_guided_workup(
                 run_payload=run_payload,
                 queue_items=new_items,
                 previews=previews,
+                run_started_at=result.get("run_started_at"),
+                data_freshness=result.get("data_freshness"),
+                ciq_info=result.get("ciq"),
             )
             result["profile_review_packets"].append(_jsonable(packet))
             io.write(f"Review packet: {packet.path}")

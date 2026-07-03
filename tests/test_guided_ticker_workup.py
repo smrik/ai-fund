@@ -148,7 +148,15 @@ def _deps(tmp_path: Path, *, calls: dict | None = None) -> guided.GuidedDependen
         render_prep_markdown=lambda payload: f"# Analyst Prep {payload['ticker']}",
         export_xlsx=lambda ticker: {"ticker": ticker, "artifacts": []},
         refresh_dossier=lambda ticker: {"ticker": ticker, "source_mode": "loaded_backend_state"},
-        collect_freshness=lambda ticker: {"ticker": ticker, "edgar_filing_cache": {"filing_count": 3}},
+        collect_freshness=lambda ticker: {
+            "ticker": ticker,
+            "db_path": str(tmp_path / "alpha_pod.db"),
+            "market_cache_rows": [{"data_type": "market_data", "fetched_at": "2026-06-12"}],
+            "edgar_filing_cache": {"filing_count": 3, "latest_filing_date": "2026-06-05"},
+            "filing_context_cache": [
+                {"profile_name": "company_analysis", "latest_context_at": "2026-07-02T10:00:00+00:00"}
+            ],
+        },
     )
 
 
@@ -298,6 +306,30 @@ def test_guided_workup_non_interactive_skips_ciq_ingest_and_queue_mutations(
     assert "approve" not in calls
     assert "apply" not in calls
     assert result["queue_decisions"] == [{"item_id": 11, "action": "skipped", "reason": "non_interactive"}]
+
+
+def test_guided_workup_renders_data_freshness_in_run_and_profile_packets(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    monkeypatch.setattr(guided, "_now_iso", lambda: "2026-07-03T00:00:00+00:00")
+    monkeypatch.setattr(guided, "_stamp", lambda: "20260703T000000Z")
+    io = ScriptedIO(["s"])
+
+    result = guided.run_guided_workup(
+        _args(tmp_path, "--skip-ciq-stage"),
+        deps=_deps(tmp_path),
+        io=io,
+    )
+
+    run_markdown = Path(result["artifacts"]["markdown"]).read_text(encoding="utf-8")
+    review_markdown = Path(result["profile_review_packets"][0]["path"]).read_text(encoding="utf-8")
+
+    for markdown in (run_markdown, review_markdown):
+        assert "## Data Freshness" in markdown
+        assert "[STALE] market_data fetched 2026-06-12 (age 21.0d, warn >1d)" in markdown
+        assert "EDGAR filings: 3 cached, latest filing date=2026-06-05" in markdown
+        assert "CIQ ingest: skipped (skip_ciq_stage)" in markdown
 
 
 def test_pm_queue_review_index_includes_commands_and_preview(tmp_path: Path) -> None:
