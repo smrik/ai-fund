@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from contextlib import nullcontext
 from pathlib import Path
 
 from scripts.manual import pm_decision_queue
 from scripts.manual import run_guided_ticker_workup as guided
+from scripts.manual.run_ticker_valuation_flow import AGENT_MODEL_ENV_VARS
 
 
 class ScriptedIO(guided.GuidedIO):
@@ -330,6 +332,70 @@ def test_guided_workup_renders_data_freshness_in_run_and_profile_packets(
         assert "[STALE] market_data fetched 2026-06-12 (age 21.0d, warn >1d)" in markdown
         assert "EDGAR filings: 3 cached, latest filing date=2026-06-05" in markdown
         assert "CIQ ingest: skipped (skip_ciq_stage)" in markdown
+    assert "Agent LLM routing: model=" in run_markdown
+    assert result["llm_routing"]["source"] == ".env/config"
+    assert any(message.startswith("Agent LLM routing: model=") for message in io.messages)
+
+
+def test_configure_openrouter_free_overrides_pre_set_env(monkeypatch) -> None:
+    for env_name in [
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "LLM_MODEL_FAST",
+        "LLM_SYNTHESIS_MODEL",
+        "LLM_FALLBACK_MODELS",
+        *AGENT_MODEL_ENV_VARS,
+    ]:
+        monkeypatch.delenv(env_name, raising=False)
+    monkeypatch.setenv("LLM_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setenv("LLM_MODEL", "gemini-from-env")
+
+    routing = guided.configure_openrouter_free("openai/gpt-oss-120b:free")
+
+    assert os.environ["LLM_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert os.environ["LLM_MODEL"] == "openai/gpt-oss-120b:free"
+    assert routing["base_url"] == "https://openrouter.ai/api/v1"
+    assert routing["model"] == "openai/gpt-oss-120b:free"
+
+
+def test_friction_draft_write_never_clobbers_existing_same_day_file(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(guided, "_now_iso", lambda: "2026-07-03T00:00:00+00:00")
+    monkeypatch.setattr(guided, "_stamp", lambda: "20260703T000000Z")
+
+    friction_dir = tmp_path / "reviews"
+    friction_dir.mkdir()
+    existing = guided.next_friction_draft_path(friction_dir, "MSFT")
+    existing.write_text("sentinel completed log", encoding="utf-8")
+    result = {
+        "ticker": "MSFT",
+        "run_stamp": "20260703T000000Z",
+        "run_started_at": "2026-07-03T00:00:00+00:00",
+        "agent_mode": "heuristic",
+        "database": {"mode": "isolated_snapshot"},
+        "profiles": [],
+        "queue_decisions": [],
+        "latest_model": {},
+        "data_freshness": {},
+        "llm_routing": {
+            "model": "openai/gpt-oss-120b:free",
+            "base_url": "openrouter.ai",
+            "fallbacks": [],
+            "source": "--use-openrouter-free",
+        },
+    }
+
+    artifacts = guided.write_artifacts(
+        result,
+        output_dir=tmp_path / "out",
+        friction_log_dir=friction_dir,
+        prep_markdown="# Analyst Prep MSFT",
+    )
+
+    second = friction_dir / f"{existing.stem}-2.md"
+    assert existing.read_text(encoding="utf-8") == "sentinel completed log"
+    assert Path(artifacts["friction_draft"]) == second
+    assert second.exists()
+    assert second.read_text(encoding="utf-8").startswith("# Weekly Loop Friction Draft")
 
 
 def test_pm_queue_review_index_includes_commands_and_preview(tmp_path: Path) -> None:

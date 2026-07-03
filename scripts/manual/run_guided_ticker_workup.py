@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -50,6 +51,71 @@ def _as_dict(value: Any) -> dict[str, Any]:
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _split_model_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        parts = value
+    else:
+        parts = str(value or "").split(",")
+    return [str(part).strip() for part in parts if str(part).strip()]
+
+
+def _host_only(url: Any) -> str:
+    text = str(url or "").strip()
+    if not text:
+        return "not configured"
+    parsed = urlparse(text)
+    if parsed.hostname:
+        return parsed.hostname
+    parsed = urlparse(f"//{text}")
+    return parsed.hostname or text.split("/")[0]
+
+
+def _config_llm_defaults() -> dict[str, str]:
+    try:
+        from config import LLM_BASE_URL, LLM_MODEL
+
+        return {"model": str(LLM_MODEL or ""), "base_url": str(LLM_BASE_URL or "")}
+    except Exception:
+        return {"model": "", "base_url": ""}
+
+
+def build_llm_routing(
+    *,
+    source: str,
+    configured: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    defaults = _config_llm_defaults()
+    configured = configured or {}
+    model = str(configured.get("model") or os.getenv("LLM_MODEL") or defaults.get("model") or "not configured")
+    base_url = (
+        configured.get("base_url")
+        or os.getenv("LLM_BASE_URL")
+        or os.getenv("OPENAI_BASE_URL")
+        or defaults.get("base_url")
+        or ""
+    )
+    fallback_models = configured.get("fallback_models")
+    if fallback_models is None:
+        fallback_models = _split_model_list(os.getenv("LLM_FALLBACK_MODELS"))
+    return {
+        "model": model,
+        "base_url": _host_only(base_url),
+        "fallbacks": _split_model_list(fallback_models),
+        "source": source,
+    }
+
+
+def format_llm_routing_line(routing: dict[str, Any]) -> str:
+    fallbacks = _as_list(routing.get("fallbacks"))
+    fallback_label = ", ".join(str(value) for value in fallbacks) if fallbacks else "none"
+    return (
+        f"Agent LLM routing: model={routing.get('model') or 'not configured'} "
+        f"base_url={routing.get('base_url') or 'not configured'} "
+        f"fallbacks={fallback_label} "
+        f"(source: {routing.get('source') or 'unknown'})"
+    )
 
 
 def _int_set(values: Any) -> set[int]:
@@ -981,6 +1047,9 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
             ciq_info=result.get("ciq"),
         )
     )
+    llm_routing = _as_dict(result.get("llm_routing"))
+    if llm_routing:
+        lines.extend([format_llm_routing_line(llm_routing), ""])
     lines.extend(
         [
             "## Final Model Snapshot",
@@ -1092,7 +1161,7 @@ def write_artifacts(
     json_path = ticker_dir / f"{ticker}-{stamp}.json"
     md_path = ticker_dir / f"{ticker}-{stamp}.md"
     prep_md_path = ticker_dir / f"{ticker}-{stamp}-analyst-prep.md"
-    friction_path = friction_log_dir / f"{datetime.now(timezone.utc).date().isoformat()}-{ticker}-friction-draft.md"
+    friction_path = next_friction_draft_path(friction_log_dir, ticker)
 
     json_path.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     md_path.write_text(render_guided_markdown(result), encoding="utf-8")
@@ -1104,6 +1173,19 @@ def write_artifacts(
         "analyst_prep_markdown": str(prep_md_path),
         "friction_draft": str(friction_path),
     }
+
+
+def next_friction_draft_path(friction_log_dir: Path, ticker: str) -> Path:
+    today = datetime.now(timezone.utc).date().isoformat()
+    base = friction_log_dir / f"{today}-{ticker}-friction-draft.md"
+    if not base.exists():
+        return base
+    index = 2
+    while True:
+        candidate = friction_log_dir / f"{today}-{ticker}-friction-draft-{index}.md"
+        if not candidate.exists():
+            return candidate
+        index += 1
 
 
 def run_guided_workup(
@@ -1122,8 +1204,14 @@ def run_guided_workup(
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
+    configured_llm_routing: dict[str, Any] | None = None
     if args.use_openrouter_free:
-        configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+        configured_llm_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+    llm_routing = build_llm_routing(
+        source="--use-openrouter-free" if args.use_openrouter_free else ".env/config",
+        configured=configured_llm_routing,
+    )
+    io.write(format_llm_routing_line(llm_routing))
 
     result: dict[str, Any] = {
         "ticker": ticker,
@@ -1143,6 +1231,7 @@ def run_guided_workup(
         "analyst_prep": None,
         "excel_export": None,
         "data_freshness": None,
+        "llm_routing": llm_routing,
         "errors": [],
         "artifacts": {},
     }

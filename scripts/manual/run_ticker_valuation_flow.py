@@ -223,11 +223,11 @@ def collect_edgar_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> None:
-    os.environ.setdefault("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-    os.environ.setdefault("LLM_MODEL", model)
-    os.environ.setdefault("LLM_MODEL_FAST", model)
-    os.environ.setdefault("LLM_SYNTHESIS_MODEL", model)
+def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> dict[str, Any]:
+    os.environ["LLM_BASE_URL"] = "https://openrouter.ai/api/v1"
+    os.environ["LLM_MODEL"] = model
+    os.environ["LLM_MODEL_FAST"] = model
+    os.environ["LLM_SYNTHESIS_MODEL"] = model
     fallback_values = [str(value).strip() for value in (fallback_models or []) if str(value).strip()]
     if fallback_values:
         existing = [part.strip() for part in str(os.getenv("LLM_FALLBACK_MODELS", "")).split(",") if part.strip()]
@@ -238,7 +238,14 @@ def configure_openrouter_free(model: str, fallback_models: list[str] | None = No
         if merged:
             os.environ["LLM_FALLBACK_MODELS"] = ",".join(merged)
     for env_name in AGENT_MODEL_ENV_VARS:
-        os.environ.setdefault(env_name, model)
+        os.environ[env_name] = model
+    return {
+        "base_url": os.environ["LLM_BASE_URL"],
+        "model": os.environ["LLM_MODEL"],
+        "fallback_models": [
+            part.strip() for part in str(os.getenv("LLM_FALLBACK_MODELS", "")).split(",") if part.strip()
+        ],
+    }
 
 
 def configure_isolated_db(args: argparse.Namespace, ticker: str, stamp: str) -> dict[str, Any] | None:
