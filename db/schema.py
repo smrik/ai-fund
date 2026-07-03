@@ -2,14 +2,24 @@
 Alpha Pod — Database Schema
 Creates all tables. Safe to run multiple times (IF NOT EXISTS).
 """
+import os
+from pathlib import Path
 import sqlite3
 from config.settings import DB_PATH, DATA_DIR
 
 
-def get_connection() -> sqlite3.Connection:
-    """Get a database connection with row factory enabled."""
+def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
+    """Get a database connection with row factory enabled.
+
+    Path resolution: explicit db_path arg > ALPHA_POD_DB_PATH env var > config
+    DB_PATH. The env var is read at call time, not import time, so isolated-DB
+    setup (which sets it after imports) is honored regardless of import order.
+    """
+    if db_path is None:
+        override = os.getenv("ALPHA_POD_DB_PATH")
+        db_path = Path(override).resolve() if override else DB_PATH
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")  # Better concurrent read performance
     conn.execute("PRAGMA foreign_keys=ON")
