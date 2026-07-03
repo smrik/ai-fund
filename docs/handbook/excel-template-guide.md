@@ -53,13 +53,14 @@ Hard rules that keep this safe:
 
 To grow the model, edit the formula sheets / add tabs once, then keep refreshing data underneath.
 
-### Known backend data caveats (surfaced, not silently fixed)
+### Known backend data caveats (fixed in current exports)
 
-- `excel_flat.forecast[].delta_nwc_mm` is emitted in **raw dollars** (~1e6× too large) for later
-  forecast years. The model derives ΔNWC from `nwc_mm` levels and never trusts `delta_nwc_mm`.
-- `excel_flat.wacc.size_premium` is stored as **percentage-points** (e.g. `0.6` = 0.6%, displays
-  as 60%) while every other rate is a fraction. It does not flow into the backend WACC; treat the
-  unit as a known inconsistency until the exporter is fixed.
+- Current JSON exports emit `excel_flat.forecast[].delta_nwc_mm` in millions, consistent with the
+  other forecast money fields. Stale JSONs generated before the 2026-06-15 exporter fix may contain
+  mixed units and should be regenerated before use.
+- Current JSON exports emit `excel_flat.wacc.size_premium` as a decimal rate, consistent with the
+  other WACC rates. Stale JSONs generated before the 2026-06-15 exporter fix may store this value as
+  legacy percentage-points and should be regenerated before use.
 
 **Agent judgment.** If a guided-workup / analyst-prep run exists for the ticker (auto-discovered
 from `output/guided_workups/<TICKER>/` or `output/analyst_prep/<TICKER>/`, or passed via
