@@ -21,6 +21,7 @@ Use it for workflow guidance, local run paths, review loops, and implementation-
 
 ## For PMs And Operators
 
+- [Learn The Codebase](../learn-codebase.md)
 - [Local MVP Testing Runbook](./local-mvp-testing.md)
 - [Finance Deep Dive](./finance-deep-dive.md)
 - [Valuation Task Breakdown](./valuation-task-breakdown.md)

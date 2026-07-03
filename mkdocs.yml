@@ -51,6 +51,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Learn Codebase: learn-codebase.md
   - Valuation:
       - Index: valuation/index.md
       - Company Analysis: valuation/01_company-analysis.md

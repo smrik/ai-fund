@@ -10,6 +10,7 @@ Use this page to get to the right section quickly. `AGENTS.md` is the short repo
 | --- | --- |
 | Understand the product and valuation method | [Valuation](./valuation/index.md) |
 | Operate or review the system | [Handbook](./handbook/index.md) |
+| Learn how to review this codebase as a non-engineer | [Learn The Codebase](./learn-codebase.md) |
 | Modify the codebase safely | [Design Docs](./design-docs/index.md) |
 | Find current work and roadmap | [Plans](./plans/index.md) |
 | Understand repo rules and doc taxonomy | [Repository Guidance](./PLANS.md) |
@@ -22,6 +23,8 @@ Use this page to get to the right section quickly. `AGENTS.md` is the short repo
   Architecture, boundaries, and implementation truth.
 - [Handbook](./handbook/index.md)
   Operator and engineer how-to guidance.
+- [Learn The Codebase](./learn-codebase.md)
+  Beginner-friendly walkthrough for reviewing the repo, tracing changes, and asking good PR questions.
 - [Reference](./reference/index.md)
   Stable setup, config, glossary, and workflow references.
 - [Plans](./plans/index.md)
