@@ -124,7 +124,7 @@ def _latest_excel_model(ticker: str) -> str | None:
     export_dir = ROOT / "data" / "exports" / "generated" / "ticker" / ticker
     if not export_dir.exists():
         return None
-    paths = sorted(export_dir.glob(f"*-excelmodel-*/*_excel_model.xlsx"), reverse=True)
+    paths = sorted(export_dir.glob("*-excelmodel-*/*_excel_model.xlsx"), reverse=True)
     return str(paths[0]) if paths else None
 
 
