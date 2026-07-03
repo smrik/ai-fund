@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import Iterable
 
-from config import DB_PATH, EDGAR_CACHE_CLEAN_DIR, EDGAR_PARSER_VERSION
+from config import EDGAR_CACHE_CLEAN_DIR, EDGAR_PARSER_VERSION
 from db.loader import upsert_edgar_filing_cache
 from db.schema import create_tables, get_connection
 from src.stage_00_data import edgar_client
@@ -57,7 +57,7 @@ def summarise_cached_filings(
     ticker = coerce_ticker(ticker)
     form_list = normalise_forms(forms)
     _ensure_tables()
-    with get_connection(DB_PATH) as conn:
+    with get_connection() as conn:
         conn.row_factory = sqlite3.Row
         rows: list[FilingPrefetchRow] = []
         for form in form_list:
@@ -105,7 +105,7 @@ def prefetch_filings(
     except Exception as exc:
         return FilingPrefetchResult(ticker=ticker, rows=[], errors=[f"CIK lookup failed for {ticker}: {exc}"])
 
-    with get_connection(DB_PATH) as conn:
+    with get_connection() as conn:
         conn.row_factory = sqlite3.Row
         for form in form_list:
             try:
@@ -173,7 +173,7 @@ def _prefetch_one(
 
 
 def _ensure_tables() -> None:
-    with get_connection(DB_PATH) as conn:
+    with get_connection() as conn:
         create_tables(conn)
 
 

@@ -16,7 +16,7 @@ def test_prefetch_filings_fetches_text_and_writes_cache(tmp_path, monkeypatch):
     db_path = tmp_path / "alpha_pod.db"
     clean_dir = tmp_path / "edgar_clean"
     _init_db(db_path)
-    monkeypatch.setattr(prefetch, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     monkeypatch.setattr(prefetch, "EDGAR_CACHE_CLEAN_DIR", clean_dir)
     monkeypatch.setattr(prefetch.edgar_client, "get_cik", lambda ticker: "0000789019")
     monkeypatch.setattr(
@@ -70,7 +70,7 @@ def test_prefetch_filings_reuses_existing_cache(tmp_path, monkeypatch):
     clean_path.parent.mkdir(parents=True)
     clean_path.write_text("cached filing text", encoding="utf-8")
     _init_db(db_path)
-    monkeypatch.setattr(prefetch, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     monkeypatch.setattr(prefetch, "EDGAR_CACHE_CLEAN_DIR", clean_dir)
     monkeypatch.setattr(prefetch.edgar_client, "get_cik", lambda ticker: "0000789019")
     monkeypatch.setattr(
@@ -132,7 +132,7 @@ def test_summary_only_reports_cache_without_fetching(tmp_path, monkeypatch, caps
     clean_path = tmp_path / "cached.txt"
     clean_path.write_text("12345", encoding="utf-8")
     _init_db(db_path)
-    monkeypatch.setattr(prefetch, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     monkeypatch.setattr(
         prefetch.edgar_client,
         "get_cik",
@@ -180,7 +180,7 @@ def test_summary_only_marks_missing_cache_file(tmp_path, monkeypatch):
     db_path = tmp_path / "alpha_pod.db"
     missing_path = tmp_path / "missing.txt"
     _init_db(db_path)
-    monkeypatch.setattr(prefetch, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     monkeypatch.setattr(
         prefetch.edgar_client,
         "get_cik",
@@ -221,10 +221,13 @@ def test_summary_only_marks_missing_cache_file(tmp_path, monkeypatch):
     assert result.rows[0].cached_chars == 0
 
 
-def test_prefetch_returns_actionable_error_when_cik_lookup_fails(monkeypatch):
+def test_prefetch_returns_actionable_error_when_cik_lookup_fails(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     monkeypatch.setattr(prefetch.edgar_client, "get_cik", lambda ticker: (_ for _ in ()).throw(RuntimeError("network down")))
 
     result = prefetch.prefetch_filings("MSFT", forms=["10-K"], limit=1)
 
     assert result.cached_count == 0
     assert result.errors == ["CIK lookup failed for MSFT: network down"]
+    assert db_path.exists()

@@ -425,28 +425,49 @@ def _export_xlsx(ticker: str, workup: dict[str, Any] | None = None) -> dict[str,
     PowerQuery template export when the model cannot be built (e.g. no excel_flat JSON
     yet, or a non-value_driver terminal mode), so the loop never loses its Excel output.
 
-    When *workup* (this run's in-memory ``{analyst_prep, run_stamp, queue_decisions}``)
-    is supplied, its agent thesis/driver cards are surfaced — so the model reflects the
-    current run rather than auto-discovering a previous one.
+    When *workup* is supplied, its current deterministic ``latest_model`` is exported
+    to a fresh valuation JSON, and its agent thesis/driver cards are surfaced — so the
+    model reflects this run rather than auto-discovering a previous one.
     """
     try:
         from src.stage_04_pipeline.advanced_dcf_model import build_advanced_dcf_model
+        from src.stage_02_valuation.json_exporter import export_ticker_json
 
         workup_path: str | None = None
         tmp_file: Path | None = None
-        if workup and (workup.get("analyst_prep") or {}).get("thesis_cards"):
-            import tempfile
+        deterministic_result = _as_dict(
+            _as_dict(_as_dict(workup or {}).get("latest_model")).get("deterministic")
+        ).get("batch_row")
+        deterministic_result = _as_dict(deterministic_result)
+        if not deterministic_result or deterministic_result.get("error"):
+            raise ValueError(
+                "Advanced DCF export requires this run's deterministic batch_row; "
+                "refusing to build from the default latest valuation JSON."
+            )
 
-            fd, name = tempfile.mkstemp(prefix=f"{ticker}-workup-", suffix=".json")
-            tmp_file = Path(name)
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(workup, fh)
-            workup_path = str(tmp_file)
-        try:
-            path = build_advanced_dcf_model(ticker, guided_workup_path=workup_path)
-        finally:
-            if tmp_file is not None:
-                tmp_file.unlink(missing_ok=True)
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix=f"{ticker}-valuation-json-") as tmp_dir:
+            valuation_json_path = export_ticker_json(
+                deterministic_result,
+                output_dir=Path(tmp_dir),
+                date_str=str(_as_dict(workup or {}).get("run_stamp") or _stamp()),
+            )
+            if workup and (workup.get("analyst_prep") or {}).get("thesis_cards"):
+                fd, name = tempfile.mkstemp(prefix=f"{ticker}-workup-", suffix=".json")
+                tmp_file = Path(name)
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    json.dump(workup, fh)
+                workup_path = str(tmp_file)
+            try:
+                path = build_advanced_dcf_model(
+                    ticker,
+                    json_path=valuation_json_path,
+                    guided_workup_path=workup_path,
+                )
+            finally:
+                if tmp_file is not None:
+                    tmp_file.unlink(missing_ok=True)
         return {"strategy": "advanced_dcf_model", "path": str(path)}
     except Exception as model_exc:
         try:
@@ -1340,6 +1361,7 @@ def run_guided_workup(
                 "run_stamp": run_stamp,
                 "analyst_prep": result.get("analyst_prep"),
                 "queue_decisions": result.get("queue_decisions") or [],
+                "latest_model": result.get("latest_model"),
             }
             try:
                 export_result = deps.export_xlsx(ticker, current_workup)  # type: ignore[call-arg]

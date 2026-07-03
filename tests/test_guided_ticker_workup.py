@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from contextlib import nullcontext
 from pathlib import Path
@@ -356,6 +357,63 @@ def test_configure_openrouter_free_overrides_pre_set_env(monkeypatch) -> None:
     assert os.environ["LLM_MODEL"] == "openai/gpt-oss-120b:free"
     assert routing["base_url"] == "https://openrouter.ai/api/v1"
     assert routing["model"] == "openai/gpt-oss-120b:free"
+
+
+def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path, monkeypatch) -> None:
+    from src.stage_02_valuation import json_exporter
+    from src.stage_04_pipeline import advanced_dcf_model
+
+    calls: dict[str, object] = {}
+
+    def _fake_export_ticker_json(result, *, output_dir=None, date_str=None, **kwargs):
+        path = Path(output_dir) / f"{result['ticker']}_{date_str}.json"
+        path.write_text(json.dumps({"ticker": result["ticker"], "fresh": True}), encoding="utf-8")
+        calls["export_result"] = result
+        calls["export_path"] = path
+        calls["export_date_str"] = date_str
+        return path
+
+    def _fake_build_advanced_dcf_model(ticker, *, json_path=None, guided_workup_path=None, **kwargs):
+        json_path = Path(json_path)
+        assert json_path.exists()
+        assert json_path == calls["export_path"]
+        assert guided_workup_path is not None
+        assert Path(guided_workup_path).exists()
+        calls["build_json_path"] = json_path
+        calls["guided_workup_path"] = Path(guided_workup_path)
+        out = tmp_path / f"{ticker}_advanced_dcf_model.xlsx"
+        out.write_text("fake workbook", encoding="utf-8")
+        return out
+
+    monkeypatch.setattr(json_exporter, "export_ticker_json", _fake_export_ticker_json)
+    monkeypatch.setattr(advanced_dcf_model, "build_advanced_dcf_model", _fake_build_advanced_dcf_model)
+
+    workup = {
+        "ticker": "MSFT",
+        "run_stamp": "20260703T000000Z",
+        "analyst_prep": {"thesis_cards": [{"title": "Current run thesis"}]},
+        "queue_decisions": [],
+        "latest_model": {
+            "deterministic": {
+                "batch_row": {
+                    "ticker": "MSFT",
+                    "iv_base": 123.45,
+                    "forecast_bridge_json": "[]",
+                }
+            }
+        },
+    }
+
+    result = guided._export_xlsx("MSFT", workup)
+
+    assert result == {
+        "strategy": "advanced_dcf_model",
+        "path": str(tmp_path / "MSFT_advanced_dcf_model.xlsx"),
+    }
+    assert calls["export_result"] == workup["latest_model"]["deterministic"]["batch_row"]
+    assert calls["export_date_str"] == "20260703T000000Z"
+    assert calls["build_json_path"] == calls["export_path"]
+    assert not calls["guided_workup_path"].exists()
 
 
 def test_friction_draft_write_never_clobbers_existing_same_day_file(tmp_path: Path, monkeypatch) -> None:
