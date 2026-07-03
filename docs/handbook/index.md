@@ -14,6 +14,7 @@ Use it for workflow guidance, local run paths, review loops, and implementation-
 
 - [End-to-End Workflow](./workflow-end-to-end.md)
 - [Weekly Loop Session](./weekly-loop-session.md)
+- [PM Queue Review Checklist](./pm-queue-review-checklist.md)
 - [Pipeline Glass-Box Walkthrough](./pipeline-glass-box.md)
 - [Operations Runbook](./operations-runbook.md)
 - [Quality And Verification](./quality-and-verification.md)
