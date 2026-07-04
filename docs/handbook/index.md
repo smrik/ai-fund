@@ -13,12 +13,16 @@ Use it for workflow guidance, local run paths, review loops, and implementation-
 ## Read First
 
 - [End-to-End Workflow](./workflow-end-to-end.md)
+- [Weekly Loop Session](./weekly-loop-session.md)
+- [PM Queue Review Checklist](./pm-queue-review-checklist.md)
+- [Pipeline Glass-Box Walkthrough](./pipeline-glass-box.md)
 - [Operations Runbook](./operations-runbook.md)
 - [Quality And Verification](./quality-and-verification.md)
 - [Valuation And DCF Logic](./valuation-dcf-logic.md)
 
 ## For PMs And Operators
 
+- [Learn The Codebase](../learn-codebase.md)
 - [Local MVP Testing Runbook](./local-mvp-testing.md)
 - [Finance Deep Dive](./finance-deep-dive.md)
 - [Valuation Task Breakdown](./valuation-task-breakdown.md)

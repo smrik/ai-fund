@@ -1,0 +1,41 @@
+IES HOLDINGS, INC.
+
+FORM 10-K
+
+PART I
+
+Item 1. Business
+
+The company provides electrical contracting, communications, infrastructure, and industrial services across multiple end markets.
+
+Item 1A. Risk Factors
+
+Demand for construction and infrastructure services may decline if customers delay capital projects or if labor availability tightens.
+
+Item 1B. Unresolved Staff Comments
+
+None.
+
+PART II
+
+Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations
+
+Revenue increased due to project execution and backlog conversion. Gross margin changed with project mix and labor costs.
+
+Item 7A. Quantitative and Qualitative Disclosures About Market Risk
+
+Market risk disclosure begins here.
+
+Item 8. Financial Statements and Supplementary Data
+
+Consolidated financial statements begin here.
+
+Notes to Consolidated Financial Statements
+
+Note 1. Summary of Significant Accounting Policies
+
+Revenue is recognized over time for many contracts based on progress toward completion.
+
+Item 9. Changes in and Disagreements With Accountants on Accounting and Financial Disclosure
+
+None.

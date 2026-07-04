@@ -1,7 +1,12 @@
 # Agentic Handoff MVP Hardening Implementation Plan
 
-> **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-> **For Codex:** Use `/goals` with the goal prompt below, then execute this file in order. Use TDD where practical, keep changes small, and verify after each task.
+| Field | Value |
+| --- | --- |
+| Status | Completed |
+| Shipped | 2026-05-22 |
+| Note | Historical implementation record; do not execute as an active plan. |
+
+> **Historical note:** The execution prompts below were used while this plan was active. They are retained for context only and should not be used as live instructions.
 
 **Goal:** Turn the current Universal Agentic Handoff scaffold into a real MVP that can be safely tested on live ticker workflows without synthetic evidence, silent agent failures, or unsafe valuation override semantics.
 
@@ -11,12 +16,12 @@
 
 ---
 
-## `/goals` Prompt
+## Historical `/goals` Prompt (Do Not Execute)
 
-Use this as the goal prompt in a fresh Codex session:
+This was the goal prompt for the original implementation session:
 
 ```text
-Build the Alpha Pod Agentic Handoff MVP hardening pass from docs/plans/active/2026-05-22-agentic-handoff-mvp-hardening.md.
+Build the Alpha Pod Agentic Handoff MVP hardening pass from the then-active plan, now archived at docs/plans/completed/2026-05-22-agentic-handoff-mvp-hardening.md.
 
 Primary objective: make the current Evidence Packet -> Agent Observation -> Translator -> PM Decision Queue -> Preview/Edit/Approve workflow safe for real-world ticker testing.
 

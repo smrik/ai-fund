@@ -1,0 +1,71 @@
+MICROSOFT CORPORATION
+
+FORM 10-K
+
+INDEX
+
+PART I
+                Item 1.       Business                                             3
+                Item 1A.      Risk Factors                                        16
+PART II
+                Item 7.       Management's Discussion and Analysis of Financial Condition and Results of Operations 35
+                Item 7A.      Quantitative and Qualitative Disclosures About Market Risk
+                Item 8.       Financial Statements and Supplementary Data
+
+PART I
+
+Item 1
+
+The Microsoft Cloud provides integration across the technology stack while the company sells software, services, devices, and cloud infrastructure to commercial and consumer customers.
+
+Research and Development
+
+We invest in research and development across AI, cloud infrastructure, productivity software, and security.
+
+PART I
+
+Item 1A
+
+Competition in cloud services, software platforms, devices, and AI infrastructure could reduce revenue growth, increase spending, and harm margins.
+
+Operational and cybersecurity threats could disrupt products, services, customer trust, and regulatory compliance.
+
+PART I
+
+Item 1B
+
+None.
+
+PART II
+
+Item 7
+
+ITEM 7. MANAGEMENT' S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS OF OPERATIONS
+
+Revenue increased due to cloud services growth, higher usage, and enterprise demand. Operating expenses increased due to cloud and AI infrastructure investment.
+
+PART II
+
+Item 7A
+
+Market risk disclosure begins here.
+
+PART II
+
+Item 8
+
+ITEM 8. FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA
+
+Consolidated statements and accompanying notes begin here.
+
+Notes to Consolidated Financial Statements
+
+Note 1. Accounting Policies
+
+Revenue is recognized when control of promised goods or services transfers to customers.
+
+PART II
+
+Item 9
+
+Changes in and disagreements with accountants begin here.

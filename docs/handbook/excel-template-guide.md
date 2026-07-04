@@ -10,6 +10,70 @@ This Power Query path is separate from CIQ workbook ingestion. CIQ data enters S
 
 ---
 
+## 0. Advanced DCF model — build once, refresh per ticker (recommended)
+
+For the in-depth, formula-driven DCF model, use `src/stage_04_pipeline/advanced_dcf_model.py`
+(`scripts/manual/build_advanced_dcf_model.py`). It is built around one idea: **you own the
+model; the pipeline owns the data.**
+
+**Build once** — generate a fresh workbook. This is *your* template:
+
+```powershell
+python scripts/manual/build_advanced_dcf_model.py --ticker BAH
+```
+
+The Base-case DCF is a transparent rebuild (PV of explicit FCFF + value-driver Gordon TV +
+exit-multiple TV, blended with the **story-derived** weight, equity bridge, diluted shares) and
+the build **refuses to emit unless the workbook Base IV reconciles to the backend `iv_base` to
+within $0.10/share**. Tabs: Cover, Thesis_Drivers, PM_Review_Queue, Assumptions (with provenance
++ register flags), Historical_Financials, Input_Forecast, WACC, DCF_Base, Scenarios,
+Valuation_Bridge, Sensitivity, Checks.
+
+**Refresh per ticker** — swap a different ticker's data into a model you have already edited:
+
+```powershell
+python scripts/manual/build_advanced_dcf_model.py --ticker IBM --refresh path\to\BAH_model.xlsx --output-path IBM_model.xlsx
+```
+
+Refresh rebuilds **only the data sheets** and preserves:
+
+- the MODEL sheets — `WACC`, `DCF_Base`, `Sensitivity`, and **any sheet you added**;
+- the **PM Override** column on `Assumptions` (overrides flow through the formulas);
+- the canonical sheet order.
+
+Hard rules that keep this safe:
+
+- **No PowerQuery in this workbook**, so an `openpyxl` round-trip cannot strip a DataMashup part
+  (the failure that corrupted earlier templates). The pipeline never needs the fragile
+  zip-patcher.
+- **Do not hand-edit the data sheets** (`Assumptions` source column, `Input_Forecast`,
+  `Historical_Financials`, `Thesis_Drivers`, `PM_Review_Queue`, `Scenarios`, `Valuation_Bridge`,
+  `Cover`, `Checks`); a refresh rebuilds them. Put your model changes on the formula sheets or new
+  sheets, and your assumption changes in the PM Override column.
+
+To grow the model, edit the formula sheets / add tabs once, then keep refreshing data underneath.
+
+### Known backend data caveats (fixed in current exports)
+
+- Current JSON exports emit `excel_flat.forecast[].delta_nwc_mm` in millions, consistent with the
+  other forecast money fields. Stale JSONs generated before the 2026-06-15 exporter fix may contain
+  mixed units and should be regenerated before use.
+- Current JSON exports emit `excel_flat.wacc.size_premium` as a decimal rate, consistent with the
+  other WACC rates. Stale JSONs generated before the 2026-06-15 exporter fix may store this value as
+  legacy percentage-points and should be regenerated before use.
+
+**Agent judgment.** If a guided-workup / analyst-prep run exists for the ticker (auto-discovered
+from `output/guided_workups/<TICKER>/` or `output/analyst_prep/<TICKER>/`, or passed via
+`--guided-workup`), the model surfaces it **read-only**: the **Thesis_Drivers** tab leads with the
+agent thesis cards (claim, model implication, confidence, what-would-change-mind), and
+**PM_Review_Queue** leads with the agent driver proposals (current → proposed value, rationale,
+PM-queue item, `review_required` status) plus missing-data flags. These never change the model —
+to act on a proposal, type the proposed value into the Assumptions **PM Override** column. When no
+guided-workup run is found, the Thesis tab falls back to the deterministic story/sector layer and
+says so.
+
+---
+
 ## 1. Generating the JSON
 
 ```bash

@@ -151,6 +151,84 @@ def test_analyst_prep_pack_maps_drivers_flags_and_public_comps(monkeypatch):
     assert pack.evidence_packet_ids == [7]
 
 
+def test_analyst_prep_deferred_queue_proposal_does_not_replace_effective_value(monkeypatch):
+    from src.stage_04_pipeline import analyst_prep_pack
+
+    monkeypatch.setattr(
+        analyst_prep_pack,
+        "build_override_workbench",
+        lambda ticker: {
+            "ticker": "IBM",
+            "available": True,
+            "fields": [
+                {
+                    "field": "revenue_growth_near",
+                    "label": "Revenue Growth (Near)",
+                    "baseline_value": 0.06,
+                    "effective_value": 0.08,
+                    "effective_source": "ciq_consensus",
+                    "unit": "pct",
+                }
+            ],
+            "default_resolution": {"status": "ok", "fields": []},
+        },
+    )
+    monkeypatch.setattr(
+        analyst_prep_pack,
+        "build_dcf_audit_view",
+        lambda ticker: {"ticker": "IBM", "available": True, "current_price": 100.0, "scenario_summary": []},
+    )
+    monkeypatch.setattr(
+        analyst_prep_pack,
+        "build_comps_dashboard_view",
+        lambda ticker: {"available": False, "peer_counts": {}, "source_lineage": {}, "target_vs_peers": {}},
+    )
+    monkeypatch.setattr(analyst_prep_pack, "build_research_board_view", lambda ticker: {"available": True})
+    monkeypatch.setattr(
+        analyst_prep_pack,
+        "build_valuation_inputs",
+        lambda ticker, apply_overrides=True: SimpleNamespace(
+            drivers=SimpleNamespace(revenue_growth_terminal=0.025),
+            source_lineage={"revenue_growth_terminal": "sector_prior"},
+        ),
+    )
+    monkeypatch.setattr(
+        analyst_prep_pack,
+        "_load_store_state",
+        lambda ticker: (
+            [{"packet_id": 7, "profile_name": "industry_analysis", "run_metadata": {"source_quality": "real"}}],
+            [
+                {
+                    "item_id": 81,
+                    "ticker": "IBM",
+                    "profile_name": "industry_analysis",
+                    "item_type": "assumption_change_pack",
+                    "status": "deferred",
+                    "summary": "Review growth later.",
+                    "evidence_anchor_ids": ["fact:growth"],
+                    "evidence_packet_ids": ["7"],
+                    "proposal_pack": {
+                        "proposals": [
+                            {
+                                "assumption_name": "revenue_growth_near",
+                                "proposal_mode": "target",
+                                "proposed_target_value": 0.10,
+                            }
+                        ]
+                    },
+                }
+            ],
+        ),
+    )
+
+    pack = analyst_prep_pack.build_analyst_prep_pack("ibm")
+
+    growth = next(card for card in pack.driver_cards if card.assumption_name == "revenue_growth_near")
+    assert growth.proposed_or_effective_value == 0.08
+    assert growth.pm_review_status == "review_required"
+    assert "is deferred" in growth.rationale
+
+
 def test_analyst_prep_driver_cards_mark_true_cross_profile_conflicts(monkeypatch):
     from src.stage_04_pipeline import analyst_prep_pack
 

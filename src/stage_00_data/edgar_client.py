@@ -5,10 +5,10 @@ Now powered by `edgartools` for robust fetching, caching, and XBRL parsing.
 
 import os
 from pathlib import Path
-import sqlite3
 from typing import Optional, Union
 
-from config import DB_PATH, EDGAR_HEADERS, ROOT_DIR
+from config import EDGAR_HEADERS, ROOT_DIR
+from db.schema import get_connection
 
 
 def _configure_workspace_edgar_cache() -> None:
@@ -54,17 +54,24 @@ def _read_cached_text(path_value: str | None, max_chars: Optional[int] = None) -
 
 def _cached_filing_rows(ticker: str, form_type: str, limit: int = 4) -> list[dict]:
     try:
-        with sqlite3.connect(str(DB_PATH)) as conn:
-            conn.row_factory = sqlite3.Row
+        cached_cik = _cached_cik(ticker)
+        with get_connection() as conn:
+            params: list[object] = [ticker.upper().strip(), form_type]
+            cik_clause = ""
+            if cached_cik:
+                cik_clause = "AND cik = ?"
+                params.append(cached_cik)
+            params.append(int(limit))
             rows = conn.execute(
-                """
+                f"""
                 SELECT cik, form_type, accession_no, filing_date, doc_name, clean_path, raw_path
                 FROM edgar_filing_cache
                 WHERE ticker = ? AND form_type = ?
+                  {cik_clause}
                 ORDER BY COALESCE(filing_date, '') DESC, fetched_at DESC
                 LIMIT ?
                 """,
-                [ticker.upper().strip(), form_type, int(limit)],
+                params,
             ).fetchall()
     except Exception:
         return []
@@ -81,14 +88,13 @@ def _cached_filing_text(
     try:
         placeholders = ",".join("?" for _ in form_types)
         params: list[object] = [ticker.upper().strip(), str(accession_no), *form_types]
-        with sqlite3.connect(str(DB_PATH)) as conn:
-            conn.row_factory = sqlite3.Row
+        with get_connection() as conn:
             row = conn.execute(
                 f"""
                 SELECT clean_path, raw_path
                 FROM edgar_filing_cache
                 WHERE ticker = ? AND accession_no = ? AND form_type IN ({placeholders})
-                ORDER BY COALESCE(filing_date, '') DESC
+                ORDER BY fetched_at DESC, COALESCE(filing_date, '') DESC
                 LIMIT 1
                 """,
                 params,
@@ -102,7 +108,7 @@ def _cached_filing_text(
 
 def _cached_cik(ticker: str) -> str | None:
     try:
-        with sqlite3.connect(str(DB_PATH)) as conn:
+        with get_connection() as conn:
             row = conn.execute(
                 """
                 SELECT cik
@@ -200,13 +206,13 @@ def get_recent_filing_metadata(ticker: str, form_type: str, limit: int = 4) -> l
 def get_filing_text_by_accession(ticker: str, accession_no: str, max_chars: Optional[int] = None) -> Optional[str]:
     """
     Fetch the full text for a specific filing identified by accession number.
-    Searches recent 10-K and 10-Q filings for the matching accession.
+    Searches recent 10-K, 10-Q, and 8-K filings for the matching accession.
     """
     if _cache_only():
         return _cached_filing_text(ticker, accession_no, max_chars=max_chars)
     try:
         company = Company(ticker)
-        for form_type in ("10-K", "10-Q"):
+        for form_type in ("10-K", "10-Q", "8-K"):
             try:
                 for filing in company.get_filings(form=form_type).head(10):
                     if str(filing.accession_no) == str(accession_no):

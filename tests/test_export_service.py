@@ -97,6 +97,66 @@ def test_stage_power_query_workbook_copies_template_and_points_json_path(monkeyp
     assert result["artifacts"][0]["artifact_key"] == "excel_workbook"
 
 
+def test_stage_excel_model_workbook_preserves_template_and_points_at_valuation_json(monkeypatch):
+    from src.stage_04_pipeline import export_service
+
+    tmp_path = _workspace_tempdir("export-excel-model")
+    template_path = tmp_path / "excelmodel_template.xlsx"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Config"
+    ws["A1"] = "Setting"
+    ws["B1"] = "Value"
+    ws["A2"] = "json_path"
+    ws["B2"] = "C:\\placeholder.json"
+    wb.create_named_range("json_path", ws, "$B$2")
+    data = wb.create_sheet("_Data")
+    data["A1"] = "PowerQuery staging"
+    dcf = wb.create_sheet("DCF_Base")
+    dcf["B4"] = "formula placeholder"
+    wb.save(template_path)
+
+    json_path = tmp_path / "BAH_latest.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "ticker": "BAH",
+                "excel_flat": {
+                    "historical_financials": [
+                        {
+                            "period": "2025-03-31",
+                            "fiscal_year": "FY25",
+                            "revenue_mm": 11980.0,
+                            "ebit_mm": 1214.0,
+                            "ebit_margin_pct": 0.1013,
+                            "source_file": "BAH_Standard.xlsx",
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = export_service.stage_excel_model_workbook(
+        "BAH",
+        tmp_path / "bundle",
+        json_path=json_path,
+        template_path=template_path,
+    )
+
+    staged = load_workbook(Path(result["primary_path"]))
+    assert staged["Config"]["B2"].value == str(json_path.resolve())
+    assert staged["_Data"]["A1"].value == "PowerQuery staging"
+    assert staged["_Data"]["A66"].value == "HistoricalFinancials"
+    assert staged["_Data"]["A68"].value == "2025-03-31"
+    assert staged["_Data"]["C68"].value == 11980.0
+    assert staged["DCF_Base"]["B4"].value == "formula placeholder"
+    assert staged["DCF_Base"]["B52"].value == "HISTORICAL ACTUALS  ($mm / ratios)"
+    assert "INDEX(_Data!$C$68:$C$77" in staged["DCF_Base"]["C54"].value
+    assert result["artifacts"][0]["artifact_key"] == "excel_model_workbook"
+
+
 def test_stage_power_query_workbook_populates_comps_tabs(monkeypatch):
     from src.stage_04_pipeline import export_service
 
@@ -267,7 +327,7 @@ def test_stage_power_query_workbook_populates_analyst_prep_sheets(monkeypatch):
                     "profile_name": "company_analysis",
                     "kind": "packet_fact",
                     "label": "Growth",
-                    "value": 8.0,
+                    "value": {"name": "bear", "probability": 0.2},
                     "unit": "%",
                     "source_quality": "real",
                     "source_ref": "ciq",
@@ -293,6 +353,7 @@ def test_stage_power_query_workbook_populates_analyst_prep_sheets(monkeypatch):
     assert staged["Thesis_Bridge"]["B5"].value == "Valuation Setup"
     assert staged["Model_Driver_Map"]["A5"].value == "wacc"
     assert staged["Evidence_Map"]["A5"].value == "packet:7:fact:growth"
+    assert staged["Evidence_Map"]["F5"].value == '{"name":"bear","probability":0.2}'
     assert staged["Segment_Drivers"]["A5"].value == "Segment evidence missing"
 
 

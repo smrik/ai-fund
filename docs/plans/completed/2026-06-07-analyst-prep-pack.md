@@ -2,7 +2,9 @@
 
 ## Status
 
-Active implementation slice for the v0.1 alpha PM workflow.
+Completed.
+
+Shipped: 2026-06-07.
 
 ## Goal
 

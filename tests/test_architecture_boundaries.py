@@ -58,8 +58,6 @@ SQLITE_CONNECT_ALLOWLIST = {
     "src/portfolio/tracker.py",
     "src/stage_00_data/ciq_adapter.py",
     "src/stage_00_data/company_descriptions.py",
-    "src/stage_00_data/edgar_client.py",
-    "src/stage_00_data/filing_retrieval.py",
     "src/stage_00_data/market_data.py",
     "src/stage_00_data/peer_similarity.py",
     "src/stage_00_data/sec_filing_metrics.py",

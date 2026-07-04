@@ -10,6 +10,24 @@ def test_base_agent_initializes():
     assert agent.name == "BaseAgent"
 
 
+def test_base_agent_resolves_base_url_at_construction(monkeypatch):
+    sentinel = "https://sentinel.example/v1"
+    monkeypatch.setenv("LLM_BASE_URL", sentinel)
+
+    agent = BaseAgent()
+
+    assert str(agent.client.base_url).startswith(sentinel)
+
+
+def test_base_agent_resolves_default_model_at_construction(monkeypatch):
+    monkeypatch.setenv("LLM_MODEL", "sentinel/model")
+
+    agent = BaseAgent()
+
+    assert agent.model == "sentinel/model"
+    assert agent.last_used_model == "sentinel/model"
+
+
 def test_tool_format_is_openai():
     """Tool definitions must use OpenAI function-calling format."""
     tool = BaseAgent._tool(

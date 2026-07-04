@@ -36,8 +36,10 @@ class BaseAgent:
 	"""
 
 	def __init__(self, model: str | None = None):
+		resolved_base_url = os.getenv("LLM_BASE_URL") or LLM_BASE_URL
+		resolved_model = model or os.getenv("LLM_MODEL") or LLM_MODEL
 		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
-		if openrouter_key and "openrouter.ai" in (LLM_BASE_URL or ""):
+		if openrouter_key and "openrouter.ai" in (resolved_base_url or ""):
 			api_key = openrouter_key
 		else:
 			api_key = (
@@ -50,10 +52,10 @@ class BaseAgent:
 		# Keep construction offline-safe for deterministic tests and blocked runs.
 		# A real request with this placeholder still fails closed at the provider.
 		kwargs: dict = {"api_key": api_key or "offline-placeholder"}
-		if LLM_BASE_URL:
-			kwargs["base_url"] = LLM_BASE_URL
+		if resolved_base_url:
+			kwargs["base_url"] = resolved_base_url
 		self.client = OpenAI(**kwargs)
-		self.model = model or LLM_MODEL
+		self.model = resolved_model
 		self.last_used_model = self.model
 		self.name = "BaseAgent"
 		self.prompt_version = "v1"

@@ -14,10 +14,10 @@ In the Assumptions sheet, put the full path in a named cell so every query reads
 
 | Cell | Value |
 |---|---|
-| `Config!A1` | `json_path` |
-| `Config!B1` | `C:\Projects\03-Finance\ai-fund\data\valuations\json\IBM_latest.json` |
+| `Config!A2` | `json_path` |
+| `Config!B2` | `C:\Projects\03-Finance\ai-fund\data\valuations\json\IBM_latest.json` |
 
-Name cell `Config!B1` as `json_path` via **Formulas → Name Manager**.
+Name cell `Config!B2` as `json_path` via **Formulas → Name Manager**.
 
 To switch tickers: change the path to e.g. `ORCL_latest.json` and hit **Data → Refresh All**.
 
@@ -52,7 +52,45 @@ in
 Create one **Blank Query** per section. Set each to **Load to: Connection Only**,
 then reference output cells via Named Ranges in the Assumptions sheet.
 
-### 3a — Assumptions block
+The JSON still keeps the nested sections below for compatibility, but new workbooks should prefer
+`TickerJSON[excel_flat]` whenever possible. Those tables are already shaped for Excel and avoid
+manual expansion of nested records/lists.
+
+### 3a — Flat table pattern
+
+Use this pattern for flat tables such as assumptions, WACC, valuation, market, source lineage, or CIQ lineage:
+
+```m
+let
+    Rows = TickerJSON[excel_flat][assumptions],
+    Result = Table.FromRecords(Rows)
+in
+    Result
+```
+
+For historical actuals:
+
+```m
+let
+    Rows = TickerJSON[excel_flat][historical_financials],
+    Result = Table.FromRecords(Rows)
+in
+    Result
+```
+
+For the forecast bridge:
+
+```m
+let
+    Rows = TickerJSON[excel_flat][forecast],
+    Result = Table.FromRecords(Rows)
+in
+    Result
+```
+
+Flat money columns ending in `_mm` are in $mm; flat percentage/rate columns stay as decimals.
+
+### 3b — Legacy assumptions block
 
 Returns a single-column table; load to a hidden sheet and link each row to Col B.
 
@@ -94,7 +132,7 @@ in
     Result
 ```
 
-### 3b — WACC block
+### 3c — Legacy WACC block
 
 ```m
 let
@@ -117,7 +155,7 @@ in
     Result
 ```
 
-### 3c — Scenarios / IV
+### 3d — Legacy scenarios / IV
 
 ```m
 let
@@ -136,7 +174,7 @@ in
     Result
 ```
 
-### 3d — Market data
+### 3e — Legacy market data
 
 ```m
 let
@@ -158,7 +196,7 @@ in
     Result
 ```
 
-### 3e — Comps peers table
+### 3f — Legacy comps peers table
 
 ```m
 let
@@ -199,7 +237,7 @@ Override pattern in Assumptions:
 
 | Error | Fix |
 |---|---|
-| `File not found` | Run batch_runner with `--json` first. Check path in `Config!B1`. |
+| `File not found` | Run batch_runner with `--json` first. Check path in `Config!B2`. |
 | `Expression.Error: key not found` | JSON schema changed. Check `json_exporter.py` for exact key. |
 | `DataFormat.Error` | Null value in JSON. Wrap with `try ... otherwise null`. |
 | Query slow | Load to Connection Only; reference cells via named ranges. |

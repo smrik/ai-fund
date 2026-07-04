@@ -348,6 +348,8 @@ def _active_pack(item: dict[str, Any]) -> dict[str, Any] | None:
 
 def _queue_value_for_field(items: list[dict[str, Any]], field: str) -> tuple[float | None, dict[str, Any] | None]:
     for item in items:
+        if str(item.get("status") or "").lower() == "rejected":
+            continue
         pack = _active_pack(item)
         if not pack:
             continue
@@ -386,10 +388,17 @@ def _driver_cards(
         default_item = default_by_field.get(field)
         default_needs_review = _default_item_needs_pm_review(default_item)
         conflict_group = conflict_by_field.get(field)
-        status = "review_required" if default_needs_review or proposed is not None or conflict_group else "ok"
+        queue_status = str((queue_item or {}).get("status") or "").lower()
+        active_proposal = proposed is not None and queue_status not in {"deferred", "rejected"}
+        displayed_value = proposed if active_proposal else effective
+        status = "review_required" if default_needs_review or active_proposal or conflict_group else "ok"
+        if proposed is not None and queue_status == "deferred":
+            status = "review_required"
+        elif proposed is not None and queue_status == "approved":
+            status = "approved"
         if (conflict_group or {}).get("conflict_level") == "conflict":
             status = "conflict"
-        if effective is None and proposed is None:
+        if effective is None and displayed_value is None:
             status = "missing"
         anchors = [f"deterministic:assumption:{field}"]
         if queue_item:
@@ -399,7 +408,7 @@ def _driver_cards(
                 assumption_name=field,
                 label=label,
                 current_value=baseline,
-                proposed_or_effective_value=proposed if proposed is not None else effective,
+                proposed_or_effective_value=displayed_value,
                 source=source,
                 rationale=_driver_rationale(field, source, default_item if default_needs_review else None, queue_item, conflict_group),
                 valuation_impact=(queue_item or {}).get("valuation_impact") if queue_item else None,
@@ -421,7 +430,11 @@ def _driver_rationale(
         note = conflict_group.get("review_note") or "Multiple profiles touch this driver."
         return f"{note} Review queue items {', '.join(str(item_id) for item_id in conflict_group.get('item_ids') or [])} together."
     if queue_item:
-        return f"PM Queue item {queue_item.get('item_id')} proposes or discusses this driver: {queue_item.get('summary') or queue_item.get('title')}"
+        status = str(queue_item.get("status") or "pending")
+        return (
+            f"PM Queue item {queue_item.get('item_id')} is {status} and discusses this driver: "
+            f"{queue_item.get('summary') or queue_item.get('title')}"
+        )
     if default_item:
         replacement = default_item.get("preferred_replacement_source") or default_item.get("replacement_source")
         if replacement:

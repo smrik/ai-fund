@@ -4,22 +4,23 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import math
+import os
 import re
 import sqlite3
 from typing import Any
 
-from config import DB_PATH, EDGAR_PARSER_VERSION, PEER_SIMILARITY_MODEL
+from config import EDGAR_PARSER_VERSION, PEER_SIMILARITY_MODEL
 from db.loader import (
     upsert_edgar_chunk_cache,
     upsert_edgar_chunk_embedding,
     upsert_edgar_section_cache,
     upsert_filing_context_cache,
 )
-from db.schema import create_tables
+from db.schema import create_tables, get_connection
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
-_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v3"
+_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v4"
 _CHUNK_VERSION = "v2"
 _QUERY_VERSION = "v2"
 _EMBEDDING_MODEL = PEER_SIMILARITY_MODEL
@@ -223,8 +224,7 @@ class FilingContextBundle:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     create_tables(conn)
     return conn
 
@@ -279,6 +279,21 @@ def _extract_section(text: str, start_patterns: list[str], end_patterns: list[st
     return candidates[0][2]
 
 
+def _item_heading_pattern(item: str, label: str | None = None, *, part: str | None = None) -> str:
+    item_text = re.escape(item)
+    part_prefix = ""
+    if part:
+        part_text = re.escape(part)
+        part_prefix = rf"(?:^|\n)\s*part\s+{part_text}\.?\s*(?:[-—]\s*)?(?:\n\s*){{1,4}}"
+    else:
+        part_prefix = r"(^|\n)\s*"
+
+    if label:
+        label_words = r"\s+".join(re.escape(word) for word in label.split())
+        return rf"{part_prefix}item\s+{item_text}\.?\s*(?:\n\s*){{0,4}}(?:{label_words})\b"
+    return rf"{part_prefix}item\s+{item_text}\.?\s*(?:\n\s*){{1,4}}"
+
+
 def _extract_note_subsections(form_type: str, notes_text: str) -> list[tuple[str, str]]:
     if not notes_text:
         return []
@@ -320,13 +335,19 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
             (
                 "business",
                 "Business",
-                [r"(^|\n)\s*item\s+1\.?\s+business\b"],
+                [
+                    r"(^|\n)\s*item\s+1\.?\s+business\b",
+                    _item_heading_pattern("1", part="i"),
+                ],
                 [r"(^|\n)\s*item\s+1a\.?\s+risk\s+factors\b", r"(^|\n)\s*item\s+2\.?\b"],
             ),
             (
                 "risk_factors",
                 "Risk Factors",
-                [r"(^|\n)\s*item\s+1a\.?\s+risk\s+factors\b"],
+                [
+                    r"(^|\n)\s*item\s+1a\.?\s+risk\s+factors\b",
+                    _item_heading_pattern("1A"),
+                ],
                 [r"(^|\n)\s*item\s+1b\.?\b", r"(^|\n)\s*item\s+2\.?\b", r"(^|\n)\s*item\s+7\.?\b"],
             ),
             (
@@ -334,6 +355,8 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
                 "MD&A",
                 [
                     r"(^|\n)\s*item\s+7\.?\s+management'?s\s+discussion\s+and\s+analysis\b",
+                    _item_heading_pattern("7", "management s discussion and analysis", part="ii"),
+                    _item_heading_pattern("7", part="ii"),
                     r"(^|\n)\s*management'?s\s+discussion\s+and\s+analysis\b",
                 ],
                 [r"(^|\n)\s*item\s+7a\.?\b", r"(^|\n)\s*item\s+8\.?\s+financial\s+statements\b"],
@@ -341,7 +364,11 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
             (
                 "financial_statements",
                 "Financial Statements",
-                [r"(^|\n)\s*item\s+8\.?\s+financial\s+statements.*\b"],
+                [
+                    r"(^|\n)\s*item\s+8\.?\s+financial\s+statements.*\b",
+                    _item_heading_pattern("8", "financial statements", part="ii"),
+                    _item_heading_pattern("8", part="ii"),
+                ],
                 [r"(^|\n)\s*item\s+9\.?\b", r"(^|\n)\s*signatures\b"],
             ),
             (
@@ -359,7 +386,11 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
             (
                 "financial_statements_q",
                 "Quarterly Financial Statements",
-                [r"(^|\n)\s*part\s+i\s*-?\s*item\s+1\.?\s+financial\s+statements\b"],
+                [
+                    r"(^|\n)\s*part\s+i\.?\s*-?\s*item\s+1\.?\s+financial\s+statements\b",
+                    _item_heading_pattern("1", "financial statements", part="i"),
+                    _item_heading_pattern("1", part="i"),
+                ],
                 [r"(^|\n)\s*part\s+i\s*-?\s*item\s+2\.?\s+management'?s\s+discussion\b"],
             ),
             (
@@ -374,13 +405,21 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
             (
                 "mda_q",
                 "Quarterly MD&A",
-                [r"(^|\n)\s*part\s+i\s*-?\s*item\s+2\.?\s+management'?s\s+discussion\s+and\s+analysis\b"],
+                [
+                    r"(^|\n)\s*part\s+i\.?\s*-?\s*item\s+2\.?\s+management'?s\s+discussion\s+and\s+analysis\b",
+                    _item_heading_pattern("2", "management s discussion and analysis", part="i"),
+                    _item_heading_pattern("2", part="i"),
+                ],
                 [r"(^|\n)\s*part\s+i\s*-?\s*item\s+3\.?\b", r"(^|\n)\s*part\s+ii\s*-?\s*item\s+1a\.?\b"],
             ),
             (
                 "risk_factors_q",
                 "Quarterly Risk Factors",
-                [r"(^|\n)\s*part\s+ii\s*-?\s*item\s+1a\.?\s+risk\s+factors\b"],
+                [
+                    r"(^|\n)\s*part\s+ii\.?\s*-?\s*item\s+1a\.?\s+risk\s+factors\b",
+                    _item_heading_pattern("1A", "risk factors", part="ii"),
+                    _item_heading_pattern("1A", part="ii"),
+                ],
                 [r"(^|\n)\s*part\s+ii\s*-?\s*item\s+2\.?\b", r"(^|\n)\s*signatures\b"],
             ),
         ]
@@ -427,6 +466,10 @@ def _encode_texts(texts: list[str], model_name: str) -> list[list[float]]:
         _MODEL_CACHE[model_name] = model
     embeddings = model.encode(texts, convert_to_numpy=False, normalize_embeddings=False)
     return [[float(v) for v in vector] for vector in embeddings]
+
+
+def _skip_embedding_fetch() -> bool:
+    return os.getenv("ALPHA_POD_EDGAR_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}
 
 
 def _cosine_similarity(left: list[float], right: list[float]) -> float:
@@ -938,6 +981,8 @@ def get_agent_filing_context(
         fallback_mode = False
         query_embeddings: list[list[float]] = []
         try:
+            if _skip_embedding_fetch():
+                raise RuntimeError("embedding fetch disabled in EDGAR cache-only mode")
             query_embeddings = _encode_texts(config["queries"], model_name)
             used_embeddings = True
         except Exception:
@@ -1004,7 +1049,8 @@ def get_agent_filing_context(
             },
         )
         bundle.rendered_text = render_filing_context(bundle, max_chars=30_000)
-        _store_context_cache(conn, bundle, model_name)
+        if not fallback_mode:
+            _store_context_cache(conn, bundle, model_name)
         return bundle
     finally:
         conn.close()

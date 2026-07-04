@@ -62,7 +62,8 @@ def test_company_analysis_packet_uses_filing_context_and_sec_metrics(monkeypatch
     assert packet.source_refs[0].source_ref_id == "filing:0001"
     assert packet.source_refs[1].source_ref_id == "sec-metrics:10-K:2026-02-01"
     assert packet.snippets[0].source_ref_id == "filing:0001"
-    assert packet.facts[0].fact_name == "revenue_cagr_3y"
+    fact_names = {fact.fact_name for fact in packet.facts}
+    assert {"filing_source_count", "filing_selected_chunk_count", "revenue_cagr_3y"} <= fact_names
 
     persisted = load_evidence_packet(conn, packet.packet_id)
     assert persisted is not None

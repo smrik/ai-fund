@@ -51,6 +51,7 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Learn Codebase: learn-codebase.md
   - Valuation:
       - Index: valuation/index.md
       - Company Analysis: valuation/01_company-analysis.md
@@ -83,6 +84,8 @@ nav:
   - Handbook:
       - Index: handbook/index.md
       - End-to-End Workflow: handbook/workflow-end-to-end.md
+      - Weekly Loop Session: handbook/weekly-loop-session.md
+      - PM Queue Review Checklist: handbook/pm-queue-review-checklist.md
       - Accounting Recast: handbook/accounting-recast.md
       - Finance Deep Dive: handbook/finance-deep-dive.md
       - Excel Template Guide: handbook/excel-template-guide.md

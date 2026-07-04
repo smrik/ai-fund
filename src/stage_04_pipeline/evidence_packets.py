@@ -300,6 +300,8 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                         },
                     }
                 )
+            if source_refs:
+                facts.extend(_filing_context_facts("company_analysis", source_refs[0]["source_ref_id"], bundle))
             selected_chunks = list(getattr(bundle, "selected_chunks", []) or [])
             for chunk in selected_chunks:
                 excerpt = _relevant_excerpt(chunk.text, "company_analysis")
@@ -583,6 +585,37 @@ def _driver_fact(
     }
 
 
+def _filing_context_facts(profile_name: str, source_ref_id: str, bundle: Any) -> list[dict[str, Any]]:
+    retrieval_summary = dict(getattr(bundle, "retrieval_summary", {}) or {})
+    section_coverage = retrieval_summary.get("section_coverage") or {}
+    if isinstance(section_coverage, dict):
+        section_counts = section_coverage.get("by_section_key") or {
+            key: value
+            for key, value in section_coverage.items()
+            if isinstance(value, (int, float))
+        }
+    else:
+        section_counts = {}
+
+    facts: list[dict[str, Any]] = []
+    base_values = {
+        "filing_source_count": len(getattr(bundle, "sources", []) or []),
+        "filing_selected_chunk_count": len(getattr(bundle, "selected_chunks", []) or []),
+    }
+    for fact_name, value in base_values.items():
+        fact = _driver_fact(profile_name, source_ref_id, fact_name, value)
+        if fact is not None:
+            facts.append(fact)
+
+    for section_key, value in sorted(section_counts.items()):
+        if not isinstance(value, (int, float)) or value <= 0:
+            continue
+        fact = _driver_fact(profile_name, source_ref_id, f"filing_section_count_{section_key}", int(value))
+        if fact is not None:
+            facts.append(fact)
+    return facts
+
+
 def _collect_industry_analysis_inputs(ticker: str) -> dict[str, Any]:
     source_refs: list[dict[str, Any]] = []
     facts: list[dict[str, Any]] = []
@@ -658,6 +691,12 @@ def _collect_industry_analysis_inputs(ticker: str) -> dict[str, Any]:
                         "metadata": {"filing_date": source.get("filing_date")},
                     }
                 )
+            if source_refs:
+                filing_ref = next(
+                    (ref for ref in source_refs if str(ref.get("source_ref_id", "")).startswith("industry-filing:")),
+                    source_refs[0],
+                )
+                facts.extend(_filing_context_facts("industry_analysis", filing_ref["source_ref_id"], bundle))
             for chunk in list(getattr(bundle, "selected_chunks", []) or []):
                 excerpt = _relevant_excerpt(chunk.text, "industry_analysis")
                 if excerpt is None:
@@ -1089,6 +1128,12 @@ def _collect_risk_review_inputs(ticker: str) -> dict[str, Any]:
                         "metadata": {"filing_date": source.get("filing_date")},
                     }
                 )
+            if source_refs:
+                filing_ref = next(
+                    (ref for ref in source_refs if str(ref.get("source_ref_id", "")).startswith("risk-filing:")),
+                    source_refs[0],
+                )
+                facts.extend(_filing_context_facts("risk_review", filing_ref["source_ref_id"], bundle))
             for chunk in list(getattr(bundle, "selected_chunks", []) or []):
                 excerpt = _relevant_excerpt(chunk.text, "risk_review")
                 if excerpt is None:

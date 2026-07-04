@@ -263,6 +263,26 @@ rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openro
 
 Analyst Prep is the junior-analyst prework layer. It does not replace PM judgment or mutate the model. It gathers deterministic valuation state, evidence packets, PM Queue items, comps diagnostics, default-resolution warnings, and source lineage into one review packet.
 
+## Guided Weekly Ticker Workup
+
+For Milestone 1 weekly sessions, prefer the guided CLI when the PM wants a complete ticker workup with manual CIQ refresh, profile-by-profile analyst review, PM Decision Queue actions, and final artifacts:
+
+```powershell
+rtk python scripts/manual/run_guided_ticker_workup.py --ticker MSFT --ciq-symbol NASDAQ:MSFT
+```
+
+This is a live-agent, live-DB command by default. Use `--isolated-db` for rehearsal or when you want a disposable PM Queue/model review.
+
+The command stages the CIQ workbook, pauses for manual Excel refresh/save, ingests the workbook, checks EDGAR filings, builds the deterministic valuation, runs each profile one at a time, and pauses after each profile for PM review. Approved queue items are previewed first and only applied after the PM types `APPLY`; inline target edits re-preview before approval.
+
+Safe rehearsal command:
+
+```powershell
+rtk python scripts/manual/run_guided_ticker_workup.py --ticker MSFT --agent-mode heuristic --isolated-db --non-interactive --skip-ciq-stage --edgar-summary-only --market-cache-only --edgar-cache-only --no-export-xlsx
+```
+
+`--non-interactive` is for smoke tests. It skips queue decisions and does not ingest a staged CIQ workbook because no PM is present to refresh/save Excel. It never approves or applies assumption changes. Outputs land under `output/guided_workups/<TICKER>/`, and a friction-log draft is written under `docs/reviews/weekly-loop/`.
+
 Primary command:
 
 ```powershell

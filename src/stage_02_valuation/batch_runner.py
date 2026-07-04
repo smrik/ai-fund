@@ -32,7 +32,10 @@ from src.stage_02_valuation.assumption_register import (
     build_assumption_register,
     summarize_assumption_register,
 )
-from src.stage_02_valuation.json_exporter import export_ticker_json
+from src.stage_02_valuation.json_exporter import (
+    build_historical_financials_from_ciq_workbook,
+    export_ticker_json,
+)
 from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_02_valuation.professional_dcf import (
@@ -49,6 +52,43 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
+
+def _ciq_workbook_candidates(ticker: str, result: dict) -> list[Path]:
+    candidates: list[Path] = []
+    source_file = result.get("ciq_source_file")
+    if source_file:
+        source_path = Path(str(source_file))
+        candidates.append(source_path)
+        if not source_path.is_absolute():
+            candidates.append(ROOT_DIR / "data" / "exports" / source_path)
+    candidates.append(ROOT_DIR / "data" / "exports" / f"{ticker.upper()}_Standard.xlsx")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+def _historical_financials_for_json(ticker: str, result: dict) -> list[dict]:
+    for path in _ciq_workbook_candidates(ticker, result):
+        if not path.exists():
+            continue
+        try:
+            return build_historical_financials_from_ciq_workbook(path)
+        except Exception as exc:
+            logger.warning(
+                "  CIQ historical export failed for %s from %s: %s",
+                ticker,
+                path,
+                exc,
+                extra={"ticker": ticker, "step": "json_export"},
+            )
+    return []
+
 
 def _mm(value: float | None) -> float | None:
     if value is None:
@@ -1479,11 +1519,13 @@ if __name__ == "__main__":
                 qoe_data = _compute_qoe_for_ticker(args.ticker) if args.qoe else None
                 comps_data = get_ciq_comps_detail(args.ticker)
                 comps_analysis = build_comps_dashboard_view(args.ticker)
+                historical_financials = _historical_financials_for_json(args.ticker, result)
                 out_path = export_ticker_json(
                     result,
                     qoe=qoe_data,
                     comps_detail=comps_data,
                     comps_analysis=comps_analysis,
+                    historical_financials=historical_financials,
                     output_dir=json_dir, date_str=today,
                 )
                 logger.info(
@@ -1513,11 +1555,13 @@ if __name__ == "__main__":
                 qoe_data = _compute_qoe_for_ticker(t) if args.qoe else None
                 comps_data = get_ciq_comps_detail(t)
                 comps_analysis = build_comps_dashboard_view(t)
+                historical_financials = _historical_financials_for_json(t, result)
                 export_ticker_json(
                     result,
                     qoe=qoe_data,
                     comps_detail=comps_data,
                     comps_analysis=comps_analysis,
+                    historical_financials=historical_financials,
                     output_dir=json_dir, date_str=today,
                 )
             logger.info("\nJSON exports written to %s", json_dir, extra={"step": "json_export"})
