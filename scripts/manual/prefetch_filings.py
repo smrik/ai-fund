@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.stage_00_data.edgar_prefetch import DEFAULT_FORMS, prefetch_filings
+from src.stage_00_data.edgar_prefetch import DEFAULT_FORMS, prefetch_filings  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

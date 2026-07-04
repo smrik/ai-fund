@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from config import CIQ_DROP_FOLDER, CIQ_WORKBOOK_GLOB, DB_PATH, ROOT_DIR
+from config import CIQ_DROP_FOLDER, CIQ_WORKBOOK_GLOB, DB_PATH, ROOT_DIR  # noqa: E402
 
 
 # Engineering default: CIQ workbooks older than one week are stale enough to
@@ -44,6 +44,7 @@ REQUIRED_PACKAGES = {
     "openpyxl": "openpyxl",
     "pyyaml": "yaml",
     "python-dotenv": "dotenv",
+    "edgartools": "edgar",
 }
 
 OPTIONAL_PACKAGES = {

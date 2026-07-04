@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.stage_04_pipeline.advanced_dcf_model import (
+from src.stage_04_pipeline.advanced_dcf_model import (  # noqa: E402
     build_advanced_dcf_model,
     refresh_model_data,
 )
