@@ -9,7 +9,7 @@ from src.stage_00_data.filing_retrieval import FilingChunk, FilingSection
 
 def test_build_filing_corpus_includes_statement_presence_and_section_coverage(tmp_path, monkeypatch):
     db_path = tmp_path / "alpha_pod.db"
-    monkeypatch.setattr(fr, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
 
     conn = sqlite3.connect(db_path)
     create_tables(conn)
@@ -54,7 +54,8 @@ def test_build_filing_corpus_includes_statement_presence_and_section_coverage(tm
     assert corpus["sources"][0]["statement_presence"]["notes_to_financials"] is True
 
 
-def test_get_agent_filing_context_reports_selected_counts_and_skipped_sections(monkeypatch):
+def test_get_agent_filing_context_reports_selected_counts_and_skipped_sections(tmp_path, monkeypatch):
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(tmp_path / "alpha_pod.db"))
     monkeypatch.setattr(
         fr,
         "build_filing_corpus",

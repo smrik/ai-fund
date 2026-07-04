@@ -1,10 +1,18 @@
 import sys
 from pathlib import Path
+import sqlite3
 from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from db.schema import create_tables
 from src.stage_00_data import edgar_client
+
+
+def _init_db(path: Path) -> None:
+    conn = sqlite3.connect(path)
+    create_tables(conn)
+    conn.close()
 
 
 def test_get_10k_text_returns_latest_text_from_edgartools(monkeypatch):
@@ -22,6 +30,55 @@ def test_get_10k_text_returns_latest_text_from_edgartools(monkeypatch):
     text = edgar_client.get_10k_text("IBM", max_chars=10)
     assert text == "This is a "
     mock_company.get_filings.assert_called_with(form="10-K")
+
+
+def test_cache_only_reads_env_db_path_set_after_import(tmp_path, monkeypatch):
+    db_path = tmp_path / "isolated.db"
+    clean_path = tmp_path / "ibm-10k.txt"
+    clean_path.write_text("cached annual filing text", encoding="utf-8")
+    _init_db(db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.setenv("ALPHA_POD_EDGAR_CACHE_ONLY", "1")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            INSERT INTO edgar_filing_cache (
+                ticker, cik, form_type, accession_no, filing_date, doc_name,
+                source_url, raw_path, clean_path, raw_text_hash, clean_text_hash,
+                parser_version, fetched_at, cleaned_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "IBM",
+                "0000051143",
+                "10-K",
+                "0000051143-26-000001",
+                "2026-02-24",
+                "ibm-10k.htm",
+                "https://sec.example/ibm",
+                None,
+                str(clean_path),
+                "hash",
+                "hash",
+                "v1",
+                "2026-07-04T00:00:00+00:00",
+                "2026-07-04T00:00:00+00:00",
+            ),
+        )
+        conn.commit()
+
+    metadata = edgar_client.get_recent_filing_metadata("IBM", "10-K", limit=1)
+    text = edgar_client.get_10k_text("IBM")
+
+    assert metadata == [
+        {
+            "accession_no": "0000051143-26-000001",
+            "filing_date": "2026-02-24",
+            "primary_doc": "ibm-10k.htm",
+        }
+    ]
+    assert text == "cached annual filing text"
 
 
 def test_get_recent_10q_texts_returns_list_of_texts(monkeypatch):

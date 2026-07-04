@@ -154,7 +154,7 @@ def test_build_filing_corpus_reports_statement_presence(monkeypatch):
 
 def test_get_agent_filing_context_falls_back_to_section_priority_without_embeddings(tmp_path, monkeypatch):
     db_path = tmp_path / "alpha_pod.db"
-    monkeypatch.setattr(fr, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
     conn = sqlite3.connect(db_path)
     create_tables(conn)
     conn.close()
@@ -185,6 +185,112 @@ def test_get_agent_filing_context_falls_back_to_section_priority_without_embeddi
     assert "mda" in bundle.retrieval_summary["skipped_sections"] or bundle.retrieval_summary["skipped_sections"] == []
     assert bundle.selected_chunks[0].section_key == "notes_to_financials"
     assert "[10-K | 2025-12-31 | notes_to_financials | chunk 0]" in bundle.rendered_text
+
+
+def test_build_filing_corpus_writes_section_cache_to_env_db_path(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.setattr(
+        fr,
+        "_load_filing_payloads",
+        lambda ticker, include_10k=True, ten_q_limit=2: [
+            {
+                "ticker": "IBM",
+                "cik": "0000051143",
+                "form_type": "10-K",
+                "accession_no": "0001",
+                "doc_name": "ibm-10k.htm",
+                "filing_date": "2025-12-31",
+                "text": TEN_K_SAMPLE,
+            }
+        ],
+    )
+
+    corpus = fr.build_filing_corpus("IBM")
+
+    assert corpus["section_coverage"]["total_sections"] > 0
+    with sqlite3.connect(db_path) as conn:
+        section_count = conn.execute("SELECT COUNT(*) FROM edgar_section_cache").fetchone()[0]
+        chunk_count = conn.execute("SELECT COUNT(*) FROM edgar_chunk_cache").fetchone()[0]
+    assert section_count > 0
+    assert chunk_count > 0
+
+
+def _synthetic_context_corpus(ticker, include_10k=True, ten_q_limit=2):
+    return {
+        "ticker": ticker,
+        "sources": [
+            {
+                "form_type": "10-K",
+                "accession_no": "a1",
+                "filing_date": "2025-12-31",
+                "doc_name": "annual.htm",
+                "section_keys": ["notes_to_financials", "mda"],
+            }
+        ],
+        "sections": [],
+        "chunks": [
+            FilingChunk("10-K", "a1", "2025-12-31", "mda", 0, "MD&A discusses growth.", "mda-0"),
+            FilingChunk(
+                "10-K",
+                "a1",
+                "2025-12-31",
+                "notes_to_financials",
+                0,
+                "Notes discuss restructuring and lease liabilities.",
+                "notes-0",
+            ),
+        ],
+        "corpus_hash": "corpus-1",
+        "statement_presence": {
+            "financial_statements": True,
+            "notes_to_financials": True,
+            "mda": True,
+            "risk_factors": False,
+            "quarterly_notes": False,
+        },
+        "section_coverage": {"mda": 1, "notes_to_financials": 1},
+        "statement_presence_by_filing": {
+            "a1::annual.htm": {
+                "financial_statements": True,
+                "notes_to_financials": True,
+                "mda": True,
+                "risk_factors": False,
+                "quarterly_notes": False,
+            }
+        },
+    }
+
+
+def _context_cache_count(db_path: Path) -> int:
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute("SELECT COUNT(*) FROM filing_context_cache").fetchone()[0]
+
+
+def test_fallback_scored_context_does_not_write_semantic_cache(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.setenv("ALPHA_POD_EDGAR_CACHE_ONLY", "1")
+    monkeypatch.setattr(fr, "build_filing_corpus", _synthetic_context_corpus)
+
+    bundle = fr.get_agent_filing_context("IBM", profile_name="qoe", use_cache=True)
+
+    assert bundle.retrieval_summary["fallback_mode"] is True
+    assert _context_cache_count(db_path) == 0
+
+
+def test_embedding_scored_context_still_writes_semantic_cache(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.delenv("ALPHA_POD_EDGAR_CACHE_ONLY", raising=False)
+    monkeypatch.setattr(fr, "build_filing_corpus", _synthetic_context_corpus)
+    monkeypatch.setattr(fr, "_encode_texts", lambda texts, model_name: [[1.0, 0.0] for _ in texts])
+
+    bundle = fr.get_agent_filing_context("IBM", profile_name="qoe", use_cache=True)
+
+    assert bundle.retrieval_summary["fallback_mode"] is False
+    assert bundle.retrieval_summary["used_embeddings"] is True
+    assert _context_cache_count(db_path) == 1
 
 
 def test_build_filing_update_context_uses_new_summary_fields():

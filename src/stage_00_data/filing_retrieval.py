@@ -9,14 +9,14 @@ import re
 import sqlite3
 from typing import Any
 
-from config import DB_PATH, EDGAR_PARSER_VERSION, PEER_SIMILARITY_MODEL
+from config import EDGAR_PARSER_VERSION, PEER_SIMILARITY_MODEL
 from db.loader import (
     upsert_edgar_chunk_cache,
     upsert_edgar_chunk_embedding,
     upsert_edgar_section_cache,
     upsert_filing_context_cache,
 )
-from db.schema import create_tables
+from db.schema import create_tables, get_connection
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
@@ -224,8 +224,7 @@ class FilingContextBundle:
 
 
 def _connect() -> sqlite3.Connection:
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
+    conn = get_connection()
     create_tables(conn)
     return conn
 
@@ -1050,7 +1049,8 @@ def get_agent_filing_context(
             },
         )
         bundle.rendered_text = render_filing_context(bundle, max_chars=30_000)
-        _store_context_cache(conn, bundle, model_name)
+        if not fallback_mode:
+            _store_context_cache(conn, bundle, model_name)
         return bundle
     finally:
         conn.close()
