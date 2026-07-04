@@ -72,6 +72,39 @@ def _host_only(url: Any) -> str:
     return parsed.hostname or text.split("/")[0]
 
 
+def _ciq_workbook_candidates_for_json(ticker: str, result: dict[str, Any]) -> list[Path]:
+    candidates: list[Path] = []
+    source_file = result.get("ciq_source_file")
+    if source_file:
+        source_path = Path(str(source_file))
+        candidates.append(source_path)
+        if not source_path.is_absolute():
+            candidates.append(ROOT / "data" / "exports" / source_path)
+    candidates.append(ROOT / "data" / "exports" / f"{ticker.upper()}_Standard.xlsx")
+
+    unique: list[Path] = []
+    seen: set[str] = set()
+    for path in candidates:
+        key = str(path.resolve()) if path.exists() else str(path)
+        if key not in seen:
+            seen.add(key)
+            unique.append(path)
+    return unique
+
+
+def _historical_financials_for_guided_json(ticker: str, result: dict[str, Any]) -> list[dict[str, Any]]:
+    from src.stage_02_valuation.json_exporter import build_historical_financials_from_ciq_workbook
+
+    for path in _ciq_workbook_candidates_for_json(ticker, result):
+        if not path.exists():
+            continue
+        try:
+            return build_historical_financials_from_ciq_workbook(path)
+        except Exception:
+            continue
+    return []
+
+
 def _config_llm_defaults() -> dict[str, str]:
     try:
         from config import LLM_BASE_URL, LLM_MODEL
@@ -435,8 +468,9 @@ def _export_xlsx(ticker: str, workup: dict[str, Any] | None = None) -> dict[str,
 
         workup_path: str | None = None
         tmp_file: Path | None = None
+        workup_payload = _as_dict(workup or {})
         deterministic_result = _as_dict(
-            _as_dict(_as_dict(workup or {}).get("latest_model")).get("deterministic")
+            _as_dict(_as_dict(workup_payload.get("latest_model")).get("deterministic"))
         ).get("batch_row")
         deterministic_result = _as_dict(deterministic_result)
         if not deterministic_result or deterministic_result.get("error"):
@@ -447,28 +481,36 @@ def _export_xlsx(ticker: str, workup: dict[str, Any] | None = None) -> dict[str,
 
         import tempfile
 
-        with tempfile.TemporaryDirectory(prefix=f"{ticker}-valuation-json-") as tmp_dir:
-            valuation_json_path = export_ticker_json(
-                deterministic_result,
-                output_dir=Path(tmp_dir),
-                date_str=str(_as_dict(workup or {}).get("run_stamp") or _stamp()),
+        run_stamp = str(workup_payload.get("run_stamp") or _stamp())
+        output_dir = Path(str(workup_payload.get("output_dir") or GUIDED_OUTPUT_DIR))
+        valuation_json_dir = output_dir / ticker.upper()
+        valuation_json_dir.mkdir(parents=True, exist_ok=True)
+        valuation_json_path = valuation_json_dir / f"{run_stamp}-valuation.json"
+        historical_financials = _historical_financials_for_guided_json(ticker, deterministic_result)
+        exported_json_path = export_ticker_json(
+            deterministic_result,
+            historical_financials=historical_financials,
+            output_dir=valuation_json_dir,
+            date_str=run_stamp,
+        )
+        if Path(exported_json_path) != valuation_json_path:
+            Path(exported_json_path).replace(valuation_json_path)
+        if workup and (workup.get("analyst_prep") or {}).get("thesis_cards"):
+            fd, name = tempfile.mkstemp(prefix=f"{ticker}-workup-", suffix=".json")
+            tmp_file = Path(name)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(workup, fh)
+            workup_path = str(tmp_file)
+        try:
+            path = build_advanced_dcf_model(
+                ticker,
+                json_path=valuation_json_path,
+                guided_workup_path=workup_path,
             )
-            if workup and (workup.get("analyst_prep") or {}).get("thesis_cards"):
-                fd, name = tempfile.mkstemp(prefix=f"{ticker}-workup-", suffix=".json")
-                tmp_file = Path(name)
-                with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                    json.dump(workup, fh)
-                workup_path = str(tmp_file)
-            try:
-                path = build_advanced_dcf_model(
-                    ticker,
-                    json_path=valuation_json_path,
-                    guided_workup_path=workup_path,
-                )
-            finally:
-                if tmp_file is not None:
-                    tmp_file.unlink(missing_ok=True)
-        return {"strategy": "advanced_dcf_model", "path": str(path)}
+        finally:
+            if tmp_file is not None:
+                tmp_file.unlink(missing_ok=True)
+        return {"strategy": "advanced_dcf_model", "path": str(path), "valuation_json": str(valuation_json_path)}
     except Exception as model_exc:
         try:
             from src.stage_04_pipeline.export_service import run_ticker_export
@@ -1362,6 +1404,7 @@ def run_guided_workup(
                 "analyst_prep": result.get("analyst_prep"),
                 "queue_decisions": result.get("queue_decisions") or [],
                 "latest_model": result.get("latest_model"),
+                "output_dir": str(args.output_dir),
             }
             try:
                 export_result = deps.export_xlsx(ticker, current_workup)  # type: ignore[call-arg]
@@ -1383,6 +1426,9 @@ def run_guided_workup(
         friction_log_dir=Path(args.friction_log_dir),
         prep_markdown=prep_markdown,
     )
+    excel_export = _as_dict(result.get("excel_export"))
+    if excel_export.get("valuation_json"):
+        artifacts["valuation_json"] = str(excel_export["valuation_json"])
     result["artifacts"] = artifacts
     Path(artifacts["json"]).write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     io.write("")

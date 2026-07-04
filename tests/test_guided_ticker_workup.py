@@ -211,6 +211,24 @@ def test_guided_workup_stages_ciq_runs_profile_and_skips_queue(tmp_path: Path, m
     assert Path(result["artifacts"]["friction_draft"]).exists()
 
 
+def test_guided_workup_lists_exported_valuation_json_artifact(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    deps = _deps(tmp_path)
+    valuation_json = tmp_path / "out" / "MSFT" / "20260703T000000Z-valuation.json"
+    valuation_json.parent.mkdir(parents=True)
+    valuation_json.write_text("{}", encoding="utf-8")
+    deps.export_xlsx = lambda ticker, workup: {
+        "strategy": "advanced_dcf_model",
+        "path": str(tmp_path / "MSFT_advanced_dcf_model.xlsx"),
+        "valuation_json": str(valuation_json),
+    }
+    io = ScriptedIO(["", "s"])
+
+    result = guided.run_guided_workup(_args(tmp_path, "--export-xlsx"), deps=deps, io=io)
+
+    assert result["artifacts"]["valuation_json"] == str(valuation_json)
+
+
 def test_guided_workup_approve_apply_requires_operator_confirmation_and_revalues(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -364,19 +382,30 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
     from src.stage_04_pipeline import advanced_dcf_model
 
     calls: dict[str, object] = {}
+    historicals = [{"period": "FY2025", "revenue": 100.0, "source": "ciq_standard_workbook"}]
 
     def _fake_export_ticker_json(result, *, output_dir=None, date_str=None, **kwargs):
         path = Path(output_dir) / f"{result['ticker']}_{date_str}.json"
-        path.write_text(json.dumps({"ticker": result["ticker"], "fresh": True}), encoding="utf-8")
+        path.write_text(
+            json.dumps(
+                {
+                    "ticker": result["ticker"],
+                    "fresh": True,
+                    "historical_financials": kwargs.get("historical_financials") or [],
+                }
+            ),
+            encoding="utf-8",
+        )
         calls["export_result"] = result
         calls["export_path"] = path
         calls["export_date_str"] = date_str
+        calls["export_historical_financials"] = kwargs.get("historical_financials")
         return path
 
     def _fake_build_advanced_dcf_model(ticker, *, json_path=None, guided_workup_path=None, **kwargs):
         json_path = Path(json_path)
         assert json_path.exists()
-        assert json_path == calls["export_path"]
+        assert json_path == tmp_path / "guided" / "MSFT" / "20260703T000000Z-valuation.json"
         assert guided_workup_path is not None
         assert Path(guided_workup_path).exists()
         calls["build_json_path"] = json_path
@@ -387,10 +416,12 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
 
     monkeypatch.setattr(json_exporter, "export_ticker_json", _fake_export_ticker_json)
     monkeypatch.setattr(advanced_dcf_model, "build_advanced_dcf_model", _fake_build_advanced_dcf_model)
+    monkeypatch.setattr(guided, "_historical_financials_for_guided_json", lambda ticker, result: historicals)
 
     workup = {
         "ticker": "MSFT",
         "run_stamp": "20260703T000000Z",
+        "output_dir": str(tmp_path / "guided"),
         "analyst_prep": {"thesis_cards": [{"title": "Current run thesis"}]},
         "queue_decisions": [],
         "latest_model": {
@@ -409,10 +440,16 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
     assert result == {
         "strategy": "advanced_dcf_model",
         "path": str(tmp_path / "MSFT_advanced_dcf_model.xlsx"),
+        "valuation_json": str(tmp_path / "guided" / "MSFT" / "20260703T000000Z-valuation.json"),
     }
     assert calls["export_result"] == workup["latest_model"]["deterministic"]["batch_row"]
     assert calls["export_date_str"] == "20260703T000000Z"
-    assert calls["build_json_path"] == calls["export_path"]
+    assert calls["export_historical_financials"] == historicals
+    assert calls["build_json_path"] == tmp_path / "guided" / "MSFT" / "20260703T000000Z-valuation.json"
+    assert Path(result["valuation_json"]).exists()
+    assert not Path(calls["export_path"]).exists()
+    written_json = json.loads(Path(result["valuation_json"]).read_text(encoding="utf-8"))
+    assert written_json["historical_financials"] == historicals
     assert not calls["guided_workup_path"].exists()
 
 
