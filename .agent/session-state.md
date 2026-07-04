@@ -25,17 +25,28 @@ backend-full-tests deep gate). Local repo is on a clean `main`;
 2. Sessions 1-4 (July): the M1 exit criteria clock. Real tickers, friction log per session.
 3. Suggested agent routing for live sessions:
    `--use-openrouter-free --openrouter-model "openai/gpt-oss-120b:free" --openrouter-fallback-models "openai/gpt-oss-120b"`
-   (requires OPENROUTER_API_KEY in env; run banner now displays effective routing —
-   confirm model+cost with PM before any live-agent run, see Claude memory codex-model-routing).
+   (requires OPENROUTER_API_KEY in env; run banner now displays effective routing).
+   Standing PM rule (2026-07-03): state the model and expected cost and get PM
+   confirmation BEFORE any live-agent run or coding-agent dispatch; the PM prefers
+   free/cheap models for the analysis agents and does not want surprise API bills.
 4. Optional final validation: rerun the single-profile live-agent isolated smoke to
    confirm agents now actually reach OpenRouter post-BaseAgent-fix (last attempt
    pre-fix failed with Gemini 404s).
 
 ## Known Issues / Machine-local
 - `.tmp-tests/`, `.codex-pytest-temp/`, `.pytest_cache/` have broken ACLs from
-  sandboxed agent runs (owned by another principal). Cleanup needs an elevated shell:
-  takeown /f <dir> /r /d y; icacls <dir> /reset /t /c /q; Remove-Item -Recurse -Force <dirs>
-  Until then the full suite locally fails ~25 tests on .tmp-tests permissions (CI unaffected).
+  sandboxed agent runs (owned by another principal). Cleanup needs an elevated
+  PowerShell, run from the repo root:
+
+  ```powershell
+  foreach ($d in ".tmp-tests", ".codex-pytest-temp", ".pytest_cache") {
+    takeown /f $d /r /d y
+    icacls $d /reset /t /c /q
+    Remove-Item -Recurse -Force $d
+  }
+  ```
+
+  Until then the full suite locally fails ~25 tests on `.tmp-tests` permissions (CI unaffected).
 - `data/alpha_pod.db.polluted-20260703.bak` (293MB, untracked) is the forensic backup
   from the 2026-07-03 isolation-leak incident; live DB was restored and verified clean
   (max queue id 91). Delete the .bak when no longer wanted.
