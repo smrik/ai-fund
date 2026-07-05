@@ -1,0 +1,41 @@
+{
+  "ticker": "MSFT",
+  "source": "quartr",
+  "event_id": "msft-q3-fy26",
+  "event_title": "Microsoft Q3 FY26 Earnings Call",
+  "event_date": "2025-05-01",
+  "fiscal_quarter": 3,
+  "fiscal_year": 2026,
+  "document_id": "msft-q3-fy26-sample",
+  "document_url": "https://example.quartr.com/msft/events/msft-q3-fy26/transcript",
+  "transcript_source": "indexed",
+  "paragraphs": [
+    {
+      "index": 0,
+      "speaker_name": "Satya Nadella",
+      "speaker_role": "Chairman and Chief Executive Officer",
+      "start_time": "00:02:15",
+      "end_time": "00:05:42",
+      "text": "We delivered another strong quarter as customers continued to use Microsoft Cloud and AI services to transform their operations.",
+      "deep_link_url": "https://example.quartr.com/msft/events/msft-q3-fy26?t=135"
+    },
+    {
+      "index": 1,
+      "speaker_name": "Amy Hood",
+      "speaker_role": "Executive Vice President and Chief Financial Officer",
+      "start_time": "00:18:10",
+      "end_time": "00:21:35",
+      "text": "Revenue growth was broad based, with continued operating discipline and durable demand across our commercial cloud portfolio.",
+      "deep_link_url": "https://example.quartr.com/msft/events/msft-q3-fy26?t=1090"
+    },
+    {
+      "index": 2,
+      "speaker_name": "Mark Murphy",
+      "speaker_role": "Analyst, JPMorgan",
+      "start_time": "00:37:44",
+      "end_time": "00:38:12",
+      "text": "Can you discuss how customers are prioritizing AI workloads within their broader Azure commitments?",
+      "deep_link_url": "https://example.quartr.com/msft/events/msft-q3-fy26?t=2264"
+    }
+  ]
+}
