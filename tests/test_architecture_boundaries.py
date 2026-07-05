@@ -49,8 +49,6 @@ PRINT_ALLOWLIST = {
     "src/stage_01_screening/stage2_filter.py",
     "src/stage_01_screening/stage2_short_filter.py",
     "src/stage_02_valuation/create_template.py",
-    "src/stage_04_pipeline/daily_refresh.py",
-    "src/stage_04_pipeline/refresh.py",
 }
 
 SQLITE_CONNECT_ALLOWLIST = {
