@@ -24,7 +24,7 @@
 | 1. EDGAR prefetch CLI | Completed 2026-06-13 | `scripts/manual/prefetch_filings.py --ticker MSFT` cached 12 filings; `--summary-only` confirmed 12 cache hits |
 | 2. Section extraction on real filings | Completed 2026-06-13 | MSFT cached corpus now extracts 10-K business/risk/MD&A/financials/notes plus two 10-Q financials/notes/MD&A/risk sections; regression fixtures added under `tests/fixtures/filings/` |
 | 3. Filing-backed profiles | Completed 2026-06-13 | MSFT glass-box run completed 6/6 profiles; generated JSON shows `source_quality=real` for all packets and filing-backed packets include source refs, facts, and snippets |
-| 4. Quartr transcript contract and client | Not started | Pending |
+| 4. Quartr transcript contract and client | Completed 2026-07-05 | Transcript contract, `transcript_cache`, fail-closed Quartr client, manual importer, fixture, and focused tests added; `pytest tests/test_quartr_client.py tests/test_transcript_contract.py -q` passed |
 | 5. Transcripts into `earnings_update` | Not started | Pending |
 | 6. Docs and runbook integration | Not started | Pending |
 

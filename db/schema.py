@@ -228,6 +228,18 @@ def create_tables(conn: sqlite3.Connection | None = None):
         PRIMARY KEY (ticker, accession_no, doc_name)
     );
 
+    CREATE TABLE IF NOT EXISTS transcript_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        event_date TEXT NOT NULL,
+        fiscal_label TEXT,
+        source TEXT NOT NULL DEFAULT 'quartr',
+        document_id TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        payload TEXT NOT NULL,
+        UNIQUE(ticker, source, document_id)
+    );
+
     CREATE TABLE IF NOT EXISTS edgar_section_cache (
         ticker          TEXT NOT NULL,
         cik             TEXT NOT NULL,
