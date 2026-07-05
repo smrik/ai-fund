@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import logging
+import os
 import pickle
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -89,6 +90,10 @@ def _fetch_training_features(lookback_days: int = 504) -> pd.DataFrame | None:
     Returns DataFrame with columns: spy_vol_20d, vix, slope_2s10s, ig_spread
     (z-score normalized, datetime index), or None on failure.
     """
+    if os.getenv("ALPHA_POD_MARKET_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}:
+        logger.debug("regime_model: market-cache-only mode; skipping live SPY/FRED download")
+        return None
+
     try:
         import pandas as pd
         import yfinance as yf
