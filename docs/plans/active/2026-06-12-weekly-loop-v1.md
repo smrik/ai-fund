@@ -236,6 +236,12 @@ C:\Users\patri\miniconda3\envs\ai-fund\python.exe scripts/manual/run_guided_tick
 
 **Commit message:** `docs: record weekly loop dry run and calibrate runbook`
 
+**Engineering pre-flight completed 2026-07-05** (`docs/reviews/weekly-loop/2026-07-05-eng-validation.md`):
+- Three passes: heuristic smoke, routing validation, full free-model run (all exit 0)
+- 5/6 profiles produced live LLM observations; evidence quality=real throughout
+- `comps_analysis` returns `completed_no_items` with live model — expected: comps evidence has 0 snippets so the live model correctly declines to produce observations; heuristic mode's output is a workflow demo only; CIQ refresh at session start is the fix
+- PM-interactive dry run still needed for Task 7 to be officially complete
+
 ## Recurring Cycle (sessions 1-4, July)
 
 Not numbered tasks — this is the operating rhythm after Task 6:

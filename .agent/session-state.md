@@ -1,60 +1,30 @@
 # Session State
 
-**Updated:** 2026-07-04 (post-merge handoff)
-**Agent:** Claude Code (supervisor) + Codex CLI (implementation)
+**Updated:** 2026-07-05
+**Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
-M1 Weekly Loop v1 engineering surface is COMPLETE and merged to main via PR #77
-(squash commit `4d3fbe8`, all 7 CI checks green including the new
-backend-full-tests deep gate). Local repo is on a clean `main`;
-`plan/m1-weekly-loop-v1` is deleted.
+TD-26 structured logging migration cleanup was applied and verified: `src/stage_04_pipeline/daily_refresh.py` and `src/stage_04_pipeline/refresh.py` already used structured logging with no `print(...)` calls, so `tests/test_architecture_boundaries.py` was updated to remove both files from `PRINT_ALLOWLIST`.
 
-## What Shipped (PR #77 highlights)
-- CI deep gate (`backend-full-tests`: full offline suite on fresh runner)
-- `scripts/manual/weekly_preflight.py` (+ edgartools check) and runbook/friction-log/queue-checklist docs
-- Guided ticker workup CLI with: verified `--isolated-db` (all write paths resolve DB at call time), Data Freshness sections with [STALE] markers, working `--use-openrouter-free` routing (BaseAgent resolves LLM_BASE_URL/LLM_MODEL from env at construction), persisted per-run valuation JSON with CIQ historicals, friction-draft no-clobber
-- Five Codex-bot review rounds fully addressed (9 threads replied + resolved)
-- Systemic fix theme: import-time binding → use-time resolution (db/schema get_connection, BaseAgent, edgar_client, filing_retrieval, edgar_prefetch)
-- Semantic cache: fallback-scored filing bundles are never persisted
+Separate dirty work from Evidence Acquisition Task 4 remains in the tree and should not be mixed into the TD-26 PR.
 
-## Next Steps (PM-facing, in order)
-1. Task 7 dry run: PM runs `docs/handbook/weekly-loop-session.md` end-to-end on one
-   ticker with an agent session open; use `docs/handbook/pm-queue-review-checklist.md`
-   for the queue click-through (all items currently NOT YET RUN).
-2. Sessions 1-4 (July): the M1 exit criteria clock. Real tickers, friction log per session.
-3. Suggested agent routing for live sessions:
-   `--use-openrouter-free --openrouter-model "openai/gpt-oss-120b:free" --openrouter-fallback-models "openai/gpt-oss-120b"`
-   (requires OPENROUTER_API_KEY in env; run banner now displays effective routing).
-   Standing PM rule (2026-07-03): state the model and expected cost and get PM
-   confirmation BEFORE any live-agent run or coding-agent dispatch; the PM prefers
-   free/cheap models for the analysis agents and does not want surprise API bills.
-4. Optional final validation: rerun the single-profile live-agent isolated smoke to
-   confirm agents now actually reach OpenRouter post-BaseAgent-fix (last attempt
-   pre-fix failed with Gemini 404s).
+## Recent Actions
+- Confirmed both Stage 04 pipeline files already import `logging`, define `logger = logging.getLogger(__name__)`, and contain no bare `print(...)` calls.
+- Removed `src/stage_04_pipeline/daily_refresh.py` and `src/stage_04_pipeline/refresh.py` from `PRINT_ALLOWLIST`.
+- Ran `ruff check src/stage_04_pipeline/daily_refresh.py src/stage_04_pipeline/refresh.py` -> passed.
+- Ran `C:\Users\patri\miniconda3\python.exe -m pytest tests/test_architecture_boundaries.py -q` -> 4 passed, with a pytest cache permission warning.
+- Ran `C:\Users\patri\miniconda3\python.exe -m pytest tests/ -q -p no:cacheprovider` -> 790 passed, 1 skipped, 38 warnings in 978.44s.
 
-## Known Issues / Machine-local
-- `.tmp-tests/`, `.codex-pytest-temp/`, `.pytest_cache/` have broken ACLs from
-  sandboxed agent runs (owned by another principal). Cleanup needs an elevated
-  PowerShell, run from the repo root:
+## Next Steps
+- From a normal Git-enabled shell, create branch `fix/logging-migration-stage04` from `origin/main`, stage only `tests/test_architecture_boundaries.py`, commit, push, and open the PR.
+- Include the TD-26 verification results above in the PR body.
+- Keep the separate Quartr/Evidence Acquisition files out of the TD-26 PR unless the PM explicitly wants a combined PR.
 
-  ```powershell
-  foreach ($d in ".tmp-tests", ".codex-pytest-temp", ".pytest_cache") {
-    takeown /f $d /r /d y
-    icacls $d /reset /t /c /q
-    Remove-Item -Recurse -Force $d
-  }
-  ```
+## Known Issues
+- This sandbox could not write Git metadata: `git switch -c fix/logging-migration-stage04 origin/main` and `git add tests/test_architecture_boundaries.py` both failed with `fatal: Unable to create 'C:/Projects/03-Finance/ai-fund/.git/index.lock': Permission denied`.
+- `gh auth status` reports the default `smrik` token is invalid, so PR creation also needs re-authentication.
+- Local `main` is ahead of `origin/main` by 2 and has unrelated dirty/untracked Quartr/Evidence Acquisition files plus ignored/generated data artifacts.
 
-  Until then the full suite locally fails ~25 tests on `.tmp-tests` permissions (CI unaffected).
-- `data/alpha_pod.db.polluted-20260703.bak` (293MB, untracked) is the forensic backup
-  from the 2026-07-03 isolation-leak incident; live DB was restored and verified clean
-  (max queue id 91). Delete the .bak when no longer wanted.
-- Codex GitHub review bot is quota-exhausted; final head f53720d had supervisor review + CI only.
-
-## Carry-over open items (from 2026-06-15 session, still valid)
-- Bridge-mode guard: if a ticker returns `gordon_formula_mode == "bridge"`, add support in
-  `_Context.reconcile()` / `_build_dcf_base` before removing the guard.
-- Needs PM sign-off: retire legacy openpyxl writer; keep-or-drop PowerQuery staging path.
-  Do not rip out `src/stage_04_pipeline/export_service.py` without sign-off.
-- TTWO CIQ history (optional): pull a CIQ Standard workbook to populate its trend tab.
+## Notes
+- Default `python` resolves to the Hermes agent venv here and lacks `pytest`; use `C:\Users\patri\miniconda3\python.exe` for local pytest verification in this environment.
