@@ -177,6 +177,10 @@ class BaseAgent:
 			codex_executable,
 			"exec",
 			"--ephemeral",
+			# Judgment calls are plain prompt->text: the user's MCP servers,
+			# apps, and skills only burn startup time and context budget
+			# (~12k tokens/call measured). Auth still resolves from CODEX_HOME.
+			"--ignore-user-config",
 			"-s",
 			"read-only",
 			"-m",
@@ -187,6 +191,15 @@ class BaseAgent:
 			str(output_path),
 			"-",
 		]
+
+	def _codex_env(self, temp_dir: str) -> dict[str, str]:
+		# Point AGENTS_HOME at an empty directory so the ~/.agents/skills
+		# library (100+ skills) is not scanned into the context budget.
+		env = dict(os.environ)
+		agents_home = Path(temp_dir) / "agents-home"
+		(agents_home / "skills").mkdir(parents=True, exist_ok=True)
+		env["AGENTS_HOME"] = str(agents_home)
+		return env
 
 	def _codex_prompt(self, user_message: str) -> str:
 		return (
@@ -211,6 +224,7 @@ class BaseAgent:
 				capture_output=True,
 				timeout=_CODEX_TIMEOUT_SECONDS,
 				check=False,
+				env=self._codex_env(temp_dir),
 			)
 			if completed.returncode != 0:
 				stderr = str(getattr(completed, "stderr", "") or "").strip()

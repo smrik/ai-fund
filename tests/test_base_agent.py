@@ -38,7 +38,7 @@ def test_codex_backend_returns_final_message_and_records_provenance(monkeypatch)
     monkeypatch.setenv("ALPHA_POD_CODEX_EFFORT", "low")
     calls: dict[str, object] = {}
 
-    def fake_run(command, *, input, text, capture_output, timeout, check):
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
         calls.update(
             command=command,
             input=input,
@@ -46,6 +46,14 @@ def test_codex_backend_returns_final_message_and_records_provenance(monkeypatch)
             capture_output=capture_output,
             timeout=timeout,
             check=check,
+            env=env,
+            # The empty AGENTS_HOME only exists during the call (temp dir),
+            # so existence must be captured here, not asserted afterwards.
+            agents_home_skills_exists=(
+                env is not None
+                and "AGENTS_HOME" in env
+                and (Path(env["AGENTS_HOME"]) / "skills").is_dir()
+            ),
         )
         output_path = Path(command[command.index("-o") + 1])
         output_path.write_text("codex answer", encoding="utf-8")
@@ -65,11 +73,14 @@ def test_codex_backend_returns_final_message_and_records_provenance(monkeypatch)
     assert calls["check"] is False
     command = calls["command"]
     assert "--ephemeral" in command
+    assert "--ignore-user-config" in command
     assert command[command.index("-s") + 1] == "read-only"
     assert command[command.index("-m") + 1] == "gpt-5.6-luna"
     assert command[command.index("-c") + 1] == "model_reasoning_effort=low"
     assert "-o" in command
     assert command[-1] == "-"
+    # Minimal-context invocation: the user's skills library must not be scanned.
+    assert calls["agents_home_skills_exists"] is True
 
 
 def test_codex_backend_passes_long_prompt_via_stdin_not_argv(monkeypatch):
@@ -77,7 +88,7 @@ def test_codex_backend_passes_long_prompt_via_stdin_not_argv(monkeypatch):
     long_prompt = "evidence " * 5_000
     calls: dict[str, object] = {}
 
-    def fake_run(command, *, input, text, capture_output, timeout, check):
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
         calls["command"] = command
         calls["input"] = input
         output_path = Path(command[command.index("-o") + 1])
@@ -111,7 +122,7 @@ def test_codex_backend_falls_back_to_openai_client_with_provenance(monkeypatch):
     monkeypatch.setenv("ALPHA_POD_CODEX_EFFORT", "low")
     monkeypatch.setenv("LLM_MODEL", "openrouter/free")
 
-    def fake_run(command, *, input, text, capture_output, timeout, check):
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
         return SimpleNamespace(returncode=7, stdout="", stderr="codex failed")
 
     monkeypatch.setattr("src.stage_03_judgment.base_agent.subprocess.run", fake_run)
@@ -134,7 +145,7 @@ def test_codex_backend_empty_or_timed_out_process_falls_back(monkeypatch, failur
     monkeypatch.setenv("ALPHA_POD_AGENT_BACKEND", "codex")
     monkeypatch.setenv("LLM_MODEL", "openrouter/free")
 
-    def fake_run(command, *, input, text, capture_output, timeout, check):
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
         if failure == "timeout":
             raise subprocess.TimeoutExpired(command, timeout)
         output_path = Path(command[command.index("-o") + 1])
