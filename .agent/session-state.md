@@ -1,6 +1,6 @@
 # Session State
 
-**Updated:** 2026-07-11T20:20:50+02:00
+**Updated:** 2026-07-11T20:30:32+02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
@@ -37,12 +37,15 @@ Implement and publish the accounting-evidence focused-dispatch slice with subage
 - Implemented Task C: whole-envelope schema retry plus item-level semantic repair that preserves valid siblings and retains rejected findings.
 - Verified the focused implementation with 65 tests passing; only the known Windows .pytest_cache permission warning remains.
 - Committed as 2dad083 and pushed branch codex/focused-accounting-evidence-repair after direct main push was rejected by protected-branch rules.
+- Added `docs/agent-prompts/2026-07-11-accounting-evidence-ultra-handoff.md` as the accounting-specific deep-dive prompt.
+- Added `docs/agent-prompts/2026-07-11-ai-fund-frontier-improvement-sprint.md` as the repository-wide ultra-mode improvement sprint prompt, including clone/branch instructions, background, reading order, plan status, audit lanes, guardrails, and acceptance criteria.
 
 ## Next Steps
 - Implementation is paused after the focus contract, selector, and repair seam; ledger/queue translation, exact Inline XBRL locators, guided-run integration, and the MSFT focus smoke remain.
 - Next implementation decision: add deterministic ledger/queue translation and duplicate/conflict handling, then run an offline MSFT-like focus smoke before enabling guided dispatch.
 - Existing later items remain: capture wall-clock timing, fix stale preview handling, and add approve-now/apply-at-end batching.
 - The implementation commit is on the pushed feature branch; preserve unrelated untracked artifacts.
+- The next frontier agent should clone the reviewed branch, create `codex/frontier-improvement-sprint`, and improve the full repository rather than treating the accounting seam as the only scope.
 
 ## Known Issues
 - The MVP run did not persist total wall-clock time, so the one-PM-hour requirement remains unmeasured.
@@ -60,3 +63,4 @@ Implement and publish the accounting-evidence focused-dispatch slice with subage
 - Active plan: `docs/plans/active/2026-07-11-accounting-evidence-packs-focused-repair.md`.
 - Commit: `2dad083 feat: add focused accounting evidence repair flow`.
 - Branch: `codex/focused-accounting-evidence-repair` (pushed to origin).
+- Sprint prompt: `docs/agent-prompts/2026-07-11-ai-fund-frontier-improvement-sprint.md`.
