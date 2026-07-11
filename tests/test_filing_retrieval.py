@@ -67,6 +67,59 @@ def test_extract_sections_for_10k_and_note_subsections():
     assert "note_acquisitions" in keys
 
 
+def test_extract_sections_handles_split_financial_heading_and_body_topic_headings():
+    text = """
+    INDEX
+    Notes to Financial Statements (Part II, Item 8 of this Form 10-K).
+
+    PART II
+    Item 8
+    NOTES TO FINANCI AL STATEMENTS
+    NOTE 1 - ACCOUNTING POLICIES
+
+    Revenue Recognition
+    Revenue is recognized as performance obligations are satisfied.
+
+    Goodwill
+    Goodwill is tested for impairment annually. The assessment compares the
+    reporting unit fair value with carrying value and records a charge when
+    the carrying amount is not recoverable.
+
+    Income Taxes
+    Uncertain tax positions require probability assessments. Management
+    recognizes benefits only when the technical position is more likely than
+    not to be sustained after examination.
+
+    Fair Value Measurements
+    Level 3 investments use unobservable inputs. The valuation process
+    includes internally developed assumptions and periodic control review.
+
+    Leases
+    Operating lease liabilities are disclosed. The company records right of
+    use assets and lease obligations over the contractual term.
+
+    Segment Information and Geographic Data
+    Reportable segment revenue and operating income are disclosed. Management
+    reviews the segment measures when allocating resources and assessing
+    performance.
+
+    PART II
+    Item 9
+    Changes in and disagreements with accountants begin here.
+    """
+
+    sections = {key: section_text for key, _, section_text in fr._extract_sections_for_filing("10-K", text)}
+
+    assert "INDEX" not in sections["notes_to_financials"]
+    assert "NOTES TO FINANCIAL STATEMENTS" in sections["notes_to_financials"]
+    assert "Revenue Recognition" in sections["note_revenue"]
+    assert "Goodwill" in sections["note_impairment"]
+    assert "Income Taxes" in sections["note_taxes"]
+    assert "Fair Value Measurements" in sections["note_fair_value"]
+    assert "Leases" in sections["note_leases"]
+    assert "Segment Information" in sections["note_segments"]
+
+
 def test_extract_sections_for_10q():
     sections = fr._extract_sections_for_filing("10-Q", TEN_Q_SAMPLE)
     keys = {key for key, _, _ in sections}
@@ -75,6 +128,31 @@ def test_extract_sections_for_10q():
     assert "notes_to_financials_q" in keys
     assert "mda_q" in keys
     assert "risk_factors_q" in keys
+
+
+def test_focused_profiles_diversify_available_topic_sections():
+    chunks = [
+        FilingChunk("10-K", "a1", "2025-12-31", "notes_to_financials", index, "broad", f"b{index}", score=1.0)
+        for index in range(4)
+    ] + [
+        FilingChunk("10-K", "a1", "2025-12-31", "note_leases", 0, "leases", "leases-0", score=0.8),
+        FilingChunk("10-K", "a1", "2025-12-31", "note_taxes", 0, "taxes", "taxes-0", score=0.7),
+        FilingChunk("10-K", "a1", "2025-12-31", "note_segments", 0, "segments", "segments-0", score=0.6),
+    ]
+
+    selected = fr._select_profile_chunks(
+        chunks,
+        profile_name="accounting_recast",
+        priorities=["note_leases", "note_taxes", "note_segments", "notes_to_financials"],
+    )
+
+    assert [chunk.section_key for chunk in selected[:4]] == [
+        "note_leases",
+        "note_taxes",
+        "note_segments",
+        "notes_to_financials",
+    ]
+    assert len(selected) == 7
 
 
 def test_extract_sections_for_real_msft_10k_multiline_headings():

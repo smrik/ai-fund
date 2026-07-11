@@ -20,9 +20,9 @@ from db.schema import create_tables, get_connection
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
-_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v4"
+_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v5"
 _CHUNK_VERSION = "v2"
-_QUERY_VERSION = "v2"
+_QUERY_VERSION = "v5"
 _EMBEDDING_MODEL = PEER_SIMILARITY_MODEL
 _CHUNK_SIZE = 1400
 _CHUNK_OVERLAP = 200
@@ -62,12 +62,14 @@ _PROFILE_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "qoe": {
         "priorities": [
-            "notes_to_financials",
             "note_revenue",
             "note_restructuring",
             "note_impairment",
             "note_acquisitions",
+            "note_sbc",
             "note_contingencies",
+            "note_fair_value",
+            "notes_to_financials",
             "notes_to_financials_q",
             "mda",
             "mda_q",
@@ -81,16 +83,18 @@ _PROFILE_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "accounting_recast": {
         "priorities": [
-            "notes_to_financials",
             "note_leases",
             "note_pension",
             "note_debt",
             "note_taxes",
             "note_contingencies",
             "note_segments",
+            "note_fair_value",
+            "note_impairment",
+            "note_revenue",
+            "note_sbc",
+            "notes_to_financials",
             "notes_to_financials_q",
-            "mda",
-            "mda_q",
         ],
         "queries": [
             "lease liabilities operating lease finance lease right of use",
@@ -138,14 +142,30 @@ _NOTE_TOPIC_PATTERNS: list[tuple[str, str]] = [
     ("note_segments", r"segment|geographic"),
     ("note_leases", r"lease|right-of-use|right of use"),
     ("note_restructuring", r"restructuring|reorganization|transformation"),
-    ("note_impairment", r"impairment|write-down|write down"),
+    ("note_impairment", r"impairment|write-down|write down|goodwill|intangible assets"),
     ("note_acquisitions", r"acquisition|business combination|purchase accounting"),
     ("note_contingencies", r"contingenc|litigation|legal proceeding|commitment"),
     ("note_pension", r"pension|retirement|postretirement"),
     ("note_taxes", r"income tax|taxation|taxes"),
     ("note_fair_value", r"fair value|level 1|level 2|level 3"),
     ("note_debt", r"debt|borrowings|credit facility|notes payable"),
+    ("note_sbc", r"stock[- ]based compensation|share[- ]based compensation|employee stock purchase"),
 ]
+
+_NOTE_BODY_TOPIC_HEADINGS: tuple[tuple[str, str], ...] = (
+    ("note_revenue", r"^(?:revenue recognition|unearned revenue)$"),
+    ("note_segments", r"^segment information(?: and geographic data)?$"),
+    ("note_leases", r"^(?:leases?|lease commitments)$"),
+    ("note_restructuring", r"^restructuring$"),
+    ("note_impairment", r"^(?:goodwill|impairment|intangible assets)$"),
+    ("note_acquisitions", r"^(?:acquisitions?|business combinations?)$"),
+    ("note_contingencies", r"^(?:contingencies|legal and other contingencies|commitments)$"),
+    ("note_pension", r"^(?:pension|pensions|postretirement)$"),
+    ("note_taxes", r"^(?:income taxes?|taxes)$"),
+    ("note_fair_value", r"^(?:fair value measurements?|fair value)$"),
+    ("note_debt", r"^(?:debt|borrowings|long-term debt)$"),
+    ("note_sbc", r"^(?:stock[- ]based compensation|share[- ]based compensation|employee stock purchase)$"),
+)
 
 
 def _statement_presence_from_keys(section_keys: set[str]) -> dict[str, bool]:
@@ -237,16 +257,33 @@ def _hash_text(text: str) -> str:
 
 
 def _normalize_heading_text(text: str) -> str:
-    return (
+    normalized = (
         text.replace("\u2019", "'")
         .replace("\u2018", "'")
         .replace("\u2013", "-")
         .replace("\u2014", "-")
         .replace("\u2012", "-")
     )
+    # Some SEC HTML-to-text tables split words at column boundaries. Keep the
+    # repair deliberately narrow so ordinary prose whitespace is untouched.
+    def _repair_financial(match: re.Match[str]) -> str:
+        source = match.group(0)
+        if source.isupper():
+            return "FINANCIAL"
+        if source.islower():
+            return "financial"
+        return "Financial"
+
+    return re.sub(r"(?i)\bfinanci\s+al\b", _repair_financial, normalized)
 
 
-def _extract_section(text: str, start_patterns: list[str], end_patterns: list[str]) -> str:
+def _extract_section(
+    text: str,
+    start_patterns: list[str],
+    end_patterns: list[str],
+    *,
+    prefer_latest: bool = False,
+) -> str:
     haystack = _normalize_heading_text(text)
     start_matches: list[re.Match[str]] = []
     for pattern in start_patterns:
@@ -275,7 +312,12 @@ def _extract_section(text: str, start_patterns: list[str], end_patterns: list[st
         return ""
     # SEC filings often contain a table of contents that matches Item headings.
     # The substantive body is usually the longest candidate span between headings.
-    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    # Notes are a special case: a TOC reference can span the entire filing, so
+    # callers can prefer the latest body heading instead.
+    if prefer_latest:
+        candidates.sort(key=lambda item: (item[1], item[0]), reverse=True)
+    else:
+        candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
     return candidates[0][2]
 
 
@@ -297,33 +339,75 @@ def _item_heading_pattern(item: str, label: str | None = None, *, part: str | No
 def _extract_note_subsections(form_type: str, notes_text: str) -> list[tuple[str, str]]:
     if not notes_text:
         return []
-    note_matches = list(
+    numbered_matches = list(
         re.finditer(
             r"(?im)(?:^|\n)\s*(note\s+\d+[a-z]?(?:[\.:\-\s]+)[^\n]{0,140})",
             notes_text,
         )
     )
-    if not note_matches:
-        return []
 
-    results: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for idx, match in enumerate(note_matches):
-        start = match.start(1)
-        end = note_matches[idx + 1].start(1) if idx + 1 < len(note_matches) else len(notes_text)
-        heading = match.group(1).strip()
+    def _body_topic_key(heading: str) -> str | None:
+        normalized = " ".join(heading.split()).strip()
+        if not normalized or len(normalized) > 100:
+            return None
+        for section_key, pattern in _NOTE_BODY_TOPIC_HEADINGS:
+            if re.fullmatch(pattern, normalized, flags=re.IGNORECASE):
+                return section_key
+        return None
+
+    body_matches: list[tuple[re.Match[str], str]] = []
+    for match in re.finditer(r"(?im)^(?P<heading>[^\n]{2,100})$", notes_text):
+        heading = match.group("heading").strip()
+        if heading.lower().startswith("note "):
+            continue
+        section_key = _body_topic_key(heading)
+        if section_key:
+            body_matches.append((match, section_key))
+
+    # Topic headings supplement numbered notes, which is necessary for filings
+    # whose text extraction drops repeated "NOTE 2 - ..." labels but keeps
+    # headings such as "Leases" or "Income Taxes".
+    boundaries: list[tuple[int, str, str | None]] = [
+        (match.start(1), match.group(1).strip(), None)
+        for match in numbered_matches
+    ]
+    boundaries.extend(
+        (match.start("heading"), match.group("heading").strip(), section_key)
+        for match, section_key in body_matches
+    )
+    boundaries.sort(key=lambda item: item[0])
+    deduped_boundaries: list[tuple[int, str, str | None]] = []
+    seen_starts: set[int] = set()
+    for boundary in boundaries:
+        if boundary[0] in seen_starts:
+            continue
+        deduped_boundaries.append(boundary)
+        seen_starts.add(boundary[0])
+
+    candidates_by_key: dict[str, list[tuple[int, int, str, str]]] = {}
+    for index, (start, heading, explicit_key) in enumerate(deduped_boundaries):
+        end = deduped_boundaries[index + 1][0] if index + 1 < len(deduped_boundaries) else len(notes_text)
         block = notes_text[start:end].strip()
         if len(block) < 80:
             continue
-        for section_key, pattern in _NOTE_TOPIC_PATTERNS:
-            if section_key in seen:
-                continue
-            if re.search(pattern, heading, flags=re.IGNORECASE):
-                label = f"{heading}"
-                results.append((section_key, f"{label}\n{block}"))
-                seen.add(section_key)
-                break
-    return results
+        section_key = explicit_key
+        if section_key is None:
+            for candidate_key, pattern in _NOTE_TOPIC_PATTERNS:
+                if re.search(pattern, heading, flags=re.IGNORECASE):
+                    section_key = candidate_key
+                    break
+        if section_key is None:
+            continue
+        candidates_by_key.setdefault(section_key, []).append((len(block), start, heading, block))
+
+    selected: list[tuple[int, str, str]] = []
+    for section_key, candidates in candidates_by_key.items():
+        # A topic can appear in both a critical-estimates discussion and its
+        # dedicated note. Prefer the most complete occurrence.
+        _, start, heading, block = max(candidates, key=lambda item: (item[0], -item[1]))
+        selected.append((start, section_key, f"{heading}\n{block}"))
+    selected.sort(key=lambda item: item[0])
+    return [(section_key, block) for _, section_key, block in selected]
 
 
 def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, str, str]]:
@@ -425,7 +509,12 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
         ]
 
     for section_key, label, start_patterns, end_patterns in definitions:
-        section_text = _extract_section(text, start_patterns, end_patterns)
+        section_text = _extract_section(
+            text,
+            start_patterns,
+            end_patterns,
+            prefer_latest=section_key in {"notes_to_financials", "notes_to_financials_q"},
+        )
         if section_text:
             sections.append((section_key, label, section_text))
 
@@ -596,6 +685,55 @@ def _section_priority_score(section_key: str, priorities: list[str]) -> float:
         index = priorities.index(section_key)
         return max(0.1, 1.0 - (index / max(1, len(priorities))))
     return 0.1
+
+
+def _select_profile_chunks(
+    scored_chunks: list[FilingChunk],
+    *,
+    profile_name: str,
+    priorities: list[str],
+) -> list[FilingChunk]:
+    """Select focused-profile evidence with section diversity.
+
+    Accounting profiles must not spend the full twelve-chunk budget on the
+    broad notes section when topic-specific sections are available. One chunk
+    per available priority section gives the agent a coverage map; remaining
+    capacity is filled by the normal score ordering.
+    """
+
+    if profile_name not in {"qoe", "accounting_recast"}:
+        return scored_chunks[:_MAX_SELECTED_CHUNKS]
+
+    selected: list[FilingChunk] = []
+    selected_keys: set[tuple[str, str, int]] = set()
+
+    def _chunk_key(chunk: FilingChunk) -> tuple[str, str, int]:
+        return (chunk.accession_no, chunk.section_key, int(chunk.chunk_index))
+
+    candidates_by_section: dict[str, list[FilingChunk]] = {
+        section_key: [chunk for chunk in scored_chunks if chunk.section_key == section_key]
+        for section_key in priorities
+    }
+    # Round-robin across sections. This keeps a large topic (for example
+    # taxes) from consuming the remainder of the packet budget.
+    for round_index in range(_MAX_SELECTED_CHUNKS):
+        progressed = False
+        for section_key in priorities:
+            candidates = candidates_by_section.get(section_key, [])
+            if round_index >= len(candidates):
+                continue
+            candidate = candidates[round_index]
+            key = _chunk_key(candidate)
+            if key in selected_keys:
+                continue
+            selected.append(candidate)
+            selected_keys.add(key)
+            progressed = True
+            if len(selected) >= _MAX_SELECTED_CHUNKS:
+                return selected
+        if not progressed:
+            break
+    return selected
 
 
 def _context_to_dict(bundle: FilingContextBundle) -> dict[str, Any]:
@@ -1018,7 +1156,11 @@ def get_agent_filing_context(
             )
 
         scored_chunks.sort(key=lambda item: (item.score or 0.0), reverse=True)
-        selected_chunks = scored_chunks[:_MAX_SELECTED_CHUNKS]
+        selected_chunks = _select_profile_chunks(
+            scored_chunks,
+            profile_name=profile_name,
+            priorities=priorities,
+        )
         selected_section_keys = {chunk.section_key for chunk in selected_chunks}
         excluded_section_keys = sorted(corpus_section_keys - candidate_section_keys)
         skipped_sections = sorted((candidate_section_keys - selected_section_keys) | set(excluded_section_keys))

@@ -20,6 +20,7 @@ class EvidencePacketKind(str, Enum):
     risk_review = "risk_review"
     valuation_review = "valuation_review"
     analyst_prep_synthesis = "analyst_prep_synthesis"
+    accounting = "accounting"
 
 
 class EvidencePacketObservationKind(str, Enum):

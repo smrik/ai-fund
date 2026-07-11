@@ -1,6 +1,8 @@
 import sqlite3
 from types import SimpleNamespace
 
+import pytest
+
 from db.loader import load_evidence_packet
 from db.schema import create_tables
 from src.contracts.evidence_packet import EvidencePacketKind
@@ -13,6 +15,351 @@ def _conn() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     create_tables(conn)
     return conn
+
+
+def test_accounting_packet_collects_retrieval_profile_sections_and_source_locators(monkeypatch):
+    """Accounting packets must preserve deterministic filing provenance."""
+    conn = _conn()
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    calls = []
+
+    def _filing_context(ticker, **kwargs):
+        calls.append((ticker, kwargs))
+        return SimpleNamespace(
+            sources=[
+                {
+                    "accession_no": "000-accounting",
+                    "form_type": "10-K",
+                    "doc_name": "msft-10k.htm",
+                    "filing_date": "2026-07-01",
+                    "source_locator": "https://www.sec.gov/Archives/edgar/data/msft-10k.htm",
+                }
+            ],
+            selected_chunks=[
+                SimpleNamespace(
+                    accession_no="000-accounting",
+                    chunk_index=2,
+                    text="Note 8 discloses operating lease liabilities.",
+                    section_key="note_leases",
+                    filing_date="2026-07-01",
+                    score=0.99,
+                ),
+                SimpleNamespace(
+                    accession_no="000-accounting",
+                    chunk_index=5,
+                    text="Note 12 discloses segment revenue and margin.",
+                    section_key="note_segments",
+                    filing_date="2026-07-01",
+                    score=0.95,
+                ),
+                SimpleNamespace(
+                    accession_no="000-accounting",
+                    chunk_index=8,
+                    text="Note 9 discloses income taxes and uncertain tax positions.",
+                    section_key="note_taxes",
+                    filing_date="2026-07-01",
+                    score=0.94,
+                ),
+            ],
+            retrieval_summary={
+                "selected_section_keys": ["note_leases", "note_segments"],
+                "section_coverage": {
+                    "by_section_key": {"note_leases": 1, "note_segments": 1},
+                },
+                "selected_source_locators": [
+                    "edgar://000-accounting/note_leases/2",
+                    "edgar://000-accounting/note_segments/5",
+                ],
+                "topic_coverage": {
+                    "leases": "retrieved",
+                    "pensions": "searched_absent",
+                },
+            },
+        )
+
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        _filing_context,
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            as_of_date="2026-07-01",
+            drivers=SimpleNamespace(
+                net_debt=1200.0,
+                non_operating_assets=400.0,
+                lease_liabilities=250.0,
+                minority_interest=30.0,
+                preferred_equity=0.0,
+                pension_deficit=15.0,
+                shares_outstanding=7500.0,
+            ),
+        ),
+    )
+
+    packet = build_evidence_packet("msft", "accounting_ev_equity_bridge")
+
+    assert packet.packet_kind == EvidencePacketKind.accounting
+    assert packet.profile_name == "accounting_ev_equity_bridge"
+    assert calls[0][1]["profile_name"] == "accounting_recast"
+    assert packet.run_metadata["selected_section_keys"] == ["note_leases", "note_segments"]
+    assert packet.run_metadata["selected_source_locators"] == [
+        "edgar://000-accounting/note_leases/2",
+        "edgar://000-accounting/note_segments/5",
+    ]
+    assert packet.source_refs[0].source_locator == "https://www.sec.gov/Archives/edgar/data/msft-10k.htm"
+
+    facts = {fact.fact_name: fact.value for fact in packet.facts}
+    assert facts["net_debt"] == 1200.0
+    assert facts["non_operating_assets"] == 400.0
+    assert facts["lease_liabilities"] == 250.0
+    assert facts["minority_interest"] == 30.0
+    assert facts["pension_deficit"] == 15.0
+    assert facts["shares_outstanding"] == 7500.0
+    assert facts["topic_coverage_note_leases"] == "selected"
+    assert facts["topic_coverage_note_pension"] == "searched_absent"
+    assert [snippet.metadata["section_key"] for snippet in packet.snippets] == [
+        "note_leases",
+        "note_segments",
+    ]
+
+
+def test_accounting_packet_distinguishes_retrieval_missing_from_searched_absent(monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        lambda ticker, **kwargs: (_ for _ in ()).throw(RuntimeError("EDGAR unavailable")),
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(as_of_date="2026-07-01", drivers=SimpleNamespace()),
+    )
+
+    packet = build_evidence_packet("msft", "accounting_contingencies_and_taxes")
+    facts = {fact.fact_name: fact.value for fact in packet.facts}
+
+    assert facts["topic_coverage_note_contingencies"] == "retrieval_unavailable"
+    assert facts["topic_coverage_note_taxes"] == "retrieval_unavailable"
+
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        lambda ticker, **kwargs: SimpleNamespace(
+            sources=[{"accession_no": "0001", "form_type": "10-K", "doc_name": "msft.htm"}],
+            selected_chunks=[],
+            retrieval_summary={
+                "selected_section_keys": [],
+                "section_coverage": {"by_section_key": {"notes_to_financials": 1}},
+            },
+        ),
+    )
+    searched_packet = build_evidence_packet("msft", "accounting_contingencies_and_taxes")
+    searched_facts = {fact.fact_name: fact.value for fact in searched_packet.facts}
+    assert searched_facts["topic_coverage_note_contingencies"] == "searched_absent"
+    assert searched_facts["topic_coverage_note_taxes"] == "searched_absent"
+
+
+def test_accounting_qoe_packet_contains_reported_and_deterministic_qoe_facts(monkeypatch):
+    conn = _conn()
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        lambda ticker, **kwargs: SimpleNamespace(
+            sources=[
+                {
+                    "accession_no": "qoe-10k",
+                    "form_type": "10-K",
+                    "doc_name": "msft.htm",
+                    "filing_date": "2026-07-01",
+                }
+            ],
+            selected_chunks=[
+                SimpleNamespace(
+                    accession_no="qoe-10k",
+                    chunk_index=1,
+                    text="Revenue recognition note describes contract assets and deferred revenue.",
+                    section_key="note_revenue",
+                    filing_date="2026-07-01",
+                    score=0.97,
+                )
+            ],
+            retrieval_summary={
+                "selected_section_keys": ["note_revenue"],
+                "section_coverage": {"by_section_key": {"note_revenue": 1}},
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            sector="Technology",
+            as_of_date="2026-07-01",
+            drivers=SimpleNamespace(
+                revenue_growth_near=0.12,
+                revenue_growth_mid=0.09,
+                ebit_margin_start=0.44,
+                ebit_margin_target=0.332,
+                tax_rate_start=0.18,
+                tax_rate_target=0.20,
+            ),
+            source_lineage={"ebit_margin_target": "story_sector"},
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_historical_financials",
+        lambda ticker, use_cache=True: {
+            "operating_income": [128_500_000_000.0],
+            "revenue": [300_000_000_000.0],
+            "cffo": [100_000_000_000.0],
+            "capex": [20_000_000_000.0],
+            "da": [10_000_000_000.0],
+            "sbc": 8_000_000_000.0,
+            "effective_tax_rate_avg": 0.19,
+        },
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_market_data",
+        lambda ticker, use_cache=True: {"sector": "Technology", "ebitda_ttm": 140_000_000_000.0},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_ciq_snapshot",
+        lambda ticker: {"operating_income_ttm": 128_500_000_000.0, "da_ttm": 10_000_000_000.0},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_ciq_nwc_history",
+        lambda ticker: [{"period_date": "2026-06-30", "dso": 45.0, "dio": 30.0, "dpo": 55.0}],
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.compute_qoe_signals",
+        lambda *args, **kwargs: {
+            "qoe_score": 4,
+            "qoe_flag": "green",
+            "sloan_accruals_ratio": 0.02,
+            "cash_conversion": 0.71,
+            "dso_current": 45.0,
+            "dso_baseline": 42.0,
+            "dso_drift": 3.0,
+            "signal_scores": {"accruals": "green"},
+            "forensic_flag": "clear",
+        },
+    )
+
+    packet = build_evidence_packet("msft", "accounting_qoe")
+
+    assert packet.packet_kind == EvidencePacketKind.accounting
+    assert packet.profile_name == "accounting_qoe"
+    assert packet.run_metadata["retrieval_profile"] == "qoe"
+    facts = {fact.fact_name: fact.value for fact in packet.facts}
+    assert facts["reported_ebit"] == 128_500_000_000.0
+    assert facts["sloan_accruals_ratio"] == 0.02
+    assert facts["cash_conversion"] == 0.71
+    assert facts["qoe_flag"] == "green"
+    assert facts["ebit_margin_target"] == 0.332
+    assert facts["topic_coverage_note_revenue"] == "selected"
+
+
+@pytest.mark.parametrize(
+    "profile_name",
+    (
+        "accounting_qoe",
+        "accounting_ev_equity_bridge",
+        "accounting_contingencies_and_taxes",
+        "accounting_segments_and_disclosure",
+    ),
+)
+def test_all_accounting_packets_include_structured_xbrl_fact_provenance(
+    monkeypatch,
+    profile_name,
+):
+    conn = _conn()
+    monkeypatch.setattr("src.stage_04_pipeline.evidence_packets.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        lambda ticker, **kwargs: SimpleNamespace(
+            sources=[],
+            selected_chunks=[],
+            retrieval_summary={},
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            as_of_date="2026-07-01",
+            sector="Technology",
+            drivers=SimpleNamespace(),
+            source_lineage={},
+        ),
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_historical_financials",
+        lambda ticker, use_cache=True: {},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_market_data",
+        lambda ticker, use_cache=True: {},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_ciq_snapshot",
+        lambda ticker: {},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_ciq_nwc_history",
+        lambda ticker: [],
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.compute_qoe_signals",
+        lambda *args, **kwargs: {},
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_xbrl_fact_evidence",
+        lambda ticker, concepts, max_facts_per_concept=None: {
+            "status": "ok",
+            "cik": "0000789019",
+            "fact_count": 1,
+            "errors": [],
+            "facts": [
+                {
+                    "fact_id": "xbrl:MSFT:0000950170-25-100235:us-gaap:Cash:D1",
+                    "fact_name": "us-gaap:CashAndCashEquivalentsAtCarryingValue",
+                    "value": 100.0,
+                    "numeric_value": 100.0,
+                    "unit": "USD",
+                    "period": "2025-06-30",
+                    "source_locator": "https://www.sec.gov/Archives/edgar/data/789019/000095017025100235-index.html",
+                    "metadata": {
+                        "source": "sec_xbrl_companyfacts_v3",
+                        "taxonomy": "us-gaap",
+                        "label": "Cash and cash equivalents",
+                        "accession": "0000950170-25-100235",
+                        "filing_date": "2025-07-30",
+                        "form_type": "10-K",
+                        "context_ref": "D1",
+                        "dimensions": {},
+                        "statement_type": "BalanceSheet",
+                    },
+                }
+            ],
+        },
+    )
+
+    packet = build_evidence_packet("msft", profile_name)
+
+    xbrl_facts = [
+        fact for fact in packet.facts
+        if fact.metadata.get("fact_role") == "xbrl_structured_fact"
+    ]
+    assert len(xbrl_facts) == 1
+    assert xbrl_facts[0].value == 100.0
+    assert xbrl_facts[0].unit == "USD"
+    assert xbrl_facts[0].metadata["accession"] == "0000950170-25-100235"
+    assert xbrl_facts[0].metadata["source_locator"].endswith("-index.html")
+    assert any(
+        ref.source_kind == "sec_xbrl_fact"
+        and ref.source_locator.endswith("-index.html")
+        for ref in packet.source_refs
+    )
+    assert packet.run_metadata["xbrl_fact_count"] == 1
+    assert packet.run_metadata["xbrl_retrieval_status"] == "ok"
 
 
 def test_company_analysis_packet_uses_filing_context_and_sec_metrics(monkeypatch):

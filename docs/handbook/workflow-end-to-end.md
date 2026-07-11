@@ -159,6 +159,21 @@ Guardrail:
 
 - Agent outputs should be treated as contextual overlays unless promoted through a deterministic acceptance rule.
 
+### EDGAR Evidence Split: XBRL Facts + Filing Narrative
+
+The EDGAR path has two complementary evidence surfaces:
+
+- `src/stage_00_data/xbrl_evidence.py` preserves typed Company Facts, periods, units,
+  filing vintage, accession, dimensions, statement metadata, and a stable SEC filing-index
+  locator. Use this for numeric accounting evidence and balance-sheet/bridge facts.
+- `src/stage_00_data/filing_retrieval.py` remains the source for note headings,
+  accounting-policy prose, contingencies, explanations, and surrounding disclosure text.
+
+XBRL should not be flattened into a single undimensioned value: dimensions, context refs,
+restatement vintage, and form/filing date are part of the evidence. The current XBRL adapter
+links to the filing index rather than pretending it has an exact fact-level HTML anchor;
+Inline XBRL DOM locators are a later enhancement.
+
 ## Agentic Handoff MVP Workflow
 
 The valuation shell now includes a universal PM Queue / Insights path for judgment-agent handoffs.

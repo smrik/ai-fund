@@ -28,6 +28,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 - [Weekly Loop v1 (Milestone 1)](./active/2026-06-12-weekly-loop-v1.md) — session runbook, preflight, friction log, full-suite CI, queue-in-anger verification
 - [Evidence Acquisition: EDGAR End-To-End And Quartr Transcripts](./active/2026-06-13-evidence-acquisition-edgar-quartr.md) — unblocks 4 of 6 agent profiles; transcript contract with REST/import dual transport
+- [Accounting Evidence Packs And Focused Repair](./active/2026-07-11-accounting-evidence-packs-focused-repair.md) — topic-specific accounting/QoE packets, semantic repair retries, and PM-safe adjustment candidates
 - [Quote-Terminal UI Redesign And Streamlit Migration](./active/2026-03-28-quote-terminal-ui-redesign-and-streamlit-stabilization.md) — canonical Streamlit-retirement workstream; full parity push starts with Milestone 2 (Vision Decision 7)
 
 ## Future / Queued
