@@ -1,0 +1,2861 @@
+{
+  "$schema_version": "1.0",
+  "analyst_prep": {
+    "comps_card": {
+      "evidence_anchor_ids": [
+        "deterministic:comps:peer_set"
+      ],
+      "exit_multiple_support": "Primary comps metric tev_ebitda_fwd supports reviewing exit_multiple.",
+      "peer_count": 6,
+      "peer_set_quality": "real",
+      "premium_discount_argument": "Target trades at a discount versus peer median on tev_ebitda_fwd.",
+      "primary_metric": "tev_ebitda_fwd",
+      "target_vs_peer_median": {
+        "deltas": {
+          "net_debt_to_ebitda": -0.1218,
+          "pe_ltm": -5.6006,
+          "tev_ebitda_fwd": -4.2657,
+          "tev_ebitda_ltm": -9.9144
+        },
+        "peer_medians": {
+          "net_debt_to_ebitda": 0.3777,
+          "pe_ltm": 30.4175,
+          "tev_ebit_fwd": null,
+          "tev_ebit_ltm": null,
+          "tev_ebitda_fwd": 18.742,
+          "tev_ebitda_ltm": 25.7682
+        },
+        "target": {
+          "ebit_margin": 0.46326,
+          "net_debt_to_ebitda": 0.2559,
+          "pe_ltm": 24.81691,
+          "revenue_growth": 0.183,
+          "tev_ebitda_fwd": 14.47633,
+          "tev_ebitda_ltm": 15.85378
+        }
+      },
+      "title": "Comps Judgment",
+      "warnings": [
+        "Outliers removed from tev_ebitda_fwd: SNOW, S",
+        "Peer set cleaned from 8 to 6"
+      ]
+    },
+    "conflict_groups": [],
+    "contract_version": "0.1.0",
+    "driver_cards": [
+      {
+        "assumption_name": "revenue_growth_near",
+        "current_value": 0.1279213954529603,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:revenue_growth_near"
+        ],
+        "label": "Revenue Growth (Near)",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.1279213954529603,
+        "rationale": "Current deterministic model source: ciq|story_sector.",
+        "source": "ciq|story_sector",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "revenue_growth_mid",
+        "current_value": 0.08954497681707219,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:revenue_growth_mid"
+        ],
+        "label": "Revenue Growth (Mid)",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.08954497681707219,
+        "rationale": "Current deterministic model source: ciq|story_sector.",
+        "source": "ciq|story_sector",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "ebit_margin_start",
+        "current_value": 0.44013045483412555,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:ebit_margin_start"
+        ],
+        "label": "EBIT Margin (Start)",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.44013045483412555,
+        "rationale": "Current deterministic model source: ciq.",
+        "source": "ciq",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "ebit_margin_target",
+        "current_value": 0.3320652274170628,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:ebit_margin_target"
+        ],
+        "label": "EBIT Margin (Target)",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.3320652274170628,
+        "rationale": "Current deterministic model source: story_sector.",
+        "source": "story_sector",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "wacc",
+        "current_value": 0.09351999999999999,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:wacc"
+        ],
+        "label": "WACC",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.09351999999999999,
+        "rationale": "Current deterministic model source: yfinance_capm|story_sector.",
+        "source": "yfinance_capm|story_sector",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "revenue_growth_terminal",
+        "current_value": null,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:revenue_growth_terminal"
+        ],
+        "label": "Terminal Growth",
+        "pm_review_status": "ok",
+        "proposed_or_effective_value": 0.035,
+        "rationale": "Current deterministic model source: default.",
+        "source": "default",
+        "valuation_impact": null
+      },
+      {
+        "assumption_name": "exit_multiple",
+        "current_value": 20.072682000000004,
+        "evidence_anchor_ids": [
+          "deterministic:assumption:exit_multiple",
+          "fact:comps_analysis:peer_count_raw",
+          "fact:comps_analysis:peer_count_clean"
+        ],
+        "label": "Exit Multiple",
+        "pm_review_status": "review_required",
+        "proposed_or_effective_value": 21.572682000000004,
+        "rationale": "PM Queue item 33 proposes or discusses this driver: The deterministic comps packet has enough peer data for PM review of the exit multiple, but the comps model diagnostics still need inspection.",
+        "source": "ciq_comps_tev_ebitda_fwd|story_sector",
+        "valuation_impact": null
+      }
+    ],
+    "evidence_map": [
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:peer_count_raw",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:peer_count_raw",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 8
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:peer_count_clean",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:peer_count_clean",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 6
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:primary_metric",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:primary_metric",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": "tev_ebitda_fwd"
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:pe_ltm:target",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:pe_ltm:target",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 24.81691
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:pe_ltm:peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:pe_ltm:peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 30.4175
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:pe_ltm:target_minus_peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:pe_ltm:target_minus_peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": -5.6006
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_fwd:target",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_fwd:target",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 14.47633
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_fwd:peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_fwd:peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 18.742
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_fwd:target_minus_peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_fwd:target_minus_peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": -4.2657
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_ltm:target",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_ltm:target",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 15.85378
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_ltm:peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_ltm:peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": 25.7682
+      },
+      {
+        "anchor_id": "packet:97:fact:fact:comps_analysis:tev_ebitda_ltm:target_minus_peer_median",
+        "kind": "packet_fact",
+        "label": "fact:comps_analysis:tev_ebitda_ltm:target_minus_peer_median",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": null,
+        "unit": null,
+        "value": -9.9144
+      },
+      {
+        "anchor_id": "heuristic:comps_analysis:1",
+        "kind": "packet_observation",
+        "label": "The deterministic comps packet has enough peer data for PM review of the exit multiple, but the comps model diagnostics still need inspection.",
+        "packet_id": 97,
+        "profile_name": "comps_analysis",
+        "source_quality": "real",
+        "source_ref": "fact:comps_analysis:peer_count_raw; fact:comps_analysis:peer_count_clean",
+        "unit": null,
+        "value": "multiple_premium_supported"
+      },
+      {
+        "anchor_id": "deterministic:assumption:revenue_growth_near",
+        "kind": "model_assumption",
+        "label": "Revenue Growth (Near)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq|story_sector",
+        "unit": "pct",
+        "value": 0.1279213954529603
+      },
+      {
+        "anchor_id": "deterministic:assumption:revenue_growth_mid",
+        "kind": "model_assumption",
+        "label": "Revenue Growth (Mid)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq|story_sector",
+        "unit": "pct",
+        "value": 0.08954497681707219
+      },
+      {
+        "anchor_id": "deterministic:assumption:ebit_margin_start",
+        "kind": "model_assumption",
+        "label": "EBIT Margin (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "pct",
+        "value": 0.44013045483412555
+      },
+      {
+        "anchor_id": "deterministic:assumption:ebit_margin_target",
+        "kind": "model_assumption",
+        "label": "EBIT Margin (Target)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "story_sector",
+        "unit": "pct",
+        "value": 0.3320652274170628
+      },
+      {
+        "anchor_id": "deterministic:assumption:tax_rate_start",
+        "kind": "model_assumption",
+        "label": "Tax Rate (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "pct",
+        "value": 0.20409426921981771
+      },
+      {
+        "anchor_id": "deterministic:assumption:tax_rate_target",
+        "kind": "model_assumption",
+        "label": "Tax Rate (Target)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "pct",
+        "value": 0.20409426921981771
+      },
+      {
+        "anchor_id": "deterministic:assumption:capex_pct_start",
+        "kind": "model_assumption",
+        "label": "Capex % (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "pct",
+        "value": 0.1810700991691587
+      },
+      {
+        "anchor_id": "deterministic:assumption:capex_pct_target",
+        "kind": "model_assumption",
+        "label": "Capex % (Target)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "story_sector",
+        "unit": "pct",
+        "value": 0.16701659421070075
+      },
+      {
+        "anchor_id": "deterministic:assumption:da_pct_start",
+        "kind": "model_assumption",
+        "label": "D&A % (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "pct",
+        "value": 0.005
+      },
+      {
+        "anchor_id": "deterministic:assumption:da_pct_target",
+        "kind": "model_assumption",
+        "label": "D&A % (Target)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "story_sector",
+        "unit": "pct",
+        "value": 0.00275
+      },
+      {
+        "anchor_id": "deterministic:assumption:dso_start",
+        "kind": "model_assumption",
+        "label": "DSO (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "days",
+        "value": 68.9
+      },
+      {
+        "anchor_id": "deterministic:assumption:dio_start",
+        "kind": "model_assumption",
+        "label": "DIO (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "days",
+        "value": 5.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:dpo_start",
+        "kind": "model_assumption",
+        "label": "DPO (Start)",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "days",
+        "value": 43.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:wacc",
+        "kind": "model_assumption",
+        "label": "WACC",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "yfinance_capm|story_sector",
+        "unit": "pct",
+        "value": 0.09351999999999999
+      },
+      {
+        "anchor_id": "deterministic:assumption:exit_multiple",
+        "kind": "model_assumption",
+        "label": "Exit Multiple",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq_comps_tev_ebitda_fwd|story_sector",
+        "unit": "x",
+        "value": 20.072682000000004
+      },
+      {
+        "anchor_id": "deterministic:assumption:net_debt",
+        "kind": "model_assumption",
+        "label": "Net Debt",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq",
+        "unit": "usd",
+        "value": 93327000000.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:non_operating_assets",
+        "kind": "model_assumption",
+        "label": "Non-Operating Assets",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "ciq_cash_excess",
+        "unit": "usd",
+        "value": 25739540000.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:lease_liabilities",
+        "kind": "model_assumption",
+        "label": "Lease Liabilities",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "default",
+        "unit": "usd",
+        "value": 0.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:minority_interest",
+        "kind": "model_assumption",
+        "label": "Minority Interest",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "default",
+        "unit": "usd",
+        "value": 0.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:preferred_equity",
+        "kind": "model_assumption",
+        "label": "Preferred Equity",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "default",
+        "unit": "usd",
+        "value": 0.0
+      },
+      {
+        "anchor_id": "deterministic:assumption:pension_deficit",
+        "kind": "model_assumption",
+        "label": "Pension Deficit",
+        "packet_id": null,
+        "profile_name": "deterministic_model",
+        "source_quality": "partial",
+        "source_ref": "default",
+        "unit": "usd",
+        "value": 0.0
+      },
+      {
+        "anchor_id": "deterministic:comps:peer_set",
+        "kind": "comps_peer_set",
+        "label": "Comparable company peer set",
+        "packet_id": null,
+        "profile_name": "deterministic_comps",
+        "source_quality": "real",
+        "source_ref": "ciq_cleandata.xlsx",
+        "unit": "peers",
+        "value": 6
+      }
+    ],
+    "evidence_packet_ids": [
+      97
+    ],
+    "export_metadata": {
+      "builder": "src.stage_04_pipeline.analyst_prep_pack",
+      "ciq_lineage": {
+        "comps_as_of_date": "2026-03-31",
+        "comps_iv_base": 572.1016,
+        "comps_iv_ev_ebit": null,
+        "comps_iv_ev_ebitda": 633.5008,
+        "comps_iv_pe": 510.7024,
+        "comps_run_id": 10,
+        "comps_source_file": "ciq_cleandata.xlsx",
+        "comps_used": true,
+        "peer_count": 8,
+        "peer_median_pe_ltm": 30.4175,
+        "peer_median_tev_ebit_ltm": null,
+        "peer_median_tev_ebitda_ltm": 25.7682,
+        "public_comps_fallback_peer_count": null,
+        "public_comps_fallback_source_file": null,
+        "public_comps_fallback_used": false,
+        "snapshot_as_of_date": "2026-03-31",
+        "snapshot_run_id": 10,
+        "snapshot_source_file": "ciq_cleandata.xlsx",
+        "snapshot_used": true
+      },
+      "comps_available": true,
+      "dcf_available": true,
+      "default_resolution_status": "review_required",
+      "research_available": true,
+      "store_error": null,
+      "workbench_available": true
+    },
+    "generated_at": "2026-06-08T19:44:32.579473+00:00",
+    "missing_data": [
+      {
+        "flag_id": "segment_data_missing",
+        "label": "Segment evidence missing",
+        "reason": "No deterministic segment rows were found in the current CIQ/SEC payload.",
+        "severity": "medium",
+        "source": "segment_driver_rows",
+        "suggested_check": "Refresh CIQ segment tabs or add SEC segment snippets before relying on mix-shift margin claims."
+      },
+      {
+        "flag_id": "default_resolution:pension_deficit",
+        "label": "pension_deficit default needs review",
+        "reason": "Default-resolution layer flagged this assumption.",
+        "severity": "medium",
+        "source": "default",
+        "suggested_check": null
+      },
+      {
+        "flag_id": "default_resolution:minority_interest",
+        "label": "minority_interest default needs review",
+        "reason": "Default-resolution layer flagged this assumption.",
+        "severity": "low",
+        "source": "default",
+        "suggested_check": null
+      },
+      {
+        "flag_id": "default_resolution:preferred_equity",
+        "label": "preferred_equity default needs review",
+        "reason": "Default-resolution layer flagged this assumption.",
+        "severity": "low",
+        "source": "default",
+        "suggested_check": null
+      }
+    ],
+    "sections": [
+      {
+        "evidence_anchor_ids": [
+          "packet:97:fact:fact:comps_analysis:peer_count_raw",
+          "packet:97:fact:fact:comps_analysis:peer_count_clean",
+          "packet:97:fact:fact:comps_analysis:primary_metric",
+          "packet:97:fact:fact:comps_analysis:pe_ltm:target",
+          "packet:97:fact:fact:comps_analysis:pe_ltm:peer_median",
+          "packet:97:fact:fact:comps_analysis:pe_ltm:target_minus_peer_median"
+        ],
+        "section_id": "investment_thesis",
+        "source_quality": "real",
+        "summary": "Prep pack combines deterministic valuation state, evidence packets, PM Queue items, and comps diagnostics.",
+        "title": "Investment Thesis",
+        "warnings": [
+          "Segment evidence missing",
+          "pension_deficit default needs review"
+        ]
+      },
+      {
+        "evidence_anchor_ids": [],
+        "section_id": "diligence_queue",
+        "source_quality": "real",
+        "summary": "Inspect missing segment evidence, default-resolution warnings, comps fallback status, and unresolved PM Queue conflicts first.",
+        "title": "Diligence Queue",
+        "warnings": []
+      }
+    ],
+    "segment_driver_rows": [],
+    "source_quality": "real",
+    "thesis_cards": [
+      {
+        "agent_confidence": null,
+        "business_evidence_summary": "Deterministic DCF bridge provides the starting valuation gap.",
+        "card_id": "MSFT:valuation_setup",
+        "claim": "Base DCF IV is 281.99 versus current price 416.67.",
+        "counter_evidence": null,
+        "deterministic_confidence": "medium",
+        "evidence_anchor_ids": [
+          "deterministic:dcf:base_iv",
+          "packet:97:fact:fact:comps_analysis:peer_count_raw",
+          "packet:97:fact:fact:comps_analysis:peer_count_clean"
+        ],
+        "linked_assumption_fields": [
+          "revenue_growth_near",
+          "ebit_margin_target",
+          "wacc",
+          "revenue_growth_terminal",
+          "exit_multiple"
+        ],
+        "model_implication": "Review revenue growth, margin, WACC, terminal growth, and exit multiple before trusting the spread.",
+        "numeric_fact_refs": [
+          "deterministic:dcf:base_iv",
+          "deterministic:dcf:current_price",
+          "packet:97:fact:fact:comps_analysis:peer_count_raw",
+          "packet:97:fact:fact:comps_analysis:peer_count_clean"
+        ],
+        "source_quality": "real",
+        "title": "Valuation Setup",
+        "what_would_change_mind": "A stale CIQ refresh, unresolved default driver, or rejected PM Queue item would invalidate the spread."
+      },
+      {
+        "agent_confidence": null,
+        "business_evidence_summary": "Driver cards combine deterministic sources, PM Queue proposals, and default-resolution warnings.",
+        "card_id": "MSFT:driver_review",
+        "claim": "The main senior-review work is concentrated in Exit Multiple.",
+        "counter_evidence": null,
+        "deterministic_confidence": "medium",
+        "evidence_anchor_ids": [
+          "deterministic:assumption:revenue_growth_near",
+          "deterministic:assumption:revenue_growth_mid",
+          "deterministic:assumption:ebit_margin_start",
+          "deterministic:assumption:ebit_margin_target"
+        ],
+        "linked_assumption_fields": [
+          "exit_multiple"
+        ],
+        "model_implication": "Resolve these drivers before converting the prep pack into approved model changes.",
+        "numeric_fact_refs": [],
+        "source_quality": "real",
+        "title": "Model Driver Review",
+        "what_would_change_mind": "Accepted PM Queue previews or refreshed CIQ facts that eliminate the warning set."
+      },
+      {
+        "agent_confidence": null,
+        "business_evidence_summary": "Comparable-company diagnostics show peer coverage, outliers, and target-vs-peer multiple positioning.",
+        "card_id": "MSFT:comps_support",
+        "claim": "Comps support uses 6 peers and primary metric tev_ebitda_fwd.",
+        "counter_evidence": null,
+        "deterministic_confidence": "medium",
+        "evidence_anchor_ids": [
+          "deterministic:comps:peer_set"
+        ],
+        "linked_assumption_fields": [
+          "exit_multiple"
+        ],
+        "model_implication": "Use the comps card to challenge the exit multiple and triangulate DCF value.",
+        "numeric_fact_refs": [
+          "deterministic:comps:peer_set"
+        ],
+        "source_quality": "real",
+        "title": "Comps Support",
+        "what_would_change_mind": "Different peer set, outlier handling, or CIQ comps refresh."
+      }
+    ],
+    "ticker": "MSFT"
+  },
+  "assumptions": {
+    "capex_pct": 0.1810700991691587,
+    "da_pct": 0.005,
+    "dio_start": 5.0,
+    "dpo_start": 43.0,
+    "dso_start": 68.9,
+    "ebit_margin_start_pct": 0.44013045483412555,
+    "ebit_margin_target_pct": 0.3320652274170628,
+    "exit_multiple": 20.072682000000004,
+    "growth_mid_pct": 0.08954497681707219,
+    "growth_near_pct": 0.1279213954529603,
+    "lease_liabilities_mm": 0.0,
+    "minority_interest_mm": 0.0,
+    "net_debt_mm": 93327000000.0,
+    "non_operating_assets_mm": 25739540000.0,
+    "pension_deficit_mm": 0.0,
+    "preferred_equity_mm": 0.0,
+    "tax_rate_start_pct": 0.20409426921981771,
+    "tax_rate_target_pct": 0.20409426921981771
+  },
+  "ciq_lineage": {
+    "comps_as_of_date": "2026-03-31",
+    "comps_iv_base": 572.1016,
+    "comps_iv_ev_ebit": null,
+    "comps_iv_ev_ebitda": 633.5008,
+    "comps_iv_pe": 510.7024,
+    "comps_run_id": 10,
+    "comps_source_file": "ciq_cleandata.xlsx",
+    "comps_used": true,
+    "peer_count": 6,
+    "peer_median_pe_ltm": 30.4175,
+    "peer_median_tev_ebit_ltm": null,
+    "peer_median_tev_ebitda_ltm": 25.7682,
+    "public_comps_fallback_peer_count": null,
+    "public_comps_fallback_source_file": null,
+    "public_comps_fallback_used": false,
+    "snapshot_as_of_date": "2026-03-31",
+    "snapshot_run_id": 10,
+    "snapshot_source_file": "ciq_cleandata.xlsx",
+    "snapshot_used": true
+  },
+  "company_name": "Microsoft Corporation",
+  "comps_analysis": {
+    "audit_flags": [
+      "Outliers removed from tev_ebitda_fwd: SNOW, S",
+      "Peer set cleaned from 8 to 6"
+    ],
+    "comparison_summary": [
+      {
+        "delta": -9.9144,
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "peer_median": 25.7682,
+        "target": 15.85378
+      },
+      {
+        "delta": -4.2657,
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "peer_median": 18.742,
+        "target": 14.47633
+      },
+      {
+        "delta": -5.6006,
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "peer_median": 30.4175,
+        "target": 24.81691
+      },
+      {
+        "delta": null,
+        "label": "Revenue Growth",
+        "metric": "revenue_growth",
+        "peer_median": null,
+        "target": 0.183
+      },
+      {
+        "delta": null,
+        "label": "EBIT Margin",
+        "metric": "ebit_margin",
+        "peer_median": null,
+        "target": 0.46326
+      },
+      {
+        "delta": -0.1218,
+        "label": "Net Debt / EBITDA",
+        "metric": "net_debt_to_ebitda",
+        "peer_median": 0.3777,
+        "target": 0.2559
+      }
+    ],
+    "football_field": {
+      "markers": [
+        {
+          "label": "Current Price",
+          "type": "spot",
+          "value": 416.67
+        },
+        {
+          "band": "bear",
+          "label": "TEV / EBITDA Fwd Bear",
+          "metric": "tev_ebitda_fwd",
+          "type": "range_point",
+          "value": 315.2347
+        },
+        {
+          "band": "base",
+          "label": "TEV / EBITDA Fwd Base",
+          "metric": "tev_ebitda_fwd",
+          "type": "range_point",
+          "value": 458.4226
+        },
+        {
+          "band": "bull",
+          "label": "TEV / EBITDA Fwd Bull",
+          "metric": "tev_ebitda_fwd",
+          "type": "range_point",
+          "value": 459.6406
+        },
+        {
+          "band": "bear",
+          "label": "TEV / EBITDA LTM Bear",
+          "metric": "tev_ebitda_ltm",
+          "type": "range_point",
+          "value": 387.4458
+        },
+        {
+          "band": "base",
+          "label": "TEV / EBITDA LTM Base",
+          "metric": "tev_ebitda_ltm",
+          "type": "range_point",
+          "value": 655.8198
+        },
+        {
+          "band": "bull",
+          "label": "TEV / EBITDA LTM Bull",
+          "metric": "tev_ebitda_ltm",
+          "type": "range_point",
+          "value": 730.4902
+        },
+        {
+          "band": "bear",
+          "label": "P / E LTM Bear",
+          "metric": "pe_ltm",
+          "type": "range_point",
+          "value": 472.0663
+        },
+        {
+          "band": "base",
+          "label": "P / E LTM Base",
+          "metric": "pe_ltm",
+          "type": "range_point",
+          "value": 494.0289
+        },
+        {
+          "band": "bull",
+          "label": "P / E LTM Bull",
+          "metric": "pe_ltm",
+          "type": "range_point",
+          "value": 527.3759
+        },
+        {
+          "label": "Analyst Target Mean",
+          "type": "spot",
+          "value": 560.946
+        }
+      ],
+      "range_max": 730.4902,
+      "range_min": 315.2347,
+      "ranges": [
+        {
+          "base": 458.4226,
+          "bear": 315.2347,
+          "bull": 459.6406,
+          "label": "TEV / EBITDA Fwd",
+          "metric": "tev_ebitda_fwd"
+        },
+        {
+          "base": 655.8198,
+          "bear": 387.4458,
+          "bull": 730.4902,
+          "label": "TEV / EBITDA LTM",
+          "metric": "tev_ebitda_ltm"
+        },
+        {
+          "base": 494.0289,
+          "bear": 472.0663,
+          "bull": 527.3759,
+          "label": "P / E LTM",
+          "metric": "pe_ltm"
+        }
+      ]
+    },
+    "historical_multiples_summary": {
+      "audit_flags": [
+        "No price history available"
+      ],
+      "available": false,
+      "history_points": 0,
+      "metrics": {},
+      "peer_snapshot": {},
+      "period": "5y",
+      "ticker": "MSFT"
+    },
+    "metric_status_rows": [
+      {
+        "display_name": "ORCL",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 17.87129,
+        "status": "included",
+        "ticker": "ORCL"
+      },
+      {
+        "display_name": "NVDA",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 18.71746,
+        "status": "included",
+        "ticker": "NVDA"
+      },
+      {
+        "display_name": "NOW",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 18.76651,
+        "status": "included",
+        "ticker": "NOW"
+      },
+      {
+        "display_name": "CRM",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 10.36843,
+        "status": "included",
+        "ticker": "CRM"
+      },
+      {
+        "display_name": "GOOGL",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 19.62558,
+        "status": "included",
+        "ticker": "GOOGL"
+      },
+      {
+        "display_name": "AMZN",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 12.95101,
+        "status": "included",
+        "ticker": "AMZN"
+      },
+      {
+        "display_name": "SNOW",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 76.96815,
+        "status": "outlier_removed",
+        "ticker": "SNOW"
+      },
+      {
+        "display_name": "S",
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "raw_multiple": 35.8602,
+        "status": "outlier_removed",
+        "ticker": "S"
+      },
+      {
+        "display_name": "ORCL",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 24.86936,
+        "status": "included",
+        "ticker": "ORCL"
+      },
+      {
+        "display_name": "NVDA",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 29.67414,
+        "status": "included",
+        "ticker": "NVDA"
+      },
+      {
+        "display_name": "NOW",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 36.33528,
+        "status": "included",
+        "ticker": "NOW"
+      },
+      {
+        "display_name": "CRM",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 13.53024,
+        "status": "included",
+        "ticker": "CRM"
+      },
+      {
+        "display_name": "GOOGL",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 26.66702,
+        "status": "included",
+        "ticker": "GOOGL"
+      },
+      {
+        "display_name": "AMZN",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": 15.85909,
+        "status": "included",
+        "ticker": "AMZN"
+      },
+      {
+        "display_name": "SNOW",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": null,
+        "status": "missing",
+        "ticker": "SNOW"
+      },
+      {
+        "display_name": "S",
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "raw_multiple": null,
+        "status": "missing",
+        "ticker": "S"
+      },
+      {
+        "display_name": "ORCL",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 38.34205,
+        "status": "included",
+        "ticker": "ORCL"
+      },
+      {
+        "display_name": "NVDA",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 31.41057,
+        "status": "included",
+        "ticker": "NVDA"
+      },
+      {
+        "display_name": "NOW",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 66.94245,
+        "status": "outlier_removed",
+        "ticker": "NOW"
+      },
+      {
+        "display_name": "CRM",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 21.55186,
+        "status": "included",
+        "ticker": "CRM"
+      },
+      {
+        "display_name": "GOOGL",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 28.11632,
+        "status": "included",
+        "ticker": "GOOGL"
+      },
+      {
+        "display_name": "AMZN",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": 29.42442,
+        "status": "included",
+        "ticker": "AMZN"
+      },
+      {
+        "display_name": "SNOW",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": null,
+        "status": "missing",
+        "ticker": "SNOW"
+      },
+      {
+        "display_name": "S",
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "raw_multiple": null,
+        "status": "missing",
+        "ticker": "S"
+      }
+    ],
+    "notes": "primary=tev_ebitda_fwd; 3 metrics computed; 6/8 peers after IQR cleaning",
+    "operating_context": {
+      "peer_count": 8,
+      "peer_medians": {
+        "net_debt_to_ebitda": 0.3777
+      },
+      "target": {
+        "ebitda_ltm_mm": 184457.0,
+        "eps_ltm": 16.78976,
+        "net_debt_mm": 47204.0,
+        "net_debt_to_ebitda": 0.2559,
+        "revenue_ltm_mm": 318273.0
+      }
+    },
+    "peer_counts": {
+      "clean": 6,
+      "raw": 8
+    },
+    "peer_table": [
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "ORCL",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 27441.0,
+        "eps_ltm": 5.57299,
+        "market_cap_mm": 614553.50928,
+        "model_weight": 0.1342,
+        "net_debt_mm": 128543.0,
+        "net_debt_to_ebitda": 4.6843,
+        "pe_ltm": 38.34205,
+        "revenue_ltm_mm": 64076.0,
+        "run_id": 10,
+        "similarity_score": 0.7648261855326386,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 17.87129,
+        "tev_ebitda_ltm": 24.86936,
+        "tev_mm": 743096.50928,
+        "ticker": "ORCL"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "NVDA",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 165514.0,
+        "eps_ltm": 6.52965,
+        "market_cap_mm": 4967629.724673,
+        "model_weight": 0.1319,
+        "net_debt_mm": -40358.0,
+        "net_debt_to_ebitda": -0.2438,
+        "pe_ltm": 31.41057,
+        "revenue_ltm_mm": 253491.0,
+        "run_id": 10,
+        "similarity_score": 0.7519754628271613,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 18.71746,
+        "tev_ebitda_ltm": 29.67414,
+        "tev_mm": 4927271.724673,
+        "ticker": "NVDA"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "NOW",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 2888.0,
+        "eps_ltm": 1.6798,
+        "market_cap_mm": 115970.5846,
+        "model_weight": 0.131,
+        "net_debt_mm": -2751.0,
+        "net_debt_to_ebitda": -0.9526,
+        "pe_ltm": 66.94245,
+        "revenue_ltm_mm": 13960.0,
+        "run_id": 10,
+        "similarity_score": 0.7467822402741602,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 18.76651,
+        "tev_ebitda_ltm": 36.33528,
+        "tev_mm": 113219.5846,
+        "ticker": "NOW"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "CRM",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 12895.0,
+        "eps_ltm": 8.61457,
+        "market_cap_mm": 152055.54,
+        "model_weight": 0.13,
+        "net_debt_mm": 30711.0,
+        "net_debt_to_ebitda": 2.3816,
+        "pe_ltm": 21.55186,
+        "revenue_ltm_mm": 42829.0,
+        "run_id": 10,
+        "similarity_score": 0.7408888044930437,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 10.36843,
+        "tev_ebitda_ltm": 13.53024,
+        "tev_mm": 182766.54,
+        "ticker": "CRM"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "GOOGL",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 161316.0,
+        "eps_ltm": 13.10733,
+        "market_cap_mm": 4497138.300685099,
+        "model_weight": 0.1232,
+        "net_debt_mm": -30964.0,
+        "net_debt_to_ebitda": -0.1919,
+        "pe_ltm": 28.11632,
+        "revenue_ltm_mm": 422498.0,
+        "run_id": 10,
+        "similarity_score": 0.7023933308878831,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 19.62558,
+        "tev_ebitda_ltm": 26.66702,
+        "tev_mm": 4466174.300685099,
+        "ticker": "GOOGL"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "AMZN",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 155861.0,
+        "eps_ltm": 8.36142,
+        "market_cap_mm": 2646571.6355232,
+        "model_weight": 0.12,
+        "net_debt_mm": 92451.0,
+        "net_debt_to_ebitda": 0.5932,
+        "pe_ltm": 29.42442,
+        "revenue_ltm_mm": 742776.0,
+        "run_id": 10,
+        "similarity_score": 0.6843184374971162,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 12.95101,
+        "tev_ebitda_ltm": 15.85909,
+        "tev_mm": 2739022.6355232,
+        "ticker": "AMZN"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "SNOW",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": -1126.667,
+        "eps_ltm": -3.51388,
+        "market_cap_mm": 82581.15426,
+        "model_weight": 0.119,
+        "net_debt_mm": -182.903,
+        "net_debt_to_ebitda": 0.1623,
+        "pe_ltm": null,
+        "revenue_ltm_mm": 5032.823,
+        "run_id": 10,
+        "similarity_score": 0.678529636521952,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 76.96815,
+        "tev_ebitda_ltm": null,
+        "tev_mm": 82398.25125999999,
+        "ticker": "SNOW"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "display_name": "S",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": -259.49,
+        "eps_ltm": -0.9589,
+        "market_cap_mm": 5467.719333999999,
+        "model_weight": 0.1107,
+        "net_debt_mm": -656.787,
+        "net_debt_to_ebitda": 2.5311,
+        "pe_ltm": null,
+        "revenue_ltm_mm": 1048.906,
+        "run_id": 10,
+        "similarity_score": 0.6311768344818225,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 35.8602,
+        "tev_ebitda_ltm": null,
+        "tev_mm": 4810.932333999999,
+        "ticker": "S"
+      }
+    ],
+    "primary_metric": "tev_ebitda_fwd",
+    "similarity_method": "embedding_cosine",
+    "similarity_model": "all-MiniLM-L6-v2",
+    "source_lineage": {
+      "as_of_date": "2026-03-31",
+      "run_id": 10,
+      "source_file": "ciq_cleandata.xlsx"
+    },
+    "support_data_quality": {
+      "common_patchups_needed": [],
+      "peer_coverage": {
+        "ebit_ltm_mm": {
+          "present": 0,
+          "ratio": 0.0,
+          "total": 8
+        },
+        "ebit_margin": {
+          "present": 0,
+          "ratio": 0.0,
+          "total": 8
+        },
+        "ebitda_ltm_mm": {
+          "present": 8,
+          "ratio": 1.0,
+          "total": 8
+        },
+        "net_debt_to_ebitda": {
+          "present": 8,
+          "ratio": 1.0,
+          "total": 8
+        },
+        "pe_ltm": {
+          "present": 6,
+          "ratio": 0.75,
+          "total": 8
+        },
+        "revenue_ltm_mm": {
+          "present": 8,
+          "ratio": 1.0,
+          "total": 8
+        },
+        "tev_ebit_ltm": {
+          "present": 0,
+          "ratio": 0.0,
+          "total": 8
+        },
+        "tev_ebitda_ltm": {
+          "present": 6,
+          "ratio": 0.75,
+          "total": 8
+        }
+      },
+      "target_missing_fields": [
+        "ebit_ltm_mm",
+        "ebit_margin"
+      ],
+      "valuation_metric_count": 3
+    },
+    "valuation_by_metric_rows": [
+      {
+        "base_iv": 458.4226,
+        "base_multiple": 18.7175,
+        "bear_iv": 315.2347,
+        "bear_multiple": 12.951,
+        "bull_iv": 459.6406,
+        "bull_multiple": 18.7665,
+        "is_primary": true,
+        "label": "TEV / EBITDA Fwd",
+        "metric": "tev_ebitda_fwd",
+        "n_clean": 6,
+        "n_raw": 8,
+        "outliers_removed": [
+          "SNOW",
+          "S"
+        ],
+        "peer_median_multiple": 18.742,
+        "target_multiple": 14.47633
+      },
+      {
+        "base_iv": 655.8198,
+        "base_multiple": 26.667,
+        "bear_iv": 387.4458,
+        "bear_multiple": 15.8591,
+        "bull_iv": 730.4902,
+        "bull_multiple": 29.6741,
+        "is_primary": false,
+        "label": "TEV / EBITDA LTM",
+        "metric": "tev_ebitda_ltm",
+        "n_clean": 6,
+        "n_raw": 6,
+        "outliers_removed": [],
+        "peer_median_multiple": 25.7682,
+        "target_multiple": 15.85378
+      },
+      {
+        "base_iv": 494.0289,
+        "base_multiple": 29.4244,
+        "bear_iv": 472.0663,
+        "bear_multiple": 28.1163,
+        "bull_iv": 527.3759,
+        "bull_multiple": 31.4106,
+        "is_primary": false,
+        "label": "P / E LTM",
+        "metric": "pe_ltm",
+        "n_clean": 5,
+        "n_raw": 6,
+        "outliers_removed": [
+          "NOW"
+        ],
+        "peer_median_multiple": 30.4175,
+        "target_multiple": 24.81691
+      }
+    ],
+    "valuation_range": {
+      "base": 458.4226,
+      "bear": 315.2347,
+      "blended_base": 536.0904,
+      "bull": 459.6406
+    },
+    "weighting_formula": "0.60*description_similarity + 0.40*market_cap_proximity"
+  },
+  "comps_detail": {
+    "medians": {
+      "net_debt_to_ebitda": 0.3777,
+      "pe_ltm": 30.4175,
+      "tev_ebit_fwd": null,
+      "tev_ebit_ltm": null,
+      "tev_ebitda_fwd": 18.742,
+      "tev_ebitda_ltm": 25.7682
+    },
+    "peers": [
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 27441.0,
+        "eps_ltm": 5.57299,
+        "market_cap_mm": 614553.50928,
+        "model_weight": 0.1342,
+        "net_debt_mm": 128543.0,
+        "net_debt_to_ebitda": 4.6843,
+        "pe_ltm": 38.34205,
+        "revenue_ltm_mm": 64076.0,
+        "run_id": 10,
+        "similarity_score": 0.7648261855326386,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 17.87129,
+        "tev_ebitda_ltm": 24.86936,
+        "tev_mm": 743096.50928,
+        "ticker": "ORCL"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 165514.0,
+        "eps_ltm": 6.52965,
+        "market_cap_mm": 4967629.724673,
+        "model_weight": 0.1319,
+        "net_debt_mm": -40358.0,
+        "net_debt_to_ebitda": -0.2438,
+        "pe_ltm": 31.41057,
+        "revenue_ltm_mm": 253491.0,
+        "run_id": 10,
+        "similarity_score": 0.7519754628271613,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 18.71746,
+        "tev_ebitda_ltm": 29.67414,
+        "tev_mm": 4927271.724673,
+        "ticker": "NVDA"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 2888.0,
+        "eps_ltm": 1.6798,
+        "market_cap_mm": 115970.5846,
+        "model_weight": 0.131,
+        "net_debt_mm": -2751.0,
+        "net_debt_to_ebitda": -0.9526,
+        "pe_ltm": 66.94245,
+        "revenue_ltm_mm": 13960.0,
+        "run_id": 10,
+        "similarity_score": 0.7467822402741602,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 18.76651,
+        "tev_ebitda_ltm": 36.33528,
+        "tev_mm": 113219.5846,
+        "ticker": "NOW"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 12895.0,
+        "eps_ltm": 8.61457,
+        "market_cap_mm": 152055.54,
+        "model_weight": 0.13,
+        "net_debt_mm": 30711.0,
+        "net_debt_to_ebitda": 2.3816,
+        "pe_ltm": 21.55186,
+        "revenue_ltm_mm": 42829.0,
+        "run_id": 10,
+        "similarity_score": 0.7408888044930437,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 10.36843,
+        "tev_ebitda_ltm": 13.53024,
+        "tev_mm": 182766.54,
+        "ticker": "CRM"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 161316.0,
+        "eps_ltm": 13.10733,
+        "market_cap_mm": 4497138.300685099,
+        "model_weight": 0.1232,
+        "net_debt_mm": -30964.0,
+        "net_debt_to_ebitda": -0.1919,
+        "pe_ltm": 28.11632,
+        "revenue_ltm_mm": 422498.0,
+        "run_id": 10,
+        "similarity_score": 0.7023933308878831,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 19.62558,
+        "tev_ebitda_ltm": 26.66702,
+        "tev_mm": 4466174.300685099,
+        "ticker": "GOOGL"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": 155861.0,
+        "eps_ltm": 8.36142,
+        "market_cap_mm": 2646571.6355232,
+        "model_weight": 0.12,
+        "net_debt_mm": 92451.0,
+        "net_debt_to_ebitda": 0.5932,
+        "pe_ltm": 29.42442,
+        "revenue_ltm_mm": 742776.0,
+        "run_id": 10,
+        "similarity_score": 0.6843184374971162,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 12.95101,
+        "tev_ebitda_ltm": 15.85909,
+        "tev_mm": 2739022.6355232,
+        "ticker": "AMZN"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": -1126.667,
+        "eps_ltm": -3.51388,
+        "market_cap_mm": 82581.15426,
+        "model_weight": 0.119,
+        "net_debt_mm": -182.903,
+        "net_debt_to_ebitda": 0.1623,
+        "pe_ltm": null,
+        "revenue_ltm_mm": 5032.823,
+        "run_id": 10,
+        "similarity_score": 0.678529636521952,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 76.96815,
+        "tev_ebitda_ltm": null,
+        "tev_mm": 82398.25125999999,
+        "ticker": "SNOW"
+      },
+      {
+        "as_of_date": "2026-03-31",
+        "ebit_ltm_mm": null,
+        "ebit_margin": null,
+        "ebitda_ltm_mm": -259.49,
+        "eps_ltm": -0.9589,
+        "market_cap_mm": 5467.719333999999,
+        "model_weight": 0.1107,
+        "net_debt_mm": -656.787,
+        "net_debt_to_ebitda": 2.5311,
+        "pe_ltm": null,
+        "revenue_ltm_mm": 1048.906,
+        "run_id": 10,
+        "similarity_score": 0.6311768344818225,
+        "source_file": "ciq_cleandata.xlsx",
+        "tev_ebit_fwd": null,
+        "tev_ebit_ltm": null,
+        "tev_ebitda_fwd": 35.8602,
+        "tev_ebitda_ltm": null,
+        "tev_mm": 4810.932333999999,
+        "ticker": "S"
+      }
+    ],
+    "target": {
+      "ebit_margin": 0.46326,
+      "net_debt_to_ebitda": 0.2559,
+      "pe_ltm": 24.81691,
+      "revenue_growth": 0.183,
+      "tev_ebitda_fwd": 14.47633,
+      "tev_ebitda_ltm": 15.85378
+    }
+  },
+  "default_resolution": {
+    "counts": {
+      "resolved": 4,
+      "review_required": 3
+    },
+    "fields": [
+      {
+        "available_comps_medians": {
+          "pe_ltm": 30.4175,
+          "tev_ebit_fwd": null,
+          "tev_ebit_ltm": null,
+          "tev_ebitda_fwd": 18.742,
+          "tev_ebitda_ltm": 25.7682
+        },
+        "fallback_value": 16.0,
+        "field": "exit_multiple",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq_comps_forward",
+          "ciq_comps_ltm",
+          "comps_detail_median",
+          "pm_override"
+        ],
+        "severity": "high",
+        "source": "ciq_comps_tev_ebitda_fwd|story_sector",
+        "source_class": "ciq",
+        "value": 20.072682000000004,
+        "why_it_matters": "Directly affects terminal value and equity value."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 45.0,
+        "field": "dso_start",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior"
+        ],
+        "severity": "medium",
+        "source": "ciq",
+        "source_class": "ciq",
+        "value": 68.9,
+        "why_it_matters": "Affects working-capital cash drag."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 35.0,
+        "field": "dio_start",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior",
+          "not_applicable"
+        ],
+        "severity": "medium",
+        "source": "ciq",
+        "source_class": "ciq",
+        "value": 5.0,
+        "why_it_matters": "Affects inventory investment and working-capital cash drag."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 38.0,
+        "field": "dpo_start",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior"
+        ],
+        "severity": "medium",
+        "source": "ciq",
+        "source_class": "ciq",
+        "value": 43.0,
+        "why_it_matters": "Affects supplier financing and working-capital cash drag."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 0.0,
+        "field": "pension_deficit",
+        "needs_pm_review": true,
+        "preferred_sources": [
+          "ciq",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "severity": "medium",
+        "source": "default",
+        "source_class": "unproven_zero",
+        "value": 0.0,
+        "why_it_matters": "Can be a non-equity claim in the equity bridge."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 0.0,
+        "field": "minority_interest",
+        "needs_pm_review": true,
+        "preferred_sources": [
+          "ciq",
+          "yfinance",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "severity": "low",
+        "source": "default",
+        "source_class": "unproven_zero",
+        "value": 0.0,
+        "why_it_matters": "Can be a non-equity claim in the equity bridge."
+      },
+      {
+        "available_comps_medians": null,
+        "fallback_value": 0.0,
+        "field": "preferred_equity",
+        "needs_pm_review": true,
+        "preferred_sources": [
+          "ciq",
+          "yfinance",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "severity": "low",
+        "source": "default",
+        "source_class": "unproven_zero",
+        "value": 0.0,
+        "why_it_matters": "Can be a non-equity claim in the equity bridge."
+      }
+    ],
+    "status": "review_required"
+  },
+  "forecast_bridge": [
+    {
+      "capex_mm": 65001.8,
+      "da_mm": 1794.93,
+      "delta_nwc_mm": 6378.66,
+      "ebit_margin_pct": 44.01,
+      "ebit_mm": 158001.08,
+      "fcff_mm": 56168.44,
+      "growth_pct": 12.79,
+      "nopat_mm": 125753.96,
+      "revenue_mm": 358986.93,
+      "roic_pct": 28.1,
+      "year": 1
+    },
+    {
+      "capex_mm": 72684.65,
+      "da_mm": 1923.32,
+      "delta_nwc_mm": 6063.51,
+      "ebit_margin_pct": 42.81,
+      "ebit_mm": 173350.95,
+      "fcff_mm": 61146.17,
+      "growth_pct": 12.79,
+      "nopat_mm": 137971.02,
+      "revenue_mm": 404909.03,
+      "roic_pct": 26.68,
+      "year": 2
+    },
+    {
+      "capex_mm": 81269.43,
+      "da_mm": 2055.18,
+      "delta_nwc_mm": 6694.47,
+      "ebit_margin_pct": 41.61,
+      "ebit_mm": 190042.47,
+      "fcff_mm": 65347.17,
+      "growth_pct": 12.79,
+      "nopat_mm": 151255.89,
+      "revenue_mm": 456705.56,
+      "roic_pct": 25.47,
+      "year": 3
+    },
+    {
+      "capex_mm": 90419.52,
+      "da_mm": 2178.65,
+      "delta_nwc_mm": 7016.34,
+      "ebit_margin_pct": 40.41,
+      "ebit_mm": 207155.89,
+      "fcff_mm": 69619.35,
+      "growth_pct": 12.24,
+      "nopat_mm": 164876.56,
+      "revenue_mm": 512624.16,
+      "roic_pct": 24.25,
+      "year": 4
+    },
+    {
+      "capex_mm": 100100.61,
+      "da_mm": 2290.32,
+      "delta_nwc_mm": 7291.18,
+      "ebit_margin_pct": 39.21,
+      "ebit_mm": 224509.06,
+      "fcff_mm": 73586.58,
+      "growth_pct": 11.7,
+      "nopat_mm": 178688.05,
+      "revenue_mm": 572578.99,
+      "roic_pct": 23.05,
+      "year": 5
+    },
+    {
+      "capex_mm": 110265.51,
+      "da_mm": 2386.53,
+      "delta_nwc_mm": 7508.91,
+      "ebit_margin_pct": 38.01,
+      "ebit_mm": 241894.57,
+      "fcff_mm": 77137.39,
+      "growth_pct": 11.15,
+      "nopat_mm": 192525.27,
+      "revenue_mm": 636406.87,
+      "roic_pct": 21.87,
+      "year": 6
+    },
+    {
+      "capex_mm": 120853.69,
+      "da_mm": 2463.51,
+      "delta_nwc_mm": 7659.63,
+      "ebit_margin_pct": 36.81,
+      "ebit_mm": 259082.03,
+      "fcff_mm": 80155.06,
+      "growth_pct": 10.6,
+      "nopat_mm": 206204.87,
+      "revenue_mm": 703860.91,
+      "roic_pct": 20.71,
+      "year": 7
+    },
+    {
+      "capex_mm": 131791.11,
+      "da_mm": 2517.47,
+      "delta_nwc_mm": 7733.99,
+      "ebit_margin_pct": 35.61,
+      "ebit_mm": 275821.4,
+      "fcff_mm": 82520.21,
+      "growth_pct": 10.05,
+      "nopat_mm": 219527.83,
+      "revenue_mm": 774605.74,
+      "roic_pct": 19.57,
+      "year": 8
+    },
+    {
+      "capex_mm": 142990.38,
+      "da_mm": 2544.64,
+      "delta_nwc_mm": 7723.42,
+      "ebit_margin_pct": 34.41,
+      "ebit_mm": 291847.24,
+      "fcff_mm": 84113.75,
+      "growth_pct": 9.5,
+      "nopat_mm": 232282.89,
+      "revenue_mm": 848214.45,
+      "roic_pct": 18.45,
+      "year": 9
+    },
+    {
+      "capex_mm": 154351.36,
+      "da_mm": 2541.46,
+      "delta_nwc_mm": 7620.55,
+      "ebit_margin_pct": 33.21,
+      "ebit_mm": 306883.99,
+      "fcff_mm": 84820.28,
+      "growth_pct": 8.95,
+      "nopat_mm": 244250.72,
+      "revenue_mm": 924167.79,
+      "roic_pct": 17.36,
+      "year": 10
+    }
+  ],
+  "generated_at": "2026-06-08T19:44:30+00:00",
+  "health_flags": {
+    "ep_reconcile_flag": false,
+    "fcff_interest_contamination_flag": false,
+    "terminal_denominator_guardrail_flag": false,
+    "terminal_growth_guardrail_flag": false,
+    "terminal_ronic_guardrail_flag": false,
+    "tv_extreme_flag": false,
+    "tv_high_flag": true,
+    "tv_method_fallback_flag": false
+  },
+  "market": {
+    "analyst_recommendation": null,
+    "analyst_target": null,
+    "num_analysts": null,
+    "price": 416.67
+  },
+  "research": {
+    "notebook": {
+      "available": false,
+      "blocks_by_type": {
+        "catalyst": [],
+        "decision": [],
+        "evidence": [],
+        "general": [],
+        "question": [],
+        "review": [],
+        "risk": [],
+        "thesis": []
+      },
+      "counts": {
+        "all": 0,
+        "catalyst": 0,
+        "decision": 0,
+        "evidence": 0,
+        "general": 0,
+        "question": 0,
+        "review": 0,
+        "risk": 0,
+        "thesis": 0
+      },
+      "pinned_count": 0,
+      "ticker": "MSFT"
+    },
+    "publishable_memo_preview": "",
+    "ticker": "MSFT",
+    "tracker": {
+      "audit_flags": [
+        "no_archived_snapshot"
+      ],
+      "available": false,
+      "catalyst_board": {
+        "resolved": [],
+        "urgent_open": [],
+        "watching": []
+      },
+      "continuity": {},
+      "latest_snapshot": null,
+      "next_queue": {},
+      "pillar_board": [],
+      "prior_snapshot": null,
+      "stance": {},
+      "ticker": "MSFT",
+      "what_changed": {}
+    }
+  },
+  "scenarios": {
+    "base": {
+      "iv": 281.99,
+      "probability": null,
+      "upside_pct": -32.3
+    },
+    "bear": {
+      "iv": 173.67,
+      "probability": null,
+      "upside_pct": -58.3
+    },
+    "bull": {
+      "iv": 472.01,
+      "probability": null,
+      "upside_pct": 13.3
+    },
+    "expected": {
+      "iv": 298.33,
+      "probability": null,
+      "upside_pct": -28.4
+    }
+  },
+  "sector": "Technology",
+  "sensitivity": {
+    "long_form": [
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.03,
+        "column_value_display": 3.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 325.4,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.035,
+        "column_value_display": 3.5,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 334.69,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.04,
+        "column_value_display": 4.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 346.03,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.03,
+        "column_value_display": 3.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 276.8,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.035,
+        "column_value_display": 3.5,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 281.99,
+        "is_base_case": true,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.04,
+        "column_value_display": 4.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 288.09,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.03,
+        "column_value_display": 3.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 239.76,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.035,
+        "column_value_display": 3.5,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 242.77,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      },
+      {
+        "column_axis": "terminal_growth",
+        "column_value": 0.04,
+        "column_value_display": 4.0,
+        "grid": "wacc_x_terminal_growth",
+        "intrinsic_value": 246.21,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 18.065414,
+        "column_value_display": 18.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 321.99,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 20.072682,
+        "column_value_display": 20.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 334.69,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 22.07995,
+        "column_value_display": 22.08,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 347.38,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.08352,
+        "row_value_pct": 8.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 18.065414,
+        "column_value_display": 18.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 270.41,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 20.072682,
+        "column_value_display": 20.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 281.99,
+        "is_base_case": true,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 22.07995,
+        "column_value_display": 22.08,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 293.57,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.09352,
+        "row_value_pct": 9.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 18.065414,
+        "column_value_display": 18.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 232.2,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 20.072682,
+        "column_value_display": 20.07,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 242.77,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      },
+      {
+        "column_axis": "exit_multiple",
+        "column_value": 22.07995,
+        "column_value_display": 22.08,
+        "grid": "wacc_x_exit_multiple",
+        "intrinsic_value": 253.34,
+        "is_base_case": false,
+        "row_axis": "wacc",
+        "row_value": 0.10352,
+        "row_value_pct": 10.35
+      }
+    ],
+    "metadata": {
+      "wacc_x_exit_multiple": {
+        "base_case": {
+          "exit_multiple": 20.072682,
+          "intrinsic_value": 281.99,
+          "wacc": 0.09352
+        },
+        "column_axis": {
+          "key": "exit_multiple",
+          "label": "Exit Multiple",
+          "unit": "multiple",
+          "values": [
+            18.065414,
+            20.072682,
+            22.07995
+          ]
+        },
+        "label": "WACC x Exit Multiple",
+        "row_axis": {
+          "key": "wacc",
+          "label": "WACC",
+          "unit": "pct",
+          "values": [
+            0.08352,
+            0.09352,
+            0.10352
+          ]
+        },
+        "summary": {
+          "cell_count": 9,
+          "max_iv": 347.38,
+          "min_iv": 232.2,
+          "spread": 115.18
+        },
+        "value_key": "intrinsic_value"
+      },
+      "wacc_x_terminal_growth": {
+        "base_case": {
+          "intrinsic_value": 281.99,
+          "terminal_growth": 0.035,
+          "wacc": 0.09352
+        },
+        "column_axis": {
+          "key": "terminal_growth",
+          "label": "Terminal Growth",
+          "unit": "pct",
+          "values": [
+            0.03,
+            0.035,
+            0.04
+          ]
+        },
+        "label": "WACC x Terminal Growth",
+        "row_axis": {
+          "key": "wacc",
+          "label": "WACC",
+          "unit": "pct",
+          "values": [
+            0.08352,
+            0.09352,
+            0.10352
+          ]
+        },
+        "summary": {
+          "cell_count": 9,
+          "max_iv": 346.03,
+          "min_iv": 239.76,
+          "spread": 106.27
+        },
+        "value_key": "intrinsic_value"
+      }
+    },
+    "summary": [
+      {
+        "cell_count": 9,
+        "grid": "wacc_x_terminal_growth",
+        "max_iv": 346.03,
+        "min_iv": 239.76,
+        "spread": 106.27
+      },
+      {
+        "cell_count": 9,
+        "grid": "wacc_x_exit_multiple",
+        "max_iv": 347.38,
+        "min_iv": 232.2,
+        "spread": 115.18
+      }
+    ],
+    "wacc_x_exit_multiple": [
+      {
+        "wacc_pct": 8.35,
+        "x_18.07": 321.99,
+        "x_20.07": 334.69,
+        "x_22.08": 347.38
+      },
+      {
+        "wacc_pct": 9.35,
+        "x_18.07": 270.41,
+        "x_20.07": 281.99,
+        "x_22.08": 293.57
+      },
+      {
+        "wacc_pct": 10.35,
+        "x_18.07": 232.2,
+        "x_20.07": 242.77,
+        "x_22.08": 253.34
+      }
+    ],
+    "wacc_x_terminal_growth": [
+      {
+        "g_3.00%": 325.4,
+        "g_3.50%": 334.69,
+        "g_4.00%": 346.03,
+        "wacc_pct": 8.35
+      },
+      {
+        "g_3.00%": 276.8,
+        "g_3.50%": 281.99,
+        "g_4.00%": 288.09,
+        "wacc_pct": 9.35
+      },
+      {
+        "g_3.00%": 239.76,
+        "g_3.50%": 242.77,
+        "g_4.00%": 246.21,
+        "wacc_pct": 10.35
+      }
+    ]
+  },
+  "source_lineage": {
+    "capex_pct_start": "ciq",
+    "capex_pct_target": "story_sector",
+    "da_pct_start": "ciq",
+    "da_pct_target": "story_sector",
+    "dio_start": "ciq",
+    "dpo_start": "ciq",
+    "dso_start": "ciq",
+    "ebit_margin_start": "ciq",
+    "ebit_margin_target": "story_sector",
+    "exit_multiple": "ciq_comps_tev_ebitda_fwd|story_sector",
+    "lease_liabilities": "default",
+    "minority_interest": "default",
+    "net_debt": "ciq",
+    "non_operating_assets": "ciq_cash_excess",
+    "pension_deficit": "default",
+    "preferred_equity": "default",
+    "revenue_growth_mid": "ciq|story_sector",
+    "revenue_growth_near": "ciq|story_sector",
+    "tax_rate_start": "ciq",
+    "tax_rate_target": "ciq",
+    "wacc": "yfinance_capm|story_sector"
+  },
+  "terminal": {
+    "fcff_11_bridge_mm": 91421.85,
+    "fcff_11_value_driver_mm": 193812.95,
+    "gordon_formula_mode": "value_driver",
+    "method_used": "blend",
+    "pv_tv_blended_mm": 1757756.34,
+    "pv_tv_exit_mm": 2540353.35,
+    "pv_tv_gordon_mm": 1354600.31,
+    "ronic_terminal_pct": 15.0,
+    "terminal_growth_pct": 3.5,
+    "tv_blended_mm": 4297599.88,
+    "tv_exit_mm": 6210998.64,
+    "tv_gordon_mm": 3311909.6,
+    "tv_pct_of_ev": 79.7
+  },
+  "ticker": "MSFT",
+  "ticker_dossier": {
+    "as_of_date": "2026-03-31",
+    "contract_name": "TickerDossier",
+    "contract_version": "1.0.0",
+    "currency": "USD",
+    "display_name": "Microsoft Corporation",
+    "export_metadata": {
+      "generated_at": "2026-06-08T19:44:30+00:00",
+      "schema_version": "1.0",
+      "snapshot_id": null,
+      "source_label": "loaded_backend_state",
+      "source_mode": "loaded_backend_state",
+      "template_strategy": null
+    },
+    "latest_snapshot": {
+      "company_identity": {
+        "country": null,
+        "description": null,
+        "display_name": "Microsoft Corporation",
+        "exchange": null,
+        "industry": null,
+        "sector": "Technology",
+        "ticker": "MSFT"
+      },
+      "comps_snapshot": {
+        "audit_flags": [
+          "Outliers removed from tev_ebitda_fwd: SNOW, S",
+          "Peer set cleaned from 8 to 6"
+        ],
+        "median_multiple": null,
+        "peer_count": 6,
+        "primary_metric": "tev_ebitda_fwd",
+        "valuation_range": {
+          "base": 458.4226,
+          "bear": 315.2347,
+          "blended_base": 536.0904,
+          "bull": 459.6406
+        }
+      },
+      "historical_series": {
+        "ebit": [],
+        "fcff": [
+          {
+            "capex_mm": 65001.8,
+            "da_mm": 1794.93,
+            "delta_nwc_mm": 6378.66,
+            "ebit_margin_pct": 44.01,
+            "ebit_mm": 158001.08,
+            "fcff_mm": 56168.44,
+            "growth_pct": 12.79,
+            "nopat_mm": 125753.96,
+            "revenue_mm": 358986.93,
+            "roic_pct": 28.1,
+            "year": 1
+          },
+          {
+            "capex_mm": 72684.65,
+            "da_mm": 1923.32,
+            "delta_nwc_mm": 6063.51,
+            "ebit_margin_pct": 42.81,
+            "ebit_mm": 173350.95,
+            "fcff_mm": 61146.17,
+            "growth_pct": 12.79,
+            "nopat_mm": 137971.02,
+            "revenue_mm": 404909.03,
+            "roic_pct": 26.68,
+            "year": 2
+          },
+          {
+            "capex_mm": 81269.43,
+            "da_mm": 2055.18,
+            "delta_nwc_mm": 6694.47,
+            "ebit_margin_pct": 41.61,
+            "ebit_mm": 190042.47,
+            "fcff_mm": 65347.17,
+            "growth_pct": 12.79,
+            "nopat_mm": 151255.89,
+            "revenue_mm": 456705.56,
+            "roic_pct": 25.47,
+            "year": 3
+          },
+          {
+            "capex_mm": 90419.52,
+            "da_mm": 2178.65,
+            "delta_nwc_mm": 7016.34,
+            "ebit_margin_pct": 40.41,
+            "ebit_mm": 207155.89,
+            "fcff_mm": 69619.35,
+            "growth_pct": 12.24,
+            "nopat_mm": 164876.56,
+            "revenue_mm": 512624.16,
+            "roic_pct": 24.25,
+            "year": 4
+          },
+          {
+            "capex_mm": 100100.61,
+            "da_mm": 2290.32,
+            "delta_nwc_mm": 7291.18,
+            "ebit_margin_pct": 39.21,
+            "ebit_mm": 224509.06,
+            "fcff_mm": 73586.58,
+            "growth_pct": 11.7,
+            "nopat_mm": 178688.05,
+            "revenue_mm": 572578.99,
+            "roic_pct": 23.05,
+            "year": 5
+          },
+          {
+            "capex_mm": 110265.51,
+            "da_mm": 2386.53,
+            "delta_nwc_mm": 7508.91,
+            "ebit_margin_pct": 38.01,
+            "ebit_mm": 241894.57,
+            "fcff_mm": 77137.39,
+            "growth_pct": 11.15,
+            "nopat_mm": 192525.27,
+            "revenue_mm": 636406.87,
+            "roic_pct": 21.87,
+            "year": 6
+          },
+          {
+            "capex_mm": 120853.69,
+            "da_mm": 2463.51,
+            "delta_nwc_mm": 7659.63,
+            "ebit_margin_pct": 36.81,
+            "ebit_mm": 259082.03,
+            "fcff_mm": 80155.06,
+            "growth_pct": 10.6,
+            "nopat_mm": 206204.87,
+            "revenue_mm": 703860.91,
+            "roic_pct": 20.71,
+            "year": 7
+          },
+          {
+            "capex_mm": 131791.11,
+            "da_mm": 2517.47,
+            "delta_nwc_mm": 7733.99,
+            "ebit_margin_pct": 35.61,
+            "ebit_mm": 275821.4,
+            "fcff_mm": 82520.21,
+            "growth_pct": 10.05,
+            "nopat_mm": 219527.83,
+            "revenue_mm": 774605.74,
+            "roic_pct": 19.57,
+            "year": 8
+          },
+          {
+            "capex_mm": 142990.38,
+            "da_mm": 2544.64,
+            "delta_nwc_mm": 7723.42,
+            "ebit_margin_pct": 34.41,
+            "ebit_mm": 291847.24,
+            "fcff_mm": 84113.75,
+            "growth_pct": 9.5,
+            "nopat_mm": 232282.89,
+            "revenue_mm": 848214.45,
+            "roic_pct": 18.45,
+            "year": 9
+          },
+          {
+            "capex_mm": 154351.36,
+            "da_mm": 2541.46,
+            "delta_nwc_mm": 7620.55,
+            "ebit_margin_pct": 33.21,
+            "ebit_mm": 306883.99,
+            "fcff_mm": 84820.28,
+            "growth_pct": 8.95,
+            "nopat_mm": 244250.72,
+            "revenue_mm": 924167.79,
+            "roic_pct": 17.36,
+            "year": 10
+          }
+        ],
+        "margin": [],
+        "revenue": []
+      },
+      "market_snapshot": {
+        "analyst_recommendation": null,
+        "analyst_target": null,
+        "as_of_date": "2026-03-31",
+        "beta": null,
+        "enterprise_value": null,
+        "market_cap": null,
+        "num_analysts": null,
+        "price": 416.67
+      },
+      "qoe_snapshot": {
+        "flags": [],
+        "present": false,
+        "score": null
+      },
+      "source_lineage": {
+        "comps_snapshot": {
+          "as_of_date": "2026-03-31",
+          "run_id": 10,
+          "source_file": "ciq_cleandata.xlsx"
+        },
+        "valuation_snapshot": {
+          "capex_pct_start": "ciq",
+          "capex_pct_target": "story_sector",
+          "da_pct_start": "ciq",
+          "da_pct_target": "story_sector",
+          "dio_start": "ciq",
+          "dpo_start": "ciq",
+          "dso_start": "ciq",
+          "ebit_margin_start": "ciq",
+          "ebit_margin_target": "story_sector",
+          "exit_multiple": "ciq_comps_tev_ebitda_fwd|story_sector",
+          "lease_liabilities": "default",
+          "minority_interest": "default",
+          "net_debt": "ciq",
+          "non_operating_assets": "ciq_cash_excess",
+          "pension_deficit": "default",
+          "preferred_equity": "default",
+          "revenue_growth_mid": "ciq|story_sector",
+          "revenue_growth_near": "ciq|story_sector",
+          "tax_rate_start": "ciq",
+          "tax_rate_target": "ciq",
+          "wacc": "yfinance_capm|story_sector"
+        }
+      },
+      "valuation_snapshot": {
+        "base_iv": 281.99,
+        "bear_iv": 173.67,
+        "bull_iv": 472.01,
+        "current_price": 416.67,
+        "expected_iv": 281.99,
+        "scenario_probabilities": {
+          "base": null,
+          "bear": null,
+          "bull": null,
+          "expected": null
+        },
+        "upside_pct": null
+      }
+    },
+    "loaded_backend_state": {
+      "adapter_state": {
+        "api_ready": true,
+        "excel_ready": true,
+        "html_ready": true,
+        "react_ready": true
+      },
+      "backend_name": "export-service",
+      "backend_version": "1.0.0",
+      "field_mappings": {
+        "company_identity": "company_name/sector",
+        "comps_snapshot": "comps_analysis/ciq_lineage",
+        "historical_series": "historical_series/drivers_raw/qoe/comps_analysis/forecast_bridge",
+        "market_snapshot": "market",
+        "qoe_snapshot": "qoe",
+        "valuation_snapshot": "valuation/scenarios"
+      },
+      "loaded_at": "2026-06-08T19:44:30+00:00",
+      "loaded_from": null,
+      "normalization_mode": "canonical",
+      "source_format": "json",
+      "source_mode": "loaded_backend_state",
+      "validation": {
+        "missing_required_fields": [],
+        "passed": true,
+        "warnings": []
+      }
+    },
+    "optional_overlays": {
+      "api_view": {},
+      "assumption_register_summary": {},
+      "debug_view": {
+        "legacy_payload_keys": [
+          "$schema_version",
+          "analyst_prep",
+          "assumptions",
+          "ciq_lineage",
+          "company_name",
+          "comps_analysis",
+          "comps_detail",
+          "default_resolution",
+          "forecast_bridge",
+          "generated_at",
+          "health_flags",
+          "market",
+          "research",
+          "scenarios",
+          "sector",
+          "sensitivity",
+          "source_lineage",
+          "terminal",
+          "ticker",
+          "valuation",
+          "wacc"
+        ]
+      },
+      "drift_test_view": {},
+      "excel_view": {
+        "legacy_roots": [
+          "$schema_version",
+          "analyst_prep",
+          "assumptions",
+          "ciq_lineage",
+          "company_name",
+          "comps_analysis",
+          "comps_detail",
+          "default_resolution",
+          "forecast_bridge",
+          "generated_at",
+          "health_flags",
+          "market",
+          "research",
+          "scenarios",
+          "sector",
+          "sensitivity",
+          "source_lineage",
+          "terminal",
+          "ticker",
+          "valuation",
+          "wacc"
+        ]
+      },
+      "forecast_bridge": [
+        {
+          "capex_mm": 65001.8,
+          "da_mm": 1794.93,
+          "delta_nwc_mm": 6378.66,
+          "ebit_margin_pct": 44.01,
+          "ebit_mm": 158001.08,
+          "fcff_mm": 56168.44,
+          "growth_pct": 12.79,
+          "nopat_mm": 125753.96,
+          "revenue_mm": 358986.93,
+          "roic_pct": 28.1,
+          "year": 1
+        },
+        {
+          "capex_mm": 72684.65,
+          "da_mm": 1923.32,
+          "delta_nwc_mm": 6063.51,
+          "ebit_margin_pct": 42.81,
+          "ebit_mm": 173350.95,
+          "fcff_mm": 61146.17,
+          "growth_pct": 12.79,
+          "nopat_mm": 137971.02,
+          "revenue_mm": 404909.03,
+          "roic_pct": 26.68,
+          "year": 2
+        },
+        {
+          "capex_mm": 81269.43,
+          "da_mm": 2055.18,
+          "delta_nwc_mm": 6694.47,
+          "ebit_margin_pct": 41.61,
+          "ebit_mm": 190042.47,
+          "fcff_mm": 65347.17,
+          "growth_pct": 12.79,
+          "nopat_mm": 151255.89,
+          "revenue_mm": 456705.56,
+          "roic_pct": 25.47,
+          "year": 3
+        },
+        {
+          "capex_mm": 90419.52,
+          "da_mm": 2178.65,
+          "delta_nwc_mm": 7016.34,
+          "ebit_margin_pct": 40.41,
+          "ebit_mm": 207155.89,
+          "fcff_mm": 69619.35,
+          "growth_pct": 12.24,
+          "nopat_mm": 164876.56,
+          "revenue_mm": 512624.16,
+          "roic_pct": 24.25,
+          "year": 4
+        },
+        {
+          "capex_mm": 100100.61,
+          "da_mm": 2290.32,
+          "delta_nwc_mm": 7291.18,
+          "ebit_margin_pct": 39.21,
+          "ebit_mm": 224509.06,
+          "fcff_mm": 73586.58,
+          "growth_pct": 11.7,
+          "nopat_mm": 178688.05,
+          "revenue_mm": 572578.99,
+          "roic_pct": 23.05,
+          "year": 5
+        },
+        {
+          "capex_mm": 110265.51,
+          "da_mm": 2386.53,
+          "delta_nwc_mm": 7508.91,
+          "ebit_margin_pct": 38.01,
+          "ebit_mm": 241894.57,
+          "fcff_mm": 77137.39,
+          "growth_pct": 11.15,
+          "nopat_mm": 192525.27,
+          "revenue_mm": 636406.87,
+          "roic_pct": 21.87,
+          "year": 6
+        },
+        {
+          "capex_mm": 120853.69,
+          "da_mm": 2463.51,
+          "delta_nwc_mm": 7659.63,
+          "ebit_margin_pct": 36.81,
+          "ebit_mm": 259082.03,
+          "fcff_mm": 80155.06,
+          "growth_pct": 10.6,
+          "nopat_mm": 206204.87,
+          "revenue_mm": 703860.91,
+          "roic_pct": 20.71,
+          "year": 7
+        },
+        {
+          "capex_mm": 131791.11,
+          "da_mm": 2517.47,
+          "delta_nwc_mm": 7733.99,
+          "ebit_margin_pct": 35.61,
+          "ebit_mm": 275821.4,
+          "fcff_mm": 82520.21,
+          "growth_pct": 10.05,
+          "nopat_mm": 219527.83,
+          "revenue_mm": 774605.74,
+          "roic_pct": 19.57,
+          "year": 8
+        },
+        {
+          "capex_mm": 142990.38,
+          "da_mm": 2544.64,
+          "delta_nwc_mm": 7723.42,
+          "ebit_margin_pct": 34.41,
+          "ebit_mm": 291847.24,
+          "fcff_mm": 84113.75,
+          "growth_pct": 9.5,
+          "nopat_mm": 232282.89,
+          "revenue_mm": 848214.45,
+          "roic_pct": 18.45,
+          "year": 9
+        },
+        {
+          "capex_mm": 154351.36,
+          "da_mm": 2541.46,
+          "delta_nwc_mm": 7620.55,
+          "ebit_margin_pct": 33.21,
+          "ebit_mm": 306883.99,
+          "fcff_mm": 84820.28,
+          "growth_pct": 8.95,
+          "nopat_mm": 244250.72,
+          "revenue_mm": 924167.79,
+          "roic_pct": 17.36,
+          "year": 10
+        }
+      ],
+      "html_view": {},
+      "react_view": {}
+    },
+    "source_lineage": {
+      "ciq_lineage": {
+        "comps_as_of_date": "2026-03-31",
+        "comps_iv_base": 572.1016,
+        "comps_iv_ev_ebit": null,
+        "comps_iv_ev_ebitda": 633.5008,
+        "comps_iv_pe": 510.7024,
+        "comps_run_id": 10,
+        "comps_source_file": "ciq_cleandata.xlsx",
+        "comps_used": true,
+        "peer_count": 6,
+        "peer_median_pe_ltm": 30.4175,
+        "peer_median_tev_ebit_ltm": null,
+        "peer_median_tev_ebitda_ltm": 25.7682,
+        "public_comps_fallback_peer_count": null,
+        "public_comps_fallback_source_file": null,
+        "public_comps_fallback_used": false,
+        "snapshot_as_of_date": "2026-03-31",
+        "snapshot_run_id": 10,
+        "snapshot_source_file": "ciq_cleandata.xlsx",
+        "snapshot_used": true
+      },
+      "source_lineage": {
+        "capex_pct_start": "ciq",
+        "capex_pct_target": "story_sector",
+        "da_pct_start": "ciq",
+        "da_pct_target": "story_sector",
+        "dio_start": "ciq",
+        "dpo_start": "ciq",
+        "dso_start": "ciq",
+        "ebit_margin_start": "ciq",
+        "ebit_margin_target": "story_sector",
+        "exit_multiple": "ciq_comps_tev_ebitda_fwd|story_sector",
+        "lease_liabilities": "default",
+        "minority_interest": "default",
+        "net_debt": "ciq",
+        "non_operating_assets": "ciq_cash_excess",
+        "pension_deficit": "default",
+        "preferred_equity": "default",
+        "revenue_growth_mid": "ciq|story_sector",
+        "revenue_growth_near": "ciq|story_sector",
+        "tax_rate_start": "ciq",
+        "tax_rate_target": "ciq",
+        "wacc": "yfinance_capm|story_sector"
+      }
+    },
+    "ticker": "MSFT"
+  },
+  "valuation": {
+    "base_iv": 281.99,
+    "current_price": 416.67,
+    "expected_iv": 281.99,
+    "iv_base": 281.99,
+    "iv_bear": 173.67,
+    "iv_bull": 472.01
+  },
+  "wacc": {
+    "cost_of_equity": 0.09455,
+    "debt_weight": 0.015000000000000013,
+    "equity_weight": null,
+    "method": "peer_bottom_up",
+    "wacc": 0.09351999999999999
+  }
+}

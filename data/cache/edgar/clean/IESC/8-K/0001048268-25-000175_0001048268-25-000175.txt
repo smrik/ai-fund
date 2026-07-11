@@ -1,0 +1,89 @@
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D. C. 20549
+
+FORM 8-K
+
+  CURRENT REPORT                                                                                 
+  PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934                         
+  Date of Report (Date of Earliest Event Reported):                           November 21, 2025  
+
+IES Holdings, Inc.
+
+  Delaware                          001-13783         76-0542208           
+  (State or other jurisdiction      (Commission       (I. R. S. Employer   
+
+13131 Dairy Ashford Rd, Suite 500 Sugar Land, Texas 77478
+
+(Address of principal executive offices and zip code)
+
+Registrant’s telephone number, including area code: ( 713 860-1500
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2 (b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4 (c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of each class                          Trading Symbol      Name of each exchange on which registered  
+  Common Stock, par value $0.01 per share      IESC                NASDAQ Global Market                       
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+  Emerging growth company  
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.
+
+☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+On November 21, 2025, IES Holdings, Inc. (the “ Company”) issued a press release announcing its results of operations for the fiscal 2025 fourth quarter. A copy of the press release is furnished with this report as Exhibit 99.1.
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Executive Officer Compensation
+
+Supplementary Short Term Incentive Plan
+
+In addition, on November 20, 2025, the Compensation Committee approved a Supplementary Short Term Incentive Plan (“ SSTIP”) award for Mr. Simmes for fiscal year 2026. Under the SSTIP, Mr. Simmes is eligible for a cash bonus opportunity based on the Company’s comprehensive income before provision for income taxes and excluding employee stock compensation expense (“ Adjusted Income”). Mr. Simmes will receive a cash bonus equal to 1.0% of the amount, if any, by which the Company’s Adjusted Income 
+for fiscal year 2026 exceeds 85% of the Company’s target Adjusted Income for fiscal year 2026, and he will receive an additional cash bonus equal to 1% of the amount, if any, by which the Company’s Adjusted Income for fiscal year 2026 exceeds 100.0% of the Company’s target Adjusted Income for fiscal year 2026. The maximum payout to Mr. Simmes under the SSTIP for fiscal year 2026 is $5,000,000.
+
+A copy of the SSTIP is filed as Exhibit 10.1 to this Current Report on Form 8-K and is incorporated by reference herein. The foregoing description of the SSTIP does not purport to be a complete description and is qualified in its entirety by reference to Exhibit 10.1.
+
+Item 7.01 Regulation FD Disclosure.
+
+On November 21, 2025, the Company posted to its website, www. ies-co. com, under the Investor Relations section, a presentation with the title “ IES Holdings Q4 2025 Earnings Presentation.” The presentation will remain on the Company’s website for a period of at least thirty days.
+
+The information set forth herein is furnished pursuant to Item 7.01 - Regulation FD Disclosure and shall not be deemed “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended, or otherwise subject to the liabilities of such section nor shall the information be deemed incorporated by reference in any filing of the Company.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+  Exhibit      Description                                                                   
+  Number                                                                                     
+  99.1 —       Press release dated November 21, 2025                                         
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+  10.1 —       IES Holdings, Inc. 2026 Supplementary Short Term Incentive Plan.              
+  104 —        Cover Page Interactive Data File (embedded within the Inline XBRL document).  
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+IES HOLDINGS, INC.
+
+  Date:      November 21, 2025      /s/ Mary K. Newman                       
+ ─────────────────────────────────────────────────────────────────────────────
+                                    Mary K. Newman                           
+                                    General Counsel and Corporate Secretary

@@ -1,0 +1,90 @@
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D. C. 20549
+
+___________________________________
+
+FORM 8-K
+
+___________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of
+
+the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): May 22, 2026
+
+___________________________________
+
+Booz Allen Hamilton Holding Corporation
+
+(Exact name of Registrant as specified in its charter)
+
+___________________________________
+
+  Delaware                                                                 001-34972         26-2634160           
+  (State or other jurisdiction                                             (Commission       (IRS Employer        
+  8283 Greensboro Drive,                        McLean,      Virginia                        22102                
+  (Address of principal executive offices)                                                   (Zip Code)           
+
+Registrant’s telephone number, including area code: ( 703 902-5000
+
+___________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the Registrant under any of the following provisions:
+
+  Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)  
+
+  Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)  
+
+  Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))  
+
+  Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))  
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of Each Class       Trading Symbol      Name of Each Exchange on Which Registered  
+  Class A Common Stock      BAH                 New York Stock Exchange                    
+ ───────────────────────────────────────────────────────────────────────────────────────────
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 2.02 Results of Operations and Financial Condition.
+
+On May 22, 2026, Booz Allen Hamilton Holding Corporation (the “ Company”) issued a press release announcing its results of operations for the fiscal year ended March 31, 2026. A copy of the press release is attached hereto as Exhibit 99.1.
+
+The information in this Item 2.02 and Exhibit 99.1 shall not be deemed to be “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “ Exchange Act”), or otherwise subject to the liability of that section, and shall not be incorporated by reference into any registration statement or other document filed under the Securities Act of 1933, as amended, or the Exchange Act, except as shall be expressly set forth by specific reference in that filing.
+
+Item 7.01 Regulation FD Disclosure.
+
+On May 22, 2026, the Company posted to the “ Investor Relations” section of its website the presentation that accompanies the earnings conference call. A copy of the presentation is attached hereto as Exhibit 99.2.
+
+The information in this Item 7.01 and Exhibit 99.2 shall not be deemed to be “filed” for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the “ Exchange Act”), or otherwise subject to the liability of that section, and shall not be incorporated by reference into any registration statement or other document filed under the Securities Act of 1933, as amended, or the Exchange Act, except as shall be expressly set forth by specific reference in that filing.
+
+Item 9.01 Financial Statements and Exhibits.
+
+  Exhibit      Description                                                                   
+      No.                                                                                    
+     99.1      Press Release dated May 22, 2026                                              
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+     99.2      Earnings Conference Call Presentation                                         
+      104      The cover page of this Current Report on Form 8-K, formatted as inline XBRL.  
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+  Booz Allen Hamilton Holding Corporation               
+  /s/ Troy Lahr                                         
+  Troy Lahr                                             
+  Executive Vice President and Chief Financial Officer  
+
+Date: May 22, 2026

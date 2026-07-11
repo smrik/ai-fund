@@ -1,0 +1,1126 @@
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D. C. 20549
+
+___________________________________________________________
+
+FORM 10-Q
+
+___________________________________________________________
+
+(Mark One)
+
+  QUARTERLY REPORT PURSUANT TO SECTION 13 OR 15(D) OF THE SECURITIES EXCHANGE ACT OF 1934  
+ ───────────────────────────────────────────────────────────────────────────────────────────
+
+For the quarterly period ended September 30, 2025
+
+  TRANSITION REPORT PURSUANT TO SECTION 13 OR 15(D) OF THE SECURITIES EXCHANGE ACT OF 1934  
+ ────────────────────────────────────────────────────────────────────────────────────────────
+
+For the transition period from to
+
+Commission File No. 001-34972
+
+____________________________________________________________
+
+Booz Allen Hamilton Holding Corporation
+
+(Exact name of registrant as specified in its charter)
+
+___________________________________________________________
+
+  Delaware                                                                 26-2634160           
+  (State or other jurisdiction of                                          (I. R. S. Employer   
+  8283 Greensboro Drive,                        McLean,      Virginia      22102                
+  (Address of principal executive offices)                                 (Zip Code)           
+
+( 703 902-5000
+
+Registrant’s telephone number, including area code
+
+(Former name, former address, and former fiscal year if changed since last report.)
+
+__________________________________________________________
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of Each Class       Trading Symbol      Name of Each Exchange on Which Registered  
+  Class A Common Stock      BAH                 New York Stock Exchange                    
+ ───────────────────────────────────────────────────────────────────────────────────────────
+
+Indicate by check mark whether the registrant (1) has filed all reports required to be filed by Section 13 or 15(d) of the Securities Exchange Act of 1934 during the preceding 12 months (or for such shorter period that the registrant was required to file such reports), and (2) has been subject to such filing requirements for the past 90 days. Yes☒ No☐
+
+Indicate by check mark whether the registrant has submitted electronically every Interactive Data File required to be submitted pursuant to Rule 405 of Regulation S-T (§232.405 of this chapter) during the preceding 12 months (or for such shorter period that the registrant was required to submit such files). Yes☒ No☐
+
+Indicate by check mark whether the registrant is a large accelerated filer, an accelerated filer, a non-accelerated filer or a smaller reporting company. See definition of “accelerated filer,” “large accelerated filer” and “smaller reporting company” in Rule 12b-2 of the Exchange Act.
+
+  Large Accelerated Filer      Accelerated Filer          
+  Non-Accelerated Filer        Smaller Reporting Company  
+ ──────────────────────────────────────────────────────────
+                               Emerging Growth Company    
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ¨
+
+Indicate by check mark whether the registrant is a shell company (as defined in Rule 12b-2 of the Exchange Act). Yes ☐ No☒
+
+Indicate the number of shares outstanding of each of the issuer’s classes of common stock, as of the latest practicable date.
+
+                            Shares Outstanding  
+  Class A Common Stock      121,301,203         
+
+TABLE OF CONTENTS
+
+                                                                                                                                Page  
+  PART I. Financial Information                                                                                                    1  
+  ITEM 1                             Financial Statements                                                                          1  
+  ITEM 2                             Management's Discussion and Analysis of Financial Condition and Results of Operations        15  
+  ITEM 3                             Quantitative and Qualitative Disclosures About Market Risk                                   24  
+  ITEM 4                             Controls and Procedures                                                                      24  
+  PART II. Other Information                                                                                                      25  
+  ITEM 1                             Legal Proceedings                                                                            25  
+  ITEM 1A                            Risk Factors                                                                                 25  
+  ITEM 2                             Unregistered Sales of Equity Securities and Use of Proceeds                                  25  
+  ITEM 3                             Defaults Upon Senior Securities                                                              25  
+  ITEM 4                             Mine Safety Disclosures                                                                      25  
+  ITEM 5                             Other Information                                                                            25  
+  ITEM 6                             Exhibits                                                                                     26  
+
+Table of Contents
+
+PART I. FINANCIAL INFORMATION
+
+Item 1. Financial Statements
+
+INDEX TO THE UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+                                                                      Page  
+  Condensed Consolidated Balance Sheets                                  1  
+  Condensed Consolidated Statements of Operations                        2  
+  Condensed Consolidated Statements of Comprehensive Income              3  
+  Condensed Consolidated Statements of Cash Flows                        4  
+  Condensed Consolidated Statements of Stockholders' Equity              5  
+  Notes to Unaudited Condensed Consolidated Financial Statements         7  
+  1. Business Overview                                                   7  
+  2. Basis of Presentation                                               7  
+  3. Revenue                                                             8  
+  4. Earnings Per Share                                                  9  
+  5. Intangible Assets                                                  10  
+  6. Accounts Payable and Other Accrued Expenses                        10  
+  7. Accrued Compensation and Benefits                                  10  
+  8. Debt                                                               11  
+  9. Income Taxes                                                       11  
+  10. Accumulated Other Comprehensive Income / (Loss)                   12  
+  11. Fair Value Measurements                                           13  
+  12. Commitments and Contingencies                                     14  
+  13. Supplemental Condensed Consolidated Financial Information         14  
+
+Table of Contents
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+CONDENSED CONSOLIDATED BALANCE SHEETS
+
+(Amounts in millions, except share and per share data)
+
+                                                                                                                                                                                                            September 30,                 March 31,             
+                                                                                                                                                                                                              (Unaudited)                                       
+  ASSETS                                                                                                                                                                                                                                                        
+  Current assets:                                                                                                                                                                                                                                               
+  Cash and cash equivalents                                                                                                                                                                                             $        816              $        885  
+  Accounts receivable, net                                                                                                                                                                                                     2,217                     2,271  
+  Prepaid expenses and other current assets                                                                                                                                                                           188                       157             
+  Total current assets                                                                                                                                                                                                         3,221                     3,313  
+  Property and equipment, net of accumulated depreciation                                                                                                                                                             171                       177             
+  Operating lease right-of-use assets                                                                                                                                                                                 160                       178             
+  Intangible assets, net of accumulated amortization                                                                                                                                                                  537                       563             
+  Goodwill                                                                                                                                                                                                                     2,405                     2,405  
+  Deferred tax assets                                                                                                                                                                                                 244                       332             
+  Other long-term assets                                                                                                                                                                                              415                       344             
+  Total assets                                                                                                                                                                                                          $      7,153              $      7,312  
+  LIABILITIES AND STOCKHOLDERS’ EQUITY                                                                                                                                                                                                                          
+  Current liabilities:                                                                                                                                                                                                                                          
+  Current portion of long-term debt                                                                                                                                                                                     $         83              $         83  
+  Accounts payable and other accrued expenses                                                                                                                                                                                  1,001            987             
+  Accrued compensation and benefits                                                                                                                                                                                   675                       702             
+  Operating lease liabilities                                                                                                                                                                                          41                        41             
+  Other current liabilities                                                                                                                                                                                            34                        33             
+  Total current liabilities                                                                                                                                                                                                    1,834                     1,846  
+  Long-term debt, net of current portion                                                                                                                                                                                       3,877                     3,915  
+  Operating lease liabilities, net of current portion                                                                                                                                                                 160                       180             
+  Other long-term liabilities                                                                                                                                                                                         286                       368             
+  Total liabilities                                                                                                                                                                                                            6,157                     6,309  
+  Commitments and contingencies (Note 12)                                                                                                                                                                                                                       
+  Stockholders’ equity:                                                                                                                                                                                                                                         
+  Common stock, Class A - $ 0.01 par value - authorized: 600,000,000 shares;                                                                                                                                            2                         2             
+  Treasury stock, at cost - 47,085,814 and 43,643,540 shares at September 30, 2025 and March 31, 2025                                                                                                            ( 3,459)                  ( 3,082)             
+  Additional paid-in capital                                                                                                                                                                                                   1,105                     1,042  
+  Retained earnings                                                                                                                                                                                                            3,378                     3,070  
+  Accumulated other comprehensive income                                                                                                                                                                            ( 30)                     ( 29)             
+  Total stockholders’ equity                                                                                                                                                                                          996                                1,003  
+  Total liabilities and stockholders’ equity                                                                                                                                                                            $      7,153              $      7,312  
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+CONDENSED CONSOLIDATED STATEMENTS OF OPERATIONS
+
+(Unaudited)
+
+(Amounts in millions, except per share data)
+
+                                                    Three Months Ended                            Six Months Ended                                   
+                                                    September 30,                                 September 30,                                      
+                                                    2025                               2024       2025                             2024              
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Revenue                                           $                       2,890      $          $                     5,814      $          6,088  
+  Operating costs and expenses:                                                                                                                      
+  Cost of revenue                                                           1,340                                       2,763                 2,734  
+  Billable expenses                                 918                                968                              1,799                 1,913  
+  General and administrative expenses               308                                225        631                              554               
+  Depreciation and amortization                     41                                 42         81                               83                
+  Total operating costs and expenses                                        2,607                                       5,274                 5,284  
+  Operating income                                  283                                549        540                              804               
+  Interest expense, net                             ( 48)                              ( 46)      ( 92)                            ( 84)             
+  Other (expense) income                            ( 2)                               10         1                                7                 
+  Income before income taxes                        233                                513        449                              727               
+  Income tax expense                                58                                 123        3                                172               
+  Net income                                        $                         175      $          $                       446      $            555  
+  Earnings per share of common stock (Note 4):                                                                                                       
+  Basic                                             $                        1.42      $          $                      3.59      $           4.29  
+  Diluted                                           $                        1.42      $          $                      3.58      $           4.27  
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+CONDENSED CONSOLIDATED STATEMENTS OF COMPREHENSIVE INCOME
+
+(Unaudited)
+
+(Amounts in millions)
+
+                                                                               Three Months Ended                                  Six Months Ended                      
+                                                                               September 30,                                       September 30,                         
+                                                                               2025                             2024               2025                           2024   
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Net income                                                                   $                       175      $         390      $                     446      $      
+  Other comprehensive loss, net of tax:                                                                                                                                  
+  Change in unrealized loss on derivatives designated as cash flow hedges      ( 1)                             ( 8)               ( 2)                           ( 10)  
+  Change in postretirement plan costs                                          1                                —                  1                              —      
+  Total other comprehensive loss, net of tax                                   —                                ( 8)               ( 1)                           ( 10)  
+  Comprehensive income                                                         $                       175      $         382      $                     445      $      
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+CONDENSED CONSOLIDATED STATEMENTS OF CASH FLOWS
+
+(Unaudited)
+
+  (Amounts in millions)                                                                  Six Months Ended                                
+                                                                                            September 30,                                
+                                                                                                     2025                 2024           
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Cash flows from operating activities                                                                                                   
+  Net income                                                                                            $      446           $      555  
+  Adjustments to reconcile net income to net cash provided by operating activities:                                                      
+  Depreciation and amortization                                                                        81                   83           
+  Noncash lease expense                                                                                25                   26           
+  Stock-based compensation expense                                                                     36                   46           
+  Net gains on investments, dispositions, and other                                                  ( 4)                 ( 8)           
+  Changes in operating assets and liabilities:                                                                                           
+  Accounts receivable, net                                                                             54               ( 161)           
+  Deferred income taxes and income taxes receivable / payable                                          78                ( 30)           
+  Prepaid expenses and other current and long-term assets                                           ( 77)                ( 29)           
+  Accrued compensation and benefits                                                                 ( 13)                  195           
+  Accounts payable and other accrued expenses                                                          23                ( 24)           
+  Other current and long-term liabilities                                                          ( 109)                ( 14)           
+  Net cash provided by operating activities                                                           540                  639           
+  Cash flows from investing activities                                                                                                   
+  Purchases of property, equipment, and software                                                    ( 49)                ( 56)           
+  Payments for business acquisitions and dispositions, net of cash acquired                             —                ( 93)           
+  Net payments for investments                                                                      ( 12)                 ( 4)           
+  Net cash used in investing activities                                                             ( 61)               ( 153)           
+  Cash flows from financing activities                                                                                                   
+  Proceeds from issuance of common stock                                                               27                   21           
+  Repurchases of common stock                                                                      ( 395)               ( 348)           
+  Cash dividends paid                                                                              ( 138)               ( 133)           
+  Repayments on revolving credit facility, term loans, and Senior Notes                             ( 42)                ( 21)           
+  Net cash used in financing activities                                                            ( 548)               ( 481)           
+  Net (decrease) increase in cash and cash equivalents                                              ( 69)                    5           
+  Cash and cash equivalents––beginning of period                                                      885                  554           
+  Cash and cash equivalents––end of period                                                              $      816           $      559  
+  Supplemental disclosures of cash flow information                                                                                      
+  Net cash paid during the period for:                                                                                                   
+  Interest                                                                                              $       87           $       97  
+  Income taxes                                                                                          $       41           $      190  
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+  BOOZ ALLEN HAMILTON HOLDING CORPORATION                                                                                                                                    
+  (Amounts in millions, except share data)                       Class A           Treasury                                     Additional      Retained              Total  
+                                                                 Shares            Shares             Amount                                                                 
+  Balance at June 30, 2025                                       168,850,097       ( 45,141,112)      $           ( 3,249)      $               $                         $  
+  Issuance of common stock                                       145,657           —                  —                         9               —                         9  
+  Stock options exercised                                        115,374           —                  —                         8               —                         8  
+  Repurchase of common stock (1)                                 —                 ( 1,944,702)       ( 210)                    —               —                    ( 210)  
+  Net income                                                     —                 —                  —                         —               175                     175  
+  Dividends paid of $ 0.55 per share of common stock             —                 —                  —                         —               ( 68)                 ( 68)  
+  Stock-based compensation expense                               —                 —                  —                         17              —                        17  
+  Balance at September 30, 2025                                  169,111,128       ( 47,085,814)      $           ( 3,459)      $               $                         $  
+  Balance at March 31, 2025                                      168,522,544       ( 43,643,540)      $           ( 3,082)      $               $                         $  
+  Issuance of common stock                                                         —                  —                         18              —                        18  
+  Stock options exercised                                                          —                  —                         9               —                         9  
+  Repurchase of common stock (2)                                 —                                    ( 377)                    —               —                    ( 377)  
+  Net income                                                     —                 —                  —                         —               446                     446  
+  Other comprehensive loss, net of tax                           —                 —                  —                         —               —                      ( 1)  
+  Dividends paid of $ 1.10 per share of common stock             —                 —                  —                         —               ( 138)               ( 138)  
+  Stock-based compensation expense                               —                 —                  —                         36              —                        36  
+  Balance at September 30, 2025                                  169,111,128       ( 47,085,814)      $           ( 3,459)      $               $                         $  
+
+(1) During the three months ended September 30, 2025, the Company purchased1.9million shares of the Company’s Class A Common Stock for $207million. Additionally, the Company repurchased shares for $3million during the three months ended September 30, 2025 to cover the minimum statutory taxes on repurchases and restricted stock units that vested on various dates during the period.
+
+(2) During the six months ended September 30, 2025, the Company purchased3.3million shares of the Company’s Class A Common Stock for $361million. Additionally, the Company repurchased shares for $16million during the six months ended September 30, 2025 to cover the minimum statutory taxes on repurchases and restricted stock units that vested on various dates during the period.
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+  BOOZ ALLEN HAMILTON HOLDING CORPORATION                                                                                                                                         
+  (Amounts in millions, except share data)                       Class A           Treasury                       Additional      Retained      Accumulated                Total  
+                                                                 Shares            Shares             Amount                                                                      
+  Balance at June 30, 2024                                       167,705,104       ( 38,354,730)      $           $               $             $                              $  
+  Issuance of common stock                                       112,184           —                  —           7               —             —                              7  
+  Stock options exercised                                        23,716            —                  —           2               —             —                              2  
+  Repurchase of common stock (3)                                 —                 ( 1,584,386)       ( 234)      —               —             —                         ( 234)  
+  Net income                                                     —                 —                  —           —               390           —                            390  
+  Other comprehensive loss, net of tax                           —                 —                  —           —               —             ( 8)                        ( 8)  
+  Dividends paid of $ 0.51 per share of common stock             —                 —                  —           —               ( 66)         —                          ( 66)  
+  Stock-based compensation expense                               —                 —                  —           26              —             —                             26  
+  Balance at September 30, 2024                                  167,841,004       ( 39,939,116)      $           $               $             $                              $  
+  Balance at March 31, 2024                                      167,402,268       ( 37,759,145)      $           $               $             $                              $  
+  Issuance of common stock                                       348,772           —                  —           16              —             —                             16  
+  Stock options exercised                                        89,964            —                  —           4               —             —                              4  
+  Repurchase of common stock (4)                                 —                 ( 2,179,971)       ( 324)      —               —             —                         ( 324)  
+  Net income                                                     —                 —                  —           —               555           —                            555  
+  Other comprehensive loss, net of tax                           —                 —                  —           —               —             ( 10)                      ( 10)  
+  Dividends paid of $ 1.02 per share of common stock             —                 —                  —           —               ( 133)        —                         ( 133)  
+  Stock-based compensation expense                               —                 —                  —           46              —             —                             46  
+  Balance at September 30, 2024                                  167,841,004       ( 39,939,116)      $           $               $             $                              $  
+
+(3) During the three months ended September 30, 2024, the Company purchased1.6million shares of the Company’s Class A Common Stock for $230million. Additionally, the Company repurchased shares for $4million during the three months ended September 30, 2024 to cover the minimum statutory taxes on repurchases and restricted stock units that vested on various dates during the period.
+
+(4) During the six months ended September 30, 2024, the Company purchased2.1million shares of the Company’s Class A Common Stock for $308million. Additionally, the Company repurchased shares for $16million during the six months ended September 30, 2024 to cover the minimum statutory taxes on repurchases and restricted stock units that vested on various dates during the period.
+
+The accompanying notes are an integral part of these Condensed Consolidated Financial Statements.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+1. Business Overview
+
+Booz Allen Hamilton Holding Corporation, including its wholly owned subsidiaries, or the Company, we, us, and our, was incorporated in Delaware in May 2008. As an advanced technology company, the Company builds technology solutions using artificial intelligence (“ AI”), cyber, and other cutting-edge technologies to advance and protect the nation and its citizens. The Company supports critical missions for a diverse base of federal government customers, including nearly all of the U. S. 
+government’s cabinet-level departments, as well as for commercial customers, both domestically and in select international locations. The Company is headquartered in McLean, Virginia, with approximately32,500employees as of September 30, 2025, and reports operating results and financial data inonereportable segment.
+
+2. Basis of Presentation
+
+The accompanying unaudited condensed consolidated financial statements include the accounts of the Company and its subsidiaries that are majority-owned or otherwise controlled by the Company, and have been prepared in accordance with accounting principles generally accepted in the United States (“ U. S. GAAP”) and the rules and regulations of the U. S. Securities and Exchange Commission (the “ SEC”) and should be read in conjunction with the information contained in the Company's Annual Report 
+on Form 10-K for the year ended March 31, 2025. The interim period unaudited condensed consolidated financial statements are presented as described below. Certain information and disclosures normally required for annual financial statements have been condensed or omitted pursuant to U. S. GAAP and SEC rules and regulations. In the opinion of management, all adjustments considered necessary for fair presentation of the results of the interim periods presented have been included.
+
+Certain amounts reported in the Company's prior fiscal year condensed consolidated financial statements have been reclassified to conform to the current year presentation
+
+Investments
+
+As of September 30, 2025 and March 31, 2025, respectively, the total of equity and other investments related to unconsolidated entities included in other long-term assets of the Company’s condensed consolidated balance sheet were$ 109 and$ 90.
+
+Accounting Estimates
+
+The preparation of financial statements in conformity with GAAP requires management to make estimates and assumptions that affect the reported amounts of assets, liabilities, revenue and expenses, as well as the disclosure of contingent assets and liabilities at the date of the financial statements or during the relevant reporting periods (as applicable). The Company bases its estimates on historical and forward-looking assumptions that it believes are reasonable and appropriate. Actual results 
+may differ materially from those estimates. Estimates are used for, but not limited to, revenue recognition including the profitability of long-term contracts and cost accruals, the provision for claimed costs, fair value measurements, the valuation and expected lives of acquired intangible assets, incentive compensation, income taxes including reserves for uncertain tax positions, postretirement obligations and contingencies. See Note 2, “ Summary of Significant Accounting Policies” to the 
+Company’s consolidated financial statements included in the Annual Report on Form 10-K for the year ended March 31, 2025 for further details on significant estimates and assumptions used.
+
+Recently Issued Accounting Pronouncements Not Yet Adopted
+
+In December 2023, the Financial Accounting Standards Board (the “ FASB”) issued ASU 2023-09, Improvements to Income Tax Disclosures. The standard includes amendments that enhance annual income tax disclosures, primarily through standardization and disaggregation of rate reconciliation categories and income taxes paid by jurisdiction. The Company is required to adopt this standard in its Fiscal 2026 Form 10-K and does not expect it to have a material impact on its consolidated financial 
+statements and related disclosures.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+In November 2024, the FASB issued ASU 2024-03, Disaggregation of Income Statement Expenses, which is intended to enhance transparency into the nature and function of certain expenses as specified by the ASU. The guidance does not change the expense captions an entity presents on the face of the income statement; rather, it requires public business entities to provide disaggregated disclosures of certain expense captions in the notes to the financial statements. The ASU is effective for annual 
+periods beginning after December 15, 2026, and interim periods within fiscal years beginning after December 15, 2027, and can be applied retrospectively or prospectively. The Company is currently assessing the impact of this update; however, its adoption will affect only the Company’s disclosures, with no impacts to its financial conditions or results of operations.
+
+In September 2025, the FASB issued ASU 2025-06, Targeted Improvements to the Accounting for Internal-Use Software, to modernize the accounting for and disclosure of internal-use software costs. The guidance removes all references to project stages, defines the threshold to begin capitalizing costs, and clarifies the disclosure requirements of capitalized software costs. The ASU is effective for annual periods beginning after December 15, 2027, and interim periods within those fiscal years, and 
+can be applied retrospectively, prospectively, or on a modified transition approach. Early adoption is permitted. The Company is currently assessing the impact of this update.
+
+3. Revenue
+
+We disaggregate our revenue from contracts with customers by contract type and by customer type, as well as by whether the Company acts as prime contractor or sub-contractor, as we believe these categories best depict how the nature, amount, timing and uncertainty of our revenue and cash flows are affected by economic factors. The following series of tables presents our revenue disaggregated by these categories.
+
+                          Three Months Ended                                                             
+                          September 30,                                                                  
+                          2025                             2024                                          
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Cost-reimbursable       $                        59      $          57      3,471       60      3,441  
+  Time-and-materials      638                      22      722        23      1,276       22      1,393  
+  Fixed-price             539                      19      643        20      1,067       18      1,254  
+  Total Revenue           $                       100      $         100      5,814      100      6,088  
+
+                              2025                                                 2025                                  
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                              Three Months Ended                                   Six Months Ended                      
+  Defense Customers           $                        54      1,547       49      $                     3,097       53  
+  Intelligence Customers      483                      17                  16      967                               17  
+  Civil Customers             827                      29      1,105       35                            1,750       30  
+  Total Revenue               $                       100      3,146      100      $                     5,814      100  
+
+(1) Customer type is based on public market as determined by government agency hierarchy mapping. Revenue by customer type for comparative periods for certain contracts has been reclassified to align to the most recent mapping.
+
+                        Three Months Ended                                               Six Months Ended            
+                        September 30,                                                    September 30,               
+                        2025                                        2024                 2025                  2024  
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Prime Contractor      $                       2,701       93      $         3,001      $                     $     
+  Subcontractor         189                                  7      145                  372                   279   
+  Total Revenue         $                       2,890      100      $         3,146      $                     $     
+
+Performance Obligations
+
+Remaining performance obligations represent the transaction price of exercised contracts for which work has not yet been performed, irrespective of whether funding has or has not been authorized and appropriated as of the date of exercise. Remaining performance obligations exclude negotiated but unexercised options, the unfunded value of expired contracts, and certain variable consideration which the Company does not expect to recognize as revenue.
+
+As of September 30, 2025 and March 31, 2025, the Company had$ 12.1 and $ 9.565 12 70 24
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+Contract Balances
+
+The following table summarizes the contract assets and liabilities, and accounts receivable, net of allowance recognized on the Company’s condensed consolidated balance sheets:
+
+                                                                                                          September 30,                 March 31,             
+  Current assets                                                                                                                                              
+  Accounts receivable–billed                                                                              $                    636      $                781  
+  Accounts receivable–unbilled (contract assets)                                                                             1,582                     1,491  
+  Allowance for credit losses                                                                             ( 1)                          ( 1)                  
+  Accounts receivable, net                                                                                                   2,217                     2,271  
+  Other long-term assets                                                                                                                                      
+  Accounts receivable–unbilled (contract assets)                                                          59                            58                    
+  Total accounts receivable, net                                                                          $                  2,276      $              2,329  
+  Other current liabilities                                                                                                                                   
+  Advance payments, billings in excess of costs incurred and deferred revenue (contract liabilities)      $                     19      $                 18  
+
+Changes in contract assets and contract liabilities are primarily due to the timing difference between the Company’s performance of services and payments from customers. For both the three months ended September 30, 2025 and 2024, we recognized revenue of $ 1 six months endedSeptember 30, 2025 and2024, we recognized revenue of $ 12 and $ 10
+
+4. Earnings Per Share
+
+The table below provides a reconciliation of the income used to compute basic and diluted EPS for the periods presented:
+
+                                                                 Three Months Ended                                                                                             
+                                                                 September 30,                                                                                                  
+                                                                 2025                                     2024                                           2024                   
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Numerator (1):                                                                                                                                                                
+  Earnings for basic computations                                $                               174      $                    388              443      $                 552  
+  Earnings for diluted computations                              $                               174      $                    388              443      $                 552  
+  Denominator:                                                                                                                                                                  
+  Weighted-average common stock shares outstanding, basic                                122,662,037      128,391,878                   123,388,093      128,893,263            
+  Dilutive stock options and restricted stock                                                219,526                       456,199          289,899      494,459                
+  Weighted-average common stock shares outstanding, diluted                              122,881,563      128,848,077                   123,677,992      129,387,722            
+  Earnings per common share:                                                                                                                                                    
+  Basic                                                          $                              1.42      $                   3.02             3.59      $                4.29  
+  Diluted                                                        $                              1.42      $                   3.01             3.58      $                4.27  
+
+(1) The difference between earnings for basic and diluted computations and net income presented on the condensed consolidated statements of operations is due to undistributed earnings and dividends allocated to the participating securities. There were approximately0.9million and0.8million shares, respectively, of participating securities for three months ended September 30, 2025 and 2024, and0.9million and0.7million shares of participating securities for the six months ended September 30, 2025 
+and 2024, respectively.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+5. Intangible Assets
+
+Intangible assets consisted of the following at the periods presented below:
+
+                                                             September 30, 2025                                                        March 31, 2025                          
+                                                             Gross Carrying Value               Accumulated Amortization               Gross Carrying Value                    
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Amortizable intangible assets:                                                                                                                                               
+  Customer contracts and related customer relationships      $                         619      $                             284      $                         619      314  
+  Software                                                   189                                126                                    168                                     
+  Total amortizable intangible assets                        $                         808      $                             347      $                         787      373  
+  Unamortizable intangible assets:                                                                                                                                             
+  Trade name                                                 $                         190      $                             190      $                         190      190  
+  Total                                                      $                         998      $                             537      $                         977      563  
+
+6. Accounts Payable and Other Accrued Expenses
+
+Accounts payable and other accrued expenses consisted of the following at the periods presented below:
+
+                                                         September 30,                 March 31,           
+  Vendor payables                                        $                    686      $              693  
+  Provision for claimed costs                            247                           245                 
+  Accrued interest                                       35                            16                  
+  Accrued expenses                                       33                            33                  
+  Total accounts payable and other accrued expenses      $                  1,001      $              987  
+
+See Note 12, “ Commitments and Contingencies,” to the condensed consolidated financial statements for further discussion of the Company’s provision for claimed costs.
+
+7. Accrued Compensation and Benefits
+
+Accrued compensation and benefits consisted of the following at the periods presented below:
+
+                                               September 30,               March 31,           
+  Accrued payroll                              $                  239      $              328  
+  Accrued retirement                           127                         85                  
+  Accrued paid time off                        241                         242                 
+  Other                                        68                          47                  
+  Total accrued compensation and benefits      $                  675      $              702  
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+8. Debt
+
+Debt consisted of the following at the periods presented below:
+
+                                                                  September 30, 2025                                  March 31, 2025                              
+                                                                            Interest      Outstanding                       Interest      Outstanding             
+                                                                                Rate      Balance                               Rate      Balance                 
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Term Loan                                                                    5.666      $                1,485               5.675      $                1,526  
+  Senior Notes due 2028                                                        3.875      700                                  3.875      700                     
+  Senior Notes due 2029                                                        4.000      500                                  4.000      500                     
+  Senior Notes due 2033                                                        5.950      650                                  5.950      650                     
+  Senior Notes due 2035                                                        5.950      650                                  5.950      650                     
+  Less: Unamortized debt issuance costs and discount on debt                              ( 25)                                           ( 28)                   
+  Total                                                                                                    3,960                                           3,998  
+  Less: Current portion of long-term debt                                                 ( 83)                                           ( 83)                   
+  Long-term debt, net of current portion                                                  $                3,877                          $                3,915  
+
+Booz Allen Hamilton Inc. (“ Booz Allen Hamilton”), Booz Allen Hamilton Investor Corporation, and certain wholly owned subsidiaries of Booz Allen Hamilton are parties to a Credit Agreement dated as of July 31, 2012, as amended, which provided Booz Allen Hamilton with a $ 1,485 1.0 200
+
+The senior notes due 2035, senior notes due 2033, senior notes due 2029 and senior notes due 2028 (together, the “ Senior Notes”) were issued by Booz Allen Hamilton in four
+
+The Company occasionally borrows under the Revolving Credit Facility for our working capital needs. There were no no
+
+As of September 30, 2025 and March 31, 2025, Booz Allen Hamilton was in compliance with all financial covenants associated with its debt. For further information on the Company’s debt, including material terms, conditions, restrictions and redemption options, see Note 10, “ Debt,” of the Company’s consolidated financial statements included in the fiscal 2025 Annual Report on Form 10-K.
+
+9. Income Taxes
+
+The Company’s effective income tax rates were 24.9 24.0 0.7 23.7
+
+As of September 30, 2025 and March 31, 2025, the Company recorded $ 56 142 86 22 While the JCT has not yet reviewed this case, management does not anticipate that the resolution of this review will have a material adverse effect on the Company's financial position or results of operations.
+
+As of September 30, 2025 and March 31, 2025, the Company recorded long-term income tax receivables of $ 174 152
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+On July 4, 2025, the One Big Beautiful Bill Act (“ OBBB”) was enacted in the U. S. The OBBB includes significant provisions, such as the permanent extension of certain expiring provisions of the Tax Cuts and Jobs Act, restoration of favorable tax treatment for certain business provisions including the expensing of domestic research and development expenditures, and modifications to the international tax framework. The Company has incorporated the impact of the new legislation into its 
+year-to-date effective tax rate and continues to assess the impact on the consolidated financial statements.
+
+10. Accumulated Other Comprehensive Income (Loss)
+
+Amounts recorded in other comprehensive income (loss) (“ OCI”) are related to the Company's post-retirement plans and interest rate swaps designated as cash flow hedges. The following table presents the changes in Accumulated OCI (“ AOCI”) during the periods presented below:
+
+                                                                           Three Months Ended                                                                              Six Months Ended                                                                  
+                                                                           September 30, 2025                                                                              September 30, 2025                                                                
+                                                                           Post-retirement plans                 Derivatives designated as cash flow hedges                Post-retirement plans      Derivatives designated as cash flow hedges      Total  
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Beginning of period                                                      $                          ( 28)      $                                               ( 2)      $                          $                                               $      
+  Amounts reclassified from AOCI to earnings, before income taxes          1                                     ( 1)                                                      1                          ( 2)                                            ( 1)   
+  Income taxes                                                             —                                     —                                                         —                          —                                               —      
+  Amounts reclassified from AOCI to earnings, net of income taxes (1)      1                                     ( 1)                                                      1                          ( 2)                                            ( 1)   
+  Current-period OCI, net of income taxes                                  1                                     ( 1)                                                      1                          ( 2)                                            ( 1)   
+  End of period                                                            $                          ( 27)      $                                               ( 3)      $                          $                                               $      
+
+(1) The reclassifications from accumulated OCI to net income are included in interest expense, net in the Condensed Consolidated Statements of Operations.
+
+                                                                           Three Months Ended                                                                    Six Months Ended                                                                  
+                                                                           September 30, 2024                                                                    September 30, 2024                                                                
+                                                                           Post-retirement plans      Derivatives designated as cash flow hedges      Total      Post-retirement plans      Derivatives designated as cash flow hedges      Total  
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Beginning of period                                                      $                                                                   $          $      $                                                                   $          $  
+  OCI, before reclassifications and income taxes                           —                                                                ( 8)       ( 8)      —                                                                ( 7)       ( 7)  
+  Income taxes                                                             —                                                                   2          2      —                                                                   2          2  
+  OCI before reclassifications, net of income taxes                        —                                                                ( 6)       ( 6)      —                                                                ( 5)       ( 5)  
+  Amounts reclassified from AOCI to earnings, before income taxes          —                                                                ( 3)       ( 3)      —                                                                ( 7)       ( 7)  
+  Income taxes                                                             —                                                                   1          1      —                                                                   2          2  
+  Amounts reclassified from AOCI to earnings, net of income taxes (2)      —                                                                ( 2)       ( 2)      —                                                                ( 5)       ( 5)  
+  Current-period OCI, net of income taxes                                  —                                                                ( 8)       ( 8)      —                                                               ( 10)      ( 10)  
+  End of period                                                            $                                                                   $          $      $                                                                   $          $  
+
+(2) The reclassifications from accumulated OCI to net income are included in interest expense, net in the Condensed Consolidated Statements of Operations.
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+11. Fair Value Measurements
+
+Recurring Fair Value Measurements
+
+The financial instruments measured at fair value in the accompanying condensed consolidated balance sheets consisted of the following at the periods presented below:
+
+                                                      September 30, 2025                   March 31, 2025                                               
+                                                      Level 1                 Level 2      Total               Level 1      Level 2      Total          
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Assets:                                                                                                                                               
+  Current derivative instruments                      $                       $            $                   $            $            $           1  
+  Long-term deferred compensation plan asset          44                      —            44                  35           —            35             
+  Total Assets                                        $                       $            $                   $            $            $          36  
+  Liabilities:                                                                                                                                          
+  Current derivative instruments                      $                       $            $                   $            $            $           1  
+  Long-term derivative instruments                    —                       2            2                   —            2            2              
+  Long-term deferred compensation plan liability      44                      —            44                  35           —            35             
+  Total Liabilities                                   $                       $            $                   $            $            $          38  
+
+The Company did not have any Level 3 assets or liabilities as of September 30, 2025 or March 31, 2025.
+
+Derivatives
+
+The Company utilizes interest rate derivative financial instruments, which were designated as cash flow hedges, to manage its exposure to interest rate risk related to its variable rate debt and reducing volatility of interest expense as the variable-to-fixed interest rate swaps effectively convert a portion of the variable rate debt into fixed interest rate debt. The Company’s outstanding interest rate swaps have a total notional amount of $ 350
+
+The Company’s interest rate swaps are considered over-the-counter derivatives which are recorded in the condensed consolidated balance sheet on a gross basis at estimated fair value. Fair value is estimated based on the present value of future cash flows using a model-derived valuation that uses Level 2 observable inputs such as interest rate yield curves. The changes in the fair value of interest rate swaps designated as cash flow hedges are recorded in AOCI, net of taxes, and are subsequently 
+reclassified into interest expense, net in the period that the hedged forecasted interest payments are made on the Company's variable-rate debt. Over the next 12 months, the Company estimates that approximately $ 1
+
+Deferred Compensation Plans
+
+Investments in this category consist primarily of mutual funds whose fair values are determined by reference to the quoted market price per unit in active markets multiplied by the number of units held without consideration of transaction costs. These assets are recorded in other long-term assets and represent investments held in a consolidated trust to fund the Company's non-qualified deferred compensation plan, which is recorded in other long-term liabilities on our condensed consolidated 
+balance sheets.
+
+Cash, Cash Equivalents and Marketable Securities
+
+The fair value of the Company's cash and cash equivalents, which are Level 1 inputs, approximated its carrying value at September 30, 2025 and March 31, 2025. The Company’s cash and cash equivalent balances presented on the accompanying condensed consolidated balance sheets include $ 370 802
+
+Long-term Debt
+
+The Company's long-term debt is carried at amortized cost and fair value is disclosed on a quarterly basis. The estimated fair values of debt are determined using quoted prices or other market information obtained from recent trading activity of the debt in markets that are not active (Level 2 inputs). The fair value is corroborated by prices derived from the interest rate spreads of recently completed leveraged loan transactions of a similar credit profile, industry, and terms to that of the 
+Company. The fair value of the Senior Notes are determined using quoted prices or other market information obtained from recent trading activity in the high-yield bond market (Level 2 inputs). The estimated fair value of long-term debt as of September 30, 2025 and March 31, 2025 was $ 3,991 3,954
+
+
+BOOZ ALLEN HAMILTON HOLDING CORPORATION
+
+NOTES TO UNAUDITED CONDENSED CONSOLIDATED FINANCIAL STATEMENTS
+
+(Amounts in tables in millions, except share and per share data or unless otherwise noted)
+
+Nonrecurring Fair Value Measurements
+
+As of September 30, 2025 and March 31, 2025, the total of our investments that are accounted for at fair value on a non-recurring basis under the measurement alternative were $ 103 85
+
+12. Commitments and Contingencies
+
+Government Contracting Matters - Provision for Claimed Costs
+
+U. S. government contracts and subcontracts are subject to extensive legal and regulatory requirements. From time to time and in the ordinary course of business, agencies of the U. S. government, including the Defense Contract Audit Agency (“ DCAA”), audit the Company’s claimed costs and conduct inquiries and investigations of our business practices with respect to government contracts to determine whether the Company's operations are conducted in accordance with these requirements and the terms
+of the relevant contracts.
+
+As of September 30, 2025 and March 31, 2025, the Company had recorded liabilities of approximately $ 247 245
+
+Litigation
+
+Our performance under U. S. government contracts and compliance with the terms of those contracts and applicable laws and regulations are subject to continuous audit, review, and investigation by the U. S. government, which may include such investigative techniques as subpoenas or civil investigative demands. Given the nature of our business, these audits, reviews, and investigations may focus, among other areas, on various aspects of procurement integrity, labor time reporting, sensitive and/or
+classified information access and control, executive compensation, and post government employment restrictions. We are not always aware of our status in such matters, but we are currently aware of certain pending audits and investigations involving labor time reporting, procurement integrity, and classified information access. In addition, from time to time, we are also involved in legal proceedings and investigations arising in the ordinary course of business, including those relating to 
+employment matters, relationships with customers and contractors, intellectual property disputes, and other business matters. These legal proceedings seek various remedies, including claims for monetary damages in varying amounts, none of which are considered material, or are unspecified as to amount. Although the outcome of any such matter is inherently uncertain and may be materially adverse, based on current information, we do not expect any of the currently ongoing audits, reviews, 
+investigations, or litigation to have a material adverse effect on our financial condition and results of operations.
+
+13. Supplemental Condensed Consolidated Financial Information
+
+Severance and Related Charges
+
+The Company incurs costs related to employee severance and related charges including stock-based compensation, employee benefits and payroll taxes related to employees terminated pursuant to cost management initiatives. The Company records these costs when it is probable that employees will be entitled to termination benefits and the amounts can be reasonably estimated.
+
+In the first quarter of fiscal 2026, the Company’s condensed consolidated statement of operations included $ 36 30 6 no
+
+In the third quarter of fiscal 2026, the Company began actions to reduce cost by approximately $150million annually.
+
+
+Item 2. Management’s Discussion and Analysis of Financial Condition and Results of Operations
+
+The following discussion and analysis is intended to help the reader understand our business, financial condition, results of operations, and liquidity and capital resources. You should read this discussion in conjunction with our condensed consolidated financial statements and the related notes contained elsewhere in this Quarterly Report on Form 10-Q, or Quarterly Report.
+
+The statements in this discussion regarding industry outlook, our expectations regarding our future performance, liquidity and capital resources, and other non-historical statements in this discussion are forward-looking statements. These forward-looking statements are subject to numerous risks and uncertainties, including, but not limited to, the risks and uncertainties described in our Annual Report on Form 10-K for the fiscal year ended March 31, 2025 filed with the Securities and Exchange 
+Commission on May 23, 2025, or Annual Report, and under Part II, “ Item 1A. Risk Factors,” and “ - Special Note Regarding Forward Looking Statements” of this Quarterly Report. Our actual results may differ materially from those contained in or implied by any forward-looking statements.
+
+Our fiscal year ends March 31 and, unless otherwise noted, references to years or fiscal are for fiscal years ended March 31. See “ - Results of Operations.”
+
+Overview
+
+Trusted to transform missions with the power of tomorrow’s technologies, Booz Allen advances the nation’s most critical civil, defense, and national security priorities. As an advanced technology company, we build technology solutions using AI, cyber, and other cutting-edge technologies to advance and protect the nation and its citizens. By focusing on outcomes, we enable our people and customers to transform missions for the nation.
+
+Our approximately32,500 employees support critical missions for a diverse base of federal government customers, including nearly all of the U. S. government's cabine t-level departments, as well as for commercial customers, both domestically and in select international locations. Our work is designed to protect soldiers in combat, secure our national infrastructure, enable enhanced digital services, and improve government efficiency to achieve better outcomes. Drawing on our deep expertise and 
+leading position as a cybersecurity provider, we bring advanced tradecraft to commercial customers across industries, including financial services, health and life sciences, energy, and technology.
+
+Factors and Trends Affecting Our Results of Operations
+
+Our results of operations have been, and we expect them to continue to be, affected by the following factors, which may cause our future results of operations to differ from our historical results of operations discussed under “ - Results of Operations.” As a result, we began actions in October to reduce cost by approximately $150 million annually.
+
+U. S. Budgetary and Regulatory Environment
+
+The U. S. continues to face an uncertain and evolving budgetary and regulatory environment, and we expect this uncertainty will continue. Our business performance is affected by the overall level of U. S. government spending and the alignment of our offerings and capabilities with the spending priorities of the U. S. government.
+
+The U. S. government is driving changes in the structure and priorities of U. S. government agencies and the U. S. government is currently in the process of reviewing spending across U. S. government agencies to ensure it aligns with the administration’s priorities of maximizing governmental efficiency and productivity. We have been, and will continue to be, subject to these reviews, and we have had, and may in the future have, certain of our contracts impacted, reduced or canceled as a result 
+of these reviews. We have also experienced price adjustments and renegotiations prior to option exercise of certain of our contracts as a result of these reviews and may in the future continue to experience such adjustments. Further, we are, and may in the future be, subject to customer mandates to formulate additional methods by which to achieve efficiencies in providing our services, and we remain in ongoing discussions with various U. S. government departments and agencies in relation to cost
+reductions and other potential contract modifications. There can be no assurance that these reviews will not ultimately have a material adverse impact on our business and financial performance. There has been a marked increase in negative publicity regarding government contractors (including the Company) in connection with the U. S. government’s efforts to improve efficiency and reduce costs, which could harm our reputation and could have a material impact on our business, results of operations 
+and financial condition.
+
+
+The administration is putting in place a number of Executive Orders and actions that have and could continue to affect our business. U. S. government agencies are also undertaking their own independent reviews of their contract portfolios and reviewing future procurements in response to recent Executive Orders focused on efficiency in government procurement. At the same time that the scrutiny is increasing, there have been reductions in personnel at U. S. government agencies with which we do 
+business. These reductions in personnel, along with the changing regulatory environment, has led to a slowed procurement environment, with delays in the granting of new contract awards, increased willingness by agencies to not spend government money, delays in the processing of payments by government payment offices, as well as increased processing times for security clearances and other governmental consents. This slowed procurement environment has resulted in a substantial reduction in the 
+ordinary end of government fiscal year funding surge when compared to prior fiscal years and, in the aggregate, has resulted in negative impacts to our business and financial performance.
+
+The President has issued two specific Executive Orders that may cause future changes, the impact of which remains uncertain, that are intended to (i) simplify and accelerate the procurement process through a review and restructuring of the Federal Acquisition Regulation (“ FAR”), and its supplements and (ii) modernize defense acquisitions by promoting commercial solutions, innovative acquisition authorities, and other existing streamlined processes. Likewise, both the House and Senate versions 
+of the National Defense Authorization Act contemplate “generational” procurement reforms that introduce further uncertainty. The Senate draft contains a provision that would favor new entrants over traditional defense contractors by removing certain obligations only for new entrants. While the impact of these reforms on our business is uncertain, they could potentially lead to changes in the way we interact with the U. S. government. If certain commercial preferences are narrowly defined, these 
+reforms could introduce new barriers that reduce the likelihood of direct award to companies such as Booz Allen.
+
+On March 15, 2025, the President signed into law the Full-Year Continuing Appropriations and Extensions Act, 2025, which funded the U. S. government under a continuing resolution through September 30, 2025. At this time, Congress has failed to approve additional appropriations to fund the U. S. government, resulting in a government shutdown. A prolonged government shutdown is expected to have a negative impact on our business, financial condition and operating results.
+
+Contract Backlog
+
+We define backlog to include the following three components:
+
+• Funded Backlog. Funded backlog represents the revenue value of orders for services under existing contracts for which funding is appropriated or otherwise authorized less revenue previously recognized on these contracts.
+
+• Unfunded Backlog. Unfunded backlog represents the revenue value of orders (including optional orders) for services under existing contracts for which funding has not been appropriated or otherwise authorized.
+
+• Priced Options. Priced contract options represent 100% of the revenue value of all future contract option periods under existing contracts that may be exercised at our customers’ option and for which funding has not been appropriated or otherwise authorized.
+
+Our backlog does not include contracts that have been awarded but are currently under protest and also does not include any task orders under indefinite delivery/indefinite quantity (“ IDIQ”) contracts, General Services Administration (“ GSA”) Multiple Award schedule contracts (“ GSA schedules”) or other master agreement contract vehicles, except to the extent that task orders have been awarded to us under those contracts.
+
+The following table summarizes the value of our contract backlog as of the respective periods presented:
+
+                                                                                                                                                                         (In millions)                                             
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                                                                                                                                         September 30,                  September 30,              
+  Backlog (1):                                                                                                                                                                                                                     
+  Funded                                                                                                                                                                 $                   5,440      $                   5,794  
+  Unfunded                                                                                                                                                                                  10,668                          8,946  
+  Priced options                                                                                                                                                                            24,080                         24,326  
+  Total backlog                                                                                                                                                          $                  40,188      $                  39,066  
+  (1) Amounts reflect the Company’s change in policy during the fourth quarter of fiscal 2025 to exclude contracts for which the period of performance has expired.                                                                
+
+
+Our total backlog consists of contractual values which is inclusive of remaining performance obligations, unexercised option periods and other unexercised optional orders. As of September 30, 2025 and March 31, 2025, the Company had $12.1 billion and $9.5 billion of remaining performance obligations, respectively, and we expect to recognize approximately 65% of the remaining performance obligations as of September 30, 2025 as revenue over the next 12 months, and approximately 70% over the next 
+24 months. The remainder is expected to be recognized thereafter. We also expect to recognize revenue from a substantial portion of funded backlog as of September 30, 2025, within the next twelve months. However, given the uncertainties discussed below, as well as the risks described in “ Item 1A. Risk Factors” of our Annual Report on Form 10-K for the fiscal year ended March 31, 2025, we can give no assurance that we will be able to convert our performance obligations or funded backlog into 
+revenue in any particular period, if at all. Our backlog includes orders under contracts that in some cases extend for several years. The U. S. Congress generally appropriates funds for our customers on a yearly basis, even though their contracts with us may call for performance that is expected to take a number of years to complete. As a result, contracts typically are only partially funded at any point during their term and all or some of the work to be performed under the contracts may remain
+unfunded unless and until the U. S. Congress makes subsequent appropriations and the procuring agency allocates funding to the contract.
+
+We view growth in total backlog as a key measure of our potential business growth. Total backlog increased by 3% from September 30, 2024 to September 30, 2025. Additions to funded backlog during the twelve months ended September 30, 2025 and 2024 totaled $11.4 billion and $11.7 billion, respectively, as a result of the conversion of unfunded backlog to funded backlog, the award of new contracts and tas k orders under which funding was appropriated, and the exercise and subsequent funding of 
+priced options.
+
+We cannot predict with any certainty the portion of our backlog that we expect to recognize as revenue in any future period and we cannot guarantee that we will recognize any revenue from our backlog. The primary risks that could affect our ability to recognize such revenue on a timely basis or at all include contract modifications, including reductions in contract value, a reduction in U. S. government spending, whether due to cost cutting initiatives or other efforts to reduce spending, 
+delayed funding of our contracts, and the other risks and factors listed under “ - U. S. Budgetary and Regulatory Environment” in this Quarterly Report, as well as those listed under “ Risk Factors” in our Annual Report on Form 10-K for the year ended March 31, 2025. In addition, the amount of our funded backlog is also subject to change due to these factors. In our recent experience, the slowed procurement environment and reductions in contract value have had a negative effect on our ability to
+convert backlog to revenue as of September 30, 2025, and could have additional impacts in the future to our business and financial performance.
+
+Critical Accounting Estimates and Policies
+
+Our critical accounting estimates and policies are disclosed in the Critical Accounting Estimates and Policies section in Part II, “ Item 7. Management's Discussion and Analysis of Financial Condition and Results of Operations” of our Annual Report on Form 10-K for the year ended March 31, 2025.
+
+
+Results of Operations
+
+The following table presents items from our condensed consolidated statements of operations for the respective periods shown:
+
+                                           Three Months Ended                                    Six Months Ended                                           
+                                           September 30,                                         September 30,                                              
+                                           2025                           2024                   2025                                    2024               
+                                           (Unaudited)             (Unaudited)      Percent      (Unaudited)                      (Unaudited)      Percent  
+                                           (In millions)                             Change      (In millions)                                      Change  
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Revenue                                  $                                 $          (8)      $                     5,814                $          (5)  
+  Operating costs and expenses:                                                                                                                             
+  Cost of revenue                                                                       (2)                            2,763                             1  
+  Billable expenses                        918                             968          (5)                            1,799                           (6)  
+  General and administrative expenses      308                             225           37      631                                      554           14  
+  Depreciation and amortization            41                               42          (2)      81                                        83          (2)  
+  Total operating costs and expenses                                                      —                            5,274                             —  
+  Operating income                         283                             549         (48)      540                                      804         (33)  
+  Interest expense, net                    (48)                           (46)            4      (92)                                    (84)           10  
+  Other (expense) income                   (2)                              10        (120)      1                                          7         (86)  
+  Income before income taxes               233                             513         (55)      449                                      727         (38)  
+  Income tax expense                       58                              123         (53)      3                                        172         (98)  
+  Net income                               $                                 $         (55)      $                       446                $         (20)  
+
+Revenue
+
+Revenue decreased 8% to $2,890 million, and 5% to $5,814 million, respectively, for the three and six months ended September 30, 2025 compared to the prior year period. The decrease was primarily driven by a decrease in headcount due to the impact of a slowed procurement environment and continued uncertainty in the U. S. government and regulatory environment. In addition, revenue was positively impacted in the prior year by $122 million representing the reduction to our provision for claimed 
+costs recorded during the second quarter of fiscal 2025.
+
+Cost of Revenue
+
+Costs associated with compensation and related expenses for our people are the most significant component of our operating costs and expenses. The principal factors that affect our costs are additional people as we grow our business and are awarded new contracts, task orders, and additional work under our existing contracts, and the hiring of people with specific skill sets and security clearances as required by our additional work.
+
+Cost of revenue includes direct labor, related employee benefits, and overhead. Overhead consists of indirect costs, including indirect labor relating to infrastructure, management and administration, and other expenses. Cost of revenue as a percentage of revenue was46% and 43% for the three months ended September 30, 2025 and 2024, respectively, and 48% and 45% for the six months ended September 30, 2025 and 2024, respectively. Cost of revenue decreased 2% and increased 1% for the three and six
+months ended September 30, 2025, respectively, as compared to the three and six months ended September 30, 2024.
+
+The decrease for the quarter-to-date period was primarily due to decreases in salaries and related benefits due to overall headcount reductions. The increase for the year-to-date period was primarily due to increases in salary and related benefits. Cost of revenue for the year-to-date period includes costs incurred related to employee severance and related charges from the restructuring disclosed in the first quarter. See Note 13, “ Supplemental Condensed Consolidated Financial Information,” to 
+the condensed consolidated financial statements for further information. The increase for the year-to-date period was also due to higher medical benefits partially offset by decreases in other business expenses as a result of overall headcount reductions.
+
+Billable Expenses
+
+Billable expenses include direct subcontractor expenses, travel expenses, and other expenses incurred to perform on contracts. Billable expenses as a percentage of revenue were32% and 31% for the three months ended September 30, 2025 and 2024, respectively, and 31% for both the six months ended September 30, 2025 and 2024. Billable expenses decreased 5% and 6% for the three and six months ended September 30, 2025, respectively, compared to the three and six months ended September 30, 2024. The 
+decreases were primarily attributable to decreases in the use of subcontractors driven by customer demand and timing of customer needs, partially offset by increases in expenses from contracts requiring the Company to incur other direct expenses on behalf of customers as compared to the prior year.
+
+
+General and Administrative Expenses
+
+General and administrative expenses include indirect labor of executive management and corporate administrative functions, marketing and bid and proposal costs, legal costs, and other discretionary spending. General and administrative expenses as a percentage of revenue were11% and 7% for the three months ended September 30, 2025 and 2024, respectively, and 11% and 9% for the six months ended September 30, 2025 and 2024, respectively. General and administrative expenses increased 37% and 14% for
+the three and six months ended September 30, 2025, respectively, compared to the three and six months ended September 30, 2024.
+
+Fiscal 2025 reflects $115 million in insurance recoveries from claims related to the Company’s fiscal 2024 settlement as described in Note 20, “ Commitments and Contingencies,” to the consolidated financial statements contained within the Annual Report on Form 10-K for the fiscal year ended March 31, 2024, which primarily drove the increase for both the quarter and year-to-date periods. This was partially offset by decreases in salaries and related benefits, primarily due to overall headcount 
+reductions. General and administrative expenses for the year-to-date period include costs incurred related to employee severance and related charges from the restructuring disclosed in the first quarter. See Note 13, “ Supplemental Condensed Consolidated Financial Information,” to the condensed consolidated financial statements for further information.
+
+Depreciation and Amortization
+
+Depreciation and amortization includes the depreciation of computers, leasehold improvements, furniture and other equipment, and the amortization of internally developed software, as well as third-party software that we use internally, and of identifiable long-lived intangible assets over their estimated useful lives. Depreciation and amortization expense decreased2% for both the three and six months endedSeptember 30, 2025, as compared to the three and six months ended September 30, 2024.
+
+Operating Income
+
+Operating income decreased 48% to $283 million and decreased33% to$540 million for the three and six months ended September 30, 2025, respectively, compared to the three and six months ended September 30, 2024, reflecting decreases in operating margin from 17% to 10% and from 13% to9%. Operating income was driven by the factors noted above.
+
+Interest Expense, net
+
+Interest expense, net increased4% and10% for the three and six months endedSeptember 30, 2025, respectively, as compared to the three and six months endedSeptember 30, 2024, primarily due to increases of $10 million and $19 million in bond interest expense, respectively, driven by the $650 million Senior Notes due 2035 (issued in March of fiscal 2025). This was partially offset by lower interest rates on the Company’s term loans, as well as increases in interest income, reflecting the higher 
+cash balances following the bond issuance noted above.
+
+Other (Expense) Income
+
+Other (expense) income decreasedto$(2) million for the three months ended September 30, 2025 from $10 million for the three months ended September 30, 2024, and decreased to $1 million for the six months ended September 30, 2025 from $7 million for the six months ended September 30, 2024. The decreases in other (expense) income were primarily driven by larger increases in the fair value of the Company’s investments reflected in fiscal 2025 as compared to fiscal 2026.
+
+Income Tax Expense
+
+Income tax expense decreased 53% for the three months ended September 30, 2025 as compared to the three months ended September 30, 2024, while the effective tax rate increased to 24.9% from 24.0%. The decrease in income tax expense was primarily driven by the decrease in pre-tax income.
+
+Income tax expense decreased 98% for the six months endedSeptember 30, 2025 as compared to the six months ended September 30, 2024, while the effective tax rate decreased to 0.7% from 23.7%. The decrease in tax expense was primarily driven by a reduction in the income tax reserve related to the completion of IRS examination procedures in the prior quarter, the decrease in pre-tax income, and the accrual of interest income on the long-term tax receivable.
+
+
+Non-GAAP Measures
+
+We publicly disclose certain non-GAAP financial measurements, includingRevenue, Excluding Billable Expenses, EBITDA andAdjusted EBITDA, because management uses these measures for business planning purposes, including to manage our business against internal projected results of operations and measure our performance. We viewAdjusted EBITDA as a measure of our core operating business, which excludes the impact of the items detailed below, as these items are generally not operational in nature. 
+These non-GAAP measures also provide another basis for comparing period to period results by excluding potential differences caused by non-operational and unusual or non-recurring ite ms. In addition, we useRevenue, Excluding Billable Expenses because it provides management useful information about the Company's operating performance by excluding the impact of costs such as subcontractor expenses, travel expenses, and other non-labor expenses incurred to perform on contracts. Billable expenses 
+generally have lower margin and thus are less indicative of our profit generation capacity. Management believes this metric provides useful information about our business. These supplemental performance measurements may vary from and may not be comparable to similarly titled measures by other compani es in our industry. Revenue, Excluding Billable Expenses, EBITDA andAdjusted EBITDA are not recognized measurements under accounting principles generally accepted in the United States (“ GAAP”) and 
+when analyzing our performance, investors should (i) evaluate each adjustment in our reconciliation of revenue toRevenue, Excluding Billable Expenses, net income to EBITDA andAdjusted EBITDA, and (ii) useRevenue, Excluding Billable Expenses, EBITDA andAdjusted EBITDA in addition to, and not as an alternative to, revenue and net income, as measures of operating results, each as defined under GAAP. We have defined the aforementioned non-GAAP measures as follows:
+
+•Revenue, Excluding Billable Expenses represents revenue less billable expenses.
+
+•EBITDA represents net income before income taxes, interest expense, net and other income (expense), and depreciation and amortization.
+
+•Adjusted EBITDA represents net income before income tax expense, interest expense, net and other income (expense), and depreciation and amortization and before certain other items, including change in provision for claimed costs for historical rate years, certain other corporate expenses, and certain insurance recoveries. The Company preparesAdjusted EBITDA to eliminate the impact of items it does not consider indicative of ongoing operating performance due to their inherent unusual, 
+extraordinary or non-recurring nature or because they result from an event of a similar nature.
+
+Below is a reconciliation of our most directly comparable GAAP measures to our non-GAAP measures, Revenue toRevenue, Excluding Billable Expenses and Net income to EBITDA and Adjusted EBITDA, calculated and presented in accordance with GAAP:
+
+                                                        Three Months Ended                                     Six Months Ended             
+                                                        September 30,                                          September 30,                
+  (In millions, except share and per share data)        2025                                        2024       2025                  2024   
+ ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                        (Unaudited)                                            (Unaudited)                  
+  Revenue, Excluding Billable Expenses                                                                                                      
+  Revenue                                               $                                2,890      $          $                     $      
+  Less: Billable expenses                               918                                         968        1,799                 1,913  
+  Revenue, Excluding Billable Expenses *                $                                1,972      $          $                     $      
+  EBITDA and Adjusted EBITDA                                                                                                                
+  Net income                                            $                       175                 $          390 $                 $      
+  Income tax expense                                    58                                          123        3                     172    
+  Interest expense, net and other income (expense)      50                                          36         91                    77     
+  Depreciation and amortization                         41                                          42         81                    83     
+  EBITDA                                                324                                         591        621                   887    
+  Change in provision for claimed costs (a)             —                                           (113)      —                     (113)  
+  Other corporate expenses (b)                          —                                           1          14                    7      
+  Insurance recoveries (c)                              —                                           (115)      —                     (115)  
+  Adjusted EBITDA                                       $                       324                 $          364 $                 $      
+
+
+*Revenue, Excluding Billable Expenses includes $113 million of revenue for the three and six months ending September 30, 2024, resulting from the reduction to our provision for claimed costs as noted below.
+
+(a) Represents the reduction to our provision for claimed costs for years prior to fiscal 2025 recorded during the second quarter of fiscal 2025, which resulted in a corresponding increase to revenue, as a result of the Defense Contract Audit Agency's findings related to its audits of our claimed costs for multiple fiscal years. See Note 19, “ Commitments and Contingencies,” to the consolidated financial statements in the Company's Form 10-K for the fiscal year ended March 31, 2025 for further 
+information.
+
+(b) In fiscal 2026, other corporate expenses consist primarily of nonrecoverable costs associated with employee severance from a cost management initiative and restructuring of the Civil business. See Note 13, “ Supplemental Condensed Consolidated Financial Information,” to the condensed consolidated financial statements for further information. In fiscal 2025, other corporate expenses consist primarily of acquisition related costs from the acquisition of PAR Government Systems Corporation (“ 
+PGSC”).
+
+(c)Reflects insurance recoveries from claims related to the Company’s fiscal 2024 settlement as described in Note 20, “ Commitments and Contingencies,” to the consolidated financial statements contained within the Annual Report on Form 10-K for the fiscal year ended March 31, 2024.
+
+Liquidity and Capital Resources
+
+As of September 30, 2025, our total liquidity was $1.8 billion, consisting of $816 million of cash and cash equivalents and $999 million available under the Revolving Credit Facility. In the opinion of management, we will be able to meet our liquidity and cash needs through a combination of cash flows from operating activities, available cash balances, and available borrowing under the Revolving Credit Facility. If these resources need to be augmented, additional cash requirements would likely 
+be financed through the issuance of debt or equity securities.
+
+The following table presents selected financial information for the respective periods shown:
+
+                                 September 30,                 March 31,             
+                                 (Unaudited)                                         
+                                 (In millions)                                       
+  Cash and cash equivalents      $                    816      $                885  
+  Total debt                     $                  3,960      $              3,998  
+
+                                                            Six Months Ended                             
+                                                            September 30,                                
+                                                            2025                            2024         
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                                            (Unaudited)                     (Unaudited)  
+                                                            (In millions)                                
+  Net cash provided by operating activities                 $                      540      $            
+  Net cash used in investing activities                     (61)                            (153)        
+  Net cash used in financing activities                     (548)                           (481)        
+  Net (decrease) increase in cash and cash equivalents      $                     (69)      $            
+
+Some of the possible uses of our remaining excess cash at any point in time may include funding strategic acquisitions and investments, debt repayment, further investment in our business and returning value to shareholders through share repurchases, quarterly dividends, and special dividends.
+
+Historically, we have been able to generate sufficient cash to fund our operations, mandatory debt and interest payments, capital expenditures, and discretionary funding needs. However, due to the trends and developments described above under “ - Factors and Trends Affecting Our Results of Operations”, it may be necessary to borrow under our Credit Agreement to meet cash demands in the future. While the timing and financial magnitude of these possible actions are currently indeterminable, we 
+expect to be able to manage and adjust our capital structure to meet our liquidity needs. Our expected liquidity and capital structure may also be impacted by discretionary investments and acquisitions that we could pursue. We anticipate that cash provided by operating activities, existing cash and cash equivalents, and borrowing capacity under our Revolving Credit Facility will be sufficient to meet our anticipated cash requirements for the next twelve months, which primarily include:
+
+• operating expenses, including salaries;
+
+• working capital requirements to fund both organic and inorganic growth of our business;
+
+• capital expenditures which primarily relate to the purchase of computers, business systems, furniture and leasehold improvements to support our operations;
+
+
+• the ongoing maintenance around all financial management systems;
+
+• commitments and other discretionary investments;
+
+• debt service requirements for borrowings under our Credit Agreement and interest payments for the Senior Notes due 2028, Senior Notes due 2029 and Senior Notes due 2033, Senior Notes due 2035; and
+
+• cash taxes to be paid.
+
+From time to time, we evaluate conditions to opportunistically access the financing markets to secure additional debt capital resources and improve the terms of our indebtedness.
+
+Cash Flows
+
+Operating Cash Flow
+
+Net cash provided by operations was $540 million for the six months ended September 30, 2025 compared to $639 million in the prior year period. Fiscal 2025 operating cash reflects $115 million in insurance recoveries from claims related to the Company’s fiscal 2024 settlement (as described in Note 20, “ Commitments and Contingencies,” to the consolidated financial statements contained within the Annual Report on Form 10-K for the fiscal year ended March 31, 2024), as well as the change to the 
+Company’s payroll cadence during the second quarter of fiscal 2025, both resulting in a positive operating cash flow impact for fiscal 2025. The overall decrease in operating cash flow was partially offset by lower cash taxes paid in fiscal 2026 as compared to fiscal 2025.
+
+Investing Cash Flow
+
+Net cash used in investing activities was $61 million in the six months ended September 30, 2025 compared to $153 million in the prior year period. The decrease in investing cash used over the prior year was primarily due to the Company's acquisition of PGSC in the prior year.
+
+Financing Cash Flow
+
+Net cash used in financing activities was $548 million in the six months ended September 30, 2025 compared to $481 million in the prior year period. The increase in financing cash used year over year was primarily due to an increase in share repurchases of $47 million and an increase in term loan payments of $21 million.
+
+Dividends and Share Repurchases
+
+On October 24, 2025, the Company announced a regular quarterly cash dividend in the amount of $0.55 per share. The quarterly dividend is payable on December 2, 2025 to stockholders of record on November 14, 2025.
+
+During the three and six months endedSeptember 30, 2025, quarterly cash dividends of $0.55 and $1.10 per share, respectively, were declared and paid totaling$68 million and $138 million, respectively.
+
+On December 12, 2011, the Board of Directors initially approved a share repurchase program, which was subsequently increased from time to time, and most recently increased by $500 million to $4,085 million onOctober 22, 2025. T he Company may repurchase shares pursuant to the program by means of open market repurchases, directly negotiated repurchases or through agents acting pursuant to negotiated repurchase agreements. During the first six months of fiscal 2026, the Company purchased3.3 
+million shares of the Company's Class A Common Stock for an aggregate of $361 million. As of September 30, 2025, the Company had approximately $384 million remaining under the repurchase program.
+
+Any determination to pursue one or more of the above alternative uses for excess cash is subject to the discretion of our Board of Directors, and will depend upon various factors, including our results of operations, financial condition, liquidity requirements, restrictions that may be imposed by applicable law, our contracts, and our Credit Agreement as amended and other factors deemed relevant by our Board of Directors.
+
+Summarized Financial Information
+
+The Senior Notes due 2033 and Senior Notes due 2035 were issued by Booz Allen Hamilton pursuant to the Base Indenture, among Booz Allen Hamilton, the Company and U. S. Bank Trust Company, National Association, as trustee, as supplemented by the respective Supplemental Indenture and are fully and unconditionally guaranteed on an unsecured and unsubordinated basis by the Company pursuant to the Base Indenture.
+
+The tables below present the summarized financial information as combined for the Company and Booz Allen Hamilton as of March 31, 2025 and as of and for the six months ended September 30, 2025, after the elimination of intercompany transactions and balances between the Company and Booz Allen Hamilton and excluding the subsidiaries of both entities that are not issuers or guarantors of the Senior Notes due 2033 and Senior Notes due 2035, including earnings from and investments in these entities. 
+The summarized financial information is provided in accordance with the reporting requirements of Rule 13-01 under Regulation S-X and is not intended to present our financial position or results of operations in accordance with GAAP.
+
+
+Summarized Statements of Financial Condition
+
+  (in millions)                                                        September 30, 2025      March 31, 2025  
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Intercompany receivables from non-guarantor subsidiaries                            $14                 $13  
+  Total other current assets                                                       $3,186              $3,272  
+  Goodwill and intangible assets, net of accumulated amortization                  $1,505              $1,501  
+  Total other non-current assets                                                     $922                $978  
+  Intercompany payables to non-guarantor subsidiaries                                  $3                 $91  
+  Total other current liabilities                                                  $1,818              $1,819  
+  Long-term debt, net of current portion                                           $3,876              $3,915  
+  Total other non-current liabilities                                                $427                $535  
+
+Summarized Statement of Operations
+
+  (in millions)                                         Six Months Ended  
+                                                      September 30, 2025  
+ ──────────────────────────────────────────────────────────────────────────
+  Revenue                                                         $5,762  
+  Revenue from non-guarantor subsidiaries                             $9  
+  Operating income                                                  $567  
+  Operating loss from non-guarantor subsidiaries                   $(14)  
+  Net income                                                        $453  
+  Net income attributable to the Obligor Group                      $453  
+
+Commitments and Contingencies
+
+We are subject to a number of reviews, investigations, claims, lawsuits, and other uncertainties related to our business. For a discussion of these items, refer to Note 12, “Commitments and Contingencies,” to our condensed consolidated financial statements.
+
+Special Note Regarding Forward Looking Statements
+
+Certain statements contained or incorporated in this Quarterly Report on Form 10-Q (the “ Quarterly Report”), include forward-looking statements. In some cases, you can identify forward-looking statements by terminology such as “may,” “will,” “could,” “should,” “forecasts,” “expects,” “intends,” “plans,” “anticipates,” “projects,” “outlook,” “believes,” “estimates,” “predicts,” “potential,” “continue,” “preliminary,” or the negative of these terms or other comparable terminology. Although we 
+believe that the expectations reflected in the forward-looking statements are reasonable, we can give you no assurance these expectations will prove to have been correct. These forward-looking statements relate to future events or our future financial performance and involve known and unknown risks, uncertainties and other factors that may cause our actual results, levels of activity, performance, or achievements to differ materially from any future results, levels of activity, performance or 
+achievements expressed or implied by these forward-looking statements. These risks and other factors include:
+
+• any issue that compromises our relationships with the U. S. government or damages our professional reputation, including negative publicity concerning government contractors in general or us in particular;
+
+• changes in U. S. government spending, including a continuation of efforts by the U. S. government to reduce U. S. government spending, increased insourcing by certain U. S. government agencies, and shifts in expenditures away from agencies or programs that we support, as well as associated uncertainty around the timing, extent, nature and effect of such efforts;
+
+• U. S. government shutdowns as well as delayed long-term funding of our contracts;
+
+• failure to comply with new and existing U. S. and international laws and regulations;
+
+• our ability to compete effectively in the competitive bidding process and delays or losses of contract awards caused by competitors’ protests of major contract awards received by us;
+
+• the loss of U. S. government GSA Schedules or our position as prime contractor on government-wide acquisition contract vehicles (“ GWACs”);
+
+• variable purchasing patterns under certain of our U. S. government contracts and changes in the mix of our contracts including our ability to accurately estimate or otherwise recover expenses, time, and resources for our contracts;
+
+• our ability to realize the full value of and replenish our backlog, generate revenue under certain of our contracts, and the timing of our receipt of revenue under contracts included in backlog;
+
+
+• internal system or service failures and security breaches, including, but not limited to, those resulting from external or internal threats, including cyber attacks on our network and internal systems or on our customers’ network or internal systems;
+
+• misconduct or other improper activities from our employees, subcontractors, or suppliers, including the improper access, use or release of our or our customers’ sensitive or classified information;
+
+• failure to maintain strong relationships with other contractors, or the failure of contractors with which we have entered into a sub or prime-contractor relationship to meet their obligations to us or our customers;
+
+• inherent uncertainties and potential adverse developments in legal or regulatory proceedings, including litigation, audits, reviews, and investigations, which may result in materially adverse judgments, settlements, withheld payments, penalties, or other unfavorable outcomes including debarment, as well as disputes over the availability of insurance or indemnification;
+
+• risks related to a possible recession and volatility or instability of the global financial system, including the failures of financial institutions and the resulting impact on counterparties and business conditions generally;
+
+• risks related to a deterioration of economic conditions or weakening in credit or capital markets;
+
+• risks related to pending, completed and future acquisitions and dispositions, including the ability to satisfy specified closing conditions for pending transactions, such as those related to receipt of regulatory approval or lack of regulatory intervention, and to realize the expected benefits from completed acquisitions and dispositions;
+
+• risks inherent in the government contracting environment;
+
+• risks related to our indebtedness and credit facilities which contain financial and operating covenants; and
+
+• other risks and factors listed under “ Item 1A. Risk Factors” and elsewhere in this Quarterly Report, as well as those listed under “ Risk Factors” in our Annual Report on Form 10-K for the year ended March 31, 2025.
+
+In light of these risks, uncertainties and other factors, the forward-looking statements might not prove to be accurate and you should not place undue reliance upon them. All forward-looking statements speak only as of the date made and we undertake no obligation to update or revise publicly any forward-looking statements, whether as a result of new information, future events or otherwise.
+
+Item 3. Quantitative and Qualitative Disclosures About Market Risk
+
+There have been no material changes during the period covered by this Quarterly Report on Form 10-Q to the information disclosed in the Quantitative and Qualitative Disclosures About Market Risk section in Part II, “ Item 7. Management’s Discussion and Analysis of Financial Condition and Results of Operations” of our Annual Report on Form 10-K for the fiscal year ended March 31, 2025 filed with the Securities and Exchange Commission on May 23, 2025.
+
+Item 4. Controls and Procedures
+
+Disclosure Controls and Procedures
+
+Management, with the participation of our Chief Executive Officer and Chief Financial Officer, has evaluated the effectiveness of our disclosure controls and procedures, as defined in Rules 13a-15(e) and 15d-15(e) of the Securities Exchange Act of 1934, as amended, or the Exchange Act, as of the end of the period covered by this Quarterly Report. Based on that evaluation, our Chief Executive Officer and Chief Financial Officer concluded that, as of the end of the period covered by this Quarterly
+Report, our disclosure controls and procedures were effective.
+
+Changes in Internal Control Over Financial Reporting
+
+There have been no changes in our internal control over financial reporting (as such term is defined in Rules 13a-15(f) and 15d-15(f) under the Exchange Act) during the last fiscal quarter that have materially affected, or are reasonably likely to materially affect, our internal control over financial reporting.
+
+
+PART II. OTHER INFORMATION
+
+Item 1. Legal Proceedings
+
+Disclosure concerning legal proceedings can be found in Part I, Item 1. “ Financial Statements, Notes to Unaudited Condensed Consolidated Financial Statements, Note12, “Commitments and Contingencies,” under the caption, “ Litigation,” which is incorporated here by this reference.
+
+Item 1A. Risk Factors
+
+There have been no material changes during the period covered by this Quarterly Report on Form 10-Q to the risk factors disclosed in Part I, Item 1A, of our Annual Report on Form 10-K for the fiscal year endedMarch 31, 2025 filed with the Securities and Exchange Commission onMay 23, 2025.
+
+Item 2. Unregistered Sales of Equity Securities and Use of Proceeds
+
+Recent Sales of Unregistered Securities
+
+None.
+
+Issuer Purchases of Equity Securities
+
+The following table presents the share repurchase activity for each of the three months in the quarter ended September 30, 2025:
+
+  Period              Total Number of Shares Purchased (1)      Average Price Paid per Share      Total Number of Shares Purchased as Part of Publicly Announced Plans or Programs      Approximate Dollar Value of Shares that May Yet Be Purchased Under the Plans or Programs (2)  
+                                                                                                                                                                                                                                                                       (in millions)  
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  July 2025                                        531,956                              $108                                                                               531,277                                                                                              $534  
+  August 2025                                      685,605                              $110                                                                               683,084                                                                                              $459  
+  September 2025                                   727,141                              $104                                                                               722,166                                                                                              $384  
+  Total                                          1,944,702                                                                                                               1,936,527                                                                                                    
+
+(1) The total number of shares purchased includes shares surrendered to satisfy minimum statutory tax withholding obligations related to the vesting of stock awards.
+
+(2) On December 12, 2011, the Board of Directors initially approved a share repurchase program, which was subsequently increased from time to time, and most recently increased by $500 million to $4,085 million on October 22, 2025. A special committee of the Board of Directors was appointed to evaluate market conditions and other relevant factors and initiate repurchases under the program from time to time. The share repurchase program may be suspended, modified or discontinued at any time at the
+Company’s discretion without prior notice.
+
+Item 3. Defaults Upon Senior Securities
+
+None.
+
+Item 4. Mine Safety Disclosures
+
+Not applicable.
+
+Item 5. Other Information
+
+Disclosure of Trading Arrangements
+
+Item 408(a) of Regulation S-K requires the Company to disclose whether any director or officer of the Company has adopted terminated
+
+The following activity occurred requiring disclosure under Item 408(a) of Regulation S-K:
+
+Matthew Calderone Chief Financial Officer adopted June 13, 2025 June 12, 2026 10,000
+
+
+Item 6. Exhibits
+
+  Exhibit      Description                                                                                                                                                                                           
+   Number                                                                                                                                                                                                            
+       22      List of Guarantors and Subsidiary Issuers of Guaranteed Securities (Incorporated by reference to Exhibit 22 to the Company’s Annual Report for the fiscal year ended March 31, 2025 on Form 10-K ...  
+ ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+     31.1      Rule 13a-14(a)/15d-14(a) Certification of the Chief Executive Officer*                                                                                                                                
+     31.2      Rule 13a-14(a)/15d-14(a) Certification of the Chief Financial Officer*                                                                                                                                
+     32.1      Certification of the Chief Executive Officer required by Rule 13a-14(b) or Rule 15d-14(b) and Section 1350 of Chapter 63 of Title 18 of the United States Code (18 U. S. C. 1350)*                    
+     32.2      Certification of the Chief Financial Officer required by Rule 13a-14(b) or Rule 15d-14(b) and Section 1350 of Chapter 63 of Title 18 of the United States Code (18 U. S. C. 1350)*                    
+      101      The following materials from Booz Allen Hamilton Holding Corporation’s Quarterly Report on Form 10-Q for the three and six months ended September 30, 2025 formatted in Inline XBRL (eXtensible B...  
+      104      Cover Page Interactive Data File (embedded within the Inline XBRL document)                                                                                                                           
+
+___________________________________
+
+* Filed electronically herewith.
+
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the Registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+  Booz Allen Hamilton Holding Corporation                  
+  Registrant                                               
+  /s/ Dennis Metzfield                                     
+  Dennis Metzfield

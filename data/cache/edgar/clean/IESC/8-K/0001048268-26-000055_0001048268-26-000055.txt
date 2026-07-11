@@ -1,0 +1,95 @@
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D. C. 20549
+
+FORM 8-K
+
+  CURRENT REPORT                                                                                 
+  PURSUANT TO SECTION 13 OR 15(d) OF THE SECURITIES EXCHANGE ACT OF 1934                         
+  Date of Report (Date of Earliest Event Reported):                           February 19, 2026  
+
+IES Holdings, Inc.
+
+  Delaware                          001-13783         76-0542208           
+  (State or other jurisdiction      (Commission       (I. R. S. Employer   
+
+13131 Dairy Ashford Rd, Suite 500 Sugar Land, Texas 77478
+
+(Address of principal executive offices and zip code)
+
+Registrant’s telephone number, including area code: ( 713 860-1500
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the registrant under any of the following provisions (see General Instructions A.2. below):
+
+☐Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)
+
+☐Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)
+
+☐Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2 (b))
+
+☐Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4 (c))
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of each class                          Trading Symbol      Name of each exchange on which registered  
+  Common Stock, par value $0.01 per share      IESC                NASDAQ Global Market                       
+ ──────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+  Emerging growth company  
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act.
+
+☐
+
+Item 5.07 Submission of Matters to a Vote of Security Holders.
+
+On February 19, 2026, IES held its 2026 Annual Stockholders Meeting (the “ Annual Meeting”). At the Annual Meeting, the Company’s stockholders (1) elected all of the Company’s nominees for Director, (2) ratified the appointment of Ernst & Young LLP as the Company’s certified public accountants for the fiscal year ending September 30, 2026, and (3) approved, by advisory vote, the compensation of the Company’s named executive officers, each as described in the proxy statement for the Annual 
+Meeting.
+
+  (1)      Proposal One: Election of Directors to serve until the 2027 Annual Stockholders Meeting and until their successors are duly elected and qualified (or until their earlier death, resignation or r...  
+
+           NAME                            FOR      WITHHELD         BROKER  
+                                                                   NON-VOTE  
+ ─────────────────────────────────────────────────────────────────────────────
+  01—      Jennifer A. Baldock      17,426,386       283,126      1,198,172  
+  02—      Todd M. Cleveland        17,211,450       498,062      1,198,172  
+  03—      John L. Fouts            17,573,511       136,001      1,198,172  
+  04—      David B. Gendell         17,601,265       108,247      1,198,172  
+  05—      Jeffrey L. Gendell       17,611,837        97,675      1,198,172  
+  06—      Kelly C. Janzen          17,690,737        18,775      1,198,172  
+  07—      Joe D. Koshkin           17,111,245       598,267      1,198,172  
+  08—      Matthew J. Simmes        17,640,587        68,925      1,198,172  
+
+  (2)      Proposal Two: Ratification of the appointment of Ernst & Young LLP as the Company’s certified public accountants for the Company for fiscal year 2026 was approved as follows:  
+
+  18,780,073      116,678      10,933       N/A       
+  FOR             AGAINST      ABSTAIN      BROKER    
+
+  (3)      Proposal Three: Approval, by advisory vote, of the compensation of the Company’s named executive officers, as described in the proxy statement for the Annual Meeting:  
+
+  16,424,769      1,275,174      9,569        1,198,172  
+  FOR             AGAINST        ABSTAIN      BROKER     
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits.
+
+  Exhibit      Description                                                                   
+  Number                                                                                     
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+  104 —        Cover Page Interactive Data File (embedded within the Inline XBRL document).  
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+IES HOLDINGS, INC.
+
+  Date:      February 20, 2026      /s/ Mary K. Newman                                                     
+ ───────────────────────────────────────────────────────────────────────────────────────────────────────────
+                                    Mary K. Newman                                                         
+                                    Chief Administrative Officer, General Counsel and Corporate Secretary

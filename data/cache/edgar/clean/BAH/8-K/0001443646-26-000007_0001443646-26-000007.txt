@@ -1,0 +1,113 @@
+UNITED STATES
+
+SECURITIES AND EXCHANGE COMMISSION
+
+WASHINGTON, D. C. 20549
+
+___________________________________
+
+FORM 8-K
+
+___________________________________
+
+CURRENT REPORT
+
+Pursuant to Section 13 or 15(d) of
+
+the Securities Exchange Act of 1934
+
+Date of Report (Date of earliest event reported): April 27, 2026 ( April 21, 2026
+
+___________________________________
+
+Booz Allen Hamilton Holding Corporation
+
+(Exact name of Registrant as specified in its charter)
+
+___________________________________
+
+  Delaware                                                                 001-34972         26-2634160           
+  (State or other jurisdiction                                             (Commission       (IRS Employer        
+  8283 Greensboro Drive,                        McLean,      Virginia                        22102                
+  (Address of principal executive offices)                                                   (Zip Code)           
+
+Registrant’s telephone number, including area code: (703) 902-5000
+
+___________________________________
+
+Check the appropriate box below if the Form 8-K filing is intended to simultaneously satisfy the filing obligation of the Registrant under any of the following provisions:
+
+  Written communications pursuant to Rule 425 under the Securities Act (17 CFR 230.425)  
+
+  Soliciting material pursuant to Rule 14a-12 under the Exchange Act (17 CFR 240.14a-12)  
+
+  Pre-commencement communications pursuant to Rule 14d-2(b) under the Exchange Act (17 CFR 240.14d-2(b))  
+
+  Pre-commencement communications pursuant to Rule 13e-4(c) under the Exchange Act (17 CFR 240.13e-4(c))  
+
+Securities registered pursuant to Section 12(b) of the Act:
+
+  Title of Each Class       Trading Symbol      Name of Each Exchange on Which Registered  
+  Class A Common Stock      BAH                 New York Stock Exchange                    
+ ───────────────────────────────────────────────────────────────────────────────────────────
+
+Indicate by check mark whether the registrant is an emerging growth company as defined in Rule 405 of the Securities Act of 1933 (§230.405 of this chapter) or Rule 12b-2 of the Securities Exchange Act of 1934 (§240.12b-2 of this chapter).
+
+Emerging growth company☐
+
+If an emerging growth company, indicate by check mark if the registrant has elected not to use the extended transition period for complying with any new or revised financial accounting standards provided pursuant to Section 13(a) of the Exchange Act. ☐
+
+Item 5.02 Departure of Directors or Certain Officers; Election of Directors; Appointment of Certain Officers; Compensatory Arrangements of Certain Officers.
+
+Appointment of Chief Financial Officer
+
+On April 21, 2026, the Board of Directors (the "Board") of Booz Allen Hamilton Holding Corporation (the "Company") appointed Troy Lahr as Executive Vice President and Chief Financial Officer (Principal Financial Officer) of the Company, effective May 4, 2026.
+
+Mr. Lahr, age 52, previously served as Senior Vice President and Chief Financial Officer at Sierra Space. Prior to joining Sierra Space, Mr. Lahr spent approximately ten years at Boeing (NYSE: BA) serving in roles of increasing responsibility, most recently serving as Chief Financial Officer for Boeing's Defense, Space & Security business. Prior to joining Boeing, Mr. Lahr spent twelve years at Stifel Financial Corporation as an equity analyst researching the aerospace & defense industry. Mr. 
+Lahr holds a bachelor’s degree from the University of Maryland Baltimore County and a master’s degree in finance from Loyola University.
+
+In connection with Mr. Lahr's appointment to Executive Vice President and Chief Financial Officer, the Compensation, Culture and People Committee (the "Committee") of the Board has approved (i) an annual base salary of $825,000, (ii) a target annual cash bonus of $825,000, which shall be determined in accordance with the Company’s bonus program for senior executives, and (iii) a target annual equity grant value of $2,000,000, 60% of which shall consist of performance-based restricted stock units
+(“ RSUs”) and 40% of which shall consist of time-based RSUs, and such annual base salary and target annual cash bonus shall be pro-rated based on Mr. Lahr's start date of May 4, 2026. In addition, as a replacement for forfeited compensation from his prior employer, Mr. Lahr shall be eligible to receive a one-time cash sign-on bonus of $250,000 and a one-time new hire equity grant consisting of 100% time-based RSUs, with a grant date fair value of $3,000,000, which shall vest in two equal 
+installments on each of May 31, 2027 and May 31, 2028, subject to Mr. Lahr's continued employment through each applicable vesting date, and the terms and conditions of the Company's 2023 Equity Incentive Plan and the applicable award agreement. In the event Mr. Lahr is terminated by the Company without Cause (other than in connection with a Change in Control, as such capitalized terms are defined in the 2023 Equity Incentive Plan of the Company), and the Committee does not grant a waiver of the 
+forfeiture provisions applicable to such new hire equity grant, the Company has agreed that Mr. Lahr shall be eligible for a cash payment equal to the grant date fair value of the portion of the new hire equity grant that has not vested as of the termination date.
+
+Mr. Lahr has no family relationships with any of our directors or executive officers. There are no relationships between the Company or its subsidiaries, on one hand, and Mr. Lahr, on the other hand, that would require disclosure pursuant to Item 404(a) of Regulation S-K, and there are no arrangements or understanding between Mr. Lahr and any other person pursuant to which he was appointed as Chief Financial Officer (Principal Financial Officer) of the Company.
+
+In connection with and effective as of Mr. Lahr's appointment as Chief Financial Officer, Kristine Martin Anderson, the Company's Executive Vice President, Chief Operating Officer, and Interim Chief Financial Officer, will no longer serve as Interim Chief Financial Officer and Principal Financial Officer.
+
+Leadership Team Updates
+
+On April 21, 2026, the Board of Directors of the Company appointed Kristine Martin Anderson, the Company's Chief Operating Officer, to the additional role of President, effective May 1, 2026. Ms. Anderson will continue to report to Horacio Rozanski, who shall remain Chairman and Chief Executive Officer of the Company. Ms. Anderson has no family relationships with any of our directors or executive officers. There are no relationships between the Company or its subsidiaries, on one hand, and Ms. 
+Anderson on the other hand, that would require disclosure pursuant to Item 404(a) of Regulation S-K, and there are no arrangements or understanding between Ms. Anderson and any other person pursuant to which she was appointed as President of the Company.
+
+The information regarding Ms. Anderson’s compensation and biographical information set forth under the headings “ Executive Compensation” and “ Information about our Executive Officers”, respectively, in the Company’s Annual Report on Form 10-K for the fiscal year ended March 31, 2025, filed with the SEC on May 23, 2025, is incorporated by reference herein.
+
+Additionally, the Company is announcing role changes within the Leadership Team. Effective May 1, 2026, Shannon Fitzgerald, the Company's Executive Vice President and Chief Strategy Officer, will be promoted to President of the Civil
+
+Sector. Richard Crowe, the Company's Executive Vice President and President of the Civil Sector, will serve as Chief Growth Officer.
+
+Item 7.01 Regulation FD Disclosure.
+
+A copy of the Company's press release announcing Mr. Lahr's appointment is attached hereto as Exhibit 99.1. Exhibit 99.1 shall not be deemed to be "filed" for purposes of Section 18 of the Securities Exchange Act of 1934, as amended (the "Exchange Act"), or otherwise subject to the liability of that section, and shall not be incorporated by reference into any registration statement or other document filed under the Securities Act of 1933, as amended, or the Exchange Act, except as shall be 
+expressly set forth by specific reference in any such filing.
+
+Item 9.01 Financial Statements and Exhibits.
+
+(d) Exhibits
+
+  Exhibit      Description                                                                   
+      No.                                                                                    
+     99.1      Press Release dated April 27, 2026.                                           
+ ─────────────────────────────────────────────────────────────────────────────────────────────
+      104      Cover Page Interactive Data File (embedded within the Inline XBRL document).  
+
+SIGNATURES
+
+Pursuant to the requirements of the Securities Exchange Act of 1934, the registrant has duly caused this report to be signed on its behalf by the undersigned hereunto duly authorized.
+
+  Booz Allen Hamilton Holding Corporation             
+  /s/ Jacob D. Bernstein                              
+  Jacob D. Bernstein                                  
+  Vice President, Deputy General Counsel & Secretary  
+
+Date: April 27, 2026

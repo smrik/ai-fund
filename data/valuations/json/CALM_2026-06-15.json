@@ -1,0 +1,4832 @@
+{
+  "$schema_version": "1.0",
+  "generated_at": "2026-06-15T20:12:43",
+  "ticker": "CALM",
+  "company_name": "Cal-Maine Foods, Inc.",
+  "sector": "Consumer Defensive",
+  "industry": "Farm Products",
+  "market": {
+    "price": 75.65,
+    "market_cap_mm": 3584.0,
+    "ev_mm": 2439.0,
+    "pe_trailing": 5.26444,
+    "pe_forward": 20.984743,
+    "ev_ebitda": 2.512,
+    "analyst_target": 88.0,
+    "analyst_recommendation": "buy",
+    "num_analysts": 4
+  },
+  "assumptions": {
+    "revenue_mm": 4213.443,
+    "growth_near_pct": 0.145326581472905,
+    "growth_mid_pct": -0.051870000000000006,
+    "growth_terminal_pct": 0.025,
+    "ebit_margin_start_pct": 0.6,
+    "ebit_margin_target_pct": 0.382,
+    "capex_pct": 0.25,
+    "da_pct": 0.008371142871360388,
+    "tax_rate_start_pct": 0.21859887080076482,
+    "tax_rate_target_pct": 0.21859887080076482,
+    "dso_start": 20.4,
+    "dso_target": 34.12,
+    "dio_start": 29.5,
+    "dio_target": 49.449999999999996,
+    "dpo_start": 10.7,
+    "dpo_target": 38.21,
+    "exit_multiple": 10.541210399999999,
+    "exit_metric": "ev_ebitda",
+    "net_debt_mm": -369.45,
+    "shares_outstanding_mm": 48.562,
+    "ronic_terminal_pct": 0.11,
+    "invested_capital_mm": 2276.856,
+    "non_operating_assets_mm": 285.181,
+    "minority_interest_mm": 5.391,
+    "preferred_equity_mm": 0.0,
+    "pension_deficit_mm": 0.0,
+    "lease_liabilities_mm": 0.0,
+    "options_value_mm": 13.581,
+    "convertibles_value_mm": 0.0,
+    "scenario_prob_bear": 0.2,
+    "scenario_prob_base": 0.6,
+    "scenario_prob_bull": 0.2
+  },
+  "wacc": {
+    "wacc": 0.06644,
+    "cost_of_equity": 0.06817,
+    "cost_of_debt": null,
+    "risk_free_rate": null,
+    "equity_risk_premium": null,
+    "beta_raw": 0.24,
+    "beta_unlevered": 0.22,
+    "beta_relevered": 0.24,
+    "size_premium": 0.011000000000000001,
+    "equity_weight": 0.9167,
+    "debt_weight": 0.0833,
+    "peers_used": [
+      "CALM (self)",
+      "industry_proxy"
+    ]
+  },
+  "valuation": {
+    "iv_bear": 398.26,
+    "iv_base": 592.52,
+    "iv_bull": 964.99,
+    "expected_iv": 628.16,
+    "context_expected_iv": 642.53,
+    "upside_bear_pct": 426.4,
+    "upside_base_pct": 683.2,
+    "upside_bull_pct": 1175.6,
+    "expected_upside_pct": 730.4,
+    "context_expected_upside_pct": 749.3,
+    "margin_of_safety": 87.2,
+    "iv_gordon": 643.96,
+    "iv_exit": 508.59,
+    "iv_blended": 592.52,
+    "ep_iv_base": 656.71,
+    "fcfe_iv_base": 640.48,
+    "dcf_ep_gap_pct": 11.08,
+    "comps_iv_ev_ebitda": 339.2132,
+    "comps_iv_ev_ebit": null,
+    "comps_iv_pe": 430.0647,
+    "comps_iv_base": 384.639,
+    "implied_growth_pct": null,
+    "model_applicability_status": "dcf_applicable"
+  },
+  "scenarios": {
+    "bear": {
+      "probability": 0.2,
+      "iv": 398.26,
+      "upside_pct": 426.4
+    },
+    "base": {
+      "probability": 0.6,
+      "iv": 592.52,
+      "upside_pct": 683.2
+    },
+    "bull": {
+      "probability": 0.2,
+      "iv": 964.99,
+      "upside_pct": 1175.6
+    }
+  },
+  "terminal": {
+    "tv_gordon_mm": 44751.0,
+    "tv_exit_mm": 32243.0,
+    "tv_blended_mm": 39998.0,
+    "pv_tv_gordon_mm": 23520.0,
+    "pv_tv_exit_mm": 16946.0,
+    "pv_tv_blended_mm": 21022.0,
+    "tv_pct_of_ev": 74.7,
+    "terminal_growth_pct": 2.5,
+    "terminal_ronic_pct": 11.0,
+    "gordon_formula_mode": "value_driver",
+    "ev_operations_mm": 28138.0,
+    "ev_total_mm": 28424.0,
+    "non_operating_assets_mm": 285.0,
+    "non_equity_claims_mm": -350.0
+  },
+  "health_flags": {
+    "tv_high_flag": false,
+    "tv_extreme_flag": false,
+    "tv_method_fallback_flag": false,
+    "roic_consistency_flag": false,
+    "nwc_driver_quality_flag": true,
+    "terminal_growth_guardrail_flag": false,
+    "terminal_ronic_guardrail_flag": false,
+    "terminal_denominator_guardrail_flag": false,
+    "fcff_interest_contamination_flag": false,
+    "ep_reconcile_flag": true
+  },
+  "forecast_bridge": [
+    {
+      "year": 1,
+      "revenue": 4825768267.420941,
+      "growth_rate": 0.145326581472905,
+      "ebit_margin": 0.6,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.25,
+      "da_pct": 0.008371142871360388,
+      "dso": 20.4,
+      "dio": 29.5,
+      "dpo": 10.7,
+      "ebit": 2895460960.4525647,
+      "nopat": 2262516464.0499363,
+      "da": 40397195.630657986,
+      "capex": 1206442066.8552353,
+      "ar": 269714171.658595,
+      "inventory": 253869125.13779888,
+      "ap": 92081343.69404906,
+      "nwc": 431501953.1023448,
+      "delta_nwc": 54751810.31998867,
+      "fcff": 1041719782.5053704,
+      "discount_factor": 1.06644,
+      "pv_fcff": 976819870.3212279,
+      "reinvestment": 1220796681.5445662,
+      "invested_capital_start": 2276856000.0,
+      "invested_capital_end": 3497652681.544566,
+      "roic": 0.9937020452984011,
+      "economic_profit": 2111242151.4099364,
+      "pv_economic_profit": 1979710205.3654554,
+      "fcfe": 1143412146.0780327,
+      "pv_fcfe": 1070440235.241612
+    },
+    {
+      "year": 2,
+      "revenue": 5527080672.70565,
+      "growth_rate": 0.145326581472905,
+      "ebit_margin": 0.5757777777777777,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24861111111111112,
+      "da_pct": 0.008324636522075053,
+      "dso": 21.924444444444443,
+      "dio": 31.716666666666665,
+      "dpo": 13.756666666666666,
+      "ebit": 3182370227.328964,
+      "nopat": 2486707689.1648793,
+      "da": 46010937.62846061,
+      "capex": 1374093667.2420993,
+      "ar": 331994994.92793876,
+      "inventory": 312611354.75668484,
+      "ap": 135590862.96172762,
+      "nwc": 509015486.722896,
+      "delta_nwc": 77513533.62055117,
+      "fcff": 1081111425.9306893,
+      "discount_factor": 1.1372942736,
+      "pv_fcff": 950599551.0805932,
+      "reinvestment": 1405596263.2341897,
+      "invested_capital_start": 3497652681.544566,
+      "invested_capital_end": 4903248944.778756,
+      "roic": 0.7109647285123654,
+      "economic_profit": 2254323645.0030584,
+      "pv_economic_profit": 1982181478.7365499,
+      "fcfe": 1198197594.6580973,
+      "pv_fcfe": 1050141183.2843626
+    },
+    {
+      "year": 3,
+      "revenue": 6330312412.394927,
+      "growth_rate": 0.145326581472905,
+      "ebit_margin": 0.5515555555555556,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24722222222222223,
+      "da_pct": 0.008278130172789716,
+      "dso": 23.448888888888888,
+      "dio": 33.93333333333333,
+      "dpo": 16.813333333333333,
+      "ebit": 3491518979.458713,
+      "nopat": 2728276873.1695995,
+      "da": 52403150.184231706,
+      "capex": 1564993901.9531903,
+      "ar": 406681622.98685706,
+      "inventory": 383065530.1839232,
+      "ap": 189801820.65301657,
+      "nwc": 599945332.5177636,
+      "delta_nwc": 90929845.79486763,
+      "fcff": 1124756275.6057734,
+      "discount_factor": 1.2128561051379843,
+      "pv_fcff": 927361680.2859001,
+      "reinvestment": 1603520597.563826,
+      "invested_capital_start": 4903248944.778756,
+      "invested_capital_end": 6506769542.342583,
+      "roic": 0.5564222628497817,
+      "economic_profit": 2402505013.278499,
+      "pv_economic_profit": 1980865663.3716419,
+      "fcfe": 1258329541.3828402,
+      "pv_fcfe": 1032460066.7721072
+    },
+    {
+      "year": 4,
+      "revenue": 7071944222.460956,
+      "growth_rate": 0.11715564126249,
+      "ebit_margin": 0.5273333333333333,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24583333333333332,
+      "da_pct": 0.008231623823504381,
+      "dso": 24.97333333333333,
+      "dio": 36.15,
+      "dpo": 19.869999999999997,
+      "ebit": 3729271919.9777436,
+      "nopat": 2914057289.361609,
+      "da": 58213584.54010377,
+      "capex": 1738519621.3549848,
+      "ar": 483863069.5404335,
+      "inventory": 455898890.6097372,
+      "ap": 250586748.44856095,
+      "nwc": 689175211.7016098,
+      "delta_nwc": 89229879.18384624,
+      "fcff": 1144521373.362882,
+      "discount_factor": 1.293438264763352,
+      "pv_fcff": 884867414.6595501,
+      "reinvestment": 1769535915.9987273,
+      "invested_capital_start": 6506769542.342583,
+      "invested_capital_end": 8276305458.3413105,
+      "roic": 0.4478500845002239,
+      "economic_profit": 2481747520.9683676,
+      "pv_economic_profit": 1918721278.4542363,
+      "fcfe": 1291923715.165576,
+      "pv_fcfe": 992373970.8693429
+    },
+    {
+      "year": 5,
+      "revenue": 7701239064.953593,
+      "growth_rate": 0.08898470105207501,
+      "ebit_margin": 0.5031111111111111,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24444444444444444,
+      "da_pct": 0.008185117474219046,
+      "dso": 26.497777777777777,
+      "dio": 38.36666666666666,
+      "dpo": 22.926666666666666,
+      "ebit": 3874578942.9010963,
+      "nopat": 3027600361.1544957,
+      "da": 63035546.44369001,
+      "capex": 1882525104.766434,
+      "ar": 559084168.100497,
+      "inventory": 526909563.46962696,
+      "ap": 314863942.4451863,
+      "nwc": 771129789.1249375,
+      "delta_nwc": 81954577.42332768,
+      "fcff": 1126156225.408424,
+      "discount_factor": 1.3793743030742291,
+      "pv_fcff": 816425405.9964327,
+      "reinvestment": 1901444135.7460716,
+      "invested_capital_start": 8276305458.3413105,
+      "invested_capital_end": 10177749594.087381,
+      "roic": 0.3658154446321354,
+      "economic_profit": 2477722626.5022993,
+      "pv_economic_profit": 1796265611.8648632,
+      "fcfe": 1284546521.9160717,
+      "pv_fcfe": 923736182.6932929
+    },
+    {
+      "year": 6,
+      "revenue": 8169580375.63413,
+      "growth_rate": 0.06081376084166,
+      "ebit_margin": 0.47888888888888886,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24305555555555555,
+      "da_pct": 0.00813861112493371,
+      "dso": 28.02222222222222,
+      "dio": 40.58333333333333,
+      "dpo": 25.983333333333334,
+      "ebit": 3912321268.7758994,
+      "nopat": 3057092257.2116723,
+      "da": 66489037.73117604,
+      "capex": 1985661896.8555176,
+      "ar": 627204922.5981514,
+      "inventory": 591246893.8323343,
+      "ap": 378543699.1723242,
+      "nwc": 839908117.2581615,
+      "delta_nwc": 68778328.13322401,
+      "fcff": 1069141069.9541066,
+      "discount_factor": 1.4710199317704808,
+      "pv_fcff": 726802572.0544225,
+      "reinvestment": 1987951187.2575655,
+      "invested_capital_start": 10177749594.087381,
+      "invested_capital_end": 12165700781.344948,
+      "roic": 0.30037015834891895,
+      "economic_profit": 2380882574.1805067,
+      "pv_economic_profit": 1618525026.5881436,
+      "fcfe": 1234737403.8526618,
+      "pv_fcfe": 831251315.5532186
+    },
+    {
+      "year": 7,
+      "revenue": 8436258522.468493,
+      "growth_rate": 0.032642820631245004,
+      "ebit_margin": 0.45466666666666666,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24166666666666667,
+      "da_pct": 0.008092104775648375,
+      "dso": 29.546666666666663,
+      "dio": 42.8,
+      "dpo": 29.04,
+      "ebit": 3835685541.5490084,
+      "nopat": 2997209013.419575,
+      "da": 68267087.8782716,
+      "capex": 2038762476.2632194,
+      "ar": 682913201.3074038,
+      "inventory": 643895004.8585178,
+      "ap": 436885769.6516672,
+      "nwc": 889922436.5142546,
+      "delta_nwc": 50014319.256093025,
+      "fcff": 976699305.7785344,
+      "discount_factor": 1.5687544960373119,
+      "pv_fcff": 622595382.6718494,
+      "reinvestment": 2020509707.6410408,
+      "invested_capital_start": 12165700781.344948,
+      "invested_capital_end": 14186210488.985989,
+      "roic": 0.2463655047324143,
+      "economic_profit": 2188919853.507017,
+      "pv_economic_profit": 1395323397.661169,
+      "fcfe": 1145007764.425033,
+      "pv_fcfe": 721648638.250167
+    },
+    {
+      "year": 8,
+      "revenue": 8473984461.78018,
+      "growth_rate": 0.004471880420829993,
+      "ebit_margin": 0.4304444444444444,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.24027777777777776,
+      "da_pct": 0.00804559842636304,
+      "dso": 31.071111111111108,
+      "dio": 45.016666666666666,
+      "dpo": 32.096666666666664,
+      "ebit": 3647579533.881824,
+      "nopat": 2850222766.6192775,
+      "da": 68178276.05072346,
+      "capex": 2036110155.3999598,
+      "ar": 721359213.0569891,
+      "inventory": 680271699.9613019,
+      "ap": 485030447.9028046,
+      "nwc": 916600465.1154864,
+      "delta_nwc": 26678028.601231813,
+      "fcff": 855612858.6688094,
+      "discount_factor": 1.672982544754031,
+      "pv_fcff": 511429638.8517343,
+      "reinvestment": 1994609907.950468,
+      "invested_capital_start": 14186210488.985989,
+      "invested_capital_end": 16180820396.936457,
+      "roic": 0.20091502017625903,
+      "economic_profit": 1907690941.7310486,
+      "pv_economic_profit": 1140293392.6077068,
+      "fcfe": 1021763864.0010834,
+      "pv_fcfe": 602875350.6531436
+    },
+    {
+      "year": 9,
+      "revenue": 8273158997.364437,
+      "growth_rate": -0.023699059789585003,
+      "ebit_margin": 0.40622222222222226,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.23888888888888887,
+      "da_pct": 0.007999092077077703,
+      "dso": 32.59555555555555,
+      "dio": 47.23333333333333,
+      "dpo": 35.153333333333336,
+      "ebit": 3360741032.707154,
+      "nopat": 2626086837.903574,
+      "da": 66177760.58822198,
+      "capex": 1976365760.4815042,
+      "ar": 738817023.886402,
+      "inventory": 696853320.0175208,
+      "ap": 518631976.91635674,
+      "nwc": 917038366.987566,
+      "delta_nwc": 437901.8720796108,
+      "fcff": 715460936.1382122,
+      "discount_factor": 1.7841355050274887,
+      "pv_fcff": 401012666.42703176,
+      "reinvestment": 1910625901.7653618,
+      "invested_capital_start": 16180820396.936457,
+      "invested_capital_end": 18091446298.70182,
+      "roic": 0.1622962725920112,
+      "economic_profit": 1551033130.7311158,
+      "pv_economic_profit": 869347157.9711758,
+      "fcfe": 874616073.7552669,
+      "pv_fcfe": 483118942.9880391
+    },
+    {
+      "year": 10,
+      "revenue": 7844030240.171144,
+      "growth_rate": -0.051870000000000006,
+      "ebit_margin": 0.382,
+      "tax_rate": 0.21859887080076482,
+      "capex_pct": 0.2375,
+      "da_pct": 0.007952585727792368,
+      "dso": 34.12,
+      "dio": 49.449999999999996,
+      "dpo": 38.21,
+      "ebit": 2996419551.745377,
+      "nopat": 2341405621.2885036,
+      "da": 62380322.936356775,
+      "capex": 1862957182.0406466,
+      "ar": 733255648.7524368,
+      "inventory": 691714631.6727117,
+      "ap": 534487686.0710681,
+      "nwc": 890482594.3540804,
+      "delta_nwc": -26555772.633485556,
+      "fcff": 567384534.8176992,
+      "discount_factor": 1.9026734679815152,
+      "pv_fcff": 298203840.20996475,
+      "reinvestment": 1774021086.4708042,
+      "invested_capital_start": 18091446298.70182,
+      "invested_capital_end": 19865467385.172623,
+      "roic": 0.1294205881956776,
+      "economic_profit": 1139409929.2027547,
+      "pv_economic_profit": 598846806.0215913,
+      "fcfe": 715160491.3207172,
+      "pv_fcfe": 369827966.41710305
+    }
+  ],
+  "historical_financials": [
+    {
+      "period": "2016-05-28",
+      "fiscal_year": "FY16",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1908.65,
+      "da_mm": 41.992,
+      "ebit_mm": 470.314,
+      "pretax_income_mm": 485.665,
+      "tax_expense_mm": 169.202,
+      "ebitda_mm": 514.906,
+      "cfo_mm": 388.437,
+      "capex_mm": 76.125,
+      "cash_mm": 29.046,
+      "total_assets_mm": 1111.765,
+      "total_equity_mm": 917.361,
+      "debt_mm": 25.57,
+      "revenue_growth_pct": 0.2109739818085843,
+      "ebit_margin_pct": 0.24641186178712704,
+      "ebitda_margin_pct": 0.26977497183873417,
+      "da_pct": 0.022000890681895577,
+      "capex_pct": 0.03988421135357451,
+      "tax_rate_pct": 0.34839241040635005,
+      "net_debt_mm": -3.475999999999999
+    },
+    {
+      "period": "2017-06-03",
+      "fiscal_year": "FY17",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1074.513,
+      "da_mm": 46.913,
+      "ebit_mm": -130.482,
+      "pretax_income_mm": -110.854,
+      "tax_expense_mm": 39.867,
+      "ebitda_mm": -81.369,
+      "cfo_mm": -45.918,
+      "capex_mm": 66.657,
+      "cash_mm": 17.564,
+      "total_assets_mm": 1033.094,
+      "total_equity_mm": 844.493,
+      "debt_mm": 10.939,
+      "revenue_growth_pct": -0.437029837843502,
+      "ebit_margin_pct": -0.12143361690365775,
+      "ebitda_margin_pct": -0.07572639884301074,
+      "da_pct": 0.043659778895183216,
+      "capex_pct": 0.062034614751054665,
+      "tax_rate_pct": -0.3596351958431811,
+      "net_debt_mm": -6.625
+    },
+    {
+      "period": "2018-06-02",
+      "fiscal_year": "FY18",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1502.932,
+      "da_mm": 51.226,
+      "ebit_mm": 181.73,
+      "pretax_income_mm": 198.595,
+      "tax_expense_mm": 8.859,
+      "ebitda_mm": 235.756,
+      "cfo_mm": 200.415,
+      "capex_mm": 19.671,
+      "cash_mm": 48.431,
+      "total_assets_mm": 1150.447,
+      "total_equity_mm": 955.682,
+      "debt_mm": 6.09,
+      "revenue_growth_pct": 0.3987099271949246,
+      "ebit_margin_pct": 0.12091698094125349,
+      "ebitda_margin_pct": 0.15686404973744653,
+      "da_pct": 0.03408404372253701,
+      "capex_pct": 0.013088416508531323,
+      "tax_rate_pct": 0.044608373826128554,
+      "net_debt_mm": -42.340999999999994
+    },
+    {
+      "period": "2019-06-01",
+      "fiscal_year": "FY19",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1361.188,
+      "da_mm": 51.85,
+      "ebit_mm": 45.814,
+      "pretax_income_mm": 70.814,
+      "tax_expense_mm": 15.743,
+      "ebitda_mm": 100.464,
+      "cfo_mm": 115.085,
+      "capex_mm": 67.989,
+      "cash_mm": 69.247,
+      "total_assets_mm": 1156.278,
+      "total_equity_mm": 989.806,
+      "debt_mm": 2.554,
+      "revenue_growth_pct": -0.0943116521572499,
+      "ebit_margin_pct": 0.033657364008498454,
+      "ebitda_margin_pct": 0.0738061164218315,
+      "da_pct": 0.0380917257572062,
+      "capex_pct": 0.049948280472645955,
+      "tax_rate_pct": 0.22231479650916489,
+      "net_debt_mm": -66.693
+    },
+    {
+      "period": "2020-05-30",
+      "fiscal_year": "FY20",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1351.609,
+      "da_mm": 55.203,
+      "ebit_mm": 1.351,
+      "pretax_income_mm": 20.002,
+      "tax_expense_mm": 1.731,
+      "ebitda_mm": 59.454,
+      "cfo_mm": 73.609,
+      "capex_mm": 124.178,
+      "cash_mm": 78.13,
+      "total_assets_mm": 1206.694,
+      "total_equity_mm": 1009.675,
+      "debt_mm": 3.388,
+      "revenue_growth_pct": -0.007037235121085561,
+      "ebit_margin_pct": 0.0009995494259064568,
+      "ebitda_margin_pct": 0.043987573329269045,
+      "da_pct": 0.04084243298172771,
+      "capex_pct": 0.09187420326440561,
+      "tax_rate_pct": 0.08654134586541347,
+      "net_debt_mm": -74.74199999999999
+    },
+    {
+      "period": "2021-05-29",
+      "fiscal_year": "FY21",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1348.987,
+      "da_mm": 59.477,
+      "ebit_mm": -23.282,
+      "pretax_income_mm": -5.616,
+      "tax_expense_mm": 12.009,
+      "ebitda_mm": 36.195,
+      "cfo_mm": 26.136,
+      "capex_mm": 95.069,
+      "cash_mm": 57.352,
+      "total_assets_mm": 1229.174,
+      "total_equity_mm": 1012.781,
+      "debt_mm": 2.378,
+      "revenue_growth_pct": -0.001939910136733225,
+      "ebit_margin_pct": -0.01725887647545899,
+      "ebitda_margin_pct": 0.026831244481970544,
+      "da_pct": 0.044090120957429535,
+      "capex_pct": 0.07047436335561424,
+      "tax_rate_pct": -2.138354700854701,
+      "net_debt_mm": -54.974
+    },
+    {
+      "period": "2022-05-28",
+      "fiscal_year": "FY22",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 1777.159,
+      "da_mm": 68.395,
+      "ebit_mm": 138.428,
+      "pretax_income_mm": 160.801,
+      "tax_expense_mm": 33.574,
+      "ebitda_mm": 206.823,
+      "cfo_mm": 126.209,
+      "capex_mm": 72.399,
+      "cash_mm": 59.084,
+      "total_assets_mm": 1427.489,
+      "total_equity_mm": 1104.345,
+      "debt_mm": 0.0,
+      "revenue_growth_pct": 0.3174026139614392,
+      "ebit_margin_pct": 0.07789286158413512,
+      "ebitda_margin_pct": 0.11637844447232915,
+      "da_pct": 0.038485582888194016,
+      "capex_pct": 0.04073861708490911,
+      "tax_rate_pct": 0.20879223387914256,
+      "net_debt_mm": -59.084
+    },
+    {
+      "period": "2023-06-03",
+      "fiscal_year": "FY23",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 3146.217,
+      "da_mm": 70.0,
+      "ebit_mm": 964.25,
+      "pretax_income_mm": 998.455,
+      "tax_expense_mm": 241.818,
+      "ebitda_mm": 1036.484,
+      "cfo_mm": 863.01,
+      "capex_mm": 136.569,
+      "cash_mm": 292.824,
+      "total_assets_mm": 1954.525,
+      "total_equity_mm": 1609.583,
+      "debt_mm": 0.0,
+      "revenue_growth_pct": 0.7703632595620313,
+      "ebit_margin_pct": 0.30647917800965413,
+      "ebitda_margin_pct": 0.3294381792482845,
+      "da_pct": 0.02224894214226164,
+      "capex_pct": 0.043407368277521854,
+      "tax_rate_pct": 0.242192186928805,
+      "net_debt_mm": -292.824
+    },
+    {
+      "period": "2024-06-01",
+      "fiscal_year": "FY24",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 2326.443,
+      "da_mm": 78.068,
+      "ebit_mm": 314.094,
+      "pretax_income_mm": 384.954,
+      "tax_expense_mm": 83.689,
+      "ebitda_mm": 394.335,
+      "cfo_mm": 451.398,
+      "capex_mm": 147.116,
+      "cash_mm": 237.878,
+      "total_assets_mm": 2184.761,
+      "total_equity_mm": 1797.043,
+      "debt_mm": 0.0,
+      "revenue_growth_pct": -0.26055863279614844,
+      "ebit_margin_pct": 0.13501039999690514,
+      "ebitda_margin_pct": 0.16950125148133866,
+      "da_pct": 0.0335568075383751,
+      "capex_pct": 0.06323645152707373,
+      "tax_rate_pct": 0.21740000103908516,
+      "net_debt_mm": -237.878
+    },
+    {
+      "period": "2025-05-31",
+      "fiscal_year": "FY25",
+      "source": "ciq_standard_workbook",
+      "source_file": "CALM_Standard.xlsx",
+      "revenue_mm": 4261.885,
+      "da_mm": 91.863,
+      "ebit_mm": 1551.436,
+      "pretax_income_mm": 1617.807,
+      "tax_expense_mm": 384.91,
+      "ebitda_mm": 1645.457,
+      "cfo_mm": 1224.734,
+      "capex_mm": 161.255,
+      "cash_mm": 499.392,
+      "total_assets_mm": 3084.619,
+      "total_equity_mm": 2566.015,
+      "debt_mm": 0.0,
+      "revenue_growth_pct": 0.8319318375734974,
+      "ebit_margin_pct": 0.36402577732623004,
+      "ebitda_margin_pct": 0.3860866729158577,
+      "da_pct": 0.021554546873038573,
+      "capex_pct": 0.03783654415827738,
+      "tax_rate_pct": 0.23792083975406214,
+      "net_debt_mm": -499.392
+    }
+  ],
+  "source_lineage": {
+    "revenue_base": "ciq",
+    "revenue_growth_near": "override_ticker",
+    "growth_source_detail": "ciq_consensus",
+    "revenue_period_type": "ttm",
+    "growth_period_type": "consensus_fy1",
+    "revenue_alignment_flag": "aligned_consensus",
+    "revenue_data_quality_flag": "ok",
+    "ebit_margin_start": "ciq",
+    "capex_pct_start": "ciq",
+    "da_pct_start": "ciq",
+    "tax_rate_start": "ciq",
+    "dso_start": "ciq",
+    "dio_start": "ciq",
+    "dpo_start": "ciq",
+    "exit_multiple": "ciq_comps_tev_ebitda_fwd|story_sector",
+    "net_debt": "ciq",
+    "shares_outstanding": "ciq",
+    "cost_of_equity": "wacc_methodology:blended",
+    "debt_weight": "wacc_methodology:blended",
+    "ronic_terminal": "default",
+    "invested_capital_start": "yfinance_derived",
+    "non_operating_assets": "ciq_cash_excess",
+    "minority_interest": "yfinance",
+    "preferred_equity": "default",
+    "pension_deficit": "default",
+    "lease_liabilities": "default",
+    "options_value": "sbc_proxy",
+    "convertibles_value": "default",
+    "story_profile": "story_sector"
+  },
+  "ciq_lineage": {
+    "snapshot_used": true,
+    "snapshot_run_id": 9,
+    "snapshot_source_file": "CALM_Standard.xlsx",
+    "snapshot_as_of_date": "2025-11-29",
+    "comps_used": true,
+    "comps_run_id": 9,
+    "comps_source_file": "CALM_Standard.xlsx",
+    "comps_as_of_date": "2025-11-29",
+    "peer_count": 8,
+    "public_comps_fallback_used": false,
+    "public_comps_fallback_source_file": null,
+    "public_comps_fallback_peer_count": null
+  },
+  "story_profile": {
+    "moat_strength": 4,
+    "pricing_power": 4,
+    "cyclicality": "low",
+    "capital_intensity": "medium",
+    "governance_risk": "low",
+    "competitive_advantage_years": 8
+  },
+  "story_adjustments": {
+    "growth_add": 0.008,
+    "margin_add": 0.012,
+    "cyclicality_growth_multiplier": 1.05,
+    "cyclicality_wacc_add": -0.003,
+    "governance_wacc_add": -0.002,
+    "capex_target_add": 0.0,
+    "da_target_add": 0.0,
+    "terminal_blend_gordon_weight": 0.62,
+    "terminal_blend_exit_weight": 0.38,
+    "exit_multiple_cyclicality_multiplier": 1.05,
+    "exit_multiple_governance_multiplier": 1.02
+  },
+  "default_resolution": {
+    "status": "review_required",
+    "counts": {
+      "resolved": 5,
+      "review_required": 2
+    },
+    "fields": [
+      {
+        "field": "exit_multiple",
+        "value": 10.541210399999999,
+        "source": "ciq_comps_tev_ebitda_fwd|story_sector",
+        "source_class": "ciq",
+        "fallback_value": 12.0,
+        "severity": "high",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq_comps_forward",
+          "ciq_comps_ltm",
+          "comps_detail_median",
+          "pm_override"
+        ],
+        "why_it_matters": "Directly affects terminal value and equity value.",
+        "available_comps_medians": {
+          "tev_ebitda_ltm": 9.6067,
+          "tev_ebitda_fwd": 9.8424,
+          "tev_ebit_ltm": null,
+          "tev_ebit_fwd": null,
+          "pe_ltm": 18.1126
+        }
+      },
+      {
+        "field": "dso_start",
+        "value": 20.4,
+        "source": "ciq",
+        "source_class": "ciq",
+        "fallback_value": 40.0,
+        "severity": "medium",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior"
+        ],
+        "why_it_matters": "Affects working-capital cash drag.",
+        "available_comps_medians": null
+      },
+      {
+        "field": "dio_start",
+        "value": 29.5,
+        "source": "ciq",
+        "source_class": "ciq",
+        "fallback_value": 58.0,
+        "severity": "medium",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior",
+          "not_applicable"
+        ],
+        "why_it_matters": "Affects inventory investment and working-capital cash drag.",
+        "available_comps_medians": null
+      },
+      {
+        "field": "dpo_start",
+        "value": 10.7,
+        "source": "ciq",
+        "source_class": "ciq",
+        "fallback_value": 50.0,
+        "severity": "medium",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "statement_derived",
+          "yfinance",
+          "peer_prior"
+        ],
+        "why_it_matters": "Affects supplier financing and working-capital cash drag.",
+        "available_comps_medians": null
+      },
+      {
+        "field": "pension_deficit",
+        "value": 0.0,
+        "source": "default",
+        "source_class": "unproven_zero",
+        "fallback_value": 0.0,
+        "severity": "medium",
+        "needs_pm_review": true,
+        "preferred_sources": [
+          "ciq",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        "available_comps_medians": null
+      },
+      {
+        "field": "minority_interest",
+        "value": 5391000.0,
+        "source": "yfinance",
+        "source_class": "public_market",
+        "fallback_value": 0.0,
+        "severity": "low",
+        "needs_pm_review": false,
+        "preferred_sources": [
+          "ciq",
+          "yfinance",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        "available_comps_medians": null
+      },
+      {
+        "field": "preferred_equity",
+        "value": 0.0,
+        "source": "default",
+        "source_class": "unproven_zero",
+        "fallback_value": 0.0,
+        "severity": "low",
+        "needs_pm_review": true,
+        "preferred_sources": [
+          "ciq",
+          "yfinance",
+          "edgar_xbrl",
+          "explicit_structural_zero"
+        ],
+        "why_it_matters": "Can be a non-equity claim in the equity bridge.",
+        "available_comps_medians": null
+      }
+    ]
+  },
+  "scenario_policy": {
+    "policy": "context_advisory_v1",
+    "official_policy": "fixed_default",
+    "ticker": "CALM",
+    "sector": "Consumer Defensive",
+    "industry": "Farm Products",
+    "probability_source": "fixed_default",
+    "context_inputs": {
+      "cyclicality": "low",
+      "capital_intensity": "medium",
+      "governance_risk": "low",
+      "moat_strength": 4,
+      "pricing_power": 4,
+      "maturity": "high_growth",
+      "driver_disagreement_width": 1.0,
+      "shock_width": 0.85
+    },
+    "official_specs": [
+      {
+        "name": "bear",
+        "probability": 0.2,
+        "growth_multiplier": 0.8,
+        "margin_shift": -0.02,
+        "wacc_shift": 0.01,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 0.9
+      },
+      {
+        "name": "base",
+        "probability": 0.6,
+        "growth_multiplier": 1.0,
+        "margin_shift": 0.0,
+        "wacc_shift": 0.0,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 1.0
+      },
+      {
+        "name": "bull",
+        "probability": 0.2,
+        "growth_multiplier": 1.2,
+        "margin_shift": 0.02,
+        "wacc_shift": -0.01,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 1.1
+      }
+    ],
+    "context_specs": [
+      {
+        "name": "bear",
+        "probability": 0.2,
+        "growth_multiplier": 0.92,
+        "margin_shift": -0.0161,
+        "wacc_shift": 0.007500000000000001,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 0.915
+      },
+      {
+        "name": "base",
+        "probability": 0.6,
+        "growth_multiplier": 1.0,
+        "margin_shift": 0.0,
+        "wacc_shift": 0.0,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 1.0
+      },
+      {
+        "name": "bull",
+        "probability": 0.2,
+        "growth_multiplier": 1.26,
+        "margin_shift": 0.017900000000000003,
+        "wacc_shift": -0.0085,
+        "terminal_growth_shift": 0.0,
+        "exit_multiple_multiplier": 1.175
+      }
+    ]
+  },
+  "context_scenarios": {
+    "bear": {
+      "name": "bear",
+      "probability": 0.2,
+      "growth_multiplier": 0.92,
+      "margin_shift": -0.0161,
+      "wacc_shift": 0.007500000000000001,
+      "terminal_growth_shift": 0.0,
+      "exit_multiple_multiplier": 0.915
+    },
+    "base": {
+      "name": "base",
+      "probability": 0.6,
+      "growth_multiplier": 1.0,
+      "margin_shift": 0.0,
+      "wacc_shift": 0.0,
+      "terminal_growth_shift": 0.0,
+      "exit_multiple_multiplier": 1.0
+    },
+    "bull": {
+      "name": "bull",
+      "probability": 0.2,
+      "growth_multiplier": 1.26,
+      "margin_shift": 0.017900000000000003,
+      "wacc_shift": -0.0085,
+      "terminal_growth_shift": 0.0,
+      "exit_multiple_multiplier": 1.175
+    }
+  },
+  "driver_consensus": [],
+  "assumption_register": {
+    "contract_version": "1.0.0",
+    "ticker": "CALM",
+    "generated_at": "2026-06-15T20:12:42.689211+00:00",
+    "entries": [
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "revenue_base",
+        "scope": "growth",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 4213443000.0,
+        "accepted_low": 1.0,
+        "accepted_high": null,
+        "range_rule_id": "revenue_base_v1_static",
+        "range_rule_description": "Revenue base should be positive.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "revenue",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "revenue_growth_near",
+        "scope": "growth",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 0.145326581472905,
+        "accepted_low": -0.2,
+        "accepted_high": 0.3,
+        "range_rule_id": "revenue_growth_near_v1_static",
+        "range_rule_description": "Default PM review range for near-term revenue growth.",
+        "source_lineage": {
+          "source": "override_ticker"
+        },
+        "affected_forecast_lines": [
+          "revenue",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "pm_override",
+        "approval_state": "pm_approved",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "revenue_growth_mid",
+        "scope": "growth",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": -0.051870000000000006,
+        "accepted_low": -0.15,
+        "accepted_high": 0.25,
+        "range_rule_id": "revenue_growth_mid_v1_static",
+        "range_rule_description": "Default PM review range for mid-term revenue growth.",
+        "source_lineage": {
+          "source": "ciq|story_sector"
+        },
+        "affected_forecast_lines": [
+          "revenue",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "revenue_growth_terminal",
+        "scope": "terminal_value",
+        "stage": "terminal_value",
+        "value_type": "numeric",
+        "current_value": 0.025,
+        "accepted_low": 0.0,
+        "accepted_high": 0.04,
+        "range_rule_id": "revenue_growth_terminal_v1_static",
+        "range_rule_description": "Terminal growth capped at long-run nominal GDP growth (4%).",
+        "source_lineage": {
+          "source": "default"
+        },
+        "affected_forecast_lines": [
+          "terminal_value",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "ebit_margin_start",
+        "scope": "margin",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 0.6,
+        "accepted_low": -0.1,
+        "accepted_high": 0.45,
+        "range_rule_id": "ebit_margin_start_v1_static",
+        "range_rule_description": "Default PM review range for starting EBIT margin.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "ebit",
+          "nopat",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "review_required",
+        "owner": "deterministic",
+        "approval_state": "review_required",
+        "approval_ref": null,
+        "out_of_range": true,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "ebit_margin_target",
+        "scope": "margin",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 0.382,
+        "accepted_low": -0.05,
+        "accepted_high": 0.5,
+        "range_rule_id": "ebit_margin_target_v1_static",
+        "range_rule_description": "Default PM review range for target EBIT margin.",
+        "source_lineage": {
+          "source": "story_sector"
+        },
+        "affected_forecast_lines": [
+          "ebit",
+          "nopat",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "tax_rate_start",
+        "scope": "tax",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 0.21859887080076482,
+        "accepted_low": 0.0,
+        "accepted_high": 0.4,
+        "range_rule_id": "tax_rate_start_v1_static",
+        "range_rule_description": "Default PM review range for effective tax rate.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "nopat",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "tax_rate_target",
+        "scope": "tax",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 0.21859887080076482,
+        "accepted_low": 0.0,
+        "accepted_high": 0.4,
+        "range_rule_id": "tax_rate_target_v1_static",
+        "range_rule_description": "Default PM review range for target tax rate.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "nopat",
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "capex_pct_start",
+        "scope": "reinvestment",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 0.25,
+        "accepted_low": 0.0,
+        "accepted_high": 0.3,
+        "range_rule_id": "capex_pct_start_v1_static",
+        "range_rule_description": "Default PM review range for capex as percent of revenue.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "capex_pct_target",
+        "scope": "reinvestment",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 0.2375,
+        "accepted_low": 0.0,
+        "accepted_high": 0.3,
+        "range_rule_id": "capex_pct_target_v1_static",
+        "range_rule_description": "Default PM review range for target capex as percent of revenue.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "da_pct_start",
+        "scope": "reinvestment",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 0.008371142871360388,
+        "accepted_low": 0.0,
+        "accepted_high": 0.25,
+        "range_rule_id": "da_pct_start_v1_static",
+        "range_rule_description": "Default PM review range for D&A as percent of revenue.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "watch",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "da_pct_target",
+        "scope": "reinvestment",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 0.007952585727792368,
+        "accepted_low": 0.0,
+        "accepted_high": 0.25,
+        "range_rule_id": "da_pct_target_v1_static",
+        "range_rule_description": "Default PM review range for target D&A as percent of revenue.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "watch",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dso_start",
+        "scope": "working_capital",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 20.4,
+        "accepted_low": 0.0,
+        "accepted_high": 180.0,
+        "range_rule_id": "dso_start_v1_static",
+        "range_rule_description": "Default PM review range for days sales outstanding.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dso_target",
+        "scope": "working_capital",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 34.12,
+        "accepted_low": 0.0,
+        "accepted_high": 180.0,
+        "range_rule_id": "dso_target_v1_static",
+        "range_rule_description": "Default PM review range for target DSO.",
+        "source_lineage": {
+          "source": "ciq_blend"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dio_start",
+        "scope": "working_capital",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 29.5,
+        "accepted_low": 0.0,
+        "accepted_high": 240.0,
+        "range_rule_id": "dio_start_v1_static",
+        "range_rule_description": "Default PM review range for days inventory outstanding.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dio_target",
+        "scope": "working_capital",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 49.449999999999996,
+        "accepted_low": 0.0,
+        "accepted_high": 240.0,
+        "range_rule_id": "dio_target_v1_static",
+        "range_rule_description": "Default PM review range for target DIO.",
+        "source_lineage": {
+          "source": "ciq_blend"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dpo_start",
+        "scope": "working_capital",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 10.7,
+        "accepted_low": 0.0,
+        "accepted_high": 240.0,
+        "range_rule_id": "dpo_start_v1_static",
+        "range_rule_description": "Default PM review range for days payables outstanding.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "watch",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "dpo_target",
+        "scope": "working_capital",
+        "stage": "dcf",
+        "value_type": "numeric",
+        "current_value": 38.21,
+        "accepted_low": 0.0,
+        "accepted_high": 240.0,
+        "range_rule_id": "dpo_target_v1_static",
+        "range_rule_description": "Default PM review range for target DPO.",
+        "source_lineage": {
+          "source": "ciq_blend"
+        },
+        "affected_forecast_lines": [
+          "fcff",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "wacc",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.06644,
+        "accepted_low": 0.04,
+        "accepted_high": 0.2,
+        "range_rule_id": "wacc_v1_static",
+        "range_rule_description": "Default PM review range for WACC.",
+        "source_lineage": {
+          "source": "wacc_methodology:blended"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "cost_of_equity",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.06817,
+        "accepted_low": 0.04,
+        "accepted_high": 0.3,
+        "range_rule_id": "cost_of_equity_v1_static",
+        "range_rule_description": "Default PM review range for cost of equity.",
+        "source_lineage": {
+          "source": "wacc_methodology:blended"
+        },
+        "affected_forecast_lines": [
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "risk_free_rate",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.045,
+        "accepted_low": 0.0,
+        "accepted_high": 0.1,
+        "range_rule_id": "risk_free_rate_v1_static",
+        "range_rule_description": "Default PM review range for risk-free rate.",
+        "source_lineage": {
+          "source": "valuation_policy:0.0450"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "equity_risk_premium",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.05,
+        "accepted_low": 0.02,
+        "accepted_high": 0.1,
+        "range_rule_id": "equity_risk_premium_v1_static",
+        "range_rule_description": "Default PM review range for equity risk premium.",
+        "source_lineage": {
+          "source": "valuation_policy:0.0500"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "beta_relevered",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.24,
+        "accepted_low": 0.2,
+        "accepted_high": 3.0,
+        "range_rule_id": "beta_relevered_v1_static",
+        "range_rule_description": "Default PM review range for relevered beta.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "watch",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "beta_unlevered_median",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.2237,
+        "accepted_low": 0.2,
+        "accepted_high": 3.0,
+        "range_rule_id": "beta_unlevered_median_v1_static",
+        "range_rule_description": "Default PM review range for unlevered beta.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "watch",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "size_premium",
+        "scope": "wacc",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.01117,
+        "accepted_low": 0.0,
+        "accepted_high": 0.08,
+        "range_rule_id": "size_premium_v1_static",
+        "range_rule_description": "Default PM review range for size premium.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "equity_weight",
+        "scope": "capital_structure",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.9166,
+        "accepted_low": 0.2,
+        "accepted_high": 1.0,
+        "range_rule_id": "equity_weight_v1_static",
+        "range_rule_description": "Default PM review range for equity weight.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "debt_weight",
+        "scope": "capital_structure",
+        "stage": "wacc",
+        "value_type": "numeric",
+        "current_value": 0.0833,
+        "accepted_low": 0.0,
+        "accepted_high": 0.8,
+        "range_rule_id": "debt_weight_v1_static",
+        "range_rule_description": "Default PM review range for debt weight.",
+        "source_lineage": {
+          "source": "wacc_methodology:blended"
+        },
+        "affected_forecast_lines": [
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {
+          "selected_methodology": {
+            "mode": "blended",
+            "selected_method": null,
+            "weights": {
+              "peer_bottom_up": 0.25,
+              "industry_proxy": 0.5,
+              "self_hamada": 0.25
+            }
+          }
+        }
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "exit_multiple",
+        "scope": "terminal_value",
+        "stage": "terminal_value",
+        "value_type": "numeric",
+        "current_value": 10.541210399999999,
+        "accepted_low": 2.0,
+        "accepted_high": 30.0,
+        "range_rule_id": "exit_multiple_v1_static",
+        "range_rule_description": "Default PM review range for terminal exit multiple.",
+        "source_lineage": {
+          "source": "ciq_comps_tev_ebitda_fwd|story_sector"
+        },
+        "affected_forecast_lines": [
+          "terminal_value",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "terminal_blend_gordon_weight",
+        "scope": "terminal_value",
+        "stage": "terminal_value",
+        "value_type": "numeric",
+        "current_value": 0.62,
+        "accepted_low": 0.0,
+        "accepted_high": 1.0,
+        "range_rule_id": "terminal_blend_gordon_weight_v1_static",
+        "range_rule_description": "Gordon terminal blend weight should be a probability-like weight.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "terminal_value",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "terminal_blend_exit_weight",
+        "scope": "terminal_value",
+        "stage": "terminal_value",
+        "value_type": "numeric",
+        "current_value": 0.38,
+        "accepted_low": 0.0,
+        "accepted_high": 1.0,
+        "range_rule_id": "terminal_blend_exit_weight_v1_static",
+        "range_rule_description": "Exit terminal blend weight should be a probability-like weight.",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "affected_forecast_lines": [
+          "terminal_value",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "ronic_terminal",
+        "scope": "terminal_value",
+        "stage": "terminal_value",
+        "value_type": "numeric",
+        "current_value": 0.11,
+        "accepted_low": 0.0,
+        "accepted_high": 0.4,
+        "range_rule_id": "ronic_terminal_v1_static",
+        "range_rule_description": "Default PM review range for terminal RONIC.",
+        "source_lineage": {
+          "source": "default"
+        },
+        "affected_forecast_lines": [
+          "terminal_value",
+          "enterprise_value",
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "net_debt",
+        "scope": "capital_structure",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": -369450000.0,
+        "accepted_low": null,
+        "accepted_high": null,
+        "range_rule_id": "net_debt_v1_static",
+        "range_rule_description": "Capital-structure money field retained for review and audit.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      },
+      {
+        "entity_type": "ticker",
+        "entity_id": "CALM",
+        "ticker": "CALM",
+        "assumption_name": "shares_outstanding",
+        "scope": "capital_structure",
+        "stage": "input_assembly",
+        "value_type": "numeric",
+        "current_value": 48562000.0,
+        "accepted_low": 1.0,
+        "accepted_high": null,
+        "range_rule_id": "shares_outstanding_v1_static",
+        "range_rule_description": "Share count should be positive.",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "affected_forecast_lines": [
+          "equity_value"
+        ],
+        "flag_level": "none",
+        "owner": "deterministic",
+        "approval_state": "none",
+        "approval_ref": null,
+        "out_of_range": false,
+        "valuation_impact": null,
+        "evidence_refs": [],
+        "advisory_refs": [],
+        "notes": {}
+      }
+    ],
+    "flag_counts": {
+      "none": 27,
+      "watch": 5,
+      "review_required": 1,
+      "critical": 0
+    },
+    "max_flag_level": "review_required",
+    "has_critical": false,
+    "model_trust_state": "review_required",
+    "summary": {
+      "model_trust_state": "review_required",
+      "flag_counts": {
+        "none": 27,
+        "watch": 5,
+        "review_required": 1,
+        "critical": 0
+      },
+      "max_flag_level": "review_required",
+      "has_critical": false
+    },
+    "notes": {}
+  },
+  "assumption_register_summary": {
+    "model_trust_state": "review_required",
+    "flag_counts": {
+      "none": 27,
+      "watch": 5,
+      "review_required": 1,
+      "critical": 0
+    },
+    "max_flag_level": "review_required",
+    "has_critical": false,
+    "flagged_entries": [
+      {
+        "assumption_name": "ebit_margin_start",
+        "scope": "margin",
+        "stage": "input_assembly",
+        "current_value": 0.6,
+        "accepted_low": -0.1,
+        "accepted_high": 0.45,
+        "flag_level": "review_required",
+        "approval_state": "review_required",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "out_of_range": true
+      },
+      {
+        "assumption_name": "da_pct_start",
+        "scope": "reinvestment",
+        "stage": "input_assembly",
+        "current_value": 0.008371142871360388,
+        "accepted_low": 0.0,
+        "accepted_high": 0.25,
+        "flag_level": "watch",
+        "approval_state": "none",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "out_of_range": false
+      },
+      {
+        "assumption_name": "da_pct_target",
+        "scope": "reinvestment",
+        "stage": "dcf",
+        "current_value": 0.007952585727792368,
+        "accepted_low": 0.0,
+        "accepted_high": 0.25,
+        "flag_level": "watch",
+        "approval_state": "none",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "out_of_range": false
+      },
+      {
+        "assumption_name": "dpo_start",
+        "scope": "working_capital",
+        "stage": "input_assembly",
+        "current_value": 10.7,
+        "accepted_low": 0.0,
+        "accepted_high": 240.0,
+        "flag_level": "watch",
+        "approval_state": "none",
+        "source_lineage": {
+          "source": "ciq"
+        },
+        "out_of_range": false
+      },
+      {
+        "assumption_name": "beta_relevered",
+        "scope": "wacc",
+        "stage": "wacc",
+        "current_value": 0.24,
+        "accepted_low": 0.2,
+        "accepted_high": 3.0,
+        "flag_level": "watch",
+        "approval_state": "none",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "out_of_range": false
+      },
+      {
+        "assumption_name": "beta_unlevered_median",
+        "scope": "wacc",
+        "stage": "wacc",
+        "current_value": 0.2237,
+        "accepted_low": 0.2,
+        "accepted_high": 3.0,
+        "flag_level": "watch",
+        "approval_state": "none",
+        "source_lineage": {
+          "source": "unknown"
+        },
+        "out_of_range": false
+      }
+    ]
+  },
+  "drivers_raw": {
+    "revenue_base": 4213443000.0,
+    "revenue_growth_near": 0.145326581472905,
+    "revenue_growth_mid": -0.051870000000000006,
+    "revenue_growth_terminal": 0.025,
+    "ebit_margin_start": 0.6,
+    "ebit_margin_target": 0.382,
+    "tax_rate_start": 0.21859887080076482,
+    "tax_rate_target": 0.21859887080076482,
+    "capex_pct_start": 0.25,
+    "capex_pct_target": 0.2375,
+    "da_pct_start": 0.008371142871360388,
+    "da_pct_target": 0.007952585727792368,
+    "dso_start": 20.4,
+    "dso_target": 34.12,
+    "dio_start": 29.5,
+    "dio_target": 49.449999999999996,
+    "dpo_start": 10.7,
+    "dpo_target": 38.21,
+    "wacc": 0.06644,
+    "exit_multiple": 10.541210399999999,
+    "exit_metric": "ev_ebitda",
+    "net_debt": -369450000.0,
+    "shares_outstanding": 48562000.0,
+    "terminal_blend_gordon_weight": 0.62,
+    "terminal_blend_exit_weight": 0.38,
+    "invested_capital_start": 2276856000.0,
+    "ronic_terminal": 0.11,
+    "non_operating_assets": 285181140.0,
+    "minority_interest": 5391000.0,
+    "preferred_equity": 0.0,
+    "pension_deficit": 0.0,
+    "lease_liabilities": 0.0,
+    "options_value": 13581000.0,
+    "convertibles_value": 0.0,
+    "cost_of_equity": 0.06817,
+    "debt_weight": 0.0833,
+    "cogs_pct_of_revenue": 0.6509,
+    "annual_dilution_pct": 0.0
+  },
+  "comps_detail": {
+    "target": {
+      "ticker": "CALM",
+      "run_id": 9,
+      "source_file": "CALM_Standard.xlsx",
+      "as_of_date": "2025-11-29",
+      "market_cap_mm": 3675.080336,
+      "tev_mm": 2542.3973359999995,
+      "revenue_ltm_mm": 4213.443,
+      "ebitda_ltm_mm": 1564.106,
+      "ebit_ltm_mm": null,
+      "eps_ltm": 23.74391,
+      "tev_ebitda_ltm": 1.61902,
+      "tev_ebitda_fwd": 9.59012,
+      "tev_ebit_ltm": null,
+      "tev_ebit_fwd": null,
+      "pe_ltm": 3.24799
+    },
+    "peers": [
+      {
+        "ticker": "VITL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 588.6342882,
+        "tev_mm": 528.7742882,
+        "revenue_ltm_mm": 759.444,
+        "ebitda_ltm_mm": 102.885,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.44,
+        "tev_ebitda_ltm": 1.35421,
+        "tev_ebitda_fwd": 5.19661,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 9.12501
+      },
+      {
+        "ticker": "POST",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 4576.777854,
+        "tev_mm": 11770.677854,
+        "revenue_ltm_mm": 8358.0,
+        "ebitda_ltm_mm": 1422.7,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 5.3982,
+        "tev_ebitda_ltm": 7.76584,
+        "tev_ebitda_fwd": 7.59492,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 17.72813
+      },
+      {
+        "ticker": "KHC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 26089.73429,
+        "tev_mm": 44311.73429,
+        "revenue_ltm_mm": 24942.0,
+        "ebitda_ltm_mm": 5727.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": -4.93,
+        "tev_ebitda_ltm": 7.08195,
+        "tev_ebitda_fwd": 8.82271,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": null
+      },
+      {
+        "ticker": "HRL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 12695.056724700002,
+        "tev_mm": 14666.047724700002,
+        "revenue_ltm_mm": 12144.664,
+        "ebitda_ltm_mm": 1211.613,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.88918,
+        "tev_ebitda_ltm": 9.71977,
+        "tev_ebitda_fwd": 10.48988,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 25.94517
+      },
+      {
+        "ticker": "GIS",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 19452.680469000003,
+        "tev_mm": 32648.580469000004,
+        "revenue_ltm_mm": 18371.2,
+        "ebitda_ltm_mm": 3318.1,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 4.07124,
+        "tev_ebitda_ltm": 9.49363,
+        "tev_ebitda_fwd": 10.03178,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 8.95305
+      },
+      {
+        "ticker": "MKC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 14246.0173968,
+        "tev_mm": 18404.6173968,
+        "revenue_ltm_mm": 6840.3,
+        "ebitda_ltm_mm": 1305.8,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 2.93,
+        "tev_ebitda_ltm": 12.6482,
+        "tev_ebitda_fwd": 12.00267,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 18.11263
+      },
+      {
+        "ticker": "300761",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 2479.5907842528,
+        "tev_mm": 2781.1122942528,
+        "revenue_ltm_mm": 2603.41102,
+        "ebitda_ltm_mm": 241.48262,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.10945,
+        "tev_ebitda_ltm": 10.9603,
+        "tev_ebitda_fwd": 9.65293,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 26.2705
+      },
+      {
+        "ticker": "MDLZ",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 74693.1471909,
+        "tev_mm": 94589.1471909,
+        "revenue_ltm_mm": 38537.0,
+        "ebitda_ltm_mm": 4990.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.89,
+        "tev_ebitda_ltm": 16.19123,
+        "tev_ebitda_fwd": 14.02245,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 30.83069
+      }
+    ],
+    "medians": {
+      "tev_ebitda_ltm": 9.6067,
+      "tev_ebitda_fwd": 9.8424,
+      "tev_ebit_ltm": null,
+      "tev_ebit_fwd": null,
+      "pe_ltm": 18.1126
+    },
+    "source_lineage": {
+      "as_of_date": "2025-11-29",
+      "run_id": 9,
+      "source_file": "CALM_Standard.xlsx"
+    }
+  },
+  "comps_analysis": {
+    "ticker": "CALM",
+    "available": true,
+    "target": {
+      "ticker": "CALM",
+      "run_id": 9,
+      "source_file": "CALM_Standard.xlsx",
+      "as_of_date": "2025-11-29",
+      "market_cap_mm": 3675.080336,
+      "tev_mm": 2542.3973359999995,
+      "revenue_ltm_mm": 4213.443,
+      "ebitda_ltm_mm": 1564.106,
+      "ebit_ltm_mm": null,
+      "eps_ltm": 23.74391,
+      "tev_ebitda_ltm": 1.61902,
+      "tev_ebitda_fwd": 9.59012,
+      "tev_ebit_ltm": null,
+      "tev_ebit_fwd": null,
+      "pe_ltm": 3.24799,
+      "ebit_margin": null,
+      "net_debt_mm": -1132.683,
+      "net_debt_to_ebitda": -0.7242,
+      "current_price": 75.65,
+      "name": "Cal-Maine Foods, Inc.",
+      "sector": "Consumer Defensive",
+      "industry": "Farm Products"
+    },
+    "peers": [
+      {
+        "ticker": "300761",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 2479.5907842528,
+        "tev_mm": 2781.1122942528,
+        "revenue_ltm_mm": 2603.41102,
+        "ebitda_ltm_mm": 241.48262,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.10945,
+        "tev_ebitda_ltm": 10.9603,
+        "tev_ebitda_fwd": 9.65293,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 26.2705,
+        "ebit_margin": null,
+        "net_debt_mm": 301.5215,
+        "net_debt_to_ebitda": 1.2486,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "GIS",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 19452.680469000003,
+        "tev_mm": 32648.580469000004,
+        "revenue_ltm_mm": 18371.2,
+        "ebitda_ltm_mm": 3318.1,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 4.07124,
+        "tev_ebitda_ltm": 9.49363,
+        "tev_ebitda_fwd": 10.03178,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 8.95305,
+        "ebit_margin": null,
+        "net_debt_mm": 13195.9,
+        "net_debt_to_ebitda": 3.9769,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "HRL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 12695.056724700002,
+        "tev_mm": 14666.047724700002,
+        "revenue_ltm_mm": 12144.664,
+        "ebitda_ltm_mm": 1211.613,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.88918,
+        "tev_ebitda_ltm": 9.71977,
+        "tev_ebitda_fwd": 10.48988,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 25.94517,
+        "ebit_margin": null,
+        "net_debt_mm": 1970.991,
+        "net_debt_to_ebitda": 1.6267,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "KHC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 26089.73429,
+        "tev_mm": 44311.73429,
+        "revenue_ltm_mm": 24942.0,
+        "ebitda_ltm_mm": 5727.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": -4.93,
+        "tev_ebitda_ltm": 7.08195,
+        "tev_ebitda_fwd": 8.82271,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": null,
+        "ebit_margin": null,
+        "net_debt_mm": 18222.0,
+        "net_debt_to_ebitda": 3.1818,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "MDLZ",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 74693.1471909,
+        "tev_mm": 94589.1471909,
+        "revenue_ltm_mm": 38537.0,
+        "ebitda_ltm_mm": 4990.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.89,
+        "tev_ebitda_ltm": 16.19123,
+        "tev_ebitda_fwd": 14.02245,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 30.83069,
+        "ebit_margin": null,
+        "net_debt_mm": 19896.0,
+        "net_debt_to_ebitda": 3.9872,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "MKC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 14246.0173968,
+        "tev_mm": 18404.6173968,
+        "revenue_ltm_mm": 6840.3,
+        "ebitda_ltm_mm": 1305.8,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 2.93,
+        "tev_ebitda_ltm": 12.6482,
+        "tev_ebitda_fwd": 12.00267,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 18.11263,
+        "ebit_margin": null,
+        "net_debt_mm": 4158.6,
+        "net_debt_to_ebitda": 3.1847,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "POST",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 4576.777854,
+        "tev_mm": 11770.677854,
+        "revenue_ltm_mm": 8358.0,
+        "ebitda_ltm_mm": 1422.7,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 5.3982,
+        "tev_ebitda_ltm": 7.76584,
+        "tev_ebitda_fwd": 7.59492,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 17.72813,
+        "ebit_margin": null,
+        "net_debt_mm": 7193.9,
+        "net_debt_to_ebitda": 5.0565,
+        "similarity_score": null,
+        "model_weight": null
+      },
+      {
+        "ticker": "VITL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 588.6342882,
+        "tev_mm": 528.7742882,
+        "revenue_ltm_mm": 759.444,
+        "ebitda_ltm_mm": 102.885,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.44,
+        "tev_ebitda_ltm": 1.35421,
+        "tev_ebitda_fwd": 5.19661,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 9.12501,
+        "ebit_margin": null,
+        "net_debt_mm": -59.86,
+        "net_debt_to_ebitda": -0.5818,
+        "similarity_score": null,
+        "model_weight": null
+      }
+    ],
+    "peer_table": [
+      {
+        "ticker": "300761",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 2479.5907842528,
+        "tev_mm": 2781.1122942528,
+        "revenue_ltm_mm": 2603.41102,
+        "ebitda_ltm_mm": 241.48262,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.10945,
+        "tev_ebitda_ltm": 10.9603,
+        "tev_ebitda_fwd": 9.65293,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 26.2705,
+        "ebit_margin": null,
+        "net_debt_mm": 301.5215,
+        "net_debt_to_ebitda": 1.2486,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "300761"
+      },
+      {
+        "ticker": "GIS",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 19452.680469000003,
+        "tev_mm": 32648.580469000004,
+        "revenue_ltm_mm": 18371.2,
+        "ebitda_ltm_mm": 3318.1,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 4.07124,
+        "tev_ebitda_ltm": 9.49363,
+        "tev_ebitda_fwd": 10.03178,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 8.95305,
+        "ebit_margin": null,
+        "net_debt_mm": 13195.9,
+        "net_debt_to_ebitda": 3.9769,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "GIS"
+      },
+      {
+        "ticker": "HRL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 12695.056724700002,
+        "tev_mm": 14666.047724700002,
+        "revenue_ltm_mm": 12144.664,
+        "ebitda_ltm_mm": 1211.613,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.88918,
+        "tev_ebitda_ltm": 9.71977,
+        "tev_ebitda_fwd": 10.48988,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 25.94517,
+        "ebit_margin": null,
+        "net_debt_mm": 1970.991,
+        "net_debt_to_ebitda": 1.6267,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "HRL"
+      },
+      {
+        "ticker": "KHC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 26089.73429,
+        "tev_mm": 44311.73429,
+        "revenue_ltm_mm": 24942.0,
+        "ebitda_ltm_mm": 5727.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": -4.93,
+        "tev_ebitda_ltm": 7.08195,
+        "tev_ebitda_fwd": 8.82271,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": null,
+        "ebit_margin": null,
+        "net_debt_mm": 18222.0,
+        "net_debt_to_ebitda": 3.1818,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "KHC"
+      },
+      {
+        "ticker": "MDLZ",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 74693.1471909,
+        "tev_mm": 94589.1471909,
+        "revenue_ltm_mm": 38537.0,
+        "ebitda_ltm_mm": 4990.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.89,
+        "tev_ebitda_ltm": 16.19123,
+        "tev_ebitda_fwd": 14.02245,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 30.83069,
+        "ebit_margin": null,
+        "net_debt_mm": 19896.0,
+        "net_debt_to_ebitda": 3.9872,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "MDLZ"
+      },
+      {
+        "ticker": "MKC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 14246.0173968,
+        "tev_mm": 18404.6173968,
+        "revenue_ltm_mm": 6840.3,
+        "ebitda_ltm_mm": 1305.8,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 2.93,
+        "tev_ebitda_ltm": 12.6482,
+        "tev_ebitda_fwd": 12.00267,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 18.11263,
+        "ebit_margin": null,
+        "net_debt_mm": 4158.6,
+        "net_debt_to_ebitda": 3.1847,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "MKC"
+      },
+      {
+        "ticker": "POST",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 4576.777854,
+        "tev_mm": 11770.677854,
+        "revenue_ltm_mm": 8358.0,
+        "ebitda_ltm_mm": 1422.7,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 5.3982,
+        "tev_ebitda_ltm": 7.76584,
+        "tev_ebitda_fwd": 7.59492,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 17.72813,
+        "ebit_margin": null,
+        "net_debt_mm": 7193.9,
+        "net_debt_to_ebitda": 5.0565,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "POST"
+      },
+      {
+        "ticker": "VITL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 588.6342882,
+        "tev_mm": 528.7742882,
+        "revenue_ltm_mm": 759.444,
+        "ebitda_ltm_mm": 102.885,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.44,
+        "tev_ebitda_ltm": 1.35421,
+        "tev_ebitda_fwd": 5.19661,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 9.12501,
+        "ebit_margin": null,
+        "net_debt_mm": -59.86,
+        "net_debt_to_ebitda": -0.5818,
+        "similarity_score": null,
+        "model_weight": null,
+        "display_name": "VITL"
+      }
+    ],
+    "peer_counts": {
+      "raw": 8,
+      "clean": 8
+    },
+    "primary_metric": "tev_ebitda_fwd",
+    "metric_options": [
+      {
+        "key": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd"
+      },
+      {
+        "key": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM"
+      },
+      {
+        "key": "pe_ltm",
+        "label": "P / E LTM"
+      }
+    ],
+    "selected_metric_default": "tev_ebitda_fwd",
+    "valuation_range": {
+      "bear": 274.6492,
+      "base": 342.593,
+      "bull": 355.1005,
+      "blended_base": 372.4858
+    },
+    "valuation_range_by_metric": {
+      "tev_ebitda_fwd": {
+        "label": "TEV / EBITDA Fwd",
+        "bear": 274.6492,
+        "base": 342.593,
+        "bull": 355.1005,
+        "bear_multiple": 7.5949,
+        "base_multiple": 9.6529,
+        "bull_multiple": 10.0318
+      },
+      "tev_ebitda_ltm": {
+        "label": "TEV / EBITDA LTM",
+        "bear": 280.292,
+        "base": 344.7997,
+        "bull": 385.755,
+        "bear_multiple": 7.7658,
+        "base_multiple": 9.7198,
+        "bull_multiple": 10.9603
+      },
+      "pe_ltm": {
+        "label": "P / E LTM",
+        "bear": 420.9351,
+        "base": 430.0647,
+        "bull": 623.7644,
+        "bear_multiple": 17.7281,
+        "base_multiple": 18.1126,
+        "bull_multiple": 26.2705
+      }
+    },
+    "valuation_by_metric_rows": [
+      {
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "target_multiple": 9.59012,
+        "peer_median_multiple": 9.8424,
+        "bear_multiple": 7.5949,
+        "base_multiple": 9.6529,
+        "bull_multiple": 10.0318,
+        "bear_iv": 274.6492,
+        "base_iv": 342.593,
+        "bull_iv": 355.1005,
+        "n_raw": 8,
+        "n_clean": 8,
+        "outliers_removed": [],
+        "is_primary": true
+      },
+      {
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "target_multiple": 1.61902,
+        "peer_median_multiple": 9.6067,
+        "bear_multiple": 7.7658,
+        "base_multiple": 9.7198,
+        "bull_multiple": 10.9603,
+        "bear_iv": 280.292,
+        "base_iv": 344.7997,
+        "bull_iv": 385.755,
+        "n_raw": 8,
+        "n_clean": 7,
+        "outliers_removed": [
+          "VITL"
+        ],
+        "is_primary": false
+      },
+      {
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "target_multiple": 3.24799,
+        "peer_median_multiple": 18.1126,
+        "bear_multiple": 17.7281,
+        "base_multiple": 18.1126,
+        "bull_multiple": 26.2705,
+        "bear_iv": 420.9351,
+        "base_iv": 430.0647,
+        "bull_iv": 623.7644,
+        "n_raw": 7,
+        "n_clean": 7,
+        "outliers_removed": [],
+        "is_primary": false
+      }
+    ],
+    "similarity_method": "market_cap_only",
+    "similarity_model": null,
+    "weighting_formula": "market_cap_proximity_only",
+    "medians": {
+      "tev_ebitda_ltm": 9.6067,
+      "tev_ebitda_fwd": 9.8424,
+      "tev_ebit_ltm": null,
+      "tev_ebit_fwd": null,
+      "pe_ltm": 18.1126
+    },
+    "compare_to_target": {
+      "target": {
+        "tev_ebitda_ltm": 1.61902,
+        "tev_ebitda_fwd": 9.59012,
+        "pe_ltm": 3.24799,
+        "net_debt_to_ebitda": -0.7242
+      },
+      "peer_medians": {
+        "tev_ebitda_ltm": 9.6067,
+        "tev_ebitda_fwd": 9.8424,
+        "pe_ltm": 18.1126
+      }
+    },
+    "target_vs_peers": {
+      "target": {
+        "tev_ebitda_ltm": 1.61902,
+        "tev_ebitda_fwd": 9.59012,
+        "pe_ltm": 3.24799,
+        "revenue_growth": -0.53,
+        "ebit_margin": 0.05395,
+        "net_debt_to_ebitda": -0.7242
+      },
+      "peer_medians": {
+        "tev_ebitda_ltm": 9.6067,
+        "tev_ebitda_fwd": 9.8424,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 18.1126,
+        "net_debt_to_ebitda": 3.1833
+      },
+      "deltas": {
+        "tev_ebitda_ltm": -7.9877,
+        "tev_ebitda_fwd": -0.2523,
+        "pe_ltm": -14.8646,
+        "net_debt_to_ebitda": -3.9075
+      }
+    },
+    "comparison_summary": [
+      {
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "target": 1.61902,
+        "peer_median": 9.6067,
+        "delta": -7.9877
+      },
+      {
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "target": 9.59012,
+        "peer_median": 9.8424,
+        "delta": -0.2523
+      },
+      {
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "target": 3.24799,
+        "peer_median": 18.1126,
+        "delta": -14.8646
+      },
+      {
+        "metric": "revenue_growth",
+        "label": "Revenue Growth",
+        "target": -0.53,
+        "peer_median": null,
+        "delta": null
+      },
+      {
+        "metric": "ebit_margin",
+        "label": "EBIT Margin",
+        "target": 0.05395,
+        "peer_median": null,
+        "delta": null
+      },
+      {
+        "metric": "net_debt_to_ebitda",
+        "label": "Net Debt / EBITDA",
+        "target": -0.7242,
+        "peer_median": 3.1833,
+        "delta": -3.9075
+      }
+    ],
+    "metric_status_rows": [
+      {
+        "ticker": "300761",
+        "display_name": "300761",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 9.65293,
+        "status": "included"
+      },
+      {
+        "ticker": "GIS",
+        "display_name": "GIS",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 10.03178,
+        "status": "included"
+      },
+      {
+        "ticker": "HRL",
+        "display_name": "HRL",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 10.48988,
+        "status": "included"
+      },
+      {
+        "ticker": "KHC",
+        "display_name": "KHC",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 8.82271,
+        "status": "included"
+      },
+      {
+        "ticker": "MDLZ",
+        "display_name": "MDLZ",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 14.02245,
+        "status": "included"
+      },
+      {
+        "ticker": "MKC",
+        "display_name": "MKC",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 12.00267,
+        "status": "included"
+      },
+      {
+        "ticker": "POST",
+        "display_name": "POST",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 7.59492,
+        "status": "included"
+      },
+      {
+        "ticker": "VITL",
+        "display_name": "VITL",
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "raw_multiple": 5.19661,
+        "status": "included"
+      },
+      {
+        "ticker": "300761",
+        "display_name": "300761",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 10.9603,
+        "status": "included"
+      },
+      {
+        "ticker": "GIS",
+        "display_name": "GIS",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 9.49363,
+        "status": "included"
+      },
+      {
+        "ticker": "HRL",
+        "display_name": "HRL",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 9.71977,
+        "status": "included"
+      },
+      {
+        "ticker": "KHC",
+        "display_name": "KHC",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 7.08195,
+        "status": "included"
+      },
+      {
+        "ticker": "MDLZ",
+        "display_name": "MDLZ",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 16.19123,
+        "status": "included"
+      },
+      {
+        "ticker": "MKC",
+        "display_name": "MKC",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 12.6482,
+        "status": "included"
+      },
+      {
+        "ticker": "POST",
+        "display_name": "POST",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 7.76584,
+        "status": "included"
+      },
+      {
+        "ticker": "VITL",
+        "display_name": "VITL",
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "raw_multiple": 1.35421,
+        "status": "outlier_removed"
+      },
+      {
+        "ticker": "300761",
+        "display_name": "300761",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 26.2705,
+        "status": "included"
+      },
+      {
+        "ticker": "GIS",
+        "display_name": "GIS",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 8.95305,
+        "status": "included"
+      },
+      {
+        "ticker": "HRL",
+        "display_name": "HRL",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 25.94517,
+        "status": "included"
+      },
+      {
+        "ticker": "KHC",
+        "display_name": "KHC",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": null,
+        "status": "missing"
+      },
+      {
+        "ticker": "MDLZ",
+        "display_name": "MDLZ",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 30.83069,
+        "status": "included"
+      },
+      {
+        "ticker": "MKC",
+        "display_name": "MKC",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 18.11263,
+        "status": "included"
+      },
+      {
+        "ticker": "POST",
+        "display_name": "POST",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 17.72813,
+        "status": "included"
+      },
+      {
+        "ticker": "VITL",
+        "display_name": "VITL",
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "raw_multiple": 9.12501,
+        "status": "included"
+      }
+    ],
+    "operating_context": {
+      "target": {
+        "revenue_ltm_mm": 4213.443,
+        "ebitda_ltm_mm": 1564.106,
+        "eps_ltm": 23.74391,
+        "net_debt_mm": -1132.683,
+        "net_debt_to_ebitda": -0.7242
+      },
+      "peer_medians": {
+        "net_debt_to_ebitda": 3.1833
+      },
+      "peer_count": 8
+    },
+    "support_data_quality": {
+      "target_missing_fields": [
+        "ebit_ltm_mm",
+        "ebit_margin"
+      ],
+      "peer_coverage": {
+        "revenue_ltm_mm": {
+          "present": 8,
+          "total": 8,
+          "ratio": 1.0
+        },
+        "ebitda_ltm_mm": {
+          "present": 8,
+          "total": 8,
+          "ratio": 1.0
+        },
+        "ebit_ltm_mm": {
+          "present": 0,
+          "total": 8,
+          "ratio": 0.0
+        },
+        "ebit_margin": {
+          "present": 0,
+          "total": 8,
+          "ratio": 0.0
+        },
+        "net_debt_to_ebitda": {
+          "present": 8,
+          "total": 8,
+          "ratio": 1.0
+        },
+        "tev_ebitda_ltm": {
+          "present": 8,
+          "total": 8,
+          "ratio": 1.0
+        },
+        "tev_ebit_ltm": {
+          "present": 0,
+          "total": 8,
+          "ratio": 0.0
+        },
+        "pe_ltm": {
+          "present": 7,
+          "total": 8,
+          "ratio": 0.875
+        }
+      },
+      "valuation_metric_count": 3,
+      "common_patchups_needed": []
+    },
+    "football_field": {
+      "ranges": [
+        {
+          "metric": "tev_ebitda_fwd",
+          "label": "TEV / EBITDA Fwd",
+          "bear": 274.6492,
+          "base": 342.593,
+          "bull": 355.1005
+        },
+        {
+          "metric": "tev_ebitda_ltm",
+          "label": "TEV / EBITDA LTM",
+          "bear": 280.292,
+          "base": 344.7997,
+          "bull": 385.755
+        },
+        {
+          "metric": "pe_ltm",
+          "label": "P / E LTM",
+          "bear": 420.9351,
+          "base": 430.0647,
+          "bull": 623.7644
+        }
+      ],
+      "markers": [
+        {
+          "label": "Current Price",
+          "value": 75.65,
+          "type": "spot"
+        },
+        {
+          "label": "TEV / EBITDA Fwd Bear",
+          "metric": "tev_ebitda_fwd",
+          "band": "bear",
+          "value": 274.6492,
+          "type": "range_point"
+        },
+        {
+          "label": "TEV / EBITDA Fwd Base",
+          "metric": "tev_ebitda_fwd",
+          "band": "base",
+          "value": 342.593,
+          "type": "range_point"
+        },
+        {
+          "label": "TEV / EBITDA Fwd Bull",
+          "metric": "tev_ebitda_fwd",
+          "band": "bull",
+          "value": 355.1005,
+          "type": "range_point"
+        },
+        {
+          "label": "TEV / EBITDA LTM Bear",
+          "metric": "tev_ebitda_ltm",
+          "band": "bear",
+          "value": 280.292,
+          "type": "range_point"
+        },
+        {
+          "label": "TEV / EBITDA LTM Base",
+          "metric": "tev_ebitda_ltm",
+          "band": "base",
+          "value": 344.7997,
+          "type": "range_point"
+        },
+        {
+          "label": "TEV / EBITDA LTM Bull",
+          "metric": "tev_ebitda_ltm",
+          "band": "bull",
+          "value": 385.755,
+          "type": "range_point"
+        },
+        {
+          "label": "P / E LTM Bear",
+          "metric": "pe_ltm",
+          "band": "bear",
+          "value": 420.9351,
+          "type": "range_point"
+        },
+        {
+          "label": "P / E LTM Base",
+          "metric": "pe_ltm",
+          "band": "base",
+          "value": 430.0647,
+          "type": "range_point"
+        },
+        {
+          "label": "P / E LTM Bull",
+          "metric": "pe_ltm",
+          "band": "bull",
+          "value": 623.7644,
+          "type": "range_point"
+        },
+        {
+          "label": "Analyst Target Mean",
+          "value": 88.0,
+          "type": "spot"
+        }
+      ],
+      "range_min": 75.65,
+      "range_max": 623.7644
+    },
+    "historical_multiples_summary": {
+      "ticker": "CALM",
+      "available": false,
+      "period": "5y",
+      "history_points": 0,
+      "metrics": {},
+      "peer_snapshot": {},
+      "audit_flags": [
+        "No price history available"
+      ]
+    },
+    "source_lineage": {
+      "as_of_date": "2025-11-29",
+      "run_id": 9,
+      "source_file": "CALM_Standard.xlsx"
+    },
+    "audit_flags": [
+      "Peer similarity unavailable: unable to open database file"
+    ],
+    "notes": "primary=tev_ebitda_fwd; 3 metrics computed; 8/8 peers after IQR cleaning",
+    "dcf_compare": {
+      "current_price": 75.65
+    }
+  },
+  "excel_flat": {
+    "metadata": [
+      {
+        "key": "schema_version",
+        "value": "1.0"
+      },
+      {
+        "key": "generated_at",
+        "value": "2026-06-15T20:12:43"
+      },
+      {
+        "key": "ticker",
+        "value": "CALM"
+      },
+      {
+        "key": "company_name",
+        "value": "Cal-Maine Foods, Inc."
+      },
+      {
+        "key": "sector",
+        "value": "Consumer Defensive"
+      },
+      {
+        "key": "industry",
+        "value": "Farm Products"
+      }
+    ],
+    "assumptions": [
+      {
+        "key": "revenue_mm",
+        "value": 4213.443
+      },
+      {
+        "key": "growth_near_pct",
+        "value": 0.145326581472905
+      },
+      {
+        "key": "growth_mid_pct",
+        "value": -0.051870000000000006
+      },
+      {
+        "key": "growth_terminal_pct",
+        "value": 0.025
+      },
+      {
+        "key": "ebit_margin_start_pct",
+        "value": 0.6
+      },
+      {
+        "key": "ebit_margin_target_pct",
+        "value": 0.382
+      },
+      {
+        "key": "capex_pct",
+        "value": 0.25
+      },
+      {
+        "key": "da_pct",
+        "value": 0.008371142871360388
+      },
+      {
+        "key": "tax_rate_start_pct",
+        "value": 0.21859887080076482
+      },
+      {
+        "key": "tax_rate_target_pct",
+        "value": 0.21859887080076482
+      },
+      {
+        "key": "dso_start",
+        "value": 20.4
+      },
+      {
+        "key": "dso_target",
+        "value": 34.12
+      },
+      {
+        "key": "dio_start",
+        "value": 29.5
+      },
+      {
+        "key": "dio_target",
+        "value": 49.449999999999996
+      },
+      {
+        "key": "dpo_start",
+        "value": 10.7
+      },
+      {
+        "key": "dpo_target",
+        "value": 38.21
+      },
+      {
+        "key": "exit_multiple",
+        "value": 10.541210399999999
+      },
+      {
+        "key": "exit_metric",
+        "value": "ev_ebitda"
+      },
+      {
+        "key": "net_debt_mm",
+        "value": -369.45
+      },
+      {
+        "key": "shares_outstanding_mm",
+        "value": 48.562
+      },
+      {
+        "key": "ronic_terminal_pct",
+        "value": 0.11
+      },
+      {
+        "key": "invested_capital_mm",
+        "value": 2276.856
+      },
+      {
+        "key": "non_operating_assets_mm",
+        "value": 285.181
+      },
+      {
+        "key": "minority_interest_mm",
+        "value": 5.391
+      },
+      {
+        "key": "preferred_equity_mm",
+        "value": 0.0
+      },
+      {
+        "key": "pension_deficit_mm",
+        "value": 0.0
+      },
+      {
+        "key": "lease_liabilities_mm",
+        "value": 0.0
+      },
+      {
+        "key": "options_value_mm",
+        "value": 13.581
+      },
+      {
+        "key": "convertibles_value_mm",
+        "value": 0.0
+      },
+      {
+        "key": "scenario_prob_bear",
+        "value": 0.2
+      },
+      {
+        "key": "scenario_prob_base",
+        "value": 0.6
+      },
+      {
+        "key": "scenario_prob_bull",
+        "value": 0.2
+      }
+    ],
+    "wacc": [
+      {
+        "key": "wacc",
+        "value": 0.06644
+      },
+      {
+        "key": "cost_of_equity",
+        "value": 0.06817
+      },
+      {
+        "key": "cost_of_debt",
+        "value": null
+      },
+      {
+        "key": "risk_free_rate",
+        "value": null
+      },
+      {
+        "key": "equity_risk_premium",
+        "value": null
+      },
+      {
+        "key": "beta_raw",
+        "value": 0.24
+      },
+      {
+        "key": "beta_unlevered",
+        "value": 0.22
+      },
+      {
+        "key": "beta_relevered",
+        "value": 0.24
+      },
+      {
+        "key": "size_premium",
+        "value": 0.011000000000000001
+      },
+      {
+        "key": "equity_weight",
+        "value": 0.9167
+      },
+      {
+        "key": "debt_weight",
+        "value": 0.0833
+      },
+      {
+        "key": "peers_used",
+        "value": "[\"CALM (self)\",\"industry_proxy\"]"
+      }
+    ],
+    "valuation": [
+      {
+        "key": "iv_bear",
+        "value": 398.26
+      },
+      {
+        "key": "iv_base",
+        "value": 592.52
+      },
+      {
+        "key": "iv_bull",
+        "value": 964.99
+      },
+      {
+        "key": "expected_iv",
+        "value": 628.16
+      },
+      {
+        "key": "context_expected_iv",
+        "value": 642.53
+      },
+      {
+        "key": "upside_bear_pct",
+        "value": 426.4
+      },
+      {
+        "key": "upside_base_pct",
+        "value": 683.2
+      },
+      {
+        "key": "upside_bull_pct",
+        "value": 1175.6
+      },
+      {
+        "key": "expected_upside_pct",
+        "value": 730.4
+      },
+      {
+        "key": "context_expected_upside_pct",
+        "value": 749.3
+      },
+      {
+        "key": "margin_of_safety",
+        "value": 87.2
+      },
+      {
+        "key": "iv_gordon",
+        "value": 643.96
+      },
+      {
+        "key": "iv_exit",
+        "value": 508.59
+      },
+      {
+        "key": "iv_blended",
+        "value": 592.52
+      },
+      {
+        "key": "ep_iv_base",
+        "value": 656.71
+      },
+      {
+        "key": "fcfe_iv_base",
+        "value": 640.48
+      },
+      {
+        "key": "dcf_ep_gap_pct",
+        "value": 11.08
+      },
+      {
+        "key": "comps_iv_ev_ebitda",
+        "value": 339.2132
+      },
+      {
+        "key": "comps_iv_ev_ebit",
+        "value": null
+      },
+      {
+        "key": "comps_iv_pe",
+        "value": 430.0647
+      },
+      {
+        "key": "comps_iv_base",
+        "value": 384.639
+      },
+      {
+        "key": "implied_growth_pct",
+        "value": null
+      },
+      {
+        "key": "model_applicability_status",
+        "value": "dcf_applicable"
+      }
+    ],
+    "scenarios": [
+      {
+        "scenario": "bear",
+        "probability": 0.2,
+        "iv": 398.26,
+        "upside_pct": 426.4
+      },
+      {
+        "scenario": "base",
+        "probability": 0.6,
+        "iv": 592.52,
+        "upside_pct": 683.2
+      },
+      {
+        "scenario": "bull",
+        "probability": 0.2,
+        "iv": 964.99,
+        "upside_pct": 1175.6
+      },
+      {
+        "scenario": "expected",
+        "probability": null,
+        "iv": 628.16,
+        "upside_pct": 730.4
+      }
+    ],
+    "market": [
+      {
+        "key": "price",
+        "value": 75.65
+      },
+      {
+        "key": "market_cap_mm",
+        "value": 3584.0
+      },
+      {
+        "key": "ev_mm",
+        "value": 2439.0
+      },
+      {
+        "key": "pe_trailing",
+        "value": 5.26444
+      },
+      {
+        "key": "pe_forward",
+        "value": 20.984743
+      },
+      {
+        "key": "ev_ebitda",
+        "value": 2.512
+      },
+      {
+        "key": "analyst_target",
+        "value": 88.0
+      },
+      {
+        "key": "analyst_recommendation",
+        "value": "buy"
+      },
+      {
+        "key": "num_analysts",
+        "value": 4
+      }
+    ],
+    "terminal": [
+      {
+        "key": "tv_gordon_mm",
+        "value": 44751.0
+      },
+      {
+        "key": "tv_exit_mm",
+        "value": 32243.0
+      },
+      {
+        "key": "tv_blended_mm",
+        "value": 39998.0
+      },
+      {
+        "key": "pv_tv_gordon_mm",
+        "value": 23520.0
+      },
+      {
+        "key": "pv_tv_exit_mm",
+        "value": 16946.0
+      },
+      {
+        "key": "pv_tv_blended_mm",
+        "value": 21022.0
+      },
+      {
+        "key": "tv_pct_of_ev",
+        "value": 74.7
+      },
+      {
+        "key": "terminal_growth_pct",
+        "value": 2.5
+      },
+      {
+        "key": "terminal_ronic_pct",
+        "value": 11.0
+      },
+      {
+        "key": "gordon_formula_mode",
+        "value": "value_driver"
+      },
+      {
+        "key": "ev_operations_mm",
+        "value": 28138.0
+      },
+      {
+        "key": "ev_total_mm",
+        "value": 28424.0
+      },
+      {
+        "key": "non_operating_assets_mm",
+        "value": 285.0
+      },
+      {
+        "key": "non_equity_claims_mm",
+        "value": -350.0
+      }
+    ],
+    "health_flags": [
+      {
+        "key": "tv_high_flag",
+        "value": false
+      },
+      {
+        "key": "tv_extreme_flag",
+        "value": false
+      },
+      {
+        "key": "tv_method_fallback_flag",
+        "value": false
+      },
+      {
+        "key": "roic_consistency_flag",
+        "value": false
+      },
+      {
+        "key": "nwc_driver_quality_flag",
+        "value": true
+      },
+      {
+        "key": "terminal_growth_guardrail_flag",
+        "value": false
+      },
+      {
+        "key": "terminal_ronic_guardrail_flag",
+        "value": false
+      },
+      {
+        "key": "terminal_denominator_guardrail_flag",
+        "value": false
+      },
+      {
+        "key": "fcff_interest_contamination_flag",
+        "value": false
+      },
+      {
+        "key": "ep_reconcile_flag",
+        "value": true
+      }
+    ],
+    "source_lineage": [
+      {
+        "key": "revenue_base",
+        "value": "ciq"
+      },
+      {
+        "key": "revenue_growth_near",
+        "value": "override_ticker"
+      },
+      {
+        "key": "growth_source_detail",
+        "value": "ciq_consensus"
+      },
+      {
+        "key": "revenue_period_type",
+        "value": "ttm"
+      },
+      {
+        "key": "growth_period_type",
+        "value": "consensus_fy1"
+      },
+      {
+        "key": "revenue_alignment_flag",
+        "value": "aligned_consensus"
+      },
+      {
+        "key": "revenue_data_quality_flag",
+        "value": "ok"
+      },
+      {
+        "key": "ebit_margin_start",
+        "value": "ciq"
+      },
+      {
+        "key": "capex_pct_start",
+        "value": "ciq"
+      },
+      {
+        "key": "da_pct_start",
+        "value": "ciq"
+      },
+      {
+        "key": "tax_rate_start",
+        "value": "ciq"
+      },
+      {
+        "key": "dso_start",
+        "value": "ciq"
+      },
+      {
+        "key": "dio_start",
+        "value": "ciq"
+      },
+      {
+        "key": "dpo_start",
+        "value": "ciq"
+      },
+      {
+        "key": "exit_multiple",
+        "value": "ciq_comps_tev_ebitda_fwd|story_sector"
+      },
+      {
+        "key": "net_debt",
+        "value": "ciq"
+      },
+      {
+        "key": "shares_outstanding",
+        "value": "ciq"
+      },
+      {
+        "key": "cost_of_equity",
+        "value": "wacc_methodology:blended"
+      },
+      {
+        "key": "debt_weight",
+        "value": "wacc_methodology:blended"
+      },
+      {
+        "key": "ronic_terminal",
+        "value": "default"
+      },
+      {
+        "key": "invested_capital_start",
+        "value": "yfinance_derived"
+      },
+      {
+        "key": "non_operating_assets",
+        "value": "ciq_cash_excess"
+      },
+      {
+        "key": "minority_interest",
+        "value": "yfinance"
+      },
+      {
+        "key": "preferred_equity",
+        "value": "default"
+      },
+      {
+        "key": "pension_deficit",
+        "value": "default"
+      },
+      {
+        "key": "lease_liabilities",
+        "value": "default"
+      },
+      {
+        "key": "options_value",
+        "value": "sbc_proxy"
+      },
+      {
+        "key": "convertibles_value",
+        "value": "default"
+      },
+      {
+        "key": "story_profile",
+        "value": "story_sector"
+      }
+    ],
+    "ciq_lineage": [
+      {
+        "key": "snapshot_used",
+        "value": true
+      },
+      {
+        "key": "snapshot_run_id",
+        "value": 9
+      },
+      {
+        "key": "snapshot_source_file",
+        "value": "CALM_Standard.xlsx"
+      },
+      {
+        "key": "snapshot_as_of_date",
+        "value": "2025-11-29"
+      },
+      {
+        "key": "comps_used",
+        "value": true
+      },
+      {
+        "key": "comps_run_id",
+        "value": 9
+      },
+      {
+        "key": "comps_source_file",
+        "value": "CALM_Standard.xlsx"
+      },
+      {
+        "key": "comps_as_of_date",
+        "value": "2025-11-29"
+      },
+      {
+        "key": "peer_count",
+        "value": 8
+      },
+      {
+        "key": "public_comps_fallback_used",
+        "value": false
+      },
+      {
+        "key": "public_comps_fallback_source_file",
+        "value": null
+      },
+      {
+        "key": "public_comps_fallback_peer_count",
+        "value": null
+      }
+    ],
+    "forecast": [
+      {
+        "year": 1,
+        "revenue_mm": 4825.768,
+        "growth_rate": 0.145326581472905,
+        "ebit_margin": 0.6,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.25,
+        "da_pct": 0.008371142871360388,
+        "dso": 20.4,
+        "dio": 29.5,
+        "dpo": 10.7,
+        "ebit_mm": 2895.461,
+        "nopat_mm": 2262.516,
+        "da_mm": 40.397,
+        "capex_mm": 1206.442,
+        "ar_mm": 269.714,
+        "inventory_mm": 253.869,
+        "ap_mm": 92.081,
+        "nwc_mm": 431.502,
+        "delta_nwc_mm": 54.752,
+        "fcff_mm": 1041.72,
+        "discount_factor": 1.06644,
+        "pv_fcff_mm": 976.82,
+        "reinvestment_mm": 1220.797,
+        "invested_capital_start_mm": 2276.856,
+        "invested_capital_end_mm": 3497.653,
+        "roic": 0.9937020452984011,
+        "economic_profit_mm": 2111.242,
+        "pv_economic_profit_mm": 1979.71,
+        "fcfe_mm": 1143.412,
+        "pv_fcfe_mm": 1070.44
+      },
+      {
+        "year": 2,
+        "revenue_mm": 5527.081,
+        "growth_rate": 0.145326581472905,
+        "ebit_margin": 0.5757777777777777,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24861111111111112,
+        "da_pct": 0.008324636522075053,
+        "dso": 21.924444444444443,
+        "dio": 31.716666666666665,
+        "dpo": 13.756666666666666,
+        "ebit_mm": 3182.37,
+        "nopat_mm": 2486.708,
+        "da_mm": 46.011,
+        "capex_mm": 1374.094,
+        "ar_mm": 331.995,
+        "inventory_mm": 312.611,
+        "ap_mm": 135.591,
+        "nwc_mm": 509.015,
+        "delta_nwc_mm": 77.514,
+        "fcff_mm": 1081.111,
+        "discount_factor": 1.1372942736,
+        "pv_fcff_mm": 950.6,
+        "reinvestment_mm": 1405.596,
+        "invested_capital_start_mm": 3497.653,
+        "invested_capital_end_mm": 4903.249,
+        "roic": 0.7109647285123654,
+        "economic_profit_mm": 2254.324,
+        "pv_economic_profit_mm": 1982.181,
+        "fcfe_mm": 1198.198,
+        "pv_fcfe_mm": 1050.141
+      },
+      {
+        "year": 3,
+        "revenue_mm": 6330.312,
+        "growth_rate": 0.145326581472905,
+        "ebit_margin": 0.5515555555555556,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24722222222222223,
+        "da_pct": 0.008278130172789716,
+        "dso": 23.448888888888888,
+        "dio": 33.93333333333333,
+        "dpo": 16.813333333333333,
+        "ebit_mm": 3491.519,
+        "nopat_mm": 2728.277,
+        "da_mm": 52.403,
+        "capex_mm": 1564.994,
+        "ar_mm": 406.682,
+        "inventory_mm": 383.066,
+        "ap_mm": 189.802,
+        "nwc_mm": 599.945,
+        "delta_nwc_mm": 90.93,
+        "fcff_mm": 1124.756,
+        "discount_factor": 1.2128561051379843,
+        "pv_fcff_mm": 927.362,
+        "reinvestment_mm": 1603.521,
+        "invested_capital_start_mm": 4903.249,
+        "invested_capital_end_mm": 6506.77,
+        "roic": 0.5564222628497817,
+        "economic_profit_mm": 2402.505,
+        "pv_economic_profit_mm": 1980.866,
+        "fcfe_mm": 1258.33,
+        "pv_fcfe_mm": 1032.46
+      },
+      {
+        "year": 4,
+        "revenue_mm": 7071.944,
+        "growth_rate": 0.11715564126249,
+        "ebit_margin": 0.5273333333333333,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24583333333333332,
+        "da_pct": 0.008231623823504381,
+        "dso": 24.97333333333333,
+        "dio": 36.15,
+        "dpo": 19.869999999999997,
+        "ebit_mm": 3729.272,
+        "nopat_mm": 2914.057,
+        "da_mm": 58.214,
+        "capex_mm": 1738.52,
+        "ar_mm": 483.863,
+        "inventory_mm": 455.899,
+        "ap_mm": 250.587,
+        "nwc_mm": 689.175,
+        "delta_nwc_mm": 89.23,
+        "fcff_mm": 1144.521,
+        "discount_factor": 1.293438264763352,
+        "pv_fcff_mm": 884.867,
+        "reinvestment_mm": 1769.536,
+        "invested_capital_start_mm": 6506.77,
+        "invested_capital_end_mm": 8276.305,
+        "roic": 0.4478500845002239,
+        "economic_profit_mm": 2481.748,
+        "pv_economic_profit_mm": 1918.721,
+        "fcfe_mm": 1291.924,
+        "pv_fcfe_mm": 992.374
+      },
+      {
+        "year": 5,
+        "revenue_mm": 7701.239,
+        "growth_rate": 0.08898470105207501,
+        "ebit_margin": 0.5031111111111111,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24444444444444444,
+        "da_pct": 0.008185117474219046,
+        "dso": 26.497777777777777,
+        "dio": 38.36666666666666,
+        "dpo": 22.926666666666666,
+        "ebit_mm": 3874.579,
+        "nopat_mm": 3027.6,
+        "da_mm": 63.036,
+        "capex_mm": 1882.525,
+        "ar_mm": 559.084,
+        "inventory_mm": 526.91,
+        "ap_mm": 314.864,
+        "nwc_mm": 771.13,
+        "delta_nwc_mm": 81.955,
+        "fcff_mm": 1126.156,
+        "discount_factor": 1.3793743030742291,
+        "pv_fcff_mm": 816.425,
+        "reinvestment_mm": 1901.444,
+        "invested_capital_start_mm": 8276.305,
+        "invested_capital_end_mm": 10177.75,
+        "roic": 0.3658154446321354,
+        "economic_profit_mm": 2477.723,
+        "pv_economic_profit_mm": 1796.266,
+        "fcfe_mm": 1284.547,
+        "pv_fcfe_mm": 923.736
+      },
+      {
+        "year": 6,
+        "revenue_mm": 8169.58,
+        "growth_rate": 0.06081376084166,
+        "ebit_margin": 0.47888888888888886,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24305555555555555,
+        "da_pct": 0.00813861112493371,
+        "dso": 28.02222222222222,
+        "dio": 40.58333333333333,
+        "dpo": 25.983333333333334,
+        "ebit_mm": 3912.321,
+        "nopat_mm": 3057.092,
+        "da_mm": 66.489,
+        "capex_mm": 1985.662,
+        "ar_mm": 627.205,
+        "inventory_mm": 591.247,
+        "ap_mm": 378.544,
+        "nwc_mm": 839.908,
+        "delta_nwc_mm": 68.778,
+        "fcff_mm": 1069.141,
+        "discount_factor": 1.4710199317704808,
+        "pv_fcff_mm": 726.803,
+        "reinvestment_mm": 1987.951,
+        "invested_capital_start_mm": 10177.75,
+        "invested_capital_end_mm": 12165.701,
+        "roic": 0.30037015834891895,
+        "economic_profit_mm": 2380.883,
+        "pv_economic_profit_mm": 1618.525,
+        "fcfe_mm": 1234.737,
+        "pv_fcfe_mm": 831.251
+      },
+      {
+        "year": 7,
+        "revenue_mm": 8436.259,
+        "growth_rate": 0.032642820631245004,
+        "ebit_margin": 0.45466666666666666,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24166666666666667,
+        "da_pct": 0.008092104775648375,
+        "dso": 29.546666666666663,
+        "dio": 42.8,
+        "dpo": 29.04,
+        "ebit_mm": 3835.686,
+        "nopat_mm": 2997.209,
+        "da_mm": 68.267,
+        "capex_mm": 2038.762,
+        "ar_mm": 682.913,
+        "inventory_mm": 643.895,
+        "ap_mm": 436.886,
+        "nwc_mm": 889.922,
+        "delta_nwc_mm": 50.014,
+        "fcff_mm": 976.699,
+        "discount_factor": 1.5687544960373119,
+        "pv_fcff_mm": 622.595,
+        "reinvestment_mm": 2020.51,
+        "invested_capital_start_mm": 12165.701,
+        "invested_capital_end_mm": 14186.21,
+        "roic": 0.2463655047324143,
+        "economic_profit_mm": 2188.92,
+        "pv_economic_profit_mm": 1395.323,
+        "fcfe_mm": 1145.008,
+        "pv_fcfe_mm": 721.649
+      },
+      {
+        "year": 8,
+        "revenue_mm": 8473.984,
+        "growth_rate": 0.004471880420829993,
+        "ebit_margin": 0.4304444444444444,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.24027777777777776,
+        "da_pct": 0.00804559842636304,
+        "dso": 31.071111111111108,
+        "dio": 45.016666666666666,
+        "dpo": 32.096666666666664,
+        "ebit_mm": 3647.58,
+        "nopat_mm": 2850.223,
+        "da_mm": 68.178,
+        "capex_mm": 2036.11,
+        "ar_mm": 721.359,
+        "inventory_mm": 680.272,
+        "ap_mm": 485.03,
+        "nwc_mm": 916.6,
+        "delta_nwc_mm": 26.678,
+        "fcff_mm": 855.613,
+        "discount_factor": 1.672982544754031,
+        "pv_fcff_mm": 511.43,
+        "reinvestment_mm": 1994.61,
+        "invested_capital_start_mm": 14186.21,
+        "invested_capital_end_mm": 16180.82,
+        "roic": 0.20091502017625903,
+        "economic_profit_mm": 1907.691,
+        "pv_economic_profit_mm": 1140.293,
+        "fcfe_mm": 1021.764,
+        "pv_fcfe_mm": 602.875
+      },
+      {
+        "year": 9,
+        "revenue_mm": 8273.159,
+        "growth_rate": -0.023699059789585003,
+        "ebit_margin": 0.40622222222222226,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.23888888888888887,
+        "da_pct": 0.007999092077077703,
+        "dso": 32.59555555555555,
+        "dio": 47.23333333333333,
+        "dpo": 35.153333333333336,
+        "ebit_mm": 3360.741,
+        "nopat_mm": 2626.087,
+        "da_mm": 66.178,
+        "capex_mm": 1976.366,
+        "ar_mm": 738.817,
+        "inventory_mm": 696.853,
+        "ap_mm": 518.632,
+        "nwc_mm": 917.038,
+        "delta_nwc_mm": 0.438,
+        "fcff_mm": 715.461,
+        "discount_factor": 1.7841355050274887,
+        "pv_fcff_mm": 401.013,
+        "reinvestment_mm": 1910.626,
+        "invested_capital_start_mm": 16180.82,
+        "invested_capital_end_mm": 18091.446,
+        "roic": 0.1622962725920112,
+        "economic_profit_mm": 1551.033,
+        "pv_economic_profit_mm": 869.347,
+        "fcfe_mm": 874.616,
+        "pv_fcfe_mm": 483.119
+      },
+      {
+        "year": 10,
+        "revenue_mm": 7844.03,
+        "growth_rate": -0.051870000000000006,
+        "ebit_margin": 0.382,
+        "tax_rate": 0.21859887080076482,
+        "capex_pct": 0.2375,
+        "da_pct": 0.007952585727792368,
+        "dso": 34.12,
+        "dio": 49.449999999999996,
+        "dpo": 38.21,
+        "ebit_mm": 2996.42,
+        "nopat_mm": 2341.406,
+        "da_mm": 62.38,
+        "capex_mm": 1862.957,
+        "ar_mm": 733.256,
+        "inventory_mm": 691.715,
+        "ap_mm": 534.488,
+        "nwc_mm": 890.483,
+        "delta_nwc_mm": -26.556,
+        "fcff_mm": 567.385,
+        "discount_factor": 1.9026734679815152,
+        "pv_fcff_mm": 298.204,
+        "reinvestment_mm": 1774.021,
+        "invested_capital_start_mm": 18091.446,
+        "invested_capital_end_mm": 19865.467,
+        "roic": 0.1294205881956776,
+        "economic_profit_mm": 1139.41,
+        "pv_economic_profit_mm": 598.847,
+        "fcfe_mm": 715.16,
+        "pv_fcfe_mm": 369.828
+      }
+    ],
+    "historical_financials": [
+      {
+        "period": "2016-05-28",
+        "fiscal_year": "FY16",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1908.65,
+        "da_mm": 41.992,
+        "ebit_mm": 470.314,
+        "pretax_income_mm": 485.665,
+        "tax_expense_mm": 169.202,
+        "ebitda_mm": 514.906,
+        "cfo_mm": 388.437,
+        "capex_mm": 76.125,
+        "cash_mm": 29.046,
+        "total_assets_mm": 1111.765,
+        "total_equity_mm": 917.361,
+        "debt_mm": 25.57,
+        "revenue_growth_pct": 0.2109739818085843,
+        "ebit_margin_pct": 0.24641186178712704,
+        "ebitda_margin_pct": 0.26977497183873417,
+        "da_pct": 0.022000890681895577,
+        "capex_pct": 0.03988421135357451,
+        "tax_rate_pct": 0.34839241040635005,
+        "net_debt_mm": -3.475999999999999
+      },
+      {
+        "period": "2017-06-03",
+        "fiscal_year": "FY17",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1074.513,
+        "da_mm": 46.913,
+        "ebit_mm": -130.482,
+        "pretax_income_mm": -110.854,
+        "tax_expense_mm": 39.867,
+        "ebitda_mm": -81.369,
+        "cfo_mm": -45.918,
+        "capex_mm": 66.657,
+        "cash_mm": 17.564,
+        "total_assets_mm": 1033.094,
+        "total_equity_mm": 844.493,
+        "debt_mm": 10.939,
+        "revenue_growth_pct": -0.437029837843502,
+        "ebit_margin_pct": -0.12143361690365775,
+        "ebitda_margin_pct": -0.07572639884301074,
+        "da_pct": 0.043659778895183216,
+        "capex_pct": 0.062034614751054665,
+        "tax_rate_pct": -0.3596351958431811,
+        "net_debt_mm": -6.625
+      },
+      {
+        "period": "2018-06-02",
+        "fiscal_year": "FY18",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1502.932,
+        "da_mm": 51.226,
+        "ebit_mm": 181.73,
+        "pretax_income_mm": 198.595,
+        "tax_expense_mm": 8.859,
+        "ebitda_mm": 235.756,
+        "cfo_mm": 200.415,
+        "capex_mm": 19.671,
+        "cash_mm": 48.431,
+        "total_assets_mm": 1150.447,
+        "total_equity_mm": 955.682,
+        "debt_mm": 6.09,
+        "revenue_growth_pct": 0.3987099271949246,
+        "ebit_margin_pct": 0.12091698094125349,
+        "ebitda_margin_pct": 0.15686404973744653,
+        "da_pct": 0.03408404372253701,
+        "capex_pct": 0.013088416508531323,
+        "tax_rate_pct": 0.044608373826128554,
+        "net_debt_mm": -42.340999999999994
+      },
+      {
+        "period": "2019-06-01",
+        "fiscal_year": "FY19",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1361.188,
+        "da_mm": 51.85,
+        "ebit_mm": 45.814,
+        "pretax_income_mm": 70.814,
+        "tax_expense_mm": 15.743,
+        "ebitda_mm": 100.464,
+        "cfo_mm": 115.085,
+        "capex_mm": 67.989,
+        "cash_mm": 69.247,
+        "total_assets_mm": 1156.278,
+        "total_equity_mm": 989.806,
+        "debt_mm": 2.554,
+        "revenue_growth_pct": -0.0943116521572499,
+        "ebit_margin_pct": 0.033657364008498454,
+        "ebitda_margin_pct": 0.0738061164218315,
+        "da_pct": 0.0380917257572062,
+        "capex_pct": 0.049948280472645955,
+        "tax_rate_pct": 0.22231479650916489,
+        "net_debt_mm": -66.693
+      },
+      {
+        "period": "2020-05-30",
+        "fiscal_year": "FY20",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1351.609,
+        "da_mm": 55.203,
+        "ebit_mm": 1.351,
+        "pretax_income_mm": 20.002,
+        "tax_expense_mm": 1.731,
+        "ebitda_mm": 59.454,
+        "cfo_mm": 73.609,
+        "capex_mm": 124.178,
+        "cash_mm": 78.13,
+        "total_assets_mm": 1206.694,
+        "total_equity_mm": 1009.675,
+        "debt_mm": 3.388,
+        "revenue_growth_pct": -0.007037235121085561,
+        "ebit_margin_pct": 0.0009995494259064568,
+        "ebitda_margin_pct": 0.043987573329269045,
+        "da_pct": 0.04084243298172771,
+        "capex_pct": 0.09187420326440561,
+        "tax_rate_pct": 0.08654134586541347,
+        "net_debt_mm": -74.74199999999999
+      },
+      {
+        "period": "2021-05-29",
+        "fiscal_year": "FY21",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1348.987,
+        "da_mm": 59.477,
+        "ebit_mm": -23.282,
+        "pretax_income_mm": -5.616,
+        "tax_expense_mm": 12.009,
+        "ebitda_mm": 36.195,
+        "cfo_mm": 26.136,
+        "capex_mm": 95.069,
+        "cash_mm": 57.352,
+        "total_assets_mm": 1229.174,
+        "total_equity_mm": 1012.781,
+        "debt_mm": 2.378,
+        "revenue_growth_pct": -0.001939910136733225,
+        "ebit_margin_pct": -0.01725887647545899,
+        "ebitda_margin_pct": 0.026831244481970544,
+        "da_pct": 0.044090120957429535,
+        "capex_pct": 0.07047436335561424,
+        "tax_rate_pct": -2.138354700854701,
+        "net_debt_mm": -54.974
+      },
+      {
+        "period": "2022-05-28",
+        "fiscal_year": "FY22",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 1777.159,
+        "da_mm": 68.395,
+        "ebit_mm": 138.428,
+        "pretax_income_mm": 160.801,
+        "tax_expense_mm": 33.574,
+        "ebitda_mm": 206.823,
+        "cfo_mm": 126.209,
+        "capex_mm": 72.399,
+        "cash_mm": 59.084,
+        "total_assets_mm": 1427.489,
+        "total_equity_mm": 1104.345,
+        "debt_mm": 0.0,
+        "revenue_growth_pct": 0.3174026139614392,
+        "ebit_margin_pct": 0.07789286158413512,
+        "ebitda_margin_pct": 0.11637844447232915,
+        "da_pct": 0.038485582888194016,
+        "capex_pct": 0.04073861708490911,
+        "tax_rate_pct": 0.20879223387914256,
+        "net_debt_mm": -59.084
+      },
+      {
+        "period": "2023-06-03",
+        "fiscal_year": "FY23",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 3146.217,
+        "da_mm": 70.0,
+        "ebit_mm": 964.25,
+        "pretax_income_mm": 998.455,
+        "tax_expense_mm": 241.818,
+        "ebitda_mm": 1036.484,
+        "cfo_mm": 863.01,
+        "capex_mm": 136.569,
+        "cash_mm": 292.824,
+        "total_assets_mm": 1954.525,
+        "total_equity_mm": 1609.583,
+        "debt_mm": 0.0,
+        "revenue_growth_pct": 0.7703632595620313,
+        "ebit_margin_pct": 0.30647917800965413,
+        "ebitda_margin_pct": 0.3294381792482845,
+        "da_pct": 0.02224894214226164,
+        "capex_pct": 0.043407368277521854,
+        "tax_rate_pct": 0.242192186928805,
+        "net_debt_mm": -292.824
+      },
+      {
+        "period": "2024-06-01",
+        "fiscal_year": "FY24",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 2326.443,
+        "da_mm": 78.068,
+        "ebit_mm": 314.094,
+        "pretax_income_mm": 384.954,
+        "tax_expense_mm": 83.689,
+        "ebitda_mm": 394.335,
+        "cfo_mm": 451.398,
+        "capex_mm": 147.116,
+        "cash_mm": 237.878,
+        "total_assets_mm": 2184.761,
+        "total_equity_mm": 1797.043,
+        "debt_mm": 0.0,
+        "revenue_growth_pct": -0.26055863279614844,
+        "ebit_margin_pct": 0.13501039999690514,
+        "ebitda_margin_pct": 0.16950125148133866,
+        "da_pct": 0.0335568075383751,
+        "capex_pct": 0.06323645152707373,
+        "tax_rate_pct": 0.21740000103908516,
+        "net_debt_mm": -237.878
+      },
+      {
+        "period": "2025-05-31",
+        "fiscal_year": "FY25",
+        "source": "ciq_standard_workbook",
+        "source_file": "CALM_Standard.xlsx",
+        "revenue_mm": 4261.885,
+        "da_mm": 91.863,
+        "ebit_mm": 1551.436,
+        "pretax_income_mm": 1617.807,
+        "tax_expense_mm": 384.91,
+        "ebitda_mm": 1645.457,
+        "cfo_mm": 1224.734,
+        "capex_mm": 161.255,
+        "cash_mm": 499.392,
+        "total_assets_mm": 3084.619,
+        "total_equity_mm": 2566.015,
+        "debt_mm": 0.0,
+        "revenue_growth_pct": 0.8319318375734974,
+        "ebit_margin_pct": 0.36402577732623004,
+        "ebitda_margin_pct": 0.3860866729158577,
+        "da_pct": 0.021554546873038573,
+        "capex_pct": 0.03783654415827738,
+        "tax_rate_pct": 0.23792083975406214,
+        "net_debt_mm": -499.392
+      }
+    ],
+    "comps_peers": [
+      {
+        "ticker": "VITL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 588.6342882,
+        "tev_mm": 528.7742882,
+        "revenue_ltm_mm": 759.444,
+        "ebitda_ltm_mm": 102.885,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.44,
+        "tev_ebitda_ltm": 1.35421,
+        "tev_ebitda_fwd": 5.19661,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 9.12501
+      },
+      {
+        "ticker": "POST",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 4576.777854,
+        "tev_mm": 11770.677854,
+        "revenue_ltm_mm": 8358.0,
+        "ebitda_ltm_mm": 1422.7,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 5.3982,
+        "tev_ebitda_ltm": 7.76584,
+        "tev_ebitda_fwd": 7.59492,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 17.72813
+      },
+      {
+        "ticker": "KHC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 26089.73429,
+        "tev_mm": 44311.73429,
+        "revenue_ltm_mm": 24942.0,
+        "ebitda_ltm_mm": 5727.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": -4.93,
+        "tev_ebitda_ltm": 7.08195,
+        "tev_ebitda_fwd": 8.82271,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": null
+      },
+      {
+        "ticker": "HRL",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 12695.056724700002,
+        "tev_mm": 14666.047724700002,
+        "revenue_ltm_mm": 12144.664,
+        "ebitda_ltm_mm": 1211.613,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.88918,
+        "tev_ebitda_ltm": 9.71977,
+        "tev_ebitda_fwd": 10.48988,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 25.94517
+      },
+      {
+        "ticker": "GIS",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 19452.680469000003,
+        "tev_mm": 32648.580469000004,
+        "revenue_ltm_mm": 18371.2,
+        "ebitda_ltm_mm": 3318.1,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 4.07124,
+        "tev_ebitda_ltm": 9.49363,
+        "tev_ebitda_fwd": 10.03178,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 8.95305
+      },
+      {
+        "ticker": "MKC",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 14246.0173968,
+        "tev_mm": 18404.6173968,
+        "revenue_ltm_mm": 6840.3,
+        "ebitda_ltm_mm": 1305.8,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 2.93,
+        "tev_ebitda_ltm": 12.6482,
+        "tev_ebitda_fwd": 12.00267,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 18.11263
+      },
+      {
+        "ticker": "300761",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 2479.5907842528,
+        "tev_mm": 2781.1122942528,
+        "revenue_ltm_mm": 2603.41102,
+        "ebitda_ltm_mm": 241.48262,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 0.10945,
+        "tev_ebitda_ltm": 10.9603,
+        "tev_ebitda_fwd": 9.65293,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 26.2705
+      },
+      {
+        "ticker": "MDLZ",
+        "run_id": 9,
+        "source_file": "CALM_Standard.xlsx",
+        "as_of_date": "2025-11-29",
+        "market_cap_mm": 74693.1471909,
+        "tev_mm": 94589.1471909,
+        "revenue_ltm_mm": 38537.0,
+        "ebitda_ltm_mm": 4990.0,
+        "ebit_ltm_mm": null,
+        "eps_ltm": 1.89,
+        "tev_ebitda_ltm": 16.19123,
+        "tev_ebitda_fwd": 14.02245,
+        "tev_ebit_ltm": null,
+        "tev_ebit_fwd": null,
+        "pe_ltm": 30.83069
+      }
+    ],
+    "comps_valuation": [
+      {
+        "metric": "tev_ebitda_fwd",
+        "label": "TEV / EBITDA Fwd",
+        "target_multiple": 9.59012,
+        "peer_median_multiple": 9.8424,
+        "bear_multiple": 7.5949,
+        "base_multiple": 9.6529,
+        "bull_multiple": 10.0318,
+        "bear_iv": 274.6492,
+        "base_iv": 342.593,
+        "bull_iv": 355.1005,
+        "n_raw": 8,
+        "n_clean": 8,
+        "outliers_removed": [],
+        "is_primary": true
+      },
+      {
+        "metric": "tev_ebitda_ltm",
+        "label": "TEV / EBITDA LTM",
+        "target_multiple": 1.61902,
+        "peer_median_multiple": 9.6067,
+        "bear_multiple": 7.7658,
+        "base_multiple": 9.7198,
+        "bull_multiple": 10.9603,
+        "bear_iv": 280.292,
+        "base_iv": 344.7997,
+        "bull_iv": 385.755,
+        "n_raw": 8,
+        "n_clean": 7,
+        "outliers_removed": [
+          "VITL"
+        ],
+        "is_primary": false
+      },
+      {
+        "metric": "pe_ltm",
+        "label": "P / E LTM",
+        "target_multiple": 3.24799,
+        "peer_median_multiple": 18.1126,
+        "bear_multiple": 17.7281,
+        "base_multiple": 18.1126,
+        "bull_multiple": 26.2705,
+        "bear_iv": 420.9351,
+        "base_iv": 430.0647,
+        "bull_iv": 623.7644,
+        "n_raw": 7,
+        "n_clean": 7,
+        "outliers_removed": [],
+        "is_primary": false
+      }
+    ]
+  }
+}

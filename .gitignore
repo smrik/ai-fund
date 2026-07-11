@@ -26,21 +26,10 @@ htmlcov/
 .env.*
 !.env.example
 
-# Runtime data artifacts (generated)
-data/cache/
-data/dossiers/
-data/valuations/
-# Generated exports remain ignored except for the curated MSFT standard
-# workbook, which is tracked for private reproducibility.
-data/exports/*
-!data/exports/MSFT_Standard.xlsx
-data/damodaran_drop/
-data/alpha_pod.db
-data/*.db-shm
-data/*.db-wal
-data/tracker-test-*.db
-data/stage1_survivors.csv
-data/regime_model.pkl
+# Runtime data is tracked for this private reproducibility branch. Keep only
+# the obsolete backup and removed archive out of Git.
+data/alpha_pod.db.polluted-20260703.bak
+data/data.zip
 
 # Excel temp files
 ~$*.xlsx
