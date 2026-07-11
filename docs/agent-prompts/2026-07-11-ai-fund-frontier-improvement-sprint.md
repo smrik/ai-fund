@@ -53,6 +53,30 @@ git switch --track origin/codex/focused-accounting-evidence-repair
 git switch -c codex/frontier-improvement-sprint
 ```
 
+### If Git is not installed
+
+Install Git if you can. On Windows, the simplest option is:
+
+```powershell
+winget install --id Git.Git -e --source winget
+```
+
+Then open a new terminal and verify:
+
+```powershell
+git --version
+```
+
+On macOS, use `xcode-select --install` or `brew install git`. On Debian/Ubuntu, use `sudo apt-get install git`. If package installation is unavailable, use the official installer from [git-scm.com/downloads](https://git-scm.com/downloads) or GitHub Desktop.
+
+If Git cannot be installed at all, download the exact reviewed branch as a ZIP:
+
+```text
+https://github.com/smrik/ai-fund/archive/refs/heads/codex/focused-accounting-evidence-repair.zip
+```
+
+Extract it, open a terminal in the extracted `ai-fund-*` directory, and run the sprint command from there. The agent can inspect, edit, and test the files, but this fallback has no Git history, branch management, diff tracking, commit, push, or pull-request workflow. Save the final changed directory or create a patch manually, then move the work to a machine with Git before integrating it.
+
 Local `.env` secrets, SQLite databases, SEC/market caches, and generated `output/` artifacts are machine-local. Configure the new device from `.env.example` and the setup documentation; never copy secrets into Git or send them to a delegated worker.
 
 ## Project background
