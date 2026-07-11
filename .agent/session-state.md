@@ -1,29 +1,29 @@
 # Session State
 
-**Updated:** 2026-07-11T12:35:00+02:00
+**Updated:** 2026-07-11T12:07:39+02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
-Work Package 3: final live MSFT guided ticker workup and financial soundness audit.
+Work Package 4: add the Codex CLI backend for judgment agents with OpenRouter free fallback, routing flags, truthful model provenance, and offline fake-subprocess tests.
 
 ## Recent Actions
-- Ran the exact requested isolated live MSFT workup with OpenRouter free routing; exit code was 0.
-- All six profiles failed at the live agent call with HTTP 401 `Missing Authentication header`; no parse-error profile rerun was applicable.
-- Audited the run artifacts: deterministic snapshot arithmetic and scenario facts reconcile, SEC metrics use 2025-06-30 with revenue CAGR 0.1530, and current-run evidence map packet IDs are 172-177.
-- Found material prep-pack base-IV drift (276.43 claim versus final 274.71), stale cache warnings, an unrendered current queue (0 items), and TODO placeholders in the friction draft.
-- Read-only Excel scan found 12 sheets, 308 formulas, and no formula/error strings.
+- Added `BaseAgent` Codex routing using `codex exec --ephemeral -s read-only -m ... -c model_reasoning_effort=... -o <temp-file> -`, with prompts on stdin and a strict no-tools/no-files/no-commands preamble.
+- Added Codex failure fallback, structured-payload skip, artifact trace provenance, and cache/run-history provenance restoration for fallback and cache-hit calls.
+- Added guided workup `--use-codex`, model/effort overrides, OpenRouter fallback configuration, precedence behavior, subscription routing banner, secondary fallback preservation, and tests.
+- Added and completed the canonical plan at `docs/plans/completed/2026-07-11-codex-cli-judgment-backend.md`.
 
 ## Next Steps
-- Deliver the Work Package 3 run result and PASS/FAIL audit to the PM.
-- Do not commit; preserve the existing unrelated dirty worktree changes and database artifacts.
+- No implementation work remains for Work Package 4.
+- PM/orchestrator can run the separate live Codex smoke; this session intentionally did not make live LLM calls.
+- Do not commit the working tree; preserve unrelated untracked artifacts.
 
 ## Known Issues
-- Live OpenRouter free routing returned HTTP 401 `Missing Authentication header` for all six profiles.
-- Historical financials and market cache entries are flagged stale at about 5.4/5.5 days.
-- Analyst prep claim says Base DCF IV 276.43, but final snapshot/valuation JSON use 274.71; friction draft contains TODO placeholders.
-- The working tree contains unrelated pre-existing modifications and untracked artifacts. The workup used an isolated DB snapshot; `data/alpha_pod.db` was not directly touched.
+- Final offline suite: `792 passed, 1 skipped, 2 deselected, 19 failed, 5 errors`.
+- All 24 failures/errors are known Windows ACL/environment failures when tests create `.tmp-tests` or `.codex-pytest-temp` directories; they are outside this work package and were not chased.
+- The working tree was already `main...origin/main [ahead 1]` with unrelated untracked database/review artifacts; no database file was modified.
 
 ## Notes
-- Run artifact root: `C:\Users\patri\AppData\Local\Temp\claude\C--Projects-03-Finance-ai-fund\f730ddc5-0ae4-45de-8ceb-51825d8685c2\scratchpad\deliverable\MSFT`.
-- Retry requires valid OpenRouter authentication; the user allowed only parse-error profile reruns, so no profile was rerun.
+- Exact requested gate passed: `53 passed, 1 warning`.
+- Expanded focused gate including BaseAgent and artifact-cache tests passed: `68 passed, 1 warning`.
+- No commits were created and `data/alpha_pod.db` was not touched.

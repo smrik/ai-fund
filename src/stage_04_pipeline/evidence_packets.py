@@ -428,6 +428,7 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                     source_ref_id,
                     f"model_assumption_{field_name}",
                     getattr(inputs.drivers, field_name),
+                    source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -604,6 +605,7 @@ def _collect_earnings_update_inputs(ticker: str) -> dict[str, Any]:
                     source_ref_id,
                     f"model_assumption_{field_name}",
                     getattr(inputs.drivers, field_name),
+                    source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -682,14 +684,19 @@ def _driver_fact(
     source_ref_id: str,
     fact_name: str,
     value: Any,
+    *,
+    source_lineage: str | None = None,
 ) -> dict[str, Any] | None:
     if value is None:
         return None
+    metadata: dict[str, Any] = {"source_ref_id": source_ref_id}
+    if source_lineage:
+        metadata["source_lineage"] = source_lineage
     return {
         "fact_id": f"fact:{profile_name}:{fact_name}",
         "fact_name": fact_name,
         "value": value,
-        "metadata": {"source_ref_id": source_ref_id},
+        "metadata": metadata,
     }
 
 
@@ -753,6 +760,7 @@ def _collect_industry_analysis_inputs(ticker: str) -> dict[str, Any]:
                     source_ref_id,
                     field_name,
                     getattr(inputs.drivers, field_name),
+                    source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
                 )
                 if fact is not None:
                     facts.append(fact)
@@ -1282,7 +1290,11 @@ def _collect_comps_analysis_inputs(ticker: str) -> dict[str, Any]:
                 }
             )
             fact = _driver_fact(
-                "comps_analysis", model_ref_id, "model_assumption_exit_multiple", exit_multiple
+                "comps_analysis",
+                model_ref_id,
+                "model_assumption_exit_multiple",
+                exit_multiple,
+                source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get("exit_multiple"),
             )
             if fact is not None:
                 facts.append(fact)
@@ -1380,7 +1392,13 @@ def _collect_risk_review_inputs(ticker: str) -> dict[str, Any]:
             for field_name in ("wacc", "net_debt", "revenue_growth_near", "ebit_margin_target"):
                 if not hasattr(inputs.drivers, field_name):
                     continue
-                fact = _driver_fact("risk_review", source_ref_id, field_name, getattr(inputs.drivers, field_name))
+                fact = _driver_fact(
+                    "risk_review",
+                    source_ref_id,
+                    field_name,
+                    getattr(inputs.drivers, field_name),
+                    source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
+                )
                 if fact is not None:
                     facts.append(fact)
             statuses.append(_collector_status("valuation_inputs", "ok", fact_count=len(facts)))

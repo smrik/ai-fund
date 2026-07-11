@@ -7,7 +7,11 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
+from pathlib import Path
 from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from typing import Any, Callable
 
@@ -16,6 +20,12 @@ from config import LLM_MODEL, LLM_BASE_URL
 # Retry config for transient API errors
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = [5, 15, 30]  # seconds to wait before each retry attempt
+_CODEX_DEFAULT_MODEL = "gpt-5.6-luna"
+_CODEX_DEFAULT_EFFORT = "low"
+_CODEX_TIMEOUT_SECONDS = 120
+_CODEX_PROMPT_PREAMBLE = (
+	"Reply with plain text only. Do not use tools, do not read or write files, do not run commands."
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -38,6 +48,10 @@ class BaseAgent:
 	def __init__(self, model: str | None = None):
 		resolved_base_url = os.getenv("LLM_BASE_URL") or LLM_BASE_URL
 		resolved_model = model or os.getenv("LLM_MODEL") or LLM_MODEL
+		self._codex_enabled = os.getenv("ALPHA_POD_AGENT_BACKEND", "").strip().lower() == "codex"
+		self._codex_model = os.getenv("ALPHA_POD_CODEX_MODEL", _CODEX_DEFAULT_MODEL).strip() or _CODEX_DEFAULT_MODEL
+		self._codex_effort = os.getenv("ALPHA_POD_CODEX_EFFORT", _CODEX_DEFAULT_EFFORT).strip() or _CODEX_DEFAULT_EFFORT
+		self._fallback_model = resolved_model
 		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
 		if openrouter_key and "openrouter.ai" in (resolved_base_url or ""):
 			api_key = openrouter_key
@@ -55,7 +69,7 @@ class BaseAgent:
 		if resolved_base_url:
 			kwargs["base_url"] = resolved_base_url
 		self.client = OpenAI(**kwargs)
-		self.model = resolved_model
+		self.model = self._codex_model if self._codex_enabled else resolved_model
 		self.last_used_model = self.model
 		self._skip_structured_parse = "openrouter.ai" in (resolved_base_url or "")
 		self.name = "BaseAgent"
@@ -155,12 +169,83 @@ class BaseAgent:
 					raise
 		raise last_exc  # unreachable, satisfies type checkers
 
+	def _codex_command(self, output_path: Path) -> list[str]:
+		# On Windows the codex launcher is a .cmd shim; bare "codex" fails
+		# executable resolution under subprocess without shell=True.
+		codex_executable = shutil.which("codex") or "codex"
+		return [
+			codex_executable,
+			"exec",
+			"--ephemeral",
+			"-s",
+			"read-only",
+			"-m",
+			self._codex_model,
+			"-c",
+			f"model_reasoning_effort={self._codex_effort}",
+			"-o",
+			str(output_path),
+			"-",
+		]
+
+	def _codex_prompt(self, user_message: str) -> str:
+		return (
+			f"{_CODEX_PROMPT_PREAMBLE}\n\n"
+			f"System instructions:\n{self.system_prompt}\n\n"
+			f"User request:\n{user_message}"
+		)
+
+	def _run_codex(
+		self,
+		*,
+		user_message: str,
+		messages: list[dict[str, Any]],
+		artifact: dict[str, Any],
+	) -> str:
+		with tempfile.TemporaryDirectory(prefix="alpha-pod-codex-") as temp_dir:
+			output_path = Path(temp_dir) / "last-message.txt"
+			completed = subprocess.run(
+				self._codex_command(output_path),
+				input=self._codex_prompt(user_message),
+				text=True,
+				capture_output=True,
+				timeout=_CODEX_TIMEOUT_SECONDS,
+				check=False,
+			)
+			if completed.returncode != 0:
+				stderr = str(getattr(completed, "stderr", "") or "").strip()
+				raise RuntimeError(
+					f"codex exec exited with status {completed.returncode}"
+					+ (f": {stderr[:500]}" if stderr else "")
+				)
+			try:
+				final_text = output_path.read_text(encoding="utf-8").strip()
+			except OSError as exc:
+				raise RuntimeError(f"codex exec did not produce its output file: {exc}") from exc
+			if not final_text:
+				raise RuntimeError("codex exec produced empty output")
+
+		self.last_used_model = f"codex:{self._codex_model}@{self._codex_effort}"
+		artifact["api_trace"].append(
+			{
+				"request_messages": json.loads(json.dumps(messages)),
+				"finish_reason": "stop",
+				"model": self.last_used_model,
+				"backend": "codex",
+				"assistant_message": {"role": "assistant", "content": final_text},
+			}
+		)
+		artifact["raw_final_output"] = final_text
+		artifact["parsed_output"] = final_text
+		self.last_run_artifact = artifact
+		return final_text
+
 	def run_structured_payload(self, user_message: str, response_format: Any, max_tokens: int = 8192) -> tuple[dict[str, Any] | None, str | None]:
 		"""
 		Try strict structured output via chat.completions.parse.
 		Returns (payload_dict_or_none, model_used_or_none).
 		"""
-		if self._skip_structured_parse:
+		if self._codex_enabled or self._skip_structured_parse:
 			return None, None
 		parser = getattr(self.client.chat.completions, "parse", None)
 		if parser is None:
@@ -262,9 +347,23 @@ class BaseAgent:
 		}
 		self.last_run_artifact = artifact
 
+		fallback_active = False
+		if self._codex_enabled:
+			try:
+				return self._run_codex(
+					user_message=user_message,
+					messages=messages,
+					artifact=artifact,
+				)
+			except Exception as exc:
+				fallback_active = True
+				_logger.warning(
+					f"{self.name} Codex backend failed; falling back to OpenAI-compatible client: {exc}"
+				)
+
 		for _ in range(max_iterations):
 			kwargs = {
-				"model": self.model,
+				"model": self._fallback_model if fallback_active else self.model,
 				"max_tokens": 8192,
 				"messages": messages,
 			}
@@ -272,6 +371,10 @@ class BaseAgent:
 				kwargs["tools"] = tools_param
 
 			response = self._create_with_retry(**kwargs)
+			actual_model = self.last_used_model
+			response_model = getattr(response, "model", None) or actual_model
+			if fallback_active:
+				self.last_used_model = f"{response_model} (fallback)"
 			if not response.choices:
 				_logger.warning(f"{self.name} received empty choices from API (model may have refused or returned a null response)")
 				artifact["raw_final_output"] = ""
@@ -283,10 +386,13 @@ class BaseAgent:
 				artifact["prompt_tokens"] = getattr(usage, "prompt_tokens", artifact["prompt_tokens"])
 				artifact["completion_tokens"] = getattr(usage, "completion_tokens", artifact["completion_tokens"])
 				artifact["total_tokens"] = getattr(usage, "total_tokens", artifact["total_tokens"])
+			trace_model = response_model
+			if fallback_active:
+				trace_model = f"{trace_model} (fallback)"
 			trace_row: dict[str, Any] = {
 				"request_messages": json.loads(json.dumps(messages)),
 				"finish_reason": choice.finish_reason,
-				"model": getattr(response, "model", self.last_used_model),
+				"model": trace_model,
 				"assistant_message": self._serialize_assistant_message(choice.message),
 			}
 

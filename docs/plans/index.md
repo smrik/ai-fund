@@ -38,6 +38,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Completed
 
+- [Codex CLI Judgment Backend](./completed/2026-07-11-codex-cli-judgment-backend.md) — subscription-backed Codex routing with OpenRouter fallback and model provenance
 - [Analyst Prep Pack MVP](./completed/2026-06-07-analyst-prep-pack.md)
 - [Agentic Handoff MVP Hardening](./completed/2026-05-22-agentic-handoff-mvp-hardening.md)
 - [Internal Release Readiness And Mock Publish](./completed/2026-04-01-internal-release-readiness-and-mock-publish.md)

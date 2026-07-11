@@ -128,6 +128,35 @@ def build_llm_routing(
 ) -> dict[str, Any]:
     defaults = _config_llm_defaults()
     configured = configured or {}
+    backend = str(configured.get("backend") or os.getenv("ALPHA_POD_AGENT_BACKEND") or "").strip().lower()
+    if backend == "codex":
+        model = str(
+            configured.get("model")
+            or os.getenv("ALPHA_POD_CODEX_MODEL")
+            or "gpt-5.6-luna"
+        )
+        effort = str(
+            configured.get("effort")
+            or os.getenv("ALPHA_POD_CODEX_EFFORT")
+            or "low"
+        )
+        fallback = str(configured.get("fallback") or "")
+        fallback_models = configured.get("fallback_models")
+        if fallback_models is None:
+            fallback_models = [fallback] if fallback else []
+        fallback_values = _split_model_list(fallback_models)
+        if not fallback and fallback_values:
+            fallback = fallback_values[0]
+        return {
+            "backend": "codex",
+            "model": model,
+            "effort": effort,
+            "fallback": fallback or "not configured",
+            "base_url": _host_only(configured.get("base_url") or os.getenv("LLM_BASE_URL")),
+            "fallbacks": fallback_values,
+            "cost": str(configured.get("cost") or "subscription"),
+            "source": source,
+        }
     model = str(configured.get("model") or os.getenv("LLM_MODEL") or defaults.get("model") or "not configured")
     base_url = (
         configured.get("base_url")
@@ -150,6 +179,14 @@ def build_llm_routing(
 def format_llm_routing_line(routing: dict[str, Any]) -> str:
     fallbacks = _as_list(routing.get("fallbacks"))
     fallback_label = ", ".join(str(value) for value in fallbacks) if fallbacks else "none"
+    if routing.get("backend") == "codex":
+        return (
+            f"Agent LLM routing: backend=codex model={routing.get('model') or 'not configured'} "
+            f"effort={routing.get('effort') or 'low'} "
+            f"fallback={routing.get('fallback') or fallback_label} "
+            f"cost={routing.get('cost') or 'subscription'} "
+            f"(source: {routing.get('source') or 'unknown'})"
+        )
     return (
         f"Agent LLM routing: model={routing.get('model') or 'not configured'} "
         f"base_url={routing.get('base_url') or 'not configured'} "
@@ -1383,8 +1420,8 @@ def run_guided_workup(
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
-    # --model MODEL_ID implies OpenRouter routing
-    if args.model_shortcut:
+    # --model MODEL_ID implies OpenRouter routing, unless Codex was explicitly selected.
+    if args.model_shortcut and not args.use_codex:
         args.use_openrouter_free = True
         args.openrouter_model = args.model_shortcut
 
@@ -1393,9 +1430,31 @@ def run_guided_workup(
     os.environ["ALPHA_POD_EVIDENCE_CHARS"] = str(evidence_chars)
 
     configured_llm_routing: dict[str, Any] | None = None
-    if args.use_openrouter_free:
+    if args.use_codex:
+        os.environ["ALPHA_POD_AGENT_BACKEND"] = "codex"
+        os.environ["ALPHA_POD_CODEX_MODEL"] = args.codex_model
+        os.environ["ALPHA_POD_CODEX_EFFORT"] = args.codex_effort
+        fallback_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+        fallback_models: list[str] = []
+        for candidate in [args.openrouter_model, *fallback_routing.get("fallback_models", [])]:
+            candidate_text = str(candidate).strip()
+            if candidate_text and candidate_text not in fallback_models:
+                fallback_models.append(candidate_text)
+        configured_llm_routing = {
+            **fallback_routing,
+            "backend": "codex",
+            "model": args.codex_model,
+            "effort": args.codex_effort,
+            "fallback": args.openrouter_model,
+            "fallback_models": fallback_models,
+            "cost": "subscription",
+        }
+        routing_source = "--use-codex"
+    elif args.use_openrouter_free:
         configured_llm_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
-    routing_source = f"--model {args.model_shortcut}" if args.model_shortcut else ("--use-openrouter-free" if args.use_openrouter_free else ".env/config")
+        routing_source = f"--model {args.model_shortcut}" if args.model_shortcut else "--use-openrouter-free"
+    else:
+        routing_source = ".env/config"
     llm_routing = build_llm_routing(
         source=routing_source,
         configured=configured_llm_routing,
@@ -1595,6 +1654,22 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ciq-folder", default=str(ROOT / "data" / "exports"))
 
     # --- Model routing ---
+    parser.add_argument(
+        "--use-codex",
+        action="store_true",
+        help="Use the local Codex CLI; configures OpenRouter free as the fallback even when both routing flags are passed.",
+    )
+    parser.add_argument(
+        "--codex-model",
+        default=os.getenv("ALPHA_POD_CODEX_MODEL", "gpt-5.6-luna"),
+        help="Codex CLI model (default: gpt-5.6-luna).",
+    )
+    parser.add_argument(
+        "--codex-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        default=os.getenv("ALPHA_POD_CODEX_EFFORT", "low"),
+        help="Codex reasoning effort (default: low).",
+    )
     parser.add_argument("--use-openrouter-free", action="store_true")
     parser.add_argument("--openrouter-model", default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"))
     parser.add_argument("--openrouter-fallback-models", nargs="*", default=[])

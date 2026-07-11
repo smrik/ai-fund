@@ -122,6 +122,7 @@ def test_earnings_update_packet_uses_recent_8k_and_market_data(monkeypatch):
                 ebit_margin_start=0.16,
                 ebit_margin_target=0.18,
             ),
+            source_lineage={"revenue_growth_near": "ciq_consensus"},
         ),
     )
     monkeypatch.setattr(
@@ -146,6 +147,9 @@ def test_earnings_update_packet_uses_recent_8k_and_market_data(monkeypatch):
     fact_names = {fact.fact_name for fact in packet.facts}
     assert {"current_price", "analyst_target_mean", "analyst_recommendation", "number_of_analysts"} <= fact_names
     assert {"model_assumption_revenue_growth_near", "model_assumption_ebit_margin_target"} <= fact_names
+    # Assumption facts carry their provenance so agents can state the basis.
+    growth_fact = next(f for f in packet.facts if f.fact_name == "model_assumption_revenue_growth_near")
+    assert growth_fact.metadata["source_lineage"] == "ciq_consensus"
 
 
 def test_extract_total_revenue_facts_handles_single_space_table_layout():

@@ -573,6 +573,78 @@ def test_configure_openrouter_free_overrides_pre_set_env(monkeypatch) -> None:
     assert routing["model"] == "openai/gpt-oss-120b:free"
 
 
+def test_guided_workup_codex_routing_configures_subscription_backend_and_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    for env_name in [
+        "ALPHA_POD_AGENT_BACKEND",
+        "ALPHA_POD_CODEX_MODEL",
+        "ALPHA_POD_CODEX_EFFORT",
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "LLM_MODEL_FAST",
+        "LLM_SYNTHESIS_MODEL",
+        "LLM_FALLBACK_MODELS",
+        *AGENT_MODEL_ENV_VARS,
+    ]:
+        monkeypatch.delenv(env_name, raising=False)
+
+    io = ScriptedIO(["", "s"])
+    routing_env_names = [
+        "ALPHA_POD_AGENT_BACKEND",
+        "ALPHA_POD_CODEX_MODEL",
+        "ALPHA_POD_CODEX_EFFORT",
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "LLM_MODEL_FAST",
+        "LLM_SYNTHESIS_MODEL",
+        "LLM_FALLBACK_MODELS",
+        *AGENT_MODEL_ENV_VARS,
+    ]
+    try:
+        result = guided.run_guided_workup(
+            _args(
+            tmp_path,
+            "--skip-ciq-stage",
+            "--use-codex",
+            "--use-openrouter-free",
+            "--openrouter-fallback-models",
+            "openrouter/backup",
+            "--codex-model",
+                "gpt-5.6-luna",
+                "--codex-effort",
+                "low",
+            ),
+            deps=_deps(tmp_path),
+            io=io,
+        )
+        observed_env = {name: os.environ.get(name) for name in routing_env_names}
+    finally:
+        for env_name in routing_env_names:
+            os.environ.pop(env_name, None)
+
+    assert observed_env["ALPHA_POD_AGENT_BACKEND"] == "codex"
+    assert observed_env["ALPHA_POD_CODEX_MODEL"] == "gpt-5.6-luna"
+    assert observed_env["ALPHA_POD_CODEX_EFFORT"] == "low"
+    assert observed_env["LLM_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert observed_env["LLM_MODEL"] == "openrouter/free"
+    assert result["llm_routing"] == {
+        "backend": "codex",
+        "model": "gpt-5.6-luna",
+        "effort": "low",
+        "fallback": "openrouter/free",
+        "base_url": "openrouter.ai",
+        "fallbacks": ["openrouter/free", "openrouter/backup"],
+        "cost": "subscription",
+        "source": "--use-codex",
+    }
+    assert io.messages[0] == (
+        "Agent LLM routing: backend=codex model=gpt-5.6-luna effort=low "
+        "fallback=openrouter/free cost=subscription (source: --use-codex)"
+    )
+
+
 def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path, monkeypatch) -> None:
     from src.stage_02_valuation import json_exporter
     from src.stage_04_pipeline import advanced_dcf_model

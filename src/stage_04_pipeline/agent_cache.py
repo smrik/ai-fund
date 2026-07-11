@@ -82,6 +82,17 @@ class AgentRunCache:
         return str(getattr(agent, "model", "") or "")
 
     @staticmethod
+    def _used_model(agent: Any, default: str) -> str:
+        return str(getattr(agent, "last_used_model", None) or default)
+
+    @staticmethod
+    def _artifact_model(artifact: dict[str, Any] | None, default: str) -> str:
+        for trace_row in reversed((artifact or {}).get("api_trace") or []):
+            if isinstance(trace_row, dict) and trace_row.get("model"):
+                return str(trace_row["model"])
+        return default
+
+    @staticmethod
     def _prompt_version(agent: Any) -> str:
         return str(getattr(agent, "prompt_version", "v1") or "v1")
 
@@ -253,7 +264,12 @@ class AgentRunCache:
                        a.prompt_tokens, a.completion_tokens, a.total_tokens
                 FROM agent_run_artifacts a
                 JOIN agent_run_log l ON l.id = a.run_log_id
-                WHERE l.ticker = ? AND l.agent_name = ? AND l.input_hash = ? AND l.model = ? AND l.prompt_hash = ?
+                JOIN agent_run_cache c
+                  ON c.ticker = l.ticker
+                 AND c.agent_name = l.agent_name
+                 AND c.input_hash = l.input_hash
+                 AND c.prompt_hash = l.prompt_hash
+                WHERE l.ticker = ? AND l.agent_name = ? AND l.input_hash = ? AND c.model = ? AND l.prompt_hash = ?
                 ORDER BY a.id DESC
                 LIMIT 1
                 """,
@@ -304,11 +320,21 @@ class AgentRunCache:
                 finished = utc_now_iso()
                 duration_ms = int((time.perf_counter() - started_perf) * 1000)
                 output = _deserialize_output(row)
-                run_log_id = self._insert_log(
+                cached_artifact = self._load_cached_artifact(
                     ticker=ticker,
                     agent_name=agent_name,
                     input_hash=input_hash,
                     model=model,
+                    prompt_hash=prompt_hash,
+                )
+                used_model = self._artifact_model(cached_artifact, model)
+                if hasattr(agent, "last_used_model"):
+                    agent.last_used_model = used_model
+                run_log_id = self._insert_log(
+                    ticker=ticker,
+                    agent_name=agent_name,
+                    input_hash=input_hash,
+                    model=used_model,
                     prompt_version=prompt_version,
                     prompt_hash=prompt_hash,
                     cache_hit=True,
@@ -324,13 +350,7 @@ class AgentRunCache:
                     ticker=ticker,
                     agent_name=agent_name,
                     artifact_source="cache_reused",
-                    artifact=self._load_cached_artifact(
-                        ticker=ticker,
-                        agent_name=agent_name,
-                        input_hash=input_hash,
-                        model=model,
-                        prompt_hash=prompt_hash,
-                    ),
+                    artifact=cached_artifact,
                 )
                 return output, {
                     "cache_hit": True,
@@ -343,6 +363,7 @@ class AgentRunCache:
         try:
             output = runner()
             serialized = _serialize_output(output)
+            used_model = self._used_model(agent, model)
             self._upsert_cache(
                 ticker=ticker,
                 agent_name=agent_name,
@@ -358,7 +379,7 @@ class AgentRunCache:
                 ticker=ticker,
                 agent_name=agent_name,
                 input_hash=input_hash,
-                model=model,
+                model=used_model,
                 prompt_version=prompt_version,
                 prompt_hash=prompt_hash,
                 cache_hit=False,
@@ -388,11 +409,12 @@ class AgentRunCache:
         except Exception as exc:
             finished = utc_now_iso()
             duration_ms = int((time.perf_counter() - started_perf) * 1000)
+            used_model = self._used_model(agent, model)
             run_log_id = self._insert_log(
                 ticker=ticker,
                 agent_name=agent_name,
                 input_hash=input_hash,
-                model=model,
+                model=used_model,
                 prompt_version=prompt_version,
                 prompt_hash=prompt_hash,
                 cache_hit=False,
