@@ -72,12 +72,26 @@ def _base_scenario(dcf: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _latest_packet_per_profile(packets: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Current evidence state is the newest packet per profile. Older packets
+    stay in the store for audit, but rendering them here would resurface
+    superseded (and possibly corrected) facts next to fresh ones."""
+    latest: dict[str, dict[str, Any]] = {}
+    for packet in packets:
+        profile = str(packet.get("profile_name") or "")
+        packet_id = int(packet.get("packet_id") or 0)
+        current = latest.get(profile)
+        if current is None or packet_id > int(current.get("packet_id") or 0):
+            latest[profile] = packet
+    return sorted(latest.values(), key=lambda p: int(p.get("packet_id") or 0))
+
+
 def _load_store_state(ticker: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     from db.loader import list_evidence_packets, list_pm_decision_queue_items
 
     with get_connection() as conn:
         create_tables(conn)
-        packets = list_evidence_packets(conn, ticker=ticker)
+        packets = _latest_packet_per_profile(list_evidence_packets(conn, ticker=ticker))
         queue_items = list_pm_decision_queue_items(conn, ticker=ticker, status=None)
         return packets, queue_items
 
@@ -395,7 +409,7 @@ def _driver_cards(
         if proposed is not None and queue_status == "deferred":
             status = "review_required"
         elif proposed is not None and queue_status == "approved":
-            status = "approved"
+            status = "ok"
         if (conflict_group or {}).get("conflict_level") == "conflict":
             status = "conflict"
         if effective is None and displayed_value is None:
@@ -571,7 +585,10 @@ def _thesis_cards(
             ThesisBridgeCard(
                 card_id=f"{ticker}:valuation_setup",
                 title="Valuation Setup",
-                claim=f"Base DCF IV is {base_iv:.2f} versus current price {current_price:.2f}.",
+                claim=(
+                    f"Base DCF IV is {base_iv:.2f} versus current price {current_price:.2f} "
+                    "(effective model: includes approved PM overrides, so it can differ from the raw pipeline snapshot)."
+                ),
                 business_evidence_summary="Deterministic DCF bridge provides the starting valuation gap.",
                 model_implication="Review revenue growth, margin, WACC, terminal growth, and exit multiple before trusting the spread.",
                 linked_assumption_fields=[

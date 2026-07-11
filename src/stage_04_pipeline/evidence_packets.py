@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+import os
 import re
 from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
+
+
+def _evidence_chars() -> int:
+    """Per-snippet char budget, set by ALPHA_POD_EVIDENCE_CHARS env var."""
+    try:
+        return max(100, int(os.getenv("ALPHA_POD_EVIDENCE_CHARS", "420")))
+    except (ValueError, TypeError):
+        return 420
 
 from db.schema import create_tables, get_connection
 from src.contracts.evidence_packet import (
@@ -147,6 +156,9 @@ def _is_meaningful_evidence_text(text: str | None) -> bool:
     return True
 
 
+_LARGE_CONTEXT_THRESHOLD = 2_000
+
+
 def _relevant_excerpt(text: str | None, profile_name: str, *, max_chars: int = 360) -> str | None:
     cleaned = " ".join(str(text or "").split())
     if not cleaned:
@@ -188,11 +200,22 @@ def _is_earnings_update_excerpt(text: str | None) -> bool:
     return any(term in lower for term in _EARNINGS_SIGNAL_TERMS)
 
 
+def _comparable_period_pair(current: float, prior: float) -> bool:
+    """Both positive and within 4x of each other — filters out percent-change
+    columns and subtotals being misread as the prior-year comparison."""
+    if current <= 0 or prior <= 0:
+        return False
+    ratio = current / prior
+    return 0.25 <= ratio <= 4.0
+
+
 def _extract_total_revenue_facts(text: str | None) -> dict[str, float]:
     cleaned = " ".join(str(text or "").replace(",", "").split())
+    # Filing tables render with '$' on some columns and single spaces between
+    # values, so each number allows an optional leading '$'.
     match = re.search(
-        r"Total revenue \$?\s+(-?\d+(?:\.\d+)?) \$?\s+(-?\d+(?:\.\d+)?)"
-        r"(?: \$?\s+(-?\d+(?:\.\d+)?) \$?\s+(-?\d+(?:\.\d+)?))?",
+        r"Total revenue\s+\$?\s*(-?\d+(?:\.\d+)?)\s+\$?\s*(-?\d+(?:\.\d+)?)"
+        r"(?:\s+\$?\s*(-?\d+(?:\.\d+)?)\s+\$?\s*(-?\d+(?:\.\d+)?))?",
         cleaned,
         flags=re.IGNORECASE,
     )
@@ -200,18 +223,20 @@ def _extract_total_revenue_facts(text: str | None) -> dict[str, float]:
         return {}
     current = float(match.group(1))
     prior = float(match.group(2))
-    facts = {
-        "latest_quarter_total_revenue_mm": current,
-        "prior_year_quarter_total_revenue_mm": prior,
-    }
-    if prior:
+    facts: dict[str, float] = {"latest_quarter_total_revenue_mm": current}
+    if _comparable_period_pair(current, prior):
+        facts["prior_year_quarter_total_revenue_mm"] = prior
         facts["latest_quarter_revenue_yoy_pct"] = round((current / prior - 1.0) * 100.0, 2)
     if match.group(3) is not None and match.group(4) is not None:
         ytd_current = float(match.group(3))
         ytd_prior = float(match.group(4))
-        facts["ytd_total_revenue_mm"] = ytd_current
-        facts["prior_year_ytd_total_revenue_mm"] = ytd_prior
-        if ytd_prior:
+        if (
+            ytd_current >= current
+            and ytd_prior >= prior
+            and _comparable_period_pair(ytd_current, ytd_prior)
+        ):
+            facts["ytd_total_revenue_mm"] = ytd_current
+            facts["prior_year_ytd_total_revenue_mm"] = ytd_prior
             facts["ytd_revenue_yoy_pct"] = round((ytd_current / ytd_prior - 1.0) * 100.0, 2)
     return facts
 
@@ -304,8 +329,11 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                 facts.extend(_filing_context_facts("company_analysis", source_refs[0]["source_ref_id"], bundle))
             selected_chunks = list(getattr(bundle, "selected_chunks", []) or [])
             for chunk in selected_chunks:
-                excerpt = _relevant_excerpt(chunk.text, "company_analysis")
+                _ec = _evidence_chars()
+                excerpt = _relevant_excerpt(chunk.text, "company_analysis", max_chars=_ec)
                 if excerpt is None:
+                    continue
+                if _ec < _LARGE_CONTEXT_THRESHOLD and not _is_meaningful_evidence_text(excerpt):
                     continue
                 snippets.append(
                     {
@@ -354,6 +382,10 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                 "gross_margin_avg_3y": metrics.gross_margin_avg_3y,
                 "net_debt_to_ebitda": metrics.net_debt_to_ebitda,
                 "fcf_yield": metrics.fcf_yield,
+                # Per-year series let the agent see acceleration/deceleration,
+                # not just the point CAGR.
+                "revenue_series_annual": metrics.revenue_series or None,
+                "ebit_series_annual": metrics.ebit_series or None,
             }
             for fact_name, value in metric_map.items():
                 if value is None:
@@ -369,6 +401,39 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
             statuses.append(_collector_status("sec_metrics", "ok", fact_count=len(facts)))
         else:
             statuses.append(_collector_status("sec_metrics", "missing"))
+
+    # Current model assumptions, so historical quality can be judged against
+    # what the model actually assumes rather than in the abstract.
+    try:
+        inputs = build_valuation_inputs(ticker)
+    except Exception as exc:
+        statuses.append(_collector_status("model_assumptions", "error", message=str(exc)))
+    else:
+        if inputs is not None:
+            source_ref_id = f"model-assumptions:{ticker}"
+            source_refs.append(
+                {
+                    "source_ref_id": source_ref_id,
+                    "source_kind": "valuation_inputs",
+                    "source_label": "Current model growth and margin assumptions",
+                    "source_locator": f"valuation://{ticker}/inputs",
+                    "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
+                }
+            )
+            for field_name in ("revenue_growth_near", "ebit_margin_start", "ebit_margin_target"):
+                if not hasattr(inputs.drivers, field_name):
+                    continue
+                fact = _driver_fact(
+                    "company_analysis",
+                    source_ref_id,
+                    f"model_assumption_{field_name}",
+                    getattr(inputs.drivers, field_name),
+                )
+                if fact is not None:
+                    facts.append(fact)
+            statuses.append(_collector_status("model_assumptions", "ok"))
+        else:
+            statuses.append(_collector_status("model_assumptions", "missing"))
 
     if snippets:
         quality = EvidenceSourceQuality.real
@@ -425,27 +490,28 @@ def _collect_earnings_update_inputs(ticker: str) -> dict[str, Any]:
                         "source_locator": f"edgar://{ticker}/{accession_no}",
                     }
                 )
-                if doc.get("text"):
-                    excerpt = _relevant_excerpt(doc.get("text"), "earnings_update", max_chars=420)
-                    if excerpt is None or not _is_earnings_update_excerpt(excerpt):
-                        continue
-                    snippets.append(
+                if not doc.get("text"):
+                    continue
+                excerpt = _relevant_excerpt(doc.get("text"), "earnings_update", max_chars=_evidence_chars())
+                if excerpt is None or not _is_earnings_update_excerpt(excerpt):
+                    continue
+                snippets.append(
+                    {
+                        "snippet_id": f"snippet:earnings_update:{accession_no}",
+                        "source_ref_id": source_ref_id,
+                        "text": excerpt,
+                        "metadata": {"filing_date": doc.get("filing_date")},
+                    }
+                )
+                for fact_name, value in _extract_total_revenue_facts(excerpt).items():
+                    facts.append(
                         {
-                            "snippet_id": f"snippet:earnings_update:{accession_no}",
-                            "source_ref_id": source_ref_id,
-                            "text": excerpt,
-                            "metadata": {"filing_date": doc.get("filing_date")},
+                            "fact_id": f"fact:earnings_update:{accession_no}:{fact_name}",
+                            "fact_name": fact_name,
+                            "value": value,
+                            "metadata": {"source_ref_id": source_ref_id},
                         }
                     )
-                    for fact_name, value in _extract_total_revenue_facts(excerpt).items():
-                        facts.append(
-                            {
-                                "fact_id": f"fact:earnings_update:{accession_no}:{fact_name}",
-                                "fact_name": fact_name,
-                                "value": value,
-                                "metadata": {"source_ref_id": source_ref_id},
-                            }
-                        )
             statuses.append(_collector_status("recent_8k", "ok", filing_count=len(earnings_docs)))
         else:
             statuses.append(_collector_status("recent_8k", "missing"))
@@ -469,7 +535,11 @@ def _collect_earnings_update_inputs(ticker: str) -> dict[str, Any]:
                             "source_locator": f"edgar://{ticker}/{accession_no}",
                         }
                     )
-                    excerpt = _relevant_excerpt(doc.get("text"), "earnings_update", max_chars=520)
+                    excerpt = _relevant_excerpt(
+                        doc.get("text"),
+                        "earnings_update",
+                        max_chars=_evidence_chars(),
+                    )
                     if excerpt is None or not _is_earnings_update_excerpt(excerpt):
                         continue
                     snippets.append(
@@ -502,6 +572,44 @@ def _collect_earnings_update_inputs(ticker: str) -> dict[str, Any]:
                 )
             else:
                 statuses.append(_collector_status("recent_10q_fallback", "missing"))
+
+    # The model's current growth/margin assumptions: the PM-relevant question in
+    # an earnings update is whether reported results support or contradict them.
+    try:
+        inputs = build_valuation_inputs(ticker)
+    except Exception as exc:
+        statuses.append(_collector_status("model_assumptions", "error", message=str(exc)))
+    else:
+        if inputs is not None:
+            source_ref_id = f"model-assumptions:{ticker}"
+            source_refs.append(
+                {
+                    "source_ref_id": source_ref_id,
+                    "source_kind": "valuation_inputs",
+                    "source_label": "Current model growth and margin assumptions",
+                    "source_locator": f"valuation://{ticker}/inputs",
+                    "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
+                }
+            )
+            for field_name in (
+                "revenue_growth_near",
+                "revenue_growth_mid",
+                "ebit_margin_start",
+                "ebit_margin_target",
+            ):
+                if not hasattr(inputs.drivers, field_name):
+                    continue
+                fact = _driver_fact(
+                    "earnings_update",
+                    source_ref_id,
+                    f"model_assumption_{field_name}",
+                    getattr(inputs.drivers, field_name),
+                )
+                if fact is not None:
+                    facts.append(fact)
+            statuses.append(_collector_status("model_assumptions", "ok"))
+        else:
+            statuses.append(_collector_status("model_assumptions", "missing"))
 
     market = None
     try:
@@ -586,17 +694,8 @@ def _driver_fact(
 
 
 def _filing_context_facts(profile_name: str, source_ref_id: str, bundle: Any) -> list[dict[str, Any]]:
-    retrieval_summary = dict(getattr(bundle, "retrieval_summary", {}) or {})
-    section_coverage = retrieval_summary.get("section_coverage") or {}
-    if isinstance(section_coverage, dict):
-        section_counts = section_coverage.get("by_section_key") or {
-            key: value
-            for key, value in section_coverage.items()
-            if isinstance(value, (int, float))
-        }
-    else:
-        section_counts = {}
-
+    # Per-section chunk counts are retrieval plumbing, not evidence — they live
+    # in the collector status, not in the facts the agent reasons over.
     facts: list[dict[str, Any]] = []
     base_values = {
         "filing_source_count": len(getattr(bundle, "sources", []) or []),
@@ -604,13 +703,6 @@ def _filing_context_facts(profile_name: str, source_ref_id: str, bundle: Any) ->
     }
     for fact_name, value in base_values.items():
         fact = _driver_fact(profile_name, source_ref_id, fact_name, value)
-        if fact is not None:
-            facts.append(fact)
-
-    for section_key, value in sorted(section_counts.items()):
-        if not isinstance(value, (int, float)) or value <= 0:
-            continue
-        fact = _driver_fact(profile_name, source_ref_id, f"filing_section_count_{section_key}", int(value))
         if fact is not None:
             facts.append(fact)
     return facts
@@ -698,8 +790,11 @@ def _collect_industry_analysis_inputs(ticker: str) -> dict[str, Any]:
                 )
                 facts.extend(_filing_context_facts("industry_analysis", filing_ref["source_ref_id"], bundle))
             for chunk in list(getattr(bundle, "selected_chunks", []) or []):
-                excerpt = _relevant_excerpt(chunk.text, "industry_analysis")
+                _ec = _evidence_chars()
+                excerpt = _relevant_excerpt(chunk.text, "industry_analysis", max_chars=_ec)
                 if excerpt is None:
+                    continue
+                if _ec < _LARGE_CONTEXT_THRESHOLD and not _is_meaningful_evidence_text(excerpt):
                     continue
                 snippets.append(
                     {
@@ -833,7 +928,10 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
         else:
             statuses.append(_collector_status("dcf_audit_view", "missing"))
 
+    scenario_specs = list(default_scenario_specs()) if inputs is not None else []
     scenario_fact_count = 0
+    scenario_ivs: dict[str, float] = {}
+    scenario_probs: dict[str, float] = {}
     if inputs is not None:
         scenario_ref_id = f"valuation-scenarios:{ticker}"
         source_refs.append(
@@ -844,7 +942,7 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
                 "source_locator": f"valuation://{ticker}/dcf",
             }
         )
-        for spec in default_scenario_specs():
+        for spec in scenario_specs:
             spec_values = (
                 asdict(spec)
                 if is_dataclass(spec)
@@ -878,24 +976,98 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
             )
             try:
                 result = run_dcf_professional(inputs.drivers, spec)
-            except Exception:
+                iv_value = float(result.intrinsic_value_per_share)
+            except (Exception, TypeError, ValueError):
                 continue
             facts.append(
                 {
                     "fact_id": f"fact:valuation_review:scenario_iv:{spec.name}",
                     "fact_name": f"scenario_iv_{spec.name}",
-                    "value": result.intrinsic_value_per_share,
+                    "value": iv_value,
                     "metadata": {"source_ref_id": scenario_ref_id},
                 }
             )
             scenario_fact_count += 1
+            scenario_ivs[str(spec.name)] = iv_value
+            try:
+                probability = spec_values.get("probability")
+                if probability is not None:
+                    scenario_probs[str(spec.name)] = float(probability)
+            except (TypeError, ValueError):
+                pass
         statuses.append(
             _collector_status(
                 "dcf_scenarios",
-                "ok" if scenario_fact_count else "partial",
+                "ok" if scenario_specs and scenario_fact_count == len(scenario_specs) else "partial",
                 scenario_fact_count=scenario_fact_count,
             )
         )
+
+    # Price context and expected value: without these, scenario IVs cannot be
+    # read as upside/downside, which is the PM-decision number.
+    if scenario_ivs:
+        market = None
+        try:
+            market = get_market_data(ticker, use_cache=True)
+        except TypeError:
+            market = get_market_data(ticker)
+        except Exception as exc:
+            statuses.append(_collector_status("market_price", "error", message=str(exc)))
+        price = None
+        if market:
+            try:
+                price = float(market.get("current_price") or 0.0) or None
+            except (TypeError, ValueError):
+                price = None
+        if price:
+            market_ref_id = "market:latest"
+            source_refs.append(
+                {
+                    "source_ref_id": market_ref_id,
+                    "source_kind": "market_data",
+                    "source_label": "Latest market snapshot",
+                    "source_locator": f"market://{ticker}/latest",
+                }
+            )
+            fact = _driver_fact("valuation_review", market_ref_id, "current_price", price)
+            if fact is not None:
+                facts.append(fact)
+            for name, iv in scenario_ivs.items():
+                fact = _driver_fact(
+                    "valuation_review",
+                    market_ref_id,
+                    f"scenario_upside_pct_{name}",
+                    round((iv / price - 1.0) * 100.0, 1),
+                )
+                if fact is not None:
+                    facts.append(fact)
+            expected_value_complete = (
+                scenario_fact_count == len(scenario_specs)
+                and all(
+                    str(spec.name) in scenario_ivs and str(spec.name) in scenario_probs
+                    for spec in scenario_specs
+                )
+            )
+            probability_total = sum(scenario_probs.get(str(spec.name), 0.0) for spec in scenario_specs)
+            if expected_value_complete and probability_total > 0:
+                expected_iv = (
+                    sum(scenario_probs[name] * iv for name, iv in scenario_ivs.items())
+                    / probability_total
+                )
+                for fact_name, value in (
+                    ("expected_iv_probability_weighted", round(expected_iv, 2)),
+                    ("expected_upside_pct", round((expected_iv / price - 1.0) * 100.0, 1)),
+                ):
+                    fact = _driver_fact("valuation_review", market_ref_id, fact_name, value)
+                    if fact is not None:
+                        facts.append(fact)
+        if not any(
+            status.get("collector") == "market_price" and status.get("status") == "error"
+            for status in statuses
+        ):
+            statuses.append(_collector_status("market_price", "ok" if price else "missing"))
+    else:
+        statuses.append(_collector_status("market_price", "missing", reason="no_scenario_ivs"))
 
     quality = EvidenceSourceQuality.real if inputs is not None and scenario_fact_count else (
         EvidenceSourceQuality.partial if inputs is not None else EvidenceSourceQuality.placeholder
@@ -1003,6 +1175,79 @@ def _collect_comps_analysis_inputs(ticker: str) -> dict[str, Any]:
                         }
                     )
             facts = [fact for fact in facts if fact["value"] is not None]
+
+            # Peer composition for the primary metric: the agent cannot judge
+            # whether the peer median is trustworthy without seeing who is in it.
+            primary_metric = str(view.get("primary_metric") or "").strip()
+            peer_rows = [
+                {
+                    "ticker": row.get("ticker"),
+                    "multiple": row.get("raw_multiple"),
+                    "status": row.get("status"),
+                }
+                for row in (view.get("metric_status_rows") or [])
+                if row.get("metric") == primary_metric
+            ]
+            if peer_rows:
+                facts.append(
+                    {
+                        "fact_id": "fact:comps_analysis:peers_primary_metric",
+                        "fact_name": "peers_primary_metric",
+                        "value": peer_rows,
+                        "metadata": {"source_ref_id": source_ref_id, "metric_name": primary_metric},
+                    }
+                )
+            if audit_flags:
+                facts.append(
+                    {
+                        "fact_id": "fact:comps_analysis:peer_set_audit_flags",
+                        "fact_name": "peer_set_audit_flags",
+                        "value": audit_flags,
+                        "metadata": {"source_ref_id": source_ref_id},
+                    }
+                )
+
+            # Relative leverage: premium/discount arguments need balance-sheet context.
+            operating = view.get("operating_context") or {}
+            for fact_name, value in (
+                ("net_debt_to_ebitda_target", (operating.get("target") or {}).get("net_debt_to_ebitda")),
+                ("net_debt_to_ebitda_peer_median", (operating.get("peer_medians") or {}).get("net_debt_to_ebitda")),
+            ):
+                fact = _driver_fact("comps_analysis", source_ref_id, fact_name, value)
+                if fact is not None:
+                    facts.append(fact)
+
+            # The company's own trading-multiple history anchors mean-reversion
+            # judgments about the exit multiple.
+            hist = view.get("historical_multiples_summary") or {}
+            hist_metrics = (hist.get("metrics") or {}) if hist.get("available") else {}
+            for metric_name, payload in hist_metrics.items():
+                series_values = sorted(
+                    float(point["multiple"])
+                    for point in (payload.get("series") or [])
+                    if isinstance(point, dict) and point.get("multiple") is not None
+                )
+                fact = _driver_fact(
+                    "comps_analysis", source_ref_id, f"own_{metric_name}_current", payload.get("current")
+                )
+                if fact is not None:
+                    facts.append(fact)
+                if series_values:
+                    mid = len(series_values) // 2
+                    median = (
+                        series_values[mid]
+                        if len(series_values) % 2
+                        else (series_values[mid - 1] + series_values[mid]) / 2
+                    )
+                    facts.append(
+                        _driver_fact(
+                            "comps_analysis",
+                            source_ref_id,
+                            f"own_{metric_name}_5y_median",
+                            round(median, 2),
+                        )
+                    )
+
             statuses.append(
                 _collector_status(
                     "comps_dashboard",
@@ -1014,6 +1259,68 @@ def _collect_comps_analysis_inputs(ticker: str) -> dict[str, Any]:
             )
         else:
             statuses.append(_collector_status("comps_dashboard", "missing"))
+
+    # The exit multiple the DCF currently assumes — the number every comps
+    # observation is ultimately judged against.
+    try:
+        inputs = build_valuation_inputs(ticker)
+    except Exception as exc:
+        statuses.append(_collector_status("model_assumptions", "error", message=str(exc)))
+    else:
+        exit_multiple = getattr(getattr(inputs, "drivers", None), "exit_multiple", None)
+        exit_metric = getattr(getattr(inputs, "drivers", None), "exit_metric", None)
+        exit_metric = str(exit_metric).strip() if exit_metric is not None else None
+        if exit_multiple is not None:
+            model_ref_id = f"model-assumptions:{ticker}"
+            source_refs.append(
+                {
+                    "source_ref_id": model_ref_id,
+                    "source_kind": "valuation_inputs",
+                    "source_label": "Current model exit multiple assumption",
+                    "source_locator": f"valuation://{ticker}/inputs",
+                    "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
+                }
+            )
+            fact = _driver_fact(
+                "comps_analysis", model_ref_id, "model_assumption_exit_multiple", exit_multiple
+            )
+            if fact is not None:
+                facts.append(fact)
+            if exit_metric is not None:
+                fact = _driver_fact(
+                    "comps_analysis", model_ref_id, "model_assumption_exit_metric", exit_metric
+                )
+                if fact is not None:
+                    facts.append(fact)
+
+            # Precomputed spread vs the like-for-like peer median. Doing the
+            # subtraction here keeps arithmetic out of the LLM and prevents
+            # EBITDA/EBIT family mismatches.
+            peer_metric_candidates = {
+                "ev_ebitda": ("tev_ebitda_fwd", "tev_ebitda_ltm"),
+                "ev_ebit": ("tev_ebit_fwd", "tev_ebit_ltm"),
+            }.get(exit_metric, ())
+            peer_medians = (((view or {}).get("target_vs_peers") or {}).get("peer_medians") or {})
+            for metric_used in peer_metric_candidates:
+                peer_median = peer_medians.get(metric_used)
+                if peer_median is None:
+                    continue
+                try:
+                    spread = round(float(exit_multiple) - float(peer_median), 2)
+                except (TypeError, ValueError):
+                    continue
+                fact = _driver_fact(
+                    "comps_analysis",
+                    model_ref_id,
+                    f"model_exit_multiple_minus_peer_median_{metric_used}",
+                    spread,
+                )
+                if fact is not None:
+                    facts.append(fact)
+                break
+            statuses.append(_collector_status("model_assumptions", "ok"))
+        else:
+            statuses.append(_collector_status("model_assumptions", "missing"))
 
     has_peer_multiple_signal = any(
         fact.get("fact_name") == "primary_metric"
@@ -1135,8 +1442,11 @@ def _collect_risk_review_inputs(ticker: str) -> dict[str, Any]:
                 )
                 facts.extend(_filing_context_facts("risk_review", filing_ref["source_ref_id"], bundle))
             for chunk in list(getattr(bundle, "selected_chunks", []) or []):
-                excerpt = _relevant_excerpt(chunk.text, "risk_review")
+                _ec = _evidence_chars()
+                excerpt = _relevant_excerpt(chunk.text, "risk_review", max_chars=_ec)
                 if excerpt is None:
+                    continue
+                if _ec < _LARGE_CONTEXT_THRESHOLD and not _is_meaningful_evidence_text(excerpt):
                     continue
                 snippets.append(
                     {

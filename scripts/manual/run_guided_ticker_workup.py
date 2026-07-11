@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -35,6 +37,8 @@ FRICTION_LOG_DIR = ROOT / "docs" / "reviews" / "weekly-loop"
 # Engineering display default aligned with scripts/manual/weekly_preflight.py.
 # M1 only warns in PM-facing markdown; staleness gating belongs to Milestone 3.
 MARKET_CACHE_STALE_WARN_DAYS = 1.0
+ANALYST_PREP_SYNTHESIS_PROFILE = "analyst_prep_synthesis"
+NON_INTERACTIVE_PROFILE_WORKERS = 4
 
 
 def _now_iso() -> str:
@@ -99,7 +103,10 @@ def _historical_financials_for_guided_json(ticker: str, result: dict[str, Any]) 
         if not path.exists():
             continue
         try:
-            return build_historical_financials_from_ciq_workbook(path)
+            return build_historical_financials_from_ciq_workbook(
+                path,
+                expected_ticker=ticker,
+            )
         except Exception:
             continue
     return []
@@ -672,6 +679,8 @@ def _print_profile_summary(io: GuidedIO, run_payload: dict[str, Any]) -> None:
     io.write(f"Profile `{run_payload.get('profile_name')}`")
     io.write(f"- Status: {run_payload.get('status')}")
     io.write(f"- Reason: {run_payload.get('reason') or 'n/a'}")
+    for err in run_payload.get("errors") or []:
+        io.write(f"- Error: {err.get('code')}: {err.get('message')}")
     io.write(
         "- Evidence: "
         f"quality={packet_summary.get('source_quality') or 'unknown'} "
@@ -1238,17 +1247,124 @@ def write_artifacts(
     }
 
 
+def _profile_failure_payload(ticker: str, profile: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "ticker": ticker,
+        "profile_name": profile,
+        "status": "failed",
+        "reason": "script_exception",
+        "errors": [{"code": "script_exception", "message": str(exc)}],
+        "observation_count": 0,
+        "queue_item_count": 0,
+        "queue_item_ids": [],
+    }
+
+
+def _run_profile_payload(
+    deps: GuidedDependencies,
+    ticker: str,
+    profile: str,
+) -> tuple[dict[str, Any], str | None]:
+    try:
+        payload = _jsonable(deps.run_profile(ticker, profile, include_agent_artifact=True))  # type: ignore[misc]
+        return payload, None
+    except Exception as exc:
+        return _profile_failure_payload(ticker, profile, exc), str(exc)
+
+
+def _split_parallel_profiles(profiles: list[str]) -> tuple[list[str], list[str]]:
+    regular = [profile for profile in profiles if profile != ANALYST_PREP_SYNTHESIS_PROFILE]
+    synthesis = [profile for profile in profiles if profile == ANALYST_PREP_SYNTHESIS_PROFILE]
+    return regular, synthesis
+
+
+def _run_profiles_for_mode(
+    args: argparse.Namespace,
+    *,
+    deps: GuidedDependencies,
+    io: GuidedIO,
+    ticker: str,
+) -> Iterator[tuple[str, dict[str, Any], str | None]]:
+    profiles = list(dict.fromkeys(args.profiles))
+    if not args.non_interactive:
+        for profile in profiles:
+            io.write("")
+            io.write(f"Running {profile} ({args.agent_mode})...")
+            run_payload, error = _run_profile_payload(deps, ticker, profile)
+            yield profile, run_payload, error
+        return
+
+    regular_profiles, synthesis_profiles = _split_parallel_profiles(profiles)
+    if regular_profiles:
+        worker_count = min(NON_INTERACTIVE_PROFILE_WORKERS, len(regular_profiles))
+        io.write("")
+        io.write(f"Running {len(regular_profiles)} profiles in parallel ({args.agent_mode}, workers={worker_count})...")
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures: dict[str, Future[tuple[dict[str, Any], str | None]]] = {
+                profile: executor.submit(_run_profile_payload, deps, ticker, profile)
+                for profile in regular_profiles
+            }
+            for profile in regular_profiles:
+                run_payload, error = futures[profile].result()
+                yield profile, run_payload, error
+
+    for profile in synthesis_profiles:
+        io.write("")
+        io.write(f"Running {profile} ({args.agent_mode}) after parallel profiles...")
+        run_payload, error = _run_profile_payload(deps, ticker, profile)
+        yield profile, run_payload, error
+
+
+# Lines the script writes as TODO placeholders. A draft that still carries all
+# of them was never touched by the PM and may be overwritten by a same-day re-run.
+_FRICTION_TEMPLATE_MARKERS = (
+    "- Total time: TODO",
+    "| TODO | TODO | TODO | TODO | TODO |",
+    "- Keep: TODO",
+    "- Change: TODO",
+)
+
+
+def _is_pristine_friction_draft(path: Path) -> bool:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if not all(marker in content for marker in _FRICTION_TEMPLATE_MARKERS):
+        return False
+
+    prefix = path.stem.split("-friction-draft", 1)[0]
+    ticker = prefix[11:] if len(prefix) > 11 else ""
+    if not ticker:
+        return False
+    reference = render_friction_draft({"ticker": ticker, "queue_decisions": []})
+
+    def comparable_lines(value: str) -> list[str]:
+        ignored_prefixes = (
+            "# Weekly Loop Friction Draft - ",
+            "- Approved/applied:",
+            "- Edited:",
+            "- Rejected:",
+            "- Deferred:",
+        )
+        return [
+            line for line in value.splitlines() if not line.startswith(ignored_prefixes)
+        ]
+
+    return comparable_lines(content) == comparable_lines(reference)
+
+
 def next_friction_draft_path(friction_log_dir: Path, ticker: str) -> Path:
     today = datetime.now(timezone.utc).date().isoformat()
     base = friction_log_dir / f"{today}-{ticker}-friction-draft.md"
-    if not base.exists():
-        return base
+    candidate = base
     index = 2
-    while True:
-        candidate = friction_log_dir / f"{today}-{ticker}-friction-draft-{index}.md"
-        if not candidate.exists():
+    while candidate.exists():
+        if _is_pristine_friction_draft(candidate):
             return candidate
+        candidate = friction_log_dir / f"{today}-{ticker}-friction-draft-{index}.md"
         index += 1
+    return candidate
 
 
 def run_guided_workup(
@@ -1267,11 +1383,21 @@ def run_guided_workup(
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
+    # --model MODEL_ID implies OpenRouter routing
+    if args.model_shortcut:
+        args.use_openrouter_free = True
+        args.openrouter_model = args.model_shortcut
+
+    # Evidence budget
+    evidence_chars = _EVIDENCE_BUDGETS.get(args.evidence_budget, _EVIDENCE_BUDGETS["standard"])
+    os.environ["ALPHA_POD_EVIDENCE_CHARS"] = str(evidence_chars)
+
     configured_llm_routing: dict[str, Any] | None = None
     if args.use_openrouter_free:
         configured_llm_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+    routing_source = f"--model {args.model_shortcut}" if args.model_shortcut else ("--use-openrouter-free" if args.use_openrouter_free else ".env/config")
     llm_routing = build_llm_routing(
-        source="--use-openrouter-free" if args.use_openrouter_free else ".env/config",
+        source=routing_source,
         configured=configured_llm_routing,
     )
     io.write(format_llm_routing_line(llm_routing))
@@ -1331,30 +1457,29 @@ def run_guided_workup(
     seen_queue_ids = set(initial_queue_ids)
 
     with heuristic_agent_runs(args.agent_mode == "heuristic"):
-        for profile in args.profiles:
-            io.write("")
-            io.write(f"Running {profile} ({args.agent_mode})...")
-            try:
-                run_payload = _jsonable(deps.run_profile(ticker, profile, include_agent_artifact=True))  # type: ignore[misc]
-            except Exception as exc:
-                run_payload = {
-                    "ticker": ticker,
-                    "profile_name": profile,
-                    "status": "failed",
-                    "reason": "script_exception",
-                    "errors": [{"code": "script_exception", "message": str(exc)}],
-                    "observation_count": 0,
-                    "queue_item_count": 0,
-                    "queue_item_ids": [],
-                }
-                result["errors"].append({"step": f"profile:{profile}", "message": str(exc)})
+        profile_runs = _run_profiles_for_mode(args, deps=deps, io=io, ticker=ticker)
+        for profile, run_payload, run_error in profile_runs:
+            if run_error:
+                result["errors"].append({"step": f"profile:{profile}", "message": run_error})
             result["profile_runs"].append(run_payload)
             _print_profile_summary(io, run_payload)
 
             queue_ids = _int_set(run_payload.get("queue_item_ids"))
             current_items = _list_queue_items(deps, ticker)
             if not queue_ids:
-                queue_ids = {int(item["item_id"]) for item in current_items if int(item.get("item_id") or 0) not in seen_queue_ids}
+                if args.non_interactive:
+                    queue_ids = {
+                        int(item["item_id"])
+                        for item in current_items
+                        if str(item.get("profile_name") or "") == profile
+                        and int(item.get("item_id") or 0) not in seen_queue_ids
+                    }
+                else:
+                    queue_ids = {
+                        int(item["item_id"])
+                        for item in current_items
+                        if int(item.get("item_id") or 0) not in seen_queue_ids
+                    }
             new_items = _items_by_ids(current_items, queue_ids)
             seen_queue_ids.update(queue_ids)
             previews = _build_item_previews(ticker, new_items, deps=deps)
@@ -1438,6 +1563,14 @@ def run_guided_workup(
     return result
 
 
+# chars per filing snippet; env var ALPHA_POD_EVIDENCE_CHARS overrides
+_EVIDENCE_BUDGETS: dict[str, int] = {
+    "lean": 1_500,    # fast smoke runs, low token cost
+    "standard": 6_000,  # default for weekly sessions
+    "large": 15_000,  # high-conviction research, flagship models
+}
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a guided PM-driven full ticker workup.")
     parser.add_argument("--ticker", required=True)
@@ -1460,9 +1593,29 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ciq-template", default=str(ROOT / "ciq" / "templates" / "ciq_cleandata.xlsx"))
     parser.add_argument("--ciq-input-json", default=str(ROOT / "ciq" / "templates" / "financials_input.json"))
     parser.add_argument("--ciq-folder", default=str(ROOT / "data" / "exports"))
+
+    # --- Model routing ---
     parser.add_argument("--use-openrouter-free", action="store_true")
     parser.add_argument("--openrouter-model", default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"))
     parser.add_argument("--openrouter-fallback-models", nargs="*", default=[])
+    parser.add_argument(
+        "--model",
+        dest="model_shortcut",
+        default=None,
+        metavar="MODEL_ID",
+        help="Route via OpenRouter with this model ID, e.g. deepseek/deepseek-v4-flash",
+    )
+
+    # --- Evidence budget ---
+    parser.add_argument(
+        "--context",
+        dest="evidence_budget",
+        choices=list(_EVIDENCE_BUDGETS),
+        default="standard",
+        metavar="BUDGET",
+        help=f"Evidence chars per filing snippet: lean={_EVIDENCE_BUDGETS['lean']:,}, standard={_EVIDENCE_BUDGETS['standard']:,} (default), large={_EVIDENCE_BUDGETS['large']:,}",
+    )
+
     parser.add_argument("--export-xlsx", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--non-interactive",

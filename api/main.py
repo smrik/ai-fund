@@ -682,13 +682,30 @@ def run_agentic_handoff_profile_payload(
             )
             saved_queue_item_ids.append(item_id)
 
-    status = "completed_with_items" if saved_queue_item_ids else "completed_no_items"
+    _aoa = getattr(agent, "last_agentic_observation_artifact", None) or {}
+    _rr = _aoa.get("rejection_reasons") or []
+    _parse_failed = (
+        not observations
+        and bool(_aoa.get("raw_formatting_output"))
+        and any(r.get("reason") == "observations_not_list" for r in _rr)
+    )
+    if saved_queue_item_ids:
+        status = "completed_with_items"
+    elif _parse_failed:
+        status = "completed_with_parse_error"
+    else:
+        status = "completed_no_items"
+    parse_errors: list[dict] = (
+        [{"code": "json_parse_failed", "message": "model output did not contain a parseable observations list"}]
+        if _parse_failed
+        else []
+    )
     packet = _persist_packet(
         observations=observations,
         status=status,
-        errors=[],
+        errors=parse_errors,
         queue_item_count=len(saved_queue_item_ids),
-        agent_observation_artifact=getattr(agent, "last_agentic_observation_artifact", None),
+        agent_observation_artifact=_aoa or None,
     )
     return {
         "ticker": ticker,
@@ -698,9 +715,9 @@ def run_agentic_handoff_profile_payload(
         "observation_count": len(observations),
         "queue_item_count": len(saved_queue_item_ids),
         "queue_item_ids": saved_queue_item_ids,
-        "errors": [],
+        "errors": parse_errors,
         **(
-            {"agent_observation_artifact": getattr(agent, "last_agentic_observation_artifact", None)}
+            {"agent_observation_artifact": _aoa or None}
             if include_agent_artifact
             else {}
         ),

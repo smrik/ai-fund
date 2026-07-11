@@ -57,6 +57,7 @@ class BaseAgent:
 		self.client = OpenAI(**kwargs)
 		self.model = resolved_model
 		self.last_used_model = self.model
+		self._skip_structured_parse = "openrouter.ai" in (resolved_base_url or "")
 		self.name = "BaseAgent"
 		self.prompt_version = "v1"
 		self.system_prompt = "You are a financial research assistant."
@@ -159,6 +160,8 @@ class BaseAgent:
 		Try strict structured output via chat.completions.parse.
 		Returns (payload_dict_or_none, model_used_or_none).
 		"""
+		if self._skip_structured_parse:
+			return None, None
 		parser = getattr(self.client.chat.completions, "parse", None)
 		if parser is None:
 			return None, None
@@ -269,6 +272,11 @@ class BaseAgent:
 				kwargs["tools"] = tools_param
 
 			response = self._create_with_retry(**kwargs)
+			if not response.choices:
+				_logger.warning(f"{self.name} received empty choices from API (model may have refused or returned a null response)")
+				artifact["raw_final_output"] = ""
+				self.last_run_artifact = artifact
+				return ""
 			choice = response.choices[0]
 			usage = getattr(response, "usage", None)
 			if usage is not None:

@@ -177,11 +177,19 @@ def build_historical_financials_from_ciq_workbook(
     workbook_path: Path | str,
     *,
     max_years: int = 10,
+    expected_ticker: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Extract annual historical actuals from a refreshed CIQ standard workbook."""
+    """Extract annual actuals, optionally enforcing the workbook's ticker identity."""
     from ciq.workbook_parser import parse_ciq_workbook
 
     payload = parse_ciq_workbook(Path(workbook_path))
+    parsed_ticker = str(payload.ticker or "").upper().strip()
+    normalized_expected = str(expected_ticker or "").upper().strip()
+    if normalized_expected and parsed_ticker != normalized_expected:
+        raise ValueError(
+            "CIQ workbook ticker mismatch: "
+            f"expected {normalized_expected}, found {parsed_ticker or '<missing>'}"
+        )
     by_period: dict[str, dict[str, Any]] = {}
 
     def _record_value(record: dict[str, Any]) -> float | None:

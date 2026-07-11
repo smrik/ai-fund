@@ -1,30 +1,29 @@
 # Session State
 
-**Updated:** 2026-07-05
+**Updated:** 2026-07-11T12:35:00+02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
-TD-26 structured logging migration cleanup was applied and verified: `src/stage_04_pipeline/daily_refresh.py` and `src/stage_04_pipeline/refresh.py` already used structured logging with no `print(...)` calls, so `tests/test_architecture_boundaries.py` was updated to remove both files from `PRINT_ALLOWLIST`.
-
-Separate dirty work from Evidence Acquisition Task 4 remains in the tree and should not be mixed into the TD-26 PR.
+Work Package 3: final live MSFT guided ticker workup and financial soundness audit.
 
 ## Recent Actions
-- Confirmed both Stage 04 pipeline files already import `logging`, define `logger = logging.getLogger(__name__)`, and contain no bare `print(...)` calls.
-- Removed `src/stage_04_pipeline/daily_refresh.py` and `src/stage_04_pipeline/refresh.py` from `PRINT_ALLOWLIST`.
-- Ran `ruff check src/stage_04_pipeline/daily_refresh.py src/stage_04_pipeline/refresh.py` -> passed.
-- Ran `C:\Users\patri\miniconda3\python.exe -m pytest tests/test_architecture_boundaries.py -q` -> 4 passed, with a pytest cache permission warning.
-- Ran `C:\Users\patri\miniconda3\python.exe -m pytest tests/ -q -p no:cacheprovider` -> 790 passed, 1 skipped, 38 warnings in 978.44s.
+- Ran the exact requested isolated live MSFT workup with OpenRouter free routing; exit code was 0.
+- All six profiles failed at the live agent call with HTTP 401 `Missing Authentication header`; no parse-error profile rerun was applicable.
+- Audited the run artifacts: deterministic snapshot arithmetic and scenario facts reconcile, SEC metrics use 2025-06-30 with revenue CAGR 0.1530, and current-run evidence map packet IDs are 172-177.
+- Found material prep-pack base-IV drift (276.43 claim versus final 274.71), stale cache warnings, an unrendered current queue (0 items), and TODO placeholders in the friction draft.
+- Read-only Excel scan found 12 sheets, 308 formulas, and no formula/error strings.
 
 ## Next Steps
-- From a normal Git-enabled shell, create branch `fix/logging-migration-stage04` from `origin/main`, stage only `tests/test_architecture_boundaries.py`, commit, push, and open the PR.
-- Include the TD-26 verification results above in the PR body.
-- Keep the separate Quartr/Evidence Acquisition files out of the TD-26 PR unless the PM explicitly wants a combined PR.
+- Deliver the Work Package 3 run result and PASS/FAIL audit to the PM.
+- Do not commit; preserve the existing unrelated dirty worktree changes and database artifacts.
 
 ## Known Issues
-- This sandbox could not write Git metadata: `git switch -c fix/logging-migration-stage04 origin/main` and `git add tests/test_architecture_boundaries.py` both failed with `fatal: Unable to create 'C:/Projects/03-Finance/ai-fund/.git/index.lock': Permission denied`.
-- `gh auth status` reports the default `smrik` token is invalid, so PR creation also needs re-authentication.
-- Local `main` is ahead of `origin/main` by 2 and has unrelated dirty/untracked Quartr/Evidence Acquisition files plus ignored/generated data artifacts.
+- Live OpenRouter free routing returned HTTP 401 `Missing Authentication header` for all six profiles.
+- Historical financials and market cache entries are flagged stale at about 5.4/5.5 days.
+- Analyst prep claim says Base DCF IV 276.43, but final snapshot/valuation JSON use 274.71; friction draft contains TODO placeholders.
+- The working tree contains unrelated pre-existing modifications and untracked artifacts. The workup used an isolated DB snapshot; `data/alpha_pod.db` was not directly touched.
 
 ## Notes
-- Default `python` resolves to the Hermes agent venv here and lacks `pytest`; use `C:\Users\patri\miniconda3\python.exe` for local pytest verification in this environment.
+- Run artifact root: `C:\Users\patri\AppData\Local\Temp\claude\C--Projects-03-Finance-ai-fund\f730ddc5-0ae4-45de-8ceb-51825d8685c2\scratchpad\deliverable\MSFT`.
+- Retry requires valid OpenRouter authentication; the user allowed only parse-error profile reruns, so no profile was rerun.

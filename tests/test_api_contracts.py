@@ -1322,6 +1322,13 @@ def test_agentic_handoff_comps_profile_is_runnable_with_real_comps_packet(monkey
         },
     )
     monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            as_of_date="2026-05-10",
+            drivers=SimpleNamespace(exit_multiple=12.0),
+        ),
+    )
+    monkeypatch.setattr(
         "src.stage_03_judgment.grounded_observation_agent.GroundedObservationAgent.analyze_evidence_packet",
         lambda self, packet, profile_name: [
             EvidencePacketObservation(

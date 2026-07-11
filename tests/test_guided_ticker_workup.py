@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import nullcontext
 from pathlib import Path
 
@@ -329,6 +330,201 @@ def test_guided_workup_non_interactive_skips_ciq_ingest_and_queue_mutations(
     assert result["queue_decisions"] == [{"item_id": 11, "action": "skipped", "reason": "non_interactive"}]
 
 
+def test_guided_workup_non_interactive_runs_profiles_in_parallel_with_synthesis_last(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    monkeypatch.setattr(guided, "_stamp", lambda: "20260703T000000Z")
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+
+    risk_started = threading.Event()
+    company_done = threading.Event()
+    risk_done = threading.Event()
+
+    def _run_profile(ticker: str, profile_name: str, **kwargs):
+        if profile_name == "company_analysis":
+            assert risk_started.wait(timeout=1.0)
+            company_done.set()
+        elif profile_name == "risk_review":
+            risk_started.set()
+            risk_done.set()
+        elif profile_name == "analyst_prep_synthesis":
+            assert company_done.is_set()
+            assert risk_done.is_set()
+        return {
+            **_profile_payload(profile_name),
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+        }
+
+    deps.run_profile = _run_profile
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "analyst_prep_synthesis",
+            "company_analysis",
+            "risk_review",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--non-interactive",
+            "--no-export-xlsx",
+        ]
+    )
+
+    result = guided.run_guided_workup(args, deps=deps, io=ScriptedIO([]))
+
+    assert [run["profile_name"] for run in result["profile_runs"]] == [
+        "company_analysis",
+        "risk_review",
+        "analyst_prep_synthesis",
+    ]
+
+
+def test_guided_workup_non_interactive_deduplicates_profiles(tmp_path: Path) -> None:
+    calls: dict = {}
+    deps = _deps(tmp_path, calls=calls)
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "company_analysis",
+            "company_analysis",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--non-interactive",
+            "--no-export-xlsx",
+        ]
+    )
+
+    runs = list(
+        guided._run_profiles_for_mode(
+            args,
+            deps=deps,
+            io=ScriptedIO([]),
+            ticker="MSFT",
+        )
+    )
+
+    assert [profile for profile, _, _ in runs] == ["company_analysis"]
+    assert calls["profile"] == ["company_analysis"]
+
+
+def test_guided_workup_interactive_keeps_requested_profile_order(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+    deps.run_profile = lambda ticker, profile_name, **kwargs: {
+        **_profile_payload(profile_name),
+        "queue_item_count": 0,
+        "queue_item_ids": [],
+    }
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "analyst_prep_synthesis",
+            "company_analysis",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--no-export-xlsx",
+        ]
+    )
+
+    result = guided.run_guided_workup(args, deps=deps, io=ScriptedIO(["", ""]))
+
+    assert [run["profile_name"] for run in result["profile_runs"]] == [
+        "analyst_prep_synthesis",
+        "company_analysis",
+    ]
+
+
+def test_guided_workup_interactive_reviews_each_profile_before_running_next(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    events: list[str] = []
+
+    class OrderingIO(ScriptedIO):
+        def _input(self, prompt: str) -> str:
+            events.append("review")
+            return super()._input(prompt)
+
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+
+    def _run_profile(ticker: str, profile_name: str, **kwargs):
+        events.append(f"run:{profile_name}")
+        return {
+            **_profile_payload(profile_name),
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+        }
+
+    deps.run_profile = _run_profile
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "company_analysis",
+            "risk_review",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--no-export-xlsx",
+        ]
+    )
+
+    guided.run_guided_workup(args, deps=deps, io=OrderingIO(["", ""]))
+
+    assert events == [
+        "run:company_analysis",
+        "review",
+        "run:risk_review",
+        "review",
+    ]
+
+
 def test_guided_workup_renders_data_freshness_in_run_and_profile_packets(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -491,6 +687,42 @@ def test_friction_draft_write_never_clobbers_existing_same_day_file(tmp_path: Pa
     assert Path(artifacts["friction_draft"]) == second
     assert second.exists()
     assert second.read_text(encoding="utf-8").startswith("# Weekly Loop Friction Draft")
+
+
+def test_friction_draft_reuses_pristine_template_from_same_day_rerun(tmp_path: Path) -> None:
+    friction_dir = tmp_path / "reviews"
+    friction_dir.mkdir()
+    result = {"ticker": "MSFT", "queue_decisions": []}
+
+    first = guided.next_friction_draft_path(friction_dir, "MSFT")
+    first.write_text(guided.render_friction_draft(result), encoding="utf-8")
+
+    # An untouched template from an earlier run today is overwritten in place,
+    # so repeated smoke runs do not accumulate numbered duplicates.
+    second = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert second == first
+
+    # Keeping all TODO markers is not enough: an added PM note in the friction
+    # table must preserve the draft and force a new path.
+    first.write_text(
+        guided.render_friction_draft(result).replace(
+            "| TODO | TODO | TODO | TODO | TODO |",
+            "| TODO | TODO | TODO | TODO | TODO |\n| Review | medium | no | Added PM note | ticket-1 |",
+        ),
+        encoding="utf-8",
+    )
+    added_line_path = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert added_line_path != first
+    assert added_line_path.name.endswith("-2.md")
+
+    # Once the PM fills in any TODO, the draft is preserved and a new file is minted.
+    first.write_text(
+        guided.render_friction_draft(result).replace("- Total time: TODO", "- Total time: 90 min"),
+        encoding="utf-8",
+    )
+    third = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert third != first
+    assert third.name.endswith("-2.md")
 
 
 def test_pm_queue_review_index_includes_commands_and_preview(tmp_path: Path) -> None:

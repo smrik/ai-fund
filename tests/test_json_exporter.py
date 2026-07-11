@@ -717,6 +717,8 @@ class TestExportTickerJson:
         comps["B1"] = "Name"
         comps["A2"] = "ACN"
         comps["B2"] = "Accenture"
+        input_ws = wb.create_sheet("Input")
+        input_ws["B2"] = "IBM"
         wb.save(workbook_path)
 
         rows = build_historical_financials_from_ciq_workbook(workbook_path)
@@ -728,6 +730,15 @@ class TestExportTickerJson:
         assert rows[-1]["capex_mm"] == 6.0
         assert rows[-1]["tax_rate_pct"] == pytest.approx(2.5 / 9.6)
         assert rows[-1]["net_debt_mm"] == 35.0
+
+        with pytest.raises(
+            ValueError,
+            match=r"CIQ workbook ticker mismatch: expected MSFT, found IBM",
+        ):
+            build_historical_financials_from_ciq_workbook(
+                workbook_path,
+                expected_ticker="MSFT",
+            )
 
     def test_dated_and_latest_identical(self, tmp_dir):
         dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")

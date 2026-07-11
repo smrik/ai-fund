@@ -5,6 +5,22 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_latest_packet_per_profile_keeps_newest_packets_sorted_by_packet_id():
+    from src.stage_04_pipeline.analyst_prep_pack import _latest_packet_per_profile
+
+    packets = [
+        {"packet_id": 163, "profile_name": "company_analysis", "facts": [{"value": "superseded"}]},
+        {"packet_id": 175, "profile_name": "company_analysis", "facts": [{"value": "latest"}]},
+        {"packet_id": 174, "profile_name": "comps_analysis", "facts": [{"value": "latest comps"}]},
+    ]
+
+    latest = _latest_packet_per_profile(packets)
+
+    assert [packet["packet_id"] for packet in latest] == [174, 175]
+    assert [packet["profile_name"] for packet in latest] == ["comps_analysis", "company_analysis"]
+    assert latest[1]["facts"] == [{"value": "latest"}]
+
+
 def test_analyst_prep_pack_maps_drivers_flags_and_public_comps(monkeypatch):
     from src.stage_04_pipeline import analyst_prep_pack
 

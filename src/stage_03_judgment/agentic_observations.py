@@ -109,6 +109,16 @@ _TARGET_DISCLOSURE_PROMPT_RULES = (
 )
 
 
+def _normalized_level(value: Any) -> Any:
+    """Case-normalize low/medium/high level fields ('High' -> 'high'); anything
+    else passes through unchanged so contract validation still fails closed."""
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"low", "medium", "high"}:
+            return lowered
+    return value
+
+
 def _has_numeric_target_value(row: dict[str, Any]) -> bool:
     metadata = row.get("metadata")
     if not isinstance(metadata, dict):
@@ -187,14 +197,16 @@ def build_agentic_system_prompt(
     profile = get_agentic_handoff_profile(profile_name)
     profile_guidance = "\n".join(f"- {line}" for line in profile.prompt_guidance)
     return (
-        f"You are {agent_name}, a grounded observation runner for Alpha Pod's PM Queue handoff.\n"
-        f"profile_name: {profile.profile_name}\n"
-        f"prompt_key: {profile.prompt_key}\n\n"
-        "Boundary rules:\n"
-        "- Use only evidence packet facts, snippets, source refs, and run metadata supplied by the user prompt.\n"
+        f"You are a senior equity research analyst supporting a concentrated fundamental long/short equity fund.\n"
+        f"Your task ({profile.profile_name}): extract investment-relevant observations from an evidence packet "
+        f"and surface them to the Portfolio Manager as structured PM Queue items.\n\n"
+        "Evidence rules:\n"
+        "- Use only the facts, snippets, and source refs supplied in the user prompt — no external knowledge.\n"
         "- Produce observations only; never produce deterministic valuation edits or direct overrides.\n"
-        "- Cite exact fact_id, snippet_id, or source_ref_id strings from the packet.\n"
-        "- If the packet is too thin, generic, or not directly tied to an allowed observation type, return no observations.\n\n"
+        "- Cite exact fact_id, snippet_id, or source_ref_id strings from the packet. Do not invent or paraphrase IDs.\n"
+        "- When evidence contains specific numbers, percentages, dollar amounts, or named risks, include them verbatim in the claim.\n"
+        "- Observations that name specific figures are more useful than observations that describe general themes.\n"
+        "- Do not propose direct model edits; flag the evidence and ask the PM a concrete question.\n\n"
         f"Profile guidance:\n{profile_guidance}\n"
     )
 
@@ -290,24 +302,19 @@ def build_extraction_prompt(packet: EvidencePacket, profile_name: str, agent_nam
     )
 
     return (
-        f"Extract key observations from the following evidence for ticker {packet.ticker}.\n"
-        f"Agent: {agent_name}\n"
+        f"Analyze the following evidence packet for {packet.ticker} and extract PM-useful observations.\n"
         f"profile_name: {profile_name}\n"
         f"packet_kind: {packet.packet_kind.value}\n"
         f"allowed_observation_types: {json.dumps(allowed_types)}\n\n"
-        "Important boundary:\n"
-        "- Agents produce observations only.\n"
-        "- Extract observations only.\n"
-        "- Do not propose deterministic model edits or direct valuation overrides.\n\n"
-        f"Allowed observation type definitions:\n{observation_type_guidance}\n\n"
+        f"Observation type definitions:\n{observation_type_guidance}\n\n"
         f"{_TARGET_DISCLOSURE_PROMPT_RULES}"
-        "Instructions for Extraction:\n"
-        "1. Identify the most important analytical points from the data below.\n"
-        "2. Write them out in plain text (bullet points are fine).\n"
-        "3. CRITICAL: For every point you make, you MUST cite the EXACT 'fact_id', 'snippet_id', or 'source_ref_id' string from the provided data. Do not invent or modify IDs.\n"
-        "4. Focus on identifying the core claim, why the evidence supports it, and what it implies for the thesis or valuation drivers.\n"
-        "5. Include materiality, thesis_implication, driver implication, and pm_question in plain text when useful.\n"
-        "6. Return no observation when evidence is thin, generic, or not directly connected to an allowed observation type.\n\n"
+        "Extraction instructions:\n"
+        "1. Read all facts, snippets, and source refs carefully. Prioritize specific numbers, percentages, dollar amounts, and named events over general statements.\n"
+        "2. For each material point, write a plain-text observation (bullet points fine) that states the specific finding and what it implies for the investment thesis or valuation assumptions.\n"
+        "3. CRITICAL: Cite the EXACT 'fact_id', 'snippet_id', or 'source_ref_id' string from the data for every point. Do not invent or abbreviate IDs.\n"
+        "4. State numeric values in readable units (15.3%, $28.9B, 18.7x); never paste raw unrounded ratios like 0.15300468973386483 into a claim.\n"
+        "5. Include materiality, thesis_implication, driver_implication, and pm_question when the evidence supports them.\n"
+        "6. Prefer 2-5 sharp, specific observations over many vague ones. Skip a point only if it has no clear investment relevance.\n\n"
         "If the packet is too thin for a PM-useful observation, return no observations.\n\n"
         f"source_refs: {json.dumps(source_refs)}\n"
         f"facts: {json.dumps(facts)}\n"
@@ -335,6 +342,11 @@ def build_formatting_prompt(packet: EvidencePacket, raw_extraction: str, profile
     )
     valid_snippet_ids = [s.snippet_id for s in packet.snippets]
     anchor_evidence_index = _compact_anchor_evidence_index(packet)
+    kind_rule = (
+        "- Kind rule: this packet contains NO text snippets, so every observation MUST use observation_kind 'numeric' (grounded in fact/source-ref anchors). Any 'qualitative' observation will be rejected.\n"
+        if not valid_snippet_ids
+        else "- Kind rule: observation_kind 'qualitative' REQUIRES at least one text_snippet_id; observations grounded only in facts or source refs MUST use observation_kind 'numeric'.\n"
+    )
 
     return (
         f"Format the following extracted observations into strict JSON.\n"
@@ -351,7 +363,8 @@ def build_formatting_prompt(packet: EvidencePacket, raw_extraction: str, profile
         "- claim (string)\n"
         f"- evidence_anchor_ids: list of exact IDs cited. MUST be chosen from this exact list: {json.dumps(valid_anchor_ids)}\n"
         f"- text_snippet_ids: list of exact snippet IDs cited. MUST be chosen from this exact list: {json.dumps(valid_snippet_ids)}\n"
-        "- qualitative_importance (optional: low|medium|high)\n"
+        + kind_rule
+        + "- qualitative_importance (optional: low|medium|high)\n"
         "- materiality (optional: low|medium|high)\n"
         "- agent_confidence (optional: low|medium|high)\n"
         "- evidence_rationale (1 sentence explaining why the cited evidence supports the claim)\n"
@@ -467,9 +480,9 @@ def parse_agentic_observations(
             "evidence_anchor_ids": anchor_ids,
             "text_snippet_ids": text_snippet_ids,
             "direction": row.get("direction"),
-            "qualitative_importance": row.get("qualitative_importance"),
-            "agent_confidence": row.get("agent_confidence"),
-            "materiality": row.get("materiality"),
+            "qualitative_importance": _normalized_level(row.get("qualitative_importance")),
+            "agent_confidence": _normalized_level(row.get("agent_confidence")),
+            "materiality": _normalized_level(row.get("materiality")),
             "thesis_implication": row.get("thesis_implication"),
             "driver_implication": row.get("driver_implication"),
             "evidence_rationale": row.get("evidence_rationale"),
@@ -545,6 +558,31 @@ def analyze_evidence_packet_with_agent(
         profile_name=profile_name,
         rejection_reasons=rejection_reasons,
     )
+
+    # One corrective retry when the model emitted unparseable JSON (token
+    # glitches are common on free-tier models). The retry re-states the format
+    # contract; we never silently repair malformed output ourselves.
+    parse_failed = not observations and any(
+        reason.get("reason") == "observations_not_list" for reason in rejection_reasons
+    )
+    if parse_failed:
+        artifact["raw_formatting_output_initial"] = raw_json
+        retry_prompt = (
+            formatting_prompt
+            + "\n\nYour previous response was not valid JSON and could not be parsed. "
+            'Return ONLY one valid JSON object of the form {"observations": [...]} — '
+            "no code fences, no commentary, every key and string value double-quoted."
+        )
+        raw_json = agent.run(retry_prompt)
+        artifact["raw_formatting_output"] = raw_json
+        rejection_reasons = []
+        observations = parse_agentic_observations(
+            raw=raw_json,
+            packet=packet,
+            profile_name=profile_name,
+            rejection_reasons=rejection_reasons,
+        )
+
     artifact["accepted_observation_count"] = len(observations)
     artifact["accepted_observation_ids"] = [observation.observation_id for observation in observations]
     artifact["rejected_observation_count"] = len(rejection_reasons)

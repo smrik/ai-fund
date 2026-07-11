@@ -372,6 +372,47 @@ def test_refresh_preserves_model_edits_and_overrides():
     assert set(EXPECTED_SHEETS).issubset(set(wb2.sheetnames))
 
 
+def test_refresh_clears_workbook_overrides_when_ticker_changes():
+    tmp = _workspace_tempdir("refresh-cross-ticker")
+    source_json = tmp / "TEST_latest.json"
+    source_model = tmp / "TEST_model.xlsx"
+    source_json.write_text(json.dumps(_sample_payload()), encoding="utf-8")
+    build_advanced_dcf_model("TEST", json_path=source_json, output_path=source_model)
+
+    wb = load_workbook(source_model)
+    assumptions = wb["Assumptions"]
+    override_row = next(
+        row
+        for row in range(5, assumptions.max_row + 1)
+        if assumptions.cell(row, 2).value == "exit_multiple"
+    )
+    assumptions.cell(override_row, 4).value = 9.0
+    wb.save(source_model)
+
+    target_payload = _sample_payload()
+    target_payload["ticker"] = "OTHER"
+    target_payload["company_name"] = "Other Company"
+    target_json = tmp / "OTHER_latest.json"
+    target_json.write_text(json.dumps(target_payload), encoding="utf-8")
+    target_model = tmp / "OTHER_model.xlsx"
+
+    refresh_model_data(
+        source_model,
+        ticker="OTHER",
+        json_path=target_json,
+        output_path=target_model,
+    )
+
+    refreshed = load_workbook(target_model)
+    refreshed_assumptions = refreshed["Assumptions"]
+    refreshed_override = next(
+        refreshed_assumptions.cell(row, 4).value
+        for row in range(5, refreshed_assumptions.max_row + 1)
+        if refreshed_assumptions.cell(row, 2).value == "exit_multiple"
+    )
+    assert refreshed_override is None
+
+
 def test_agent_judgment_surfaced_when_guided_workup_present():
     """When a guided-workup JSON exists, its thesis + driver cards appear, read-only."""
     tmp = _workspace_tempdir("agent")

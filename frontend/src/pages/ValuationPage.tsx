@@ -672,17 +672,36 @@ function SummaryPanel({
   const financeQuality = asRecord(summary?.finance_quality);
   const financeFlags = asRows(financeQuality?.flags);
   const financeStatus = asText(financeQuality?.status);
+  const scenarioNames = new Set(["bear", "base", "bull"]);
+  const payloadScenarioRows = asRows(asRecord(summary?.summary)?.scenario_summary).filter((row) =>
+    scenarioNames.has(String(row.scenario ?? "").toLowerCase()),
+  );
+  const dossierValuation = asRecord(
+    asRecord(asRecord(summary?.ticker_dossier)?.latest_snapshot)?.valuation_snapshot,
+  );
+  const scenarioProbabilities = asRecord(dossierValuation?.scenario_probabilities);
+  const currentPrice = asNumber(summary?.current_price ?? workspace?.current_price);
+  const fallbackScenarioRows = [
+    { scenario: "bear", intrinsic_value: summary?.bear_iv ?? workspace?.bear_iv },
+    { scenario: "base", intrinsic_value: summary?.base_iv ?? workspace?.base_iv },
+    { scenario: "bull", intrinsic_value: summary?.bull_iv ?? workspace?.bull_iv },
+  ].map((row) => {
+    const intrinsicValue = asNumber(row.intrinsic_value);
+    const probability = asNumber(scenarioProbabilities?.[row.scenario]);
+    return {
+      ...row,
+      probability_pct: probability == null ? null : Math.abs(probability) <= 1 ? probability * 100 : probability,
+      upside_pct:
+        currentPrice != null && currentPrice > 0 && intrinsicValue != null
+          ? (intrinsicValue / currentPrice - 1) * 100
+          : null,
+    };
+  });
   return (
     <section className="page-stack">
       <section className="panel">
         <h2>Scenario Summary</h2>
-        <ScenarioCards
-          rows={[
-            { scenario: "Bear", intrinsic_value: summary?.bear_iv, probability_pct: 25, upside_pct: -10 },
-            { scenario: "Base", intrinsic_value: summary?.base_iv, probability_pct: 50, upside_pct: summary?.upside_pct_base },
-            { scenario: "Bull", intrinsic_value: summary?.bull_iv, probability_pct: 25, upside_pct: 50 },
-          ]}
-        />
+        <ScenarioCards rows={payloadScenarioRows.length ? payloadScenarioRows : fallbackScenarioRows} />
       </section>
       <section className="grid-cards">
         <article className="panel">

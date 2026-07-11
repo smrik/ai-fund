@@ -221,6 +221,13 @@ beforeEach(() => {
                 },
               ],
             },
+            summary: {
+              scenario_summary: [
+                { scenario: "bear", probability_pct: 20, intrinsic_value: 120, upside_pct: 8.1 },
+                { scenario: "base", probability_pct: 60, intrinsic_value: 155, upside_pct: 39.6 },
+                { scenario: "bull", probability_pct: 20, intrinsic_value: 210, upside_pct: 89.2 },
+              ],
+            },
             ticker_dossier: canonicalDossier,
             ticker_dossier_contract_version: "1.0.0",
           }),
@@ -1144,6 +1151,14 @@ describe("frontend routes", () => {
     expect(screen.getByRole("link", { name: "Market" })).toHaveAttribute("href", "/ticker/IBM/market");
     expect(screen.getByRole("link", { name: "Research" })).toHaveAttribute("href", "/ticker/IBM/research");
     expect(screen.getByRole("link", { name: "Audit" })).toHaveAttribute("href", "/ticker/IBM/audit");
+  });
+
+  it("renders valuation summary scenarios from the backend payload", async () => {
+    renderRoute("/ticker/IBM/valuation?view=Summary");
+
+    expect(await screen.findByText("Probability +60.0%" )).toBeInTheDocument();
+    expect(screen.getAllByText("Probability +20.0%" )).toHaveLength(2);
+    expect(screen.queryByText("Probability +25.0%" )).not.toBeInTheDocument();
   });
 
   it("renders data-rich valuation content for dcf, comparables, and multiples tabs", async () => {

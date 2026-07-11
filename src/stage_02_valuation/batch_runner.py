@@ -78,7 +78,10 @@ def _historical_financials_for_json(ticker: str, result: dict) -> list[dict]:
         if not path.exists():
             continue
         try:
-            return build_historical_financials_from_ciq_workbook(path)
+            return build_historical_financials_from_ciq_workbook(
+                path,
+                expected_ticker=ticker,
+            )
         except Exception as exc:
             logger.warning(
                 "  CIQ historical export failed for %s from %s: %s",
