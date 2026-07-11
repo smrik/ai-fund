@@ -1,11 +1,11 @@
 # Session State
 
-**Updated:** 2026-07-11T19:51:32+02:00
+**Updated:** 2026-07-11T20:20:50+02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
-Plan the next accounting-evidence dispatch slice: deterministic focus subpackets with multi-finding responses, item-level repair, and ledger conflict handling.
+Implement and publish the accounting-evidence focused-dispatch slice with subagent review checkpoints.
 
 ## Recent Actions
 - Ran the attended MSFT full-ticker workup on 2026-07-11 using `--use-codex --codex-model gpt-5.6-luna --codex-effort low`.
@@ -32,13 +32,17 @@ Plan the next accounting-evidence dispatch slice: deterministic focus subpackets
 - Ran direct live adapter probe: `status=ok`, six facts for cash/operating lease concepts from recent 2026 filings; fuzzy related concepts were excluded.
 - Final focused gate: `83 passed, 1 warning` in 2:13; compileall and `git diff --check` passed.
 - Revised the active plan after PM feedback: the agent is not restricted to one finding. Added eight reasoning-level focus keys, a deterministic agent-context projection, 0..N finding envelopes with an engineering overflow guard, item-level repair that preserves valid siblings, and duplicate/conflict ledger handling.
+- Implemented Task A: stable eight-key focus contract, finding IDs, and 0..N AccountingFocusResponse envelope.
+- Implemented Task B: deterministic AccountingFocusContext selector with caps, vintage/period metadata, missing-data status, and dimension preservation.
+- Implemented Task C: whole-envelope schema retry plus item-level semantic repair that preserves valid siblings and retains rejected findings.
+- Verified the focused implementation with 65 tests passing; only the known Windows .pytest_cache permission warning remains.
+- Committed as 2dad083 and pushed branch codex/focused-accounting-evidence-repair after direct main push was rejected by protected-branch rules.
 
 ## Next Steps
-- Implementation is paused at the XBRL Slice B / focused-dispatch planning checkpoint; focus selector, multi-finding dispatch, item-level repair integration, exact Inline XBRL locators, and guided-run integration are not implemented yet.
-- Next decision: confirm the plan's conservative accounting-treatment boundaries before implementation.
-- Next implementation decision: build the focus selector and response envelope first, then test an MSFT multi-finding focus run before enabling guided dispatch.
+- Implementation is paused after the focus contract, selector, and repair seam; ledger/queue translation, exact Inline XBRL locators, guided-run integration, and the MSFT focus smoke remain.
+- Next implementation decision: add deterministic ledger/queue translation and duplicate/conflict handling, then run an offline MSFT-like focus smoke before enabling guided dispatch.
 - Existing later items remain: capture wall-clock timing, fix stale preview handling, and add approve-now/apply-at-end batching.
-- Do not commit the working tree; preserve unrelated untracked artifacts.
+- The implementation commit is on the pushed feature branch; preserve unrelated untracked artifacts.
 
 ## Known Issues
 - The MVP run did not persist total wall-clock time, so the one-PM-hour requirement remains unmeasured.
@@ -46,7 +50,7 @@ Plan the next accounting-evidence dispatch slice: deterministic focus subpackets
 - Accounting evidence improvement still needs PM confirmation for treatment conventions and materiality semantics before proposal sizing/queue materiality is implemented.
 - Remaining retrieval question: whether to add a conservative lexical fallback inside broad notes for topics without dedicated headings (pension, debt, contingencies, segments), or keep those as explicit missing evidence. No lexical fallback or agent dispatch has been implemented yet.
 - XBRL facts are now persisted in the generic packet JSON columns without a SQLite migration; cache-only runs still lack a durable XBRL fact cache and therefore expose explicit unavailable status.
-- Working tree remains `main...origin/main [ahead 3]` with unrelated untracked database/review artifacts; no cleanup or commit was performed.
+- Direct push to protected `main` was rejected by repository rules requiring a pull request and five status checks. The feature branch is pushed and ready for PR review.
 
 ## Notes
 - Accounting-focused verification: `53 passed, 1 warning`; the warning is the existing Windows `.pytest_cache` permission issue.
@@ -54,4 +58,5 @@ Plan the next accounting-evidence dispatch slice: deterministic focus subpackets
 - Retrieval-hardening smoke: packets 196–199 persisted successfully; topic snippets were filtered per packet and no LLM, queue, or valuation mutation was run.
 - MVP artifact JSON: `output/guided_workups/MSFT/MSFT-20260711T145754Z.json`.
 - Active plan: `docs/plans/active/2026-07-11-accounting-evidence-packs-focused-repair.md`.
-- No commits were created.
+- Commit: `2dad083 feat: add focused accounting evidence repair flow`.
+- Branch: `codex/focused-accounting-evidence-repair` (pushed to origin).
