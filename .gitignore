@@ -30,7 +30,10 @@ htmlcov/
 data/cache/
 data/dossiers/
 data/valuations/
-data/exports/
+# Generated exports remain ignored except for the curated MSFT standard
+# workbook, which is tracked for private reproducibility.
+data/exports/*
+!data/exports/MSFT_Standard.xlsx
 data/damodaran_drop/
 data/alpha_pod.db
 data/*.db-shm

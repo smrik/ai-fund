@@ -76,7 +76,7 @@ git fetch origin codex/focused-accounting-evidence-repair
 git switch --track origin/codex/focused-accounting-evidence-repair
 ```
 
-The branch contains the implementation commits `2dad083` and `4a45acb`, plus this handoff prompt once it is published. Local `.env` secrets, SQLite databases, SEC/market caches, and generated `output/` artifacts are machine-local and are not a substitute for a clean checkout. On a new device, configure secrets from `.env.example`, install the project dependencies according to the repository setup docs, and start with offline tests before attempting live retrieval.
+The branch contains the implementation commits `2dad083` and `4a45acb`, plus this handoff prompt once it is published. The real MSFT run also depends on `data/exports/MSFT_Standard.xlsx`; it is intentionally tracked on the private feature branch for reproducibility. Keep the repository private and do not redistribute the potentially licensed vendor workbook publicly. Local `.env` secrets, SQLite databases, SEC/market caches, and generated `output/` artifacts are machine-local and are not a substitute for a clean checkout. On a new device, configure secrets from `.env.example`, install the project dependencies according to the repository setup docs, and start with offline tests before attempting live retrieval.
 
 ## Mission
 

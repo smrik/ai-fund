@@ -77,7 +77,15 @@ https://github.com/smrik/ai-fund/archive/refs/heads/codex/focused-accounting-evi
 
 Extract it, open a terminal in the extracted `ai-fund-*` directory, and run the sprint command from there. The agent can inspect, edit, and test the files, but this fallback has no Git history, branch management, diff tracking, commit, push, or pull-request workflow. Save the final changed directory or create a patch manually, then move the work to a machine with Git before integrating it.
 
-Local `.env` secrets, SQLite databases, SEC/market caches, and generated `output/` artifacts are machine-local. Configure the new device from `.env.example` and the setup documentation; never copy secrets into Git or send them to a delegated worker.
+The real MSFT MVP run also depends on this machine-local workbook:
+
+```text
+data/exports/MSFT_Standard.xlsx
+```
+
+It is now intentionally tracked on the private GitHub feature branch for reproducibility. Treat it as potentially licensed Capital IQ data: keep the repository private and do not redistribute it publicly. A new device should receive it through the clone or ZIP branch download and place it at exactly that path before attempting the CIQ-backed MSFT run. If it is unavailable, run cache-only/offline tests and report the missing dependency instead of substituting a fabricated workbook.
+
+Local `.env` secrets, SQLite databases, SEC/market caches, and generated `output/` artifacts are also machine-local. Configure the new device from `.env.example` and the setup documentation; never copy secrets into Git or send them to a delegated worker.
 
 ## Project background
 
