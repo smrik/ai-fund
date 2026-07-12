@@ -284,14 +284,37 @@ def _compute_qoe_for_ticker(ticker: str) -> dict | None:
         return None
 
 
-def value_single_ticker(ticker: str) -> dict | None:
+def value_single_ticker(ticker: str, *, apply_overrides: bool = True) -> dict | None:
     try:
         ticker = ticker.upper().strip()
-        inputs = build_valuation_inputs(ticker)
+        # Preserve the long-standing one-argument call contract for the default
+        # path. The explicit keyword is only needed by the source-only shadow
+        # run that keeps story adjustments advisory.
+        inputs = (
+            build_valuation_inputs(ticker)
+            if apply_overrides
+            else build_valuation_inputs(ticker, apply_overrides=False)
+        )
         if inputs is None:
             return None
 
-        mkt = md_client.get_market_data(ticker)
+        try:
+            mkt = md_client.get_market_data(ticker)
+        except Exception:
+            target = (get_ciq_comps_detail(ticker) or {}).get("target") or {}
+
+            def _target_mm(field: str) -> float | None:
+                value = target.get(field)
+                return float(value) * 1_000_000.0 if value is not None else None
+
+            mkt = {
+                "current_price": target.get("stock_price") or inputs.current_price,
+                "market_cap": _target_mm("market_cap_mm"),
+                "enterprise_value": _target_mm("tev_mm"),
+                "shares_outstanding": _target_mm("shares_out_mm"),
+                "cash": _target_mm("cash_mm"),
+                "total_debt": _target_mm("debt_mm"),
+            }
         price = inputs.current_price
         lineage = inputs.source_lineage
         ciq = inputs.ciq_lineage
@@ -337,6 +360,14 @@ def value_single_ticker(ticker: str) -> dict | None:
             "equity_weight": round((wacc_inputs.get("equity_weight") or 0) * 100, 0) if wacc_inputs.get("equity_weight") is not None else None,
             "debt_weight_source": lineage.get("debt_weight", "yfinance_capm"),
             "peers_used": ", ".join(wacc_inputs.get("peers_used") or []),
+            "wacc_quality_status": wacc_inputs.get("quality_status", "source_backed"),
+            "wacc_missing_inputs_json": json.dumps(wacc_inputs.get("missing_inputs") or []),
+            "wacc_beta_source": wacc_inputs.get("beta_source"),
+            "wacc_risk_free_rate_raw": wacc_inputs.get("risk_free_rate"),
+            "wacc_equity_risk_premium_raw": wacc_inputs.get("equity_risk_premium"),
+            "wacc_cost_of_debt_after_tax_raw": wacc_inputs.get("cost_of_debt_after_tax"),
+            "wacc_beta_relevered_raw": wacc_inputs.get("beta_relevered"),
+            "wacc_size_premium_raw": wacc_inputs.get("size_premium"),
             "growth_near": round(inputs.drivers.revenue_growth_near * 100, 1),
             "growth_mid": round(inputs.drivers.revenue_growth_mid * 100, 1),
             "growth_source": lineage.get("revenue_growth_near", "default"),
@@ -1279,6 +1310,11 @@ if __name__ == "__main__":
                         help="Run full research pipeline (requires --ticker and LLM API credentials)")
     parser.add_argument("--story-profile", action="store_true",
                         help="Generate LLM story driver profile and write to config/story_drivers_pending.yaml (requires --ticker)")
+    parser.add_argument(
+        "--source-only",
+        action="store_true",
+        help="Run deterministic source facts without story or PM override mutations.",
+    )
     parser.add_argument("--macro", action="store_true",
                         help="Refresh data/macro_context.md from web search (needs an LLM provider key plus PERPLEXITY_API_KEY)")
     parser.add_argument("--review", action="store_true",
@@ -1508,7 +1544,7 @@ if __name__ == "__main__":
                 sys.exit(0)
 
         # ── deterministic valuation (default) ────────────────────────────────
-        result = value_single_ticker(args.ticker)
+        result = value_single_ticker(args.ticker, apply_overrides=not args.source_only)
         if result:
             sys.stdout.write(f"{json.dumps(result, indent=2)}\n")
 
@@ -1539,6 +1575,7 @@ if __name__ == "__main__":
                 )
         else:
             logger.error("Could not value %s", args.ticker, extra={"ticker": args.ticker.upper(), "step": "valuation"})
+            sys.exit(1)
     else:
         if args.full:
             logger.error("--full requires --ticker", extra={"step": "cli"})

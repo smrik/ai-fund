@@ -20,7 +20,10 @@ class CaptureRoute:
 
     @property
     def url(self) -> str:
-        return f"{DEFAULT_BASE_URL.rstrip('/')}{self.path}"
+        return self.url_for(DEFAULT_BASE_URL)
+
+    def url_for(self, base_url: str) -> str:
+        return f"{base_url.rstrip('/')}{self.path}"
 
 
 ALL_ROUTES = (
@@ -30,6 +33,10 @@ ALL_ROUTES = (
     CaptureRoute("valuation-dcf", "/ticker/CALM/valuation?view=DCF"),
     CaptureRoute("valuation-multiples", "/ticker/CALM/valuation?view=Multiples"),
     CaptureRoute("valuation-recommendations", "/ticker/CALM/valuation?view=Recommendations"),
+    CaptureRoute(
+        "valuation-professional-model",
+        "/ticker/MSFT/valuation?view=Professional%20Model",
+    ),
     CaptureRoute("market", "/ticker/CALM/market"),
     CaptureRoute("research", "/ticker/CALM/research"),
     CaptureRoute("audit", "/ticker/CALM/audit"),
@@ -135,14 +142,24 @@ def capture_routes(
     manifest = []
     screenshots = []
 
-    first_route, *remaining = routes
-    run_command([*cmd, f"-s={session}", "open", first_route.url, "--browser", browser])
+    first_route = routes[0]
+    run_command(
+        [
+            *cmd,
+            f"-s={session}",
+            "open",
+            first_route.url_for(base_url),
+            "--browser",
+            browser,
+        ]
+    )
     ensure_viewport(cmd, session)
     wait_for_settle(cmd, session, wait_ms)
 
     for idx, route in enumerate(routes):
+        route_url = route.url_for(base_url)
         if idx > 0:
-            run_command([*cmd, f"-s={session}", "goto", route.url])
+            run_command([*cmd, f"-s={session}", "goto", route_url])
             wait_for_settle(cmd, session, wait_ms)
 
         screenshot_path = output_dir / f"{route.name}.png"
@@ -151,7 +168,7 @@ def capture_routes(
         manifest.append(
             {
                 "name": route.name,
-                "url": route.url,
+                "url": route_url,
                 "screenshot": str(screenshot_path.relative_to(REPO_ROOT)),
             }
         )

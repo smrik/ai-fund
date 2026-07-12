@@ -1571,3 +1571,306 @@ def test_watchlist_export_endpoints_create_and_list_batch_exports(monkeypatch):
 
     assert list_response.status_code == 200
     assert list_response.json()["exports"][0]["export_id"] == "batch-1"
+
+
+def test_professional_model_summary_endpoint_returns_service_contract(monkeypatch):
+    from api.main import app
+
+    expected = {
+        "ticker": "MSFT",
+        "model_run_id": 3,
+        "normalized_state": "BLOCKED",
+        "reported_workbook_status": "BLOCKED",
+        "decision_readiness": False,
+        "download_url": "/api/tickers/MSFT/professional-model/download",
+        "permitted_actions": {"download": True, "rebuild": True},
+    }
+    calls: list[str] = []
+
+    def _summary(ticker: str) -> dict:
+        calls.append(ticker)
+        return expected
+
+    monkeypatch.setattr("api.main.build_professional_model_summary", _summary)
+
+    response = TestClient(app).get("/api/tickers/msft/professional-model")
+
+    assert response.status_code == 200
+    assert response.json() == expected
+    assert calls == ["MSFT"]
+
+
+def test_professional_model_sheet_endpoint_forwards_bounded_page_and_caps_cells(monkeypatch):
+    from api.main import app
+
+    calls: list[dict] = []
+
+    def _sheet(ticker: str, sheet_name: str, **kwargs) -> dict:
+        calls.append({"ticker": ticker, "sheet_name": sheet_name, **kwargs})
+        return {
+            "ticker": ticker,
+            "model_run_id": 3,
+            "sheet_name": sheet_name,
+            "pagination": kwargs,
+            "cells": [],
+        }
+
+    monkeypatch.setattr("api.main.build_professional_model_sheet_payload", _sheet)
+    client = TestClient(app)
+
+    page = client.get(
+        "/api/tickers/msft/professional-model/sheets/Cover"
+        "?start_row=2&start_column=3&row_limit=100&column_limit=50"
+    )
+    over_cell_cap = client.get(
+        "/api/tickers/MSFT/professional-model/sheets/Cover"
+        "?row_limit=101&column_limit=50"
+    )
+    over_row_cap = client.get(
+        "/api/tickers/MSFT/professional-model/sheets/Cover?row_limit=201"
+    )
+    invalid_start = client.get(
+        "/api/tickers/MSFT/professional-model/sheets/Cover?start_row=0"
+    )
+
+    assert page.status_code == 200
+    assert page.json()["pagination"] == {
+        "start_row": 2,
+        "start_column": 3,
+        "row_limit": 100,
+        "column_limit": 50,
+    }
+    assert calls == [
+        {
+            "ticker": "MSFT",
+            "sheet_name": "Cover",
+            "start_row": 2,
+            "start_column": 3,
+            "row_limit": 100,
+            "column_limit": 50,
+        }
+    ]
+    assert over_cell_cap.status_code == 400
+    assert "5000 cells" in over_cell_cap.json()["detail"]
+    assert over_row_cap.status_code == 422
+    assert invalid_start.status_code == 422
+
+
+def test_professional_model_download_returns_exact_identity_headers(tmp_path, monkeypatch):
+    from api.main import app
+
+    workbook = tmp_path / "MSFT_professional_model_v2.xlsx"
+    workbook.write_bytes(b"verified-professional-model")
+    workbook_sha256 = "a" * 64
+    calls: list[str] = []
+
+    def _download(ticker: str):
+        calls.append(ticker)
+        return workbook, {
+            "ticker": ticker,
+            "model_run_id": 3,
+            "filename": workbook.name,
+            "workbook_sha256": workbook_sha256,
+            "workbook_bytes": workbook.stat().st_size,
+        }
+
+    monkeypatch.setattr("api.main.resolve_professional_model_download", _download)
+
+    response = TestClient(app).get(
+        "/api/tickers/msft/professional-model/download"
+    )
+
+    assert response.status_code == 200
+    assert response.content == b"verified-professional-model"
+    assert response.headers["etag"] == f'"{workbook_sha256}"'
+    assert response.headers["x-workbook-sha256"] == workbook_sha256
+    assert response.headers["x-model-run-id"] == "3"
+    assert "spreadsheetml.sheet" in response.headers["content-type"]
+    assert workbook.name in response.headers["content-disposition"]
+    assert calls == ["MSFT"]
+
+
+def test_professional_model_review_actions_route_exact_requests(monkeypatch):
+    from api.main import app
+
+    calls: dict[str, dict] = {}
+
+    def _capture(action: str):
+        def _handler(ticker: str, **kwargs) -> dict:
+            calls[action] = {"ticker": ticker, **kwargs}
+            return {"ticker": ticker, "action": action, **kwargs}
+
+        return _handler
+
+    monkeypatch.setattr(
+        "api.main.build_professional_model_review_payload",
+        lambda ticker: {"ticker": ticker, "requirements": [], "audit_events": []},
+    )
+    monkeypatch.setattr(
+        "api.main.preview_professional_model_review", _capture("preview")
+    )
+    monkeypatch.setattr(
+        "api.main.approve_professional_model_review", _capture("approve")
+    )
+    monkeypatch.setattr(
+        "api.main.reject_professional_model_review", _capture("reject")
+    )
+    monkeypatch.setattr(
+        "api.main.signoff_professional_model", _capture("signoff")
+    )
+
+    client = TestClient(app)
+    review = client.get("/api/tickers/msft/professional-model/review")
+    preview = client.post(
+        "/api/tickers/msft/professional-model/review/preview",
+        json={
+            "approval_key": "pmq:Base:revenue_growth",
+            "reviewed_values": [0.10, 0.09, 0.08, 0.07, 0.06],
+            "actor": "pm-user",
+            "rationale": "Reviewed exact path",
+        },
+    )
+    invalid_preview = client.post(
+        "/api/tickers/MSFT/professional-model/review/preview",
+        json={
+            "approval_key": "pmq:Base:revenue_growth",
+            "reviewed_values": [0.10, 0.09, 0.08, 0.07],
+        },
+    )
+    fingerprint = "b" * 64
+    approve = client.post(
+        "/api/tickers/msft/professional-model/review/approve",
+        json={
+            "preview_id": 17,
+            "reviewed_value_fingerprint": fingerprint,
+            "actor": "pm-user",
+            "rationale": "Approve preview",
+        },
+    )
+    reject = client.post(
+        "/api/tickers/msft/professional-model/review/reject",
+        json={
+            "approval_key": "pmq:Downside:dso",
+            "actor": "pm-user",
+            "rationale": "Needs another pass",
+        },
+    )
+    signoff = client.post(
+        "/api/tickers/msft/professional-model/signoff",
+        json={
+            "workbook_sha256": "c" * 64,
+            "actor": "pm-user",
+            "rationale": "Exact artifact reviewed",
+        },
+    )
+
+    assert review.status_code == 200
+    assert review.json()["ticker"] == "MSFT"
+    assert preview.status_code == 200
+    assert invalid_preview.status_code == 422
+    assert approve.status_code == 200
+    assert reject.status_code == 200
+    assert signoff.status_code == 200
+    assert calls["preview"] == {
+        "ticker": "MSFT",
+        "approval_key": "pmq:Base:revenue_growth",
+        "reviewed_values": [0.10, 0.09, 0.08, 0.07, 0.06],
+        "actor": "pm-user",
+        "rationale": "Reviewed exact path",
+    }
+    assert calls["approve"]["preview_id"] == 17
+    assert calls["approve"]["reviewed_value_fingerprint"] == fingerprint
+    assert calls["reject"]["approval_key"] == "pmq:Downside:dso"
+    assert calls["reject"]["rationale"] == "Needs another pass"
+    assert calls["signoff"]["workbook_sha256"] == "c" * 64
+
+
+def test_professional_model_service_errors_map_to_http_statuses(monkeypatch):
+    from api.main import app
+    from src.stage_04_pipeline.professional_model_review import (
+        ProfessionalModelConflictError,
+        ProfessionalModelError,
+        ProfessionalModelNotFoundError,
+        ProfessionalModelValidationError,
+    )
+
+    def _raiser(exc: Exception):
+        def _raise(_ticker: str):
+            raise exc
+
+        return _raise
+
+    client = TestClient(app)
+    cases = [
+        (ProfessionalModelValidationError("invalid sheet"), 400),
+        (ProfessionalModelNotFoundError("model not found"), 404),
+        (ProfessionalModelConflictError("artifact mismatch"), 409),
+        (ProfessionalModelError("unexpected service failure"), 500),
+    ]
+    for exc, expected_status in cases:
+        monkeypatch.setattr(
+            "api.main.build_professional_model_summary", _raiser(exc)
+        )
+        response = client.get("/api/tickers/MSFT/professional-model")
+        assert response.status_code == expected_status
+        assert response.json()["detail"] == str(exc)
+
+
+def test_professional_model_rebuild_uses_background_tracker(monkeypatch):
+    from api.main import app
+
+    calls: list[dict] = []
+
+    def _rebuild(ticker: str, **kwargs) -> dict:
+        calls.append({"ticker": ticker, **kwargs})
+        return {
+            "ticker": ticker,
+            "model_run_id": kwargs["model_run_id"],
+            "tracker_run_id": kwargs["tracker_run_id"],
+            "artifact_identity": {"workbook_sha256": "d" * 64},
+        }
+
+    monkeypatch.setattr("api.main.rebuild_professional_model", _rebuild)
+    client = TestClient(app)
+    response = client.post(
+        "/api/tickers/msft/professional-model/rebuild",
+        json={
+            "model_run_id": 3,
+            "actor": "pm-user",
+            "rationale": "Refresh exact run",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
+    assert response.json()["ticker"] == "MSFT"
+    run_id = response.json()["run_id"]
+
+    for _ in range(100):
+        status = client.get(f"/api/runs/{run_id}")
+        assert status.status_code == 200
+        payload = status.json()
+        if payload["status"] == "completed":
+            assert payload["kind"] == "professional_model_rebuild"
+            assert payload["ticker"] == "MSFT"
+            assert payload["result"]["tracker_run_id"] == run_id
+            assert payload["result"]["artifact_identity"]["workbook_sha256"] == "d" * 64
+            assert payload["metadata"] == {
+                "model_run_id": 3,
+                "actor": "pm-user",
+                "rationale": "Refresh exact run",
+            }
+            break
+        time.sleep(0.01)
+    else:  # pragma: no cover - diagnostic guard
+        raise AssertionError("professional model rebuild never completed")
+
+    assert calls == [
+        {
+            "ticker": "MSFT",
+            "model_run_id": 3,
+            "actor": "pm-user",
+            "rationale": "Refresh exact run",
+            "tracker_run_id": run_id,
+        }
+    ]

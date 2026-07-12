@@ -170,6 +170,19 @@ def test_builder_flags_out_of_range_without_blocking_register_generation():
     assert register.model_trust_state == ModelTrustState.review_required
 
 
+def test_builder_accepts_documented_mega_cap_negative_size_premium():
+    inputs = _inputs()
+    inputs.wacc_inputs["size_premium"] = -0.0006
+    register = build_assumption_register("TEST", inputs)
+    size_premium = next(
+        entry for entry in register.entries if entry.assumption_name == "size_premium"
+    )
+
+    assert size_premium.out_of_range is False
+    assert size_premium.flag_level == FlagLevel.watch
+    assert size_premium.approval_state == AssumptionApprovalState.none
+
+
 def test_model_trust_rolls_up_critical_diagnostics():
     register = build_assumption_register(
         "TEST",

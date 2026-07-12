@@ -223,6 +223,203 @@ def collect_edgar_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _resolve_professional_workbook(*, ticker: str, batch_row: dict[str, Any]) -> Path:
+    """Resolve the exact Standard workbook named by the current deterministic run."""
+    from scripts.manual.professional_model_preflight import resolve_workbook_path
+
+    raw_source = str(batch_row.get("ciq_source_file") or "").strip()
+    if raw_source:
+        source_path = Path(raw_source).expanduser()
+        candidates = (
+            source_path,
+            ROOT / "data" / "exports" / source_path,
+            ROOT / source_path,
+        )
+        for candidate in candidates:
+            if candidate.exists() and candidate.is_file():
+                return candidate.resolve()
+    return resolve_workbook_path(ticker=ticker, workbook_path=None)
+
+
+def _build_professional_source_preflight(**kwargs: Any) -> dict[str, Any]:
+    from scripts.manual.professional_model_preflight import build_preflight_manifest
+
+    return build_preflight_manifest(**kwargs)
+
+
+def _active_preflight_db_path(database_info: dict[str, Any] | None) -> Path:
+    raw_path = _as_dict(database_info).get("path") or os.getenv("ALPHA_POD_DB_PATH")
+    return Path(str(raw_path or (ROOT / "data" / "alpha_pod.db"))).expanduser().resolve()
+
+
+def derive_source_preflight(
+    ticker: str,
+    batch_row: dict[str, Any],
+    database_info: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Fingerprint and bind the run's workbook; failures become explicit blockers."""
+    ticker = ticker.upper().strip()
+    db_path = _active_preflight_db_path(database_info)
+    try:
+        workbook_path = _resolve_professional_workbook(ticker=ticker, batch_row=batch_row)
+        manifest = _build_professional_source_preflight(
+            ticker=ticker,
+            workbook_path=workbook_path,
+            db_path=db_path,
+            require_ingested=True,
+        )
+
+        expected_run_ids: set[int] = set()
+        for key in ("ciq_run_id", "ciq_comps_run_id"):
+            value = batch_row.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                expected_run_ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+
+        source = _as_dict(manifest.get("source"))
+        observed_run_id = _as_int_or_none(source.get("run_id"))
+        expected_source = str(batch_row.get("ciq_source_file") or "").strip()
+        observed_source = str(source.get("source_file") or "").strip()
+        binding_blockers: list[str] = []
+        if not expected_run_ids:
+            binding_blockers.append("model_ciq_run_id_missing")
+        elif observed_run_id is None or expected_run_ids != {observed_run_id}:
+            binding_blockers.append(
+                "model_ciq_run_mismatch:"
+                f"expected={sorted(expected_run_ids)}:observed={observed_run_id}"
+            )
+        if expected_source and Path(expected_source).name.lower() != Path(observed_source).name.lower():
+            binding_blockers.append(
+                "model_ciq_source_mismatch:"
+                f"expected={Path(expected_source).name}:observed={observed_source or None}"
+            )
+
+        blockers = [str(item) for item in _as_list(manifest.get("blockers")) if str(item)]
+        for blocker in binding_blockers:
+            _append_unique(blockers, blocker)
+        manifest["blockers"] = blockers
+        if blockers:
+            manifest["status"] = "blocked"
+        manifest["model_binding"] = {
+            "status": "matched" if not binding_blockers else "blocked",
+            "expected_run_ids": sorted(expected_run_ids),
+            "observed_run_id": observed_run_id,
+            "expected_source_file": Path(expected_source).name if expected_source else None,
+            "observed_source_file": observed_source or None,
+            "db_path": str(db_path),
+        }
+        return manifest
+    except Exception as exc:
+        return {
+            "schema_version": "professional_model_preflight_v1",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "ticker": ticker,
+            "status": "blocked",
+            "blockers": [f"source_preflight_unavailable:{type(exc).__name__}:{exc}"],
+            "warnings": [],
+            "source": {
+                "path": None,
+                "source_file": batch_row.get("ciq_source_file"),
+                "sha256": None,
+                "run_id": None,
+                "db_path": str(db_path),
+            },
+            "workbook": {
+                "formula_error_count": "unavailable",
+                "cached_error_count": "unavailable",
+            },
+            "model_binding": {
+                "status": "blocked",
+                "expected_run_ids": [
+                    value
+                    for key in ("ciq_run_id", "ciq_comps_run_id")
+                    if (value := batch_row.get(key)) is not None
+                ],
+                "observed_run_id": None,
+                "db_path": str(db_path),
+            },
+        }
+
+
+def agent_execution_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    """Describe the actual execution path without labelling heuristics as an LLM route."""
+    mode = str(getattr(args, "agent_mode", "live") or "live").strip().lower()
+    openrouter_requested = bool(getattr(args, "use_openrouter_free", False))
+    if mode == "heuristic":
+        return {
+            "mode": "heuristic",
+            "route": "local_deterministic_heuristic",
+            "llm_route": None,
+            "llm_model": None,
+            "openrouter_requested_but_ignored": openrouter_requested,
+        }
+    if openrouter_requested:
+        return {
+            "mode": "live",
+            "route": "live_llm",
+            "llm_route": "openrouter",
+            "llm_model": getattr(args, "openrouter_model", None),
+            "openrouter_requested_but_ignored": False,
+        }
+    return {
+        "mode": "live",
+        "route": "live_llm",
+        "llm_route": "configured_provider",
+        "llm_model": os.getenv("LLM_MODEL"),
+        "openrouter_requested_but_ignored": False,
+    }
+
+
+def attach_decision_readiness(result: dict[str, Any]) -> dict[str, Any]:
+    """Fail closed for source, execution, and run-integrity gates."""
+    blockers: list[str] = []
+    preflight = result.get("source_preflight")
+    if not isinstance(preflight, dict):
+        blockers.append("source_preflight_missing")
+    else:
+        status = str(preflight.get("status") or "").strip().lower()
+        source_blockers = [str(item) for item in _as_list(preflight.get("blockers")) if str(item)]
+        for blocker in source_blockers:
+            _append_unique(blockers, f"source_preflight:{blocker}")
+        if status not in {"ready", "ok"} and not source_blockers:
+            blockers.append(f"source_preflight_status:{status or 'missing'}")
+
+    if str(result.get("agent_mode") or "").lower() == "heuristic":
+        blockers.append("heuristic_mode_not_investment_grade")
+    for error in _as_list(result.get("errors")):
+        if isinstance(error, dict):
+            blockers.append(f"flow_error:{error.get('step') or 'unknown'}")
+        else:
+            blockers.append("flow_error:unknown")
+    for run in _as_list(result.get("profile_runs")):
+        if not isinstance(run, dict):
+            continue
+        status = str(run.get("status") or "").lower()
+        if status in {"blocked", "failed", "error"}:
+            blockers.append(
+                f"profile_{status}:{run.get('profile_name') or 'unknown'}"
+            )
+    for name, payload in _as_dict(result.get("deterministic")).items():
+        if isinstance(payload, dict) and payload.get("error"):
+            blockers.append(f"deterministic_error:{name}")
+
+    unique_blockers: list[str] = []
+    for blocker in blockers:
+        _append_unique(unique_blockers, blocker)
+    decision_ready = not unique_blockers
+    result["decision_ready"] = decision_ready
+    result["decision_blockers"] = unique_blockers
+    result["decision_readiness"] = {
+        "status": "ready" if decision_ready else "blocked",
+        "artifact_status": "decision_ready" if decision_ready else "diagnostic_not_decision_ready",
+        "blockers": unique_blockers,
+    }
+    return result
+
+
 def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> dict[str, Any]:
     os.environ["LLM_BASE_URL"] = "https://openrouter.ai/api/v1"
     os.environ["LLM_MODEL"] = model
@@ -494,6 +691,10 @@ def _flow_readiness(result: dict[str, Any], deterministic: dict[str, Any]) -> tu
     blocked_profiles = [str(run.get("profile_name")) for run in profile_runs if str(run.get("status")) == "blocked"]
     live_mode = result.get("agent_mode") == "live"
     reasons: list[str] = []
+    decision_blockers = [str(item) for item in _as_list(result.get("decision_blockers")) if str(item)]
+    if result.get("decision_ready") is False:
+        reason_text = ", ".join(decision_blockers) if decision_blockers else "unspecified decision gate"
+        reasons.append(f"decision gate blocked: {reason_text}")
     if errors:
         reasons.append(f"{len(errors)} deterministic/API step(s) errored")
     if blocked_profiles:
@@ -542,6 +743,8 @@ def _flow_readiness(result: dict[str, Any], deterministic: dict[str, Any]) -> tu
     dcf_base_iv = _float_or_none(_extract_summary_numbers(summary, dcf).get("base_iv"))
     if summary_base_iv and dcf_base_iv and abs(summary_base_iv / dcf_base_iv - 1.0) > 0.01:
         reasons.append("summary base IV differs from DCF base IV by more than 1%; use DCF-level IV for scenario math")
+    if result.get("decision_ready") is False:
+        return "diagnostic only / not decision-ready", reasons
     if not reasons and live_mode:
         return "PM-reviewable live run", ["No deterministic errors or blocked agent profiles were reported."]
     if not reasons:
@@ -783,8 +986,11 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
-    if args.use_openrouter_free:
-        configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+    execution = agent_execution_metadata(args)
+    if execution["llm_route"] == "openrouter":
+        configure_openrouter_free(
+            args.openrouter_model, getattr(args, "openrouter_fallback_models", None)
+        )
 
     preflight_errors: list[dict[str, str]] = []
     ciq_refresh_result: dict[str, Any] | None = None
@@ -821,15 +1027,12 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     result: dict[str, Any] = {
         "ticker": ticker,
         "run_started_at": run_started_at,
-        "openrouter_free": bool(args.use_openrouter_free),
+        "openrouter_free": execution["llm_route"] == "openrouter",
         "edgar_cache_only": bool(args.edgar_cache_only),
         "market_cache_only": bool(args.market_cache_only),
-        "agent_model": (
-            "local_heuristic"
-            if args.agent_mode == "heuristic"
-            else args.openrouter_model if args.use_openrouter_free else os.getenv("LLM_MODEL")
-        ),
+        "agent_model": execution["llm_model"],
         "agent_mode": args.agent_mode,
+        "agent_execution": execution,
         "deterministic": {},
         "profile_runs": [],
         "evidence_packets": [],
@@ -840,7 +1043,9 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         "ciq_template_ingest": ciq_template_ingest_result,
         "database": database_info or {
             "mode": "live",
-            "path": str(ROOT / "data" / "alpha_pod.db"),
+            "path": str(
+                Path(os.environ.get("ALPHA_POD_DB_PATH") or ROOT / "data" / "alpha_pod.db").resolve()
+            ),
         },
         "data_freshness": collect_data_freshness(ticker),
         "run_scope": {
@@ -855,6 +1060,13 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         result["deterministic"]["batch_row"] = value_single_ticker(ticker)
     except Exception as exc:
         result["errors"].append({"step": "value_single_ticker", "message": str(exc)})
+
+    print(f"[ticker-flow] Fingerprinting source workbook for {ticker}...", file=sys.stderr)
+    result["source_preflight"] = derive_source_preflight(
+        ticker,
+        _as_dict(result["deterministic"].get("batch_row")),
+        _as_dict(result.get("database")),
+    )
 
     try:
         print(f"[ticker-flow] Refreshing current ticker dossier for {ticker}...", file=sys.stderr)
@@ -965,7 +1177,7 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     except Exception as exc:
         result["errors"].append({"step": "finance_quality_review", "message": str(exc)})
 
-    return _jsonable(result)
+    return _jsonable(attach_decision_readiness(result))
 
 
 def render_markdown(result: dict[str, Any]) -> str:
@@ -1007,16 +1219,43 @@ def render_markdown(result: dict[str, Any]) -> str:
     profile_qualities = _profile_quality_map(result)
     prioritized_queue_rows = _queue_priority_rows(result)
 
+    execution = _as_dict(result.get("agent_execution"))
+    if str(result.get("agent_mode") or "").lower() == "heuristic":
+        execution_label = "local deterministic heuristic (no LLM route)"
+    elif execution:
+        execution_label = (
+            f"{execution.get('route') or 'live'} via "
+            f"{execution.get('llm_route') or 'configured provider'} "
+            f"({execution.get('llm_model') or 'model not configured'})"
+        )
+    else:
+        execution_label = f"live LLM ({result.get('agent_model') or 'model not configured'})"
+    source_preflight = _as_dict(result.get("source_preflight"))
+    source = _as_dict(source_preflight.get("source"))
+    decision_ready = result.get("decision_ready") is True
+    artifact_use = (
+        "Decision-ready subject to PM review"
+        if decision_ready
+        else "Diagnostic only; blocked from decision use"
+    )
+
     lines: list[str] = [
         f"# {ticker} Professional Valuation Flow",
         "",
         f"- Generated: {result.get('run_started_at')}",
-        f"- Agent model: {result.get('agent_model') or 'not configured'}",
+        f"- Agent execution: {execution_label}",
         f"- OpenRouter free mode: {result.get('openrouter_free')}",
         f"- EDGAR cache-only mode: {result.get('edgar_cache_only')}",
         f"- Market cache-only mode: {result.get('market_cache_only')}",
         f"- Database mode: {_as_dict(result.get('database')).get('mode', 'unknown')}",
         f"- Run-scope filter: {'enabled' if _as_dict(result.get('run_scope')).get('filtered_to_current_run') else 'disabled'}",
+        f"- Decision-ready: {decision_ready}",
+        f"- Artifact use: {artifact_use}",
+        f"- Source preflight: {source_preflight.get('status') or 'missing'}",
+        (
+            f"- Source binding: file={source.get('source_file') or 'n/a'} "
+            f"run_id={source.get('run_id')} sha256={source.get('sha256') or 'n/a'}"
+        ),
         "",
         "## PM Verdict Prep",
         "",

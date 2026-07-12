@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useOutletContext, useParams, useSearchParams } from "react-router-dom";
 
 import { PageHero } from "@/components/PageHero";
+import { ProfessionalModelPanel } from "@/components/professional-model/ProfessionalModelPanel";
 import {
   approvePmDecisionQueueItem,
   applyPmDecisionQueueItem,
@@ -51,7 +52,17 @@ import type {
   WaccPreviewPayload,
 } from "@/lib/types";
 
-const valuationTabs = ["Summary", "DCF", "Comparables", "Multiples", "Assumptions", "WACC", "Recommendations", "PM Queue"] as const;
+const valuationTabs = [
+  "Summary",
+  "DCF",
+  "Comparables",
+  "Multiples",
+  "Assumptions",
+  "WACC",
+  "Recommendations",
+  "Professional Model",
+  "PM Queue",
+] as const;
 type ValuationTab = (typeof valuationTabs)[number];
 
 type TickerLayoutContext = {
@@ -3069,6 +3080,8 @@ export function ValuationPage() {
             runStatus={recommendationsRunStatusQuery.data as unknown as Record<string, unknown> | undefined}
           />
         );
+      case "Professional Model":
+        return <ProfessionalModelPanel ticker={ticker} />;
       case "PM Queue":
         return pmQueueQuery.isPending && !pmQueueQuery.data ? renderLoadingPanel("PM Queue / Insights") : (
           <PMQueuePanel
@@ -3168,9 +3181,15 @@ export function ValuationPage() {
   return (
     <section className="page-stack valuation-page">
       <header className="valuation-route-nav">
-        <div className="section-nav section-nav--page">
+        <div className="section-nav section-nav--page" role="navigation" aria-label="Valuation views">
           {valuationTabs.map((tab) => (
-            <button key={tab} type="button" className={`section-chip${selected === tab ? " active" : ""}`} onClick={() => setParams({ view: tab })}>
+            <button
+              key={tab}
+              type="button"
+              className={`section-chip${selected === tab ? " active" : ""}`}
+              onClick={() => setParams({ view: tab })}
+              aria-pressed={selected === tab}
+            >
               {tab}
             </button>
           ))}

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from config import CIQ_DROP_FOLDER, CIQ_WORKBOOK_GLOB
 from db.loader import (
+    ensure_ciq_source_facts_v2,
     finalize_ciq_ingest_run,
     insert_ciq_long_form,
     register_ciq_ingest_run,
@@ -96,6 +97,7 @@ def ingest_ciq_folder(folder_path: str | Path | None = None, as_of_date: str | N
                         "as_of_date": payload.valuation_snapshot.get("as_of_date") or run_as_of_date,
                     },
                 )
+                ensure_ciq_source_facts_v2(conn, run_id, payload.long_form_records)
 
                 if not is_new:
                     skipped += 1
@@ -105,6 +107,7 @@ def ingest_ciq_folder(folder_path: str | Path | None = None, as_of_date: str | N
                             status="skipped",
                             ticker=payload.ticker,
                             run_id=run_id,
+                            rows_parsed=payload.rows_parsed,
                         )
                     )
                     continue

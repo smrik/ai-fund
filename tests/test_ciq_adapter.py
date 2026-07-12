@@ -320,6 +320,7 @@ def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(mo
             (8, "IBM", "inventory", 80.0, "2025-12-31", 1),
             (8, "IBM", "accounts_payable", 60.0, "2025-12-31", 1),
             (8, "IBM", "revenue", 1000.0, "2025-12-31", 1),
+            (8, "IBM", "cogs", 400.0, "2025-12-31", 1),
         ],
     )
     conn.commit()
@@ -329,8 +330,9 @@ def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(mo
 
     assert out is not None
     assert out["dso"] == 43.8
-    assert out["dio"] == 29.2
-    assert out["dpo"] == 21.9
+    assert out["dio"] == 73.0
+    assert out["dpo"] == 54.8
+    assert out["cogs_pct_of_revenue"] == pytest.approx(0.4)
 
 
 def test_get_ciq_comps_valuation_includes_forward_multiples(monkeypatch):
@@ -390,11 +392,11 @@ def test_get_ciq_comps_valuation_fwd_multiples_none_when_absent(monkeypatch):
 
 def test_get_ciq_comps_detail_preserves_source_lineage(monkeypatch):
     fake_rows = [
-        {"peer_ticker": "MSFT", "metric_key": "ebitda_ltm", "value_num": 160000.0, "is_target": 1,
+        {"peer_ticker": "MSFT", "peer_name": "Microsoft Corporation", "metric_key": "ebitda_ltm", "value_num": 160000.0, "is_target": 1,
          "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
-        {"peer_ticker": "MSFT", "metric_key": "shares_out", "value_num": 7400.0, "is_target": 1,
+        {"peer_ticker": "MSFT", "peer_name": "Microsoft Corporation", "metric_key": "shares_out", "value_num": 7400.0, "is_target": 1,
          "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
-        {"peer_ticker": "ORCL", "metric_key": "tev_ebitda_cy_1", "value_num": 18.0, "is_target": 0,
+        {"peer_ticker": "ORCL", "peer_name": "Oracle Corporation", "metric_key": "tev_ebitda_cy_1", "value_num": 18.0, "is_target": 0,
          "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
         {"peer_ticker": "CRM", "metric_key": "tev_ebitda_cy_1", "value_num": 20.0, "is_target": 0,
          "run_id": 10, "source_file": "ciq_cleandata.xlsx", "as_of_date": "2026-03-31"},
@@ -408,6 +410,8 @@ def test_get_ciq_comps_detail_preserves_source_lineage(monkeypatch):
     assert out["target"]["source_file"] == "ciq_cleandata.xlsx"
     assert out["target"]["as_of_date"] == "2026-03-31"
     assert out["target"]["run_id"] == 10
+    assert out["target"]["company_name"] == "Microsoft Corporation"
+    assert out["peers"][0]["company_name"] == "Oracle Corporation"
     assert out["source_lineage"] == {
         "as_of_date": "2026-03-31",
         "run_id": 10,
@@ -474,3 +478,24 @@ def test_get_ciq_snapshot_includes_forward_revenue_from_comps(monkeypatch):
     assert out is not None
     assert out["revenue_fy1"] == pytest.approx(1_100_000_000.0)
     assert out["revenue_fy2"] == pytest.approx(1_200_000_000.0)
+
+
+def test_get_ciq_comps_valuation_requires_complete_debt_cash_bridge(monkeypatch):
+    fake_rows = [
+        {"peer_ticker": "IBM", "metric_key": "ebitda_ltm", "value_num": 120.0, "is_target": 1},
+        {"peer_ticker": "IBM", "metric_key": "diluted_eps_ltm", "value_num": 10.0, "is_target": 1},
+        {"peer_ticker": "IBM", "metric_key": "shares_out", "value_num": 100.0, "is_target": 1},
+        {"peer_ticker": "IBM", "metric_key": "total_debt", "value_num": 1000.0, "is_target": 1},
+        {"peer_ticker": "ORCL", "metric_key": "tev_ebitda_ltm", "value_num": 10.0, "is_target": 0},
+        {"peer_ticker": "ORCL", "metric_key": "pe_ltm", "value_num": 20.0, "is_target": 0},
+    ]
+    monkeypatch.setattr(ciq_adapter, "_fetch_ciq_comps_rows", lambda ticker, as_of_date=None: fake_rows)
+
+    out = ciq_adapter.get_ciq_comps_valuation("IBM")
+
+    assert out is not None
+    assert out["target_total_debt"] == 1000.0
+    assert out["target_cash"] is None
+    assert out["target_net_debt"] is None
+    assert out["implied_price_ev_ebitda"] is None
+    assert out["implied_price_pe"] == 200.0

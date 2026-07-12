@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(monkeypatch):
     from src.stage_04_pipeline import comps_dashboard
@@ -280,3 +282,40 @@ def test_build_comps_dashboard_view_uses_public_market_fallback_when_ciq_missing
     assert view["target_vs_peers"]["peer_medians"]["tev_ebitda_ltm"] == 18.0
     assert "No CIQ comps detail available; using public market yfinance fallback comps" in view["audit_flags"]
     assert view["valuation_range"]["base"] is not None
+
+
+def test_build_comps_dashboard_uses_ciq_target_when_market_cache_is_missing(monkeypatch):
+    from src.stage_04_pipeline import comps_dashboard
+
+    monkeypatch.setattr(
+        comps_dashboard,
+        "get_ciq_comps_detail",
+        lambda ticker: {
+            "target": {
+                "ticker": "MSFT",
+                "stock_price": 385.10,
+                "shares_out_mm": 7428.4347,
+                "market_cap_mm": 2_860_690.20297,
+                "tev_mm": 2_907_894.20297,
+            },
+            "peers": [],
+            "medians": {},
+        },
+    )
+    monkeypatch.setattr(
+        comps_dashboard.market_data,
+        "get_market_data",
+        lambda ticker: (_ for _ in ()).throw(RuntimeError("cache missing")),
+    )
+    monkeypatch.setattr(comps_dashboard, "run_comps_model", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        comps_dashboard,
+        "build_multiples_dashboard_view",
+        lambda ticker, period="5y": (_ for _ in ()).throw(RuntimeError("history cache missing")),
+    )
+
+    view = comps_dashboard.build_comps_dashboard_view("MSFT")
+
+    assert view["available"] is True
+    assert view["target"]["current_price"] == 385.10
+    assert view["target"]["shares_outstanding"] == pytest.approx(7_428.4347e6)

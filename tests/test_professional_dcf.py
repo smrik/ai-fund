@@ -235,3 +235,17 @@ def test_run_fcfe_valuation_matches_dcf_fcfe_branch():
     assert dcf.fcfe_equity_value is not None
     assert fcfe.intrinsic_value_per_share == pytest.approx(dcf.fcfe_intrinsic_value_per_share, rel=1e-9)
     assert fcfe.equity_value == pytest.approx(dcf.fcfe_equity_value, rel=1e-9)
+
+
+def test_present_value_per_share_uses_valuation_date_shares_not_terminal_shares():
+    drivers = _drivers(annual_dilution_pct=0.05)
+    result = run_dcf_professional(drivers, ScenarioSpec(name="base", probability=1.0))
+
+    assert result.intrinsic_value_per_share == pytest.approx(
+        result.equity_value / drivers.shares_outstanding,
+        rel=1e-12,
+    )
+    legacy_terminal_share_iv = result.equity_value / (
+        drivers.shares_outstanding * (1.0 + drivers.annual_dilution_pct) ** 10
+    )
+    assert result.intrinsic_value_per_share != pytest.approx(legacy_terminal_share_iv)

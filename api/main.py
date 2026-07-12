@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from hashlib import sha256
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from api.run_tracker import submit_background_run, update_run, get_run
@@ -100,6 +102,51 @@ class WatchlistExportRequest(BaseModel):
     source_mode: str = Field(default="saved_watchlist")
     shortlist_size: int = Field(default=10, ge=1, le=25)
 
+class ProfessionalModelReviewContextRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    source_ref: str | None = Field(default=None, max_length=1_000)
+    method: str | None = Field(default=None, max_length=1_000)
+    as_of: str | None = Field(default=None, max_length=100)
+    evidence_locator: dict[str, str | None] | None = None
+    materiality: Any | None = None
+    impact: Any | None = None
+    downstream_dependencies: list[str] = Field(default_factory=list, max_length=50)
+
+
+
+class ProfessionalModelReviewPreviewRequest(BaseModel):
+    approval_key: str = Field(min_length=1, max_length=300)
+    reviewed_values: list[float] = Field(min_length=5, max_length=5)
+    actor: str = Field(default="api", min_length=1, max_length=200)
+    review_context: ProfessionalModelReviewContextRequest | None = None
+    rationale: str | None = Field(default=None, max_length=4_000)
+
+
+class ProfessionalModelReviewApproveRequest(BaseModel):
+    preview_id: int = Field(gt=0)
+    reviewed_value_fingerprint: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    actor: str = Field(default="api", min_length=1, max_length=200)
+    rationale: str | None = Field(default=None, max_length=4_000)
+
+
+class ProfessionalModelReviewRejectRequest(BaseModel):
+    approval_key: str = Field(min_length=1, max_length=300)
+    actor: str = Field(default="api", min_length=1, max_length=200)
+    rationale: str = Field(min_length=1, max_length=4_000)
+
+
+class ProfessionalModelSignoffRequest(BaseModel):
+    workbook_sha256: str = Field(pattern=r"^[0-9a-fA-F]{64}$")
+    actor: str = Field(default="api", min_length=1, max_length=200)
+    rationale: str = Field(min_length=1, max_length=4_000)
+
+
+class ProfessionalModelRebuildRequest(BaseModel):
+    model_run_id: int | None = Field(default=None, gt=0)
+    actor: str = Field(default="api", min_length=1, max_length=200)
+    rationale: str | None = Field(default=None, max_length=4_000)
+
 
 def api_coerce_ticker(value: str) -> str:
     try:
@@ -118,6 +165,27 @@ def _raise_pm_queue_http_error(exc: Exception) -> None:
     else:
         status_code = 400
     raise HTTPException(status_code=status_code, detail=detail) from exc
+
+
+def _raise_professional_model_http_error(exc: Exception) -> None:
+    from src.stage_04_pipeline.professional_model_review import (
+        ProfessionalModelConflictError,
+        ProfessionalModelError,
+        ProfessionalModelNotFoundError,
+        ProfessionalModelValidationError,
+    )
+
+    if isinstance(exc, ProfessionalModelNotFoundError):
+        status_code = 404
+    elif isinstance(exc, ProfessionalModelConflictError):
+        status_code = 409
+    elif isinstance(exc, ProfessionalModelValidationError):
+        status_code = 400
+    elif isinstance(exc, ProfessionalModelError):
+        status_code = 500
+    else:
+        raise exc
+    raise HTTPException(status_code=status_code, detail=str(exc)) from exc
 
 
 def load_saved_watchlist(shortlist_size: int = 10) -> dict[str, Any]:
@@ -199,6 +267,154 @@ def resolve_export_download_path(export_id: str, artifact_key: str | None = None
     from src.stage_04_pipeline.export_service import resolve_export_download_path as _impl
 
     return _impl(export_id, artifact_key=artifact_key)
+
+
+def build_professional_model_summary(ticker: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        build_professional_model_summary as _impl,
+    )
+
+    return _impl(ticker)
+
+
+def build_professional_model_sheet_payload(
+    ticker: str,
+    sheet_name: str,
+    *,
+    start_row: int = 1,
+    start_column: int = 1,
+    row_limit: int = 100,
+    column_limit: int = 20,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        build_professional_model_sheet_payload as _impl,
+    )
+
+    return _impl(
+        ticker,
+        sheet_name,
+        start_row=start_row,
+        start_column=start_column,
+        row_limit=row_limit,
+        column_limit=column_limit,
+    )
+
+
+def build_professional_model_review_payload(ticker: str) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        build_professional_model_review_payload as _impl,
+    )
+
+    return _impl(ticker)
+
+
+def preview_professional_model_review(
+    ticker: str,
+    *,
+    approval_key: str,
+    reviewed_values: list[float],
+    actor: str,
+    rationale: str | None = None,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        preview_professional_model_review as _impl,
+    )
+
+    return _impl(
+        ticker,
+        approval_key=approval_key,
+        reviewed_values=reviewed_values,
+        actor=actor,
+        rationale=rationale,
+    )
+
+
+def approve_professional_model_review(
+    ticker: str,
+    *,
+    preview_id: int,
+    reviewed_value_fingerprint: str,
+    actor: str,
+    rationale: str | None = None,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        approve_professional_model_review as _impl,
+    )
+
+    return _impl(
+        ticker,
+        preview_id=preview_id,
+        reviewed_value_fingerprint=reviewed_value_fingerprint,
+        actor=actor,
+        rationale=rationale,
+    )
+
+
+def reject_professional_model_review(
+    ticker: str,
+    *,
+    approval_key: str,
+    actor: str,
+    rationale: str,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        reject_professional_model_review as _impl,
+    )
+
+    return _impl(
+        ticker,
+        approval_key=approval_key,
+        actor=actor,
+        rationale=rationale,
+    )
+
+
+def signoff_professional_model(
+    ticker: str,
+    *,
+    workbook_sha256: str,
+    actor: str,
+    rationale: str,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        signoff_professional_model as _impl,
+    )
+
+    return _impl(
+        ticker,
+        workbook_sha256=workbook_sha256,
+        actor=actor,
+        rationale=rationale,
+    )
+
+
+def resolve_professional_model_download(ticker: str):
+    from src.stage_04_pipeline.professional_model_review import (
+        resolve_professional_model_download as _impl,
+    )
+
+    return _impl(ticker)
+
+
+def rebuild_professional_model(
+    ticker: str,
+    *,
+    model_run_id: int | None = None,
+    actor: str = "api",
+    rationale: str | None = None,
+    tracker_run_id: str | None = None,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.professional_model_review import (
+        rebuild_professional_model as _impl,
+    )
+
+    return _impl(
+        ticker,
+        model_run_id=model_run_id,
+        actor=actor,
+        rationale=rationale,
+        tracker_run_id=tracker_run_id,
+    )
 
 
 def get_market_data(ticker: str, use_cache: bool = True) -> dict[str, Any]:
@@ -995,6 +1211,187 @@ def create_app() -> FastAPI:
         if run is None:
             raise HTTPException(status_code=404, detail="run not found")
         return run
+
+    @app.get("/api/tickers/{ticker}/professional-model")
+    def get_ticker_professional_model(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return build_professional_model_summary(ticker)
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.get("/api/tickers/{ticker}/professional-model/sheets/{sheet_name}")
+    def get_ticker_professional_model_sheet(
+        ticker: str,
+        sheet_name: str,
+        start_row: int = Query(default=1, ge=1, le=1_048_576),
+        start_column: int = Query(default=1, ge=1, le=16_384),
+        row_limit: int = Query(default=100, ge=1, le=200),
+        column_limit: int = Query(default=20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        if row_limit * column_limit > 5_000:
+            raise HTTPException(
+                status_code=400,
+                detail="requested professional-model sheet page exceeds 5000 cells",
+            )
+        try:
+            return build_professional_model_sheet_payload(
+                ticker,
+                sheet_name,
+                start_row=start_row,
+                start_column=start_column,
+                row_limit=row_limit,
+                column_limit=column_limit,
+            )
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.get("/api/tickers/{ticker}/professional-model/download")
+    def download_ticker_professional_model(ticker: str):
+        ticker = api_coerce_ticker(ticker)
+        try:
+            path, identity = resolve_professional_model_download(ticker)
+            workbook_snapshot = Path(path).read_bytes()
+            workbook_sha256 = str(identity["workbook_sha256"])
+            if (
+                sha256(workbook_snapshot).hexdigest() != workbook_sha256
+                or len(workbook_snapshot) != int(identity["workbook_bytes"])
+            ):
+                from src.stage_04_pipeline.professional_model_review import (
+                    ProfessionalModelConflictError,
+                )
+
+                raise ProfessionalModelConflictError(
+                    "professional model changed during exact download"
+                )
+        except OSError as exc:
+            from src.stage_04_pipeline.professional_model_review import (
+                ProfessionalModelConflictError,
+            )
+
+            _raise_professional_model_http_error(
+                ProfessionalModelConflictError("professional model download is unreadable")
+            )
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+        return Response(
+            content=workbook_snapshot,
+            media_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+            headers={
+                "Content-Disposition": f'attachment; filename="{identity["filename"]}"',
+                "ETag": f'"{workbook_sha256}"',
+                "X-Workbook-SHA256": workbook_sha256,
+                "X-Model-Run-ID": str(identity["model_run_id"]),
+            },
+        )
+
+    @app.get("/api/tickers/{ticker}/professional-model/review")
+    def get_ticker_professional_model_review(ticker: str) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return build_professional_model_review_payload(ticker)
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.post("/api/tickers/{ticker}/professional-model/review/preview")
+    def preview_ticker_professional_model_review(
+        ticker: str,
+        payload: ProfessionalModelReviewPreviewRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            preview_kwargs: dict[str, Any] = {
+                "ticker": ticker,
+                "approval_key": payload.approval_key,
+                "reviewed_values": payload.reviewed_values,
+                "actor": payload.actor,
+                "rationale": payload.rationale,
+            }
+            if payload.review_context is not None:
+                preview_kwargs["review_context"] = payload.review_context.model_dump(
+                    exclude_none=True
+                )
+            return preview_professional_model_review(**preview_kwargs)
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.post("/api/tickers/{ticker}/professional-model/review/approve")
+    def approve_ticker_professional_model_review(
+        ticker: str,
+        payload: ProfessionalModelReviewApproveRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return approve_professional_model_review(
+                ticker,
+                preview_id=payload.preview_id,
+                reviewed_value_fingerprint=payload.reviewed_value_fingerprint,
+                actor=payload.actor,
+                rationale=payload.rationale,
+            )
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.post("/api/tickers/{ticker}/professional-model/review/reject")
+    def reject_ticker_professional_model_review(
+        ticker: str,
+        payload: ProfessionalModelReviewRejectRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return reject_professional_model_review(
+                ticker,
+                approval_key=payload.approval_key,
+                actor=payload.actor,
+                rationale=payload.rationale,
+            )
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.post("/api/tickers/{ticker}/professional-model/signoff")
+    def signoff_ticker_professional_model(
+        ticker: str,
+        payload: ProfessionalModelSignoffRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return signoff_professional_model(
+                ticker,
+                workbook_sha256=payload.workbook_sha256,
+                actor=payload.actor,
+                rationale=payload.rationale,
+            )
+        except Exception as exc:
+            _raise_professional_model_http_error(exc)
+
+    @app.post("/api/tickers/{ticker}/professional-model/rebuild", status_code=202)
+    def rebuild_ticker_professional_model(
+        ticker: str,
+        payload: ProfessionalModelRebuildRequest | None = None,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        request_payload = payload or ProfessionalModelRebuildRequest()
+
+        def _runner(tracker_run_id: str) -> dict[str, Any]:
+            return rebuild_professional_model(
+                ticker,
+                model_run_id=request_payload.model_run_id,
+                actor=request_payload.actor,
+                rationale=request_payload.rationale,
+                tracker_run_id=tracker_run_id,
+            )
+
+        run_id = submit_background_run(
+            "professional_model_rebuild",
+            _runner,
+            ticker=ticker,
+            metadata=request_payload.model_dump(),
+        )
+        return {"run_id": run_id, "status": "queued", "ticker": ticker}
 
     @app.get("/api/tickers/{ticker}/workspace")
     def get_ticker_workspace(ticker: str) -> dict[str, Any]:

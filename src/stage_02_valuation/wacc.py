@@ -40,6 +40,10 @@ EQUITY_RISK_PREMIUM = float(_wacc_cfg.get("equity_risk_premium", 0.05))  # Damod
 DEFAULT_TAX_RATE = 0.21      # US corporate
 DEFAULT_COST_OF_DEBT = 0.06  # BBB-ish spread
 
+
+class MissingWACCInputError(ValueError):
+    """Raised when a load-bearing WACC input is absent."""
+
 # Size premia (CRSP Deciles Size Study - Data as of 12/31/2023)
 # https://www.crsp.com/investing-research/
 SIZE_PREMIA = {
@@ -123,6 +127,12 @@ class WACCResult:
     target_de_ratio: float = 0.0
     target_market_cap: float = 0.0
     target_net_debt: float = 0.0
+
+    # Data-quality state. Numeric fallback results remain diagnostic only.
+    quality_status: str = "source_backed"
+    missing_inputs: list[str] = field(default_factory=list)
+    beta_source: str = "peer_median"
+    market_cap_source: str = "provided"
 
     def summary(self) -> str:
         """Human-readable WACC summary."""
@@ -233,6 +243,13 @@ def compute_wacc(
         WACCResult with full audit trail
     """
     # ── Step 1: Unlever peer betas ──
+    if target.market_cap is None or target.market_cap <= 0:
+        raise MissingWACCInputError(f"{target.ticker}: market cap is required for WACC")
+
+    quality_status = "source_backed"
+    missing_inputs: list[str] = []
+    beta_source = "peer_median"
+
     peer_betas_unlevered = []
     peers_used = []
 
@@ -255,6 +272,7 @@ def compute_wacc(
     # ── Step 2: Median unlevered beta ──
     if peer_betas_unlevered:
         beta_unlevered_median = float(np.median(peer_betas_unlevered))
+        beta_source = "peer_median"
     elif target.beta and target.beta > 0:
         # Fallback: use target's own beta (unlevered)
         target_net_debt = (target.total_debt or 0) - (target.cash or 0)
@@ -262,11 +280,15 @@ def compute_wacc(
         beta_unlevered_median = unlever_beta(target.beta, target_de, target.tax_rate)
         peers_used = [f"{target.ticker} (self)"]
         peer_betas_unlevered = [beta_unlevered_median]
+        beta_source = "target_beta"
     else:
         # Last resort: market beta
         beta_unlevered_median = 1.0
         peers_used = ["market (fallback)"]
         peer_betas_unlevered = [1.0]
+        quality_status = "degraded_fallback"
+        missing_inputs.append("beta")
+        beta_source = "market_beta_assumption"
 
     # ── Step 3: Relever to target capital structure ──
     target_net_debt = (target.total_debt or 0) - (target.cash or 0)
@@ -306,6 +328,10 @@ def compute_wacc(
         target_de_ratio=round(target_de_ratio, 4),
         target_market_cap=target_mcap,
         target_net_debt=target_net_debt,
+        quality_status=quality_status,
+        missing_inputs=missing_inputs,
+        beta_source=beta_source,
+        market_cap_source="provided",
     )
 
 

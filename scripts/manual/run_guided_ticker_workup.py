@@ -81,9 +81,11 @@ def _ciq_workbook_candidates_for_json(ticker: str, result: dict[str, Any]) -> li
     source_file = result.get("ciq_source_file")
     if source_file:
         source_path = Path(str(source_file))
-        candidates.append(source_path)
-        if not source_path.is_absolute():
+        if source_path.is_absolute():
+            candidates.append(source_path)
+        else:
             candidates.append(ROOT / "data" / "exports" / source_path)
+            candidates.append(source_path)
     candidates.append(ROOT / "data" / "exports" / f"{ticker.upper()}_Standard.xlsx")
 
     unique: list[Path] = []
@@ -110,6 +112,127 @@ def _historical_financials_for_guided_json(ticker: str, result: dict[str, Any]) 
         except Exception:
             continue
     return []
+
+
+def _active_db_path_for_guided_preflight(workup: dict[str, Any]) -> Path:
+    database = _as_dict(workup.get("database"))
+    raw_path = database.get("path") or os.getenv("ALPHA_POD_DB_PATH") or (ROOT / "data" / "alpha_pod.db")
+    return Path(str(raw_path)).expanduser().resolve()
+
+
+def _source_workbook_path_for_guided_preflight(
+    ticker: str,
+    result: dict[str, Any],
+    workup: dict[str, Any],
+) -> Path:
+    for candidate in _ciq_workbook_candidates_for_json(ticker, result):
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+
+    ciq = _as_dict(workup.get("ciq"))
+    staged_path = ciq.get("workbook_path")
+    if staged_path:
+        candidate = Path(str(staged_path)).expanduser()
+        if candidate.exists() and candidate.is_file():
+            return candidate.resolve()
+
+    from scripts.manual.professional_model_preflight import resolve_workbook_path
+
+    return resolve_workbook_path(ticker=ticker, workbook_path=None)
+
+
+def _source_preflight_for_guided_json(
+    ticker: str,
+    result: dict[str, Any],
+    workup: dict[str, Any],
+) -> dict[str, Any]:
+    """Fingerprint the model's Standard workbook against this run's active DB."""
+    db_path = _active_db_path_for_guided_preflight(workup)
+    try:
+        from scripts.manual.professional_model_preflight import build_preflight_manifest
+
+        workbook_path = _source_workbook_path_for_guided_preflight(ticker, result, workup)
+        manifest = build_preflight_manifest(
+            ticker=ticker,
+            workbook_path=workbook_path,
+            db_path=db_path,
+            require_ingested=True,
+        )
+
+        expected_run_ids: set[int] = set()
+        for key in ("ciq_run_id", "ciq_comps_run_id"):
+            value = result.get(key)
+            if value is None or value == "":
+                continue
+            try:
+                expected_run_ids.add(int(value))
+            except (TypeError, ValueError):
+                pass
+
+        source = _as_dict(manifest.get("source"))
+        observed_run_id = source.get("run_id")
+        binding_blockers: list[str] = []
+        if not expected_run_ids:
+            binding_blockers.append("model_ciq_run_id_missing")
+        elif observed_run_id is None or expected_run_ids != {int(observed_run_id)}:
+            binding_blockers.append(
+                "model_ciq_run_mismatch:"
+                f"expected={sorted(expected_run_ids)}:observed={observed_run_id}"
+            )
+
+        expected_source = str(result.get("ciq_source_file") or "").strip()
+        observed_source = str(source.get("source_file") or "").strip()
+        if expected_source and Path(expected_source).name.lower() != Path(observed_source).name.lower():
+            binding_blockers.append(
+                f"model_ciq_source_mismatch:expected={Path(expected_source).name}:observed={observed_source}"
+            )
+
+        blockers = [str(item) for item in _as_list(manifest.get("blockers"))]
+        for blocker in binding_blockers:
+            if blocker not in blockers:
+                blockers.append(blocker)
+        manifest["blockers"] = blockers
+        if blockers:
+            manifest["status"] = "blocked"
+        manifest["model_binding"] = {
+            "status": "matched" if not binding_blockers else "blocked",
+            "expected_run_ids": sorted(expected_run_ids),
+            "observed_run_id": observed_run_id,
+            "expected_source_file": Path(expected_source).name if expected_source else None,
+            "observed_source_file": observed_source or None,
+            "db_path": str(db_path),
+        }
+        return manifest
+    except Exception as exc:
+        return {
+            "schema_version": "professional_model_preflight_v1",
+            "generated_at": _now_iso(),
+            "ticker": ticker.upper(),
+            "status": "blocked",
+            "blockers": [f"source_preflight_unavailable:{type(exc).__name__}:{exc}"],
+            "warnings": [],
+            "source": {
+                "path": None,
+                "source_file": result.get("ciq_source_file"),
+                "sha256": None,
+                "run_id": None,
+                "db_path": str(db_path),
+            },
+            "workbook": {
+                "formula_error_count": "unavailable",
+                "cached_error_count": "unavailable",
+            },
+            "model_binding": {
+                "status": "blocked",
+                "expected_run_ids": [
+                    result.get(key)
+                    for key in ("ciq_run_id", "ciq_comps_run_id")
+                    if result.get(key) is not None
+                ],
+                "observed_run_id": None,
+                "db_path": str(db_path),
+            },
+        }
 
 
 def _config_llm_defaults() -> dict[str, str]:
@@ -530,12 +653,18 @@ def _export_xlsx(ticker: str, workup: dict[str, Any] | None = None) -> dict[str,
         valuation_json_dir = output_dir / ticker.upper()
         valuation_json_dir.mkdir(parents=True, exist_ok=True)
         valuation_json_path = valuation_json_dir / f"{run_stamp}-valuation.json"
+        source_preflight = _source_preflight_for_guided_json(
+            ticker,
+            deterministic_result,
+            workup_payload,
+        )
         historical_financials = _historical_financials_for_guided_json(ticker, deterministic_result)
         exported_json_path = export_ticker_json(
             deterministic_result,
             historical_financials=historical_financials,
             output_dir=valuation_json_dir,
             date_str=run_stamp,
+            source_preflight=source_preflight,
         )
         if Path(exported_json_path) != valuation_json_path:
             Path(exported_json_path).replace(valuation_json_path)
@@ -1588,6 +1717,8 @@ def run_guided_workup(
                 "analyst_prep": result.get("analyst_prep"),
                 "queue_decisions": result.get("queue_decisions") or [],
                 "latest_model": result.get("latest_model"),
+                "database": result.get("database"),
+                "ciq": result.get("ciq"),
                 "output_dir": str(args.output_dir),
             }
             try:

@@ -101,9 +101,9 @@ def _source_quality_from_packets(packets: list[dict[str, Any]], *, comps_availab
         str((packet.get("run_metadata") or {}).get("source_quality") or "").lower()
         for packet in packets
     }
-    if "real" in qualities:
+    if qualities == {"real"}:
         return "real"
-    if comps_available or dcf_available or "partial" in qualities:
+    if comps_available or dcf_available or qualities.intersection({"real", "partial"}):
         return "partial"
     if "placeholder" in qualities:
         return "placeholder"

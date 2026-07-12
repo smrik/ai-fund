@@ -500,6 +500,99 @@ def create_tables(conn: sqlite3.Connection | None = None):
         FOREIGN KEY (item_id) REFERENCES pm_decision_queue_items(id)
     );
 
+    -- Immutable professional-model review ledger. Current state is derived
+    -- from the latest event for an approval key and the currently discovered
+    -- artifact hashes; opening or downloading a workbook never writes here.
+    CREATE TABLE IF NOT EXISTS professional_model_review_events_v3 (
+        id                          INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at                  TEXT NOT NULL CHECK (length(trim(created_at)) > 0),
+        ticker                      TEXT NOT NULL CHECK (length(trim(ticker)) > 0),
+        model_run_id                INTEGER NOT NULL CHECK (model_run_id > 0),
+        approval_key                TEXT NOT NULL CHECK (length(trim(approval_key)) > 0),
+        approval_scope              TEXT NOT NULL CHECK (length(trim(approval_scope)) > 0),
+        event_type                  TEXT NOT NULL CHECK (
+            event_type IN ('preview', 'approve', 'reject', 'mark_stale', 'supersede', 'signoff')
+        ),
+        state                       TEXT NOT NULL CHECK (
+            state IN ('previewed', 'approved', 'rejected', 'stale', 'superseded', 'signed_off')
+        ),
+        reviewed_values_json        TEXT NOT NULL CHECK (
+            json_valid(reviewed_values_json)
+            AND json_type(reviewed_values_json) IN ('array', 'object')
+        ),
+        reviewed_value_fingerprint  TEXT NOT NULL CHECK (
+            length(reviewed_value_fingerprint) = 64
+            AND reviewed_value_fingerprint NOT GLOB '*[^0-9a-f]*'
+        ),
+        input_hash                  TEXT NOT NULL CHECK (
+            length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        result_hash                 TEXT NOT NULL CHECK (
+            length(result_hash) = 64 AND result_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        source_hash                 TEXT NOT NULL CHECK (
+            length(source_hash) = 64 AND source_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        manifest_hash               TEXT NOT NULL CHECK (
+            length(manifest_hash) = 64 AND manifest_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        workbook_hash               TEXT NOT NULL CHECK (
+            length(workbook_hash) = 64 AND workbook_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        qa_hash                     TEXT NOT NULL CHECK (
+            length(qa_hash) = 64 AND qa_hash NOT GLOB '*[^0-9a-f]*'
+        ),
+        review_evidence_hash        TEXT CHECK (
+            review_evidence_hash IS NULL
+            OR (
+                length(review_evidence_hash) = 64
+                AND review_evidence_hash NOT GLOB '*[^0-9a-f]*'
+            )
+        ),
+        actor                        TEXT NOT NULL CHECK (length(trim(actor)) > 0),
+        rationale                    TEXT,
+        parent_event_id              INTEGER,
+        supersedes_event_id          INTEGER,
+        metadata_json                TEXT NOT NULL DEFAULT '{}' CHECK (
+            json_valid(metadata_json)
+            AND json_type(metadata_json) = 'object'
+            AND json_extract(metadata_json, '$.fingerprint_version') = 'professional-model-review-v1'
+        ),
+        CHECK (
+            (event_type = 'preview' AND state = 'previewed')
+            OR (event_type = 'approve' AND state = 'approved')
+            OR (event_type = 'reject' AND state = 'rejected')
+            OR (event_type = 'mark_stale' AND state = 'stale')
+            OR (event_type = 'supersede' AND state = 'superseded')
+            OR (event_type = 'signoff' AND state = 'signed_off')
+        ),
+        CHECK (event_type <> 'approve' OR parent_event_id IS NOT NULL),
+        CHECK (
+            (event_type = 'signoff') = (
+                approval_key = 'final_signoff' AND approval_scope = 'workbook'
+            )
+        ),
+        CHECK (
+            event_type NOT IN ('reject', 'signoff')
+            OR length(trim(COALESCE(rationale, ''))) > 0
+        ),
+        FOREIGN KEY (parent_event_id) REFERENCES professional_model_review_events_v3(id),
+        FOREIGN KEY (supersedes_event_id) REFERENCES professional_model_review_events_v3(id),
+        CHECK (event_type <> 'signoff' OR review_evidence_hash IS NOT NULL)
+    );
+
+    CREATE TRIGGER IF NOT EXISTS professional_model_review_events_v3_no_update
+    BEFORE UPDATE ON professional_model_review_events_v3
+    BEGIN
+        SELECT RAISE(ABORT, 'professional model review events are immutable');
+    END;
+
+    CREATE TRIGGER IF NOT EXISTS professional_model_review_events_v3_no_delete
+    BEFORE DELETE ON professional_model_review_events_v3
+    BEGIN
+        SELECT RAISE(ABORT, 'professional model review events are immutable');
+    END;
+
     CREATE TABLE IF NOT EXISTS agent_run_cache (
         ticker          TEXT NOT NULL,
         agent_name      TEXT NOT NULL,
@@ -838,6 +931,41 @@ def create_tables(conn: sqlite3.Connection | None = None):
         FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
     );
 
+    -- Cell-exact immutable CIQ facts. This additive v2 table intentionally
+    -- coexists with ciq_long_form, whose legacy uniqueness grain is retained
+    -- for compatibility with existing screens and valuation adapters.
+    CREATE TABLE IF NOT EXISTS ciq_source_facts_v2 (
+        run_id              INTEGER NOT NULL,
+        ticker              TEXT NOT NULL,
+        sheet_name          TEXT NOT NULL,
+        section_name        TEXT,
+        row_index           INTEGER NOT NULL,
+        source_row_id       TEXT NOT NULL,
+        row_label           TEXT NOT NULL,
+        metric_key          TEXT,
+        period_date         TEXT,
+        calc_type           TEXT,
+        column_label        TEXT,
+        column_index        INTEGER NOT NULL,
+        a1_locator          TEXT NOT NULL,
+        cell_locator        TEXT NOT NULL,
+        value_raw           TEXT,
+        value_num           REAL,
+        unit                TEXT,
+        scale_factor        REAL DEFAULT 1.0,
+        source_file         TEXT NOT NULL,
+        formula_text        TEXT,
+        cached_value        BLOB,
+        has_formula         INTEGER NOT NULL CHECK (has_formula IN (0, 1)),
+        has_cached_value    INTEGER NOT NULL CHECK (has_cached_value IN (0, 1)),
+        formula_status      TEXT NOT NULL,
+        formula_error       TEXT,
+        cached_error        TEXT,
+        PRIMARY KEY (run_id, sheet_name, row_index, column_index),
+        UNIQUE (run_id, cell_locator),
+        FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
+    );
+
     -- CIQ compute-ready deterministic snapshot
     CREATE TABLE IF NOT EXISTS ciq_valuation_snapshot (
         ticker                  TEXT NOT NULL,
@@ -916,6 +1044,9 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_importance ON pm_decision_queue_items(qualitative_importance, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_impact_bucket ON pm_decision_queue_items(valuation_impact_bucket, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_pm_decision_queue_events_item_ts ON pm_decision_queue_events(item_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_professional_model_review_key_v3 ON professional_model_review_events_v3(ticker, model_run_id, approval_scope, approval_key, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_professional_model_review_state_v3 ON professional_model_review_events_v3(ticker, model_run_id, state, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_professional_model_review_parent_v3 ON professional_model_review_events_v3(parent_event_id);
     CREATE INDEX IF NOT EXISTS idx_agent_run_log_ticker_ts ON agent_run_log(ticker, run_ts DESC);
     CREATE INDEX IF NOT EXISTS idx_agent_run_cache_lookup ON agent_run_cache(ticker, agent_name, input_hash, model, prompt_hash);
     CREATE INDEX IF NOT EXISTS idx_agent_run_artifacts_ticker_agent_ts ON agent_run_artifacts(ticker, agent_name, created_at DESC);
@@ -938,6 +1069,7 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_ticker_dossier_snapshots_ticker_updated ON ticker_dossier_snapshots(ticker, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
+    CREATE INDEX IF NOT EXISTS idx_ciq_source_facts_v2_lookup ON ciq_source_facts_v2(ticker, metric_key, period_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
 

@@ -36,13 +36,31 @@ _METRIC_ALIASES = {
 }
 
 _LONG_FORM_DAY_ALIASES = {
-    "dso": ("dso", "days_sales_outstanding"),
-    "dio": ("dio", "days_inventory_outstanding", "days_inventory"),
-    "dpo": ("dpo", "days_payables_outstanding", "days_payable_outstanding"),
+    "dso": (
+        "dso",
+        "avg_days_sales_outstanding",
+        "avg_days_sales_out",
+        "days_sales_outstanding",
+    ),
+    "dio": (
+        "dio",
+        "avg_days_inventory_outstanding",
+        "avg_days_inv_out",
+        "days_inventory_outstanding",
+        "days_inventory",
+    ),
+    "dpo": (
+        "dpo",
+        "avg_days_payable_outstanding",
+        "avg_days_payable_out",
+        "days_payables_outstanding",
+        "days_payable_outstanding",
+    ),
     "accounts_receivable": ("accounts_receivable", "receivables", "trade_receivables", "net_receivables"),
     "inventory": ("inventory", "inventories"),
     "accounts_payable": ("accounts_payable", "trade_payables", "payables"),
     "revenue": ("revenue", "total_revenue", "revenues"),
+    "cogs": ("cost_of_goods_sold", "cost_of_revenue", "cost_of_sales", "cogs"),
 }
 
 
@@ -69,7 +87,13 @@ def _matches_metric_alias(metric_key: str, aliases: tuple[str, ...]) -> bool:
 
 
 def _extract_nwc_day_drivers(conn: sqlite3.Connection, ticker: str, run_id: int) -> dict[str, float | None]:
-    out: dict[str, float | None] = {"dso": None, "dio": None, "dpo": None}
+    out: dict[str, float | None] = {
+        "dso": None,
+        "dio": None,
+        "dpo": None,
+        "cogs_ttm": None,
+        "cogs_pct_of_revenue": None,
+    }
 
     try:
         rows = conn.execute(
@@ -98,20 +122,26 @@ def _extract_nwc_day_drivers(conn: sqlite3.Connection, ticker: str, run_id: int)
                 latest[canonical] = value
 
     if "dso" in latest:
-        out["dso"] = round(float(latest["dso"]), 1)
+        out["dso"] = float(latest["dso"])
     if "dio" in latest:
-        out["dio"] = round(float(latest["dio"]), 1)
+        out["dio"] = float(latest["dio"])
     if "dpo" in latest:
-        out["dpo"] = round(float(latest["dpo"]), 1)
+        out["dpo"] = float(latest["dpo"])
 
     revenue = latest.get("revenue")
+    cogs = latest.get("cogs")
+    if cogs is not None:
+        out["cogs_ttm"] = float(cogs)
     if revenue and revenue > 0:
+        if cogs is not None and cogs >= 0:
+            out["cogs_pct_of_revenue"] = float(cogs) / float(revenue)
         if out["dso"] is None and "accounts_receivable" in latest:
             out["dso"] = round(365.0 * latest["accounts_receivable"] / revenue, 1)
+    if cogs and cogs > 0:
         if out["dio"] is None and "inventory" in latest:
-            out["dio"] = round(365.0 * latest["inventory"] / revenue, 1)
+            out["dio"] = round(365.0 * latest["inventory"] / cogs, 1)
         if out["dpo"] is None and "accounts_payable" in latest:
-            out["dpo"] = round(365.0 * latest["accounts_payable"] / revenue, 1)
+            out["dpo"] = round(365.0 * latest["accounts_payable"] / cogs, 1)
 
     return out
 
@@ -241,20 +271,22 @@ def get_ciq_nwc_history(ticker: str, as_of_date: str | None = None) -> list[dict
             entry: dict[str, Any] = {"period_date": period, "dso": None, "dio": None, "dpo": None}
 
             if "dso" in metrics:
-                entry["dso"] = round(float(metrics["dso"]), 1)
+                entry["dso"] = float(metrics["dso"])
             if "dio" in metrics:
-                entry["dio"] = round(float(metrics["dio"]), 1)
+                entry["dio"] = float(metrics["dio"])
             if "dpo" in metrics:
-                entry["dpo"] = round(float(metrics["dpo"]), 1)
+                entry["dpo"] = float(metrics["dpo"])
 
             revenue = metrics.get("revenue")
+            cogs = metrics.get("cogs")
             if revenue and revenue > 0:
                 if entry["dso"] is None and "accounts_receivable" in metrics:
                     entry["dso"] = round(365.0 * metrics["accounts_receivable"] / revenue, 1)
+            if cogs and cogs > 0:
                 if entry["dio"] is None and "inventory" in metrics:
-                    entry["dio"] = round(365.0 * metrics["inventory"] / revenue, 1)
+                    entry["dio"] = round(365.0 * metrics["inventory"] / cogs, 1)
                 if entry["dpo"] is None and "accounts_payable" in metrics:
-                    entry["dpo"] = round(365.0 * metrics["accounts_payable"] / revenue, 1)
+                    entry["dpo"] = round(365.0 * metrics["accounts_payable"] / cogs, 1)
 
             if any(v is not None for v in [entry["dso"], entry["dio"], entry["dpo"]]):
                 results.append(entry)
@@ -338,9 +370,14 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
                 return []
             as_of_date = latest["as_of_date"]
 
+        columns = {
+            str(row["name"])
+            for row in conn.execute("PRAGMA table_info(ciq_comps_snapshot)").fetchall()
+        }
+        peer_name_select = "peer_name" if "peer_name" in columns else "NULL AS peer_name"
         rows = conn.execute(
-            """
-            SELECT target_ticker, peer_ticker, as_of_date, run_id, source_file,
+            f"""
+            SELECT target_ticker, peer_ticker, {peer_name_select}, as_of_date, run_id, source_file,
                    metric_key, value_num, is_target
             FROM ciq_comps_snapshot
             WHERE target_ticker = ? AND as_of_date = ?
@@ -418,6 +455,7 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
             peer_ticker,
             {
                 "is_target": int(row.get("is_target") or 0),
+                "company_name": row.get("peer_name"),
                 "metrics": {},
                 "run_id": row.get("run_id"),
                 "source_file": row.get("source_file"),
@@ -428,6 +466,8 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
         value_num = _to_float(row.get("value_num"))
         if metric_key and value_num is not None:
             bucket["metrics"][str(metric_key)] = value_num
+        if row.get("peer_name") and not bucket.get("company_name"):
+            bucket["company_name"] = row.get("peer_name")
         if int(row.get("is_target") or 0) == 1:
             bucket["is_target"] = 1
 
@@ -477,18 +517,22 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
     target_ebit = _pick_metric(target_metrics, _METRIC_ALIASES["target_ebit_ltm"])
     target_eps = _pick_metric(target_metrics, _METRIC_ALIASES["target_eps_ltm"])
     target_shares = _pick_metric(target_metrics, _METRIC_ALIASES["target_shares_out"])
-    target_total_debt = _pick_metric(target_metrics, _METRIC_ALIASES["target_total_debt"]) or 0.0
-    target_cash = _pick_metric(target_metrics, _METRIC_ALIASES["target_cash"]) or 0.0
-    target_net_debt = target_total_debt - target_cash
+    target_total_debt = _pick_metric(target_metrics, _METRIC_ALIASES["target_total_debt"])
+    target_cash = _pick_metric(target_metrics, _METRIC_ALIASES["target_cash"])
+    target_net_debt = (
+        target_total_debt - target_cash
+        if target_total_debt is not None and target_cash is not None
+        else None
+    )
 
     implied_price_ev_ebitda = None
-    if peer_median_tev_ebitda is not None and target_ebitda is not None and target_shares and target_shares > 0:
+    if peer_median_tev_ebitda is not None and target_ebitda is not None and target_net_debt is not None and target_shares and target_shares > 0:
         implied_ev = peer_median_tev_ebitda * target_ebitda
         implied_equity = implied_ev - target_net_debt
         implied_price_ev_ebitda = implied_equity / target_shares
 
     implied_price_ev_ebit = None
-    if peer_median_tev_ebit is not None and target_ebit is not None and target_shares and target_shares > 0:
+    if peer_median_tev_ebit is not None and target_ebit is not None and target_net_debt is not None and target_shares and target_shares > 0:
         implied_ev = peer_median_tev_ebit * target_ebit
         implied_equity = implied_ev - target_net_debt
         implied_price_ev_ebit = implied_equity / target_shares
@@ -515,6 +559,8 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
         "target_ebit_ltm": target_ebit,
         "target_eps_ltm": target_eps,
         "target_shares_out": target_shares,
+        "target_total_debt": target_total_debt,
+        "target_cash": target_cash,
         "target_net_debt": target_net_debt,
         "implied_price_ev_ebitda": round(implied_price_ev_ebitda, 4) if implied_price_ev_ebitda is not None else None,
         "implied_price_ev_ebit": round(implied_price_ev_ebit, 4) if implied_price_ev_ebit is not None else None,
@@ -552,6 +598,7 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
             peer_ticker,
             {
                 "is_target": int(row.get("is_target") or 0),
+                "company_name": row.get("peer_name"),
                 "metrics": {},
                 "run_id": row.get("run_id"),
                 "source_file": row.get("source_file"),
@@ -562,6 +609,8 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
         value_num = _to_float(row.get("value_num"))
         if metric_key and value_num is not None:
             bucket["metrics"][str(metric_key)] = value_num
+        if row.get("peer_name") and not bucket.get("company_name"):
+            bucket["company_name"] = row.get("peer_name")
         if int(row.get("is_target") or 0) == 1:
             bucket["is_target"] = 1
 
@@ -582,6 +631,9 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
     _EXTRA_MM_ALIASES: dict[str, tuple[str, ...]] = {
         "market_cap_mm": ("market_cap", "market_capitalization", "mktcap"),
         "tev_mm": ("tev", "enterprise_value", "total_enterprise_value"),
+        "shares_out_mm": ("shares_out", "shares_outstanding"),
+        "cash_mm": ("cash", "cash_and_equivalents"),
+        "debt_mm": ("total_debt", "debt"),
         "revenue_ltm_mm": ("total_revenue_ltm", "revenue_ltm", "total_revenue", "revenue_ttm"),
     }
 
@@ -589,12 +641,14 @@ def get_ciq_comps_detail(ticker: str, as_of_date: str | None = None) -> dict | N
         m = bucket["metrics"]
         out: dict[str, Any] = {
             "ticker": ticker_str,
+            "company_name": bucket.get("company_name") or ticker_str,
             "run_id": bucket.get("run_id"),
             "source_file": bucket.get("source_file"),
             "as_of_date": bucket.get("as_of_date"),
         }
         for field, aliases in _EXTRA_MM_ALIASES.items():
             out[field] = next((_to_float(m.get(a)) for a in aliases if m.get(a) is not None), None)
+        out["stock_price"] = _pick_metric(m, ("stock_price", "price"))
         out["ebitda_ltm_mm"] = _pick_metric(m, _METRIC_ALIASES["target_ebitda_ltm"])
         out["ebit_ltm_mm"] = _pick_metric(m, _METRIC_ALIASES["target_ebit_ltm"])
         out["eps_ltm"] = _pick_metric(m, _METRIC_ALIASES["target_eps_ltm"])

@@ -374,6 +374,24 @@ class _Context:
         self.excel_flat = ef
         self.assumptions = _kv(ef.get("assumptions"))
         self.wacc = _kv(ef.get("wacc"))
+        missing_wacc_inputs = self.wacc.get("missing_inputs")
+        if isinstance(missing_wacc_inputs, str):
+            try:
+                parsed_missing = json.loads(missing_wacc_inputs)
+            except json.JSONDecodeError:
+                parsed_missing = [missing_wacc_inputs] if missing_wacc_inputs else []
+            self.wacc["missing_inputs"] = parsed_missing if isinstance(parsed_missing, list) else []
+        supplied_preflight = payload.get("source_preflight")
+        self.source_preflight = (
+            supplied_preflight
+            if isinstance(supplied_preflight, dict) and supplied_preflight
+            else {
+                "status": "blocked",
+                "blockers": ["source_preflight_missing"],
+                "workbook": {"formula_error_count": "unavailable"},
+            }
+        )
+        self.diagnostic_shadow_cases = payload.get("diagnostic_shadow_cases") or {}
         self.market = _kv(ef.get("market"))
         self.valuation = _kv(ef.get("valuation"))
         self.terminal = _kv(ef.get("terminal"))
@@ -408,6 +426,35 @@ class _Context:
     def source_for(self, key: str) -> str:
         return str(self.lineage.get(key, "") or "")
 
+    def source_formula_error_count(self) -> int | str:
+        value = (self.source_preflight.get("workbook") or {}).get("formula_error_count")
+        if isinstance(value, bool):
+            return int(value)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return "unavailable"
+
+    def overall_decision_status(self) -> str:
+        status = str(self.source_preflight.get("status") or "").strip().lower()
+        blockers = [item for item in self.source_preflight.get("blockers") or [] if item]
+        formula_errors = self.source_formula_error_count()
+        if status not in {"ready", "ok"} or blockers or formula_errors == "unavailable" or formula_errors > 0:
+            return "BLOCKED"
+        if (
+            str(self.wacc.get("quality_status") or "") != "source_backed"
+            or str(self.register.get("model_trust_state") or "") not in {"", "ok"}
+            or str(self.resolution.get("status") or "") not in {"", "ok", "resolved"}
+        ):
+            return "REVIEW REQUIRED"
+        return "REVIEW READY"
+
+    def terminal_weight(self, key: str, default: float) -> float:
+        value = self.story_adj.get(key)
+        if value is None:
+            value = self.drivers.get(key)
+        return _num(value, default)
+
     def assump(self, key: str) -> str:
         row = self.assumption_rows[key]
         return f"'Assumptions'!$E${row}"
@@ -432,8 +479,8 @@ class _Context:
         g = _num(a.get("growth_terminal_pct"))
         ronic = _num(self.terminal.get("terminal_ronic_pct"), 11.0) / 100.0 \
             if self.terminal.get("terminal_ronic_pct") is not None else _num(d.get("ronic_terminal"), 0.11)
-        gw = _num(self.story_adj.get("terminal_blend_gordon_weight"), 0.5)
-        ew = _num(self.story_adj.get("terminal_blend_exit_weight"), 1 - gw)
+        gw = self.terminal_weight("terminal_blend_gordon_weight", 0.60)
+        ew = self.terminal_weight("terminal_blend_exit_weight", 1 - gw)
 
         fc = self.forecast
         # PV of explicit FCFF (full-year, off the clean backend FCFF series).
@@ -458,13 +505,11 @@ class _Context:
             "lease_liabilities_mm", "options_value_mm", "convertibles_value_mm"))
         equity = ev_ops + non_op - claims
 
-        shares = _num(a.get("shares_outstanding_mm"))
-        dil = _num(d.get("annual_dilution_pct"))
-        terminal_shares = max(shares * (1 + dil) ** n, 1.0)
+        current_shares = max(_num(a.get("shares_outstanding_mm")), 1.0)
 
-        iv_blended = equity / terminal_shares if terminal_shares else 0.0
-        iv_gordon = (pv_fcff_sum + pv_tv_gordon + non_op - claims) / terminal_shares
-        iv_exit = (pv_fcff_sum + pv_tv_exit + non_op - claims) / terminal_shares
+        iv_blended = equity / current_shares
+        iv_gordon = (pv_fcff_sum + pv_tv_gordon + non_op - claims) / current_shares
+        iv_exit = (pv_fcff_sum + pv_tv_exit + non_op - claims) / current_shares
 
         backend_iv = _num(self.valuation.get("iv_base"))
         gap = abs(iv_blended - backend_iv)
@@ -478,7 +523,7 @@ class _Context:
             "pv_fcff_sum": pv_fcff_sum,
             "ev_ops": ev_ops,
             "equity": equity,
-            "terminal_shares": terminal_shares,
+            "current_shares": current_shares,
             "gordon_weight": gw,
             "exit_weight": ew,
         }
@@ -583,8 +628,8 @@ def _table(ws, name: str, r0: int, r1: int, c1: int) -> None:
 
 
 def _flag_fill(level: str):
-    level = (level or "").lower()
-    if level in {"critical", "review_required", "review"}:
+    level = (level or "").lower().replace(" ", "_")
+    if level in {"blocked", "critical", "review_required", "review"}:
         return PatternFill("solid", fgColor=PALE_RED), Font(color=RED_FONT, bold=True)
     if level in {"watch", "medium", "high"}:
         return PatternFill("solid", fgColor=PALE_AMBER), Font(color=AMBER_FONT)
@@ -604,18 +649,27 @@ def _build_cover(ctx: _Context, ticker: str, json_file: Path, as_of: datetime, r
     price = _num(mkt.get("price"))
     base = _num(val.get("iv_base"))
     headline = [
+        ("Overall decision status", ctx.overall_decision_status(), None),
         ("Sector / Industry", f"{ctx.payload.get('sector','')} / {ctx.payload.get('industry','')}", None),
         ("Current price", price, USD),
         ("Backend Base IV", base, USD),
         ("Base upside", _num(val.get("upside_base_pct")) / 100.0, PCT),
-        ("Expected IV (prob-weighted)", _num(val.get("expected_iv")), USD),
-        ("Expected upside", _num(val.get("expected_upside_pct")) / 100.0, PCT),
+        ("Legacy prob-weighted IV (not PM-approved)", _num(val.get("expected_iv")), USD),
+        ("Legacy prob-weighted upside", _num(val.get("expected_upside_pct")) / 100.0, PCT),
         ("Margin of safety", _num(val.get("margin_of_safety")) / 100.0, PCT),
         ("Analyst target / rec", f"{_num(mkt.get('analyst_target')):.2f}  ({mkt.get('analyst_recommendation','')})", None),
         ("Model applicability", val.get("model_applicability_status", ""), None),
         ("Model trust state", ctx.register.get("model_trust_state", "n/a"), None),
         ("Default resolution", ctx.resolution.get("status", "n/a"), None),
+        ("WACC quality", ctx.wacc.get("quality_status", "n/a"), None),
+        ("Source preflight", ctx.source_preflight.get("status", "blocked"), None),
+        ("Source formula blockers", ctx.source_formula_error_count(), None),
     ]
+    if ctx.diagnostic_shadow_cases:
+        headline[4:4] = [
+            ("Hold-current-margin shadow IV", ctx.diagnostic_shadow_cases.get("hold_current_ebit_margin_iv"), USD),
+            ("Margin-policy delta / share", ctx.diagnostic_shadow_cases.get("margin_policy_delta_per_share"), USD),
+        ]
     r = 4
     _section(ws, r, "Headline", 4)
     r += 1
@@ -625,7 +679,7 @@ def _build_cover(ctx: _Context, ticker: str, json_file: Path, as_of: datetime, r
         if fmt:
             c.number_format = fmt
         # color the trust/resolution rows
-        if label in {"Model trust state", "Default resolution"}:
+        if label in {"Overall decision status", "Model trust state", "Default resolution", "WACC quality", "Source preflight", "Hold-current-margin shadow IV", "Margin-policy delta / share"}:
             fill, font = _flag_fill(str(value))
             if fill:
                 c.fill, c.font = fill, font
@@ -638,14 +692,14 @@ def _build_cover(ctx: _Context, ticker: str, json_file: Path, as_of: datetime, r
         ("Workbook Base IV (rebuilt)", recon["workbook_iv"], USD),
         ("Backend Base IV", recon["backend_iv"], USD),
         ("Gap", recon["gap"], USD),
-        ("Status", "RECONCILED" if recon["status"] == "ok" else "FAILED", None),
+        ("Formula reconciliation status", "RECONCILED" if recon["status"] == "ok" else "FAILED", None),
     ]
     for label, value, fmt in recon_rows:
         ws.cell(r, 1, label).font = Font(bold=True)
         c = ws.cell(r, 2, _safe(value))
         if fmt:
             c.number_format = fmt
-        if label == "Status":
+        if label == "Formula reconciliation status":
             c.font = Font(bold=True, color=GREEN_FONT if value == "RECONCILED" else RED_FONT)
         r += 1
 
@@ -674,7 +728,7 @@ def _build_cover(ctx: _Context, ticker: str, json_file: Path, as_of: datetime, r
     ws.cell(r, 2, as_of.isoformat(timespec="seconds")).font = Font(italic=True, color="888888")
     r += 1
     ws.cell(r, 1, "Note").font = Font(italic=True, color="888888")
-    ws.cell(r, 2, "Review artifact only — does not write back to the database or approved assumptions.").font = Font(italic=True, color="888888")
+    ws.cell(r, 2, "Diagnostic only — source preflight and PM policy gates must pass before decision use; no writeback.").font = Font(italic=True, color="888888")
     _fit(ws, {"A": 30, "B": 96})
 
 
@@ -750,7 +804,12 @@ def _build_thesis(ctx: _Context) -> None:
     _grid(ws, head, r - 1, 1, 4)
 
     r += 1
-    _section(ws, r, "Story -> Model Adjustments (what the thesis changed)", 4)
+    adjustment_title = (
+        "Story -> Model Adjustments (what the thesis changed)"
+        if adj
+        else "Story -> Model Adjustments (advisory; none applied)"
+    )
+    _section(ws, r, adjustment_title, 4)
     r += 1
     _header(ws, r, ["Adjustment", "Value", "Effect on the model"])
     r += 1
@@ -775,11 +834,17 @@ def _build_thesis(ctx: _Context) -> None:
         r += 1
     _grid(ws, r - len(adj_rows), r - 1, 1, 4)
 
-    note = (
-        "These adjustments are produced by the deterministic story layer and are already baked into the "
-        "assumptions and terminal blend on the DCF tabs. They are shown here so the qualitative thesis and "
-        "the numbers are auditable together. Change them via the PM Decision Queue, not in this workbook."
-    )
+    if adj:
+        note = (
+            "These adjustments are produced by the deterministic story layer and are already baked into the "
+            "assumptions and terminal blend on the DCF tabs. They are shown here so the qualitative thesis and "
+            "the numbers are auditable together. Change them via the PM Decision Queue, not in this workbook."
+        )
+    else:
+        note = (
+            "Story priors are advisory in this source-only run and were not applied to deterministic drivers. "
+            "Any proposed change must enter through the PM Decision Queue."
+        )
     r += 1
     ws.cell(r, 1, note).font = Font(italic=True, color="666666")
     ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=6)
@@ -923,7 +988,7 @@ def _build_assumptions(ctx: _Context) -> None:
         ("Operating", "growth_terminal_pct", a.get("growth_terminal_pct"), "%", "", ""),
         ("WACC", "wacc", w.get("wacc"), "%", "", ""),
         ("WACC", "cost_of_equity", w.get("cost_of_equity"), "%", "cost_of_equity", ""),
-        ("WACC", "cost_of_debt", w.get("cost_of_debt"), "%", "", ""),
+        ("WACC", "cost_of_debt_after_tax", w.get("cost_of_debt_after_tax"), "%", "", ""),
         ("WACC", "risk_free_rate", w.get("risk_free_rate"), "%", "", ""),
         ("WACC", "equity_risk_premium", w.get("equity_risk_premium"), "%", "", ""),
         ("WACC", "beta_relevered", w.get("beta_relevered"), "x", "", ""),
@@ -934,8 +999,8 @@ def _build_assumptions(ctx: _Context) -> None:
         ("Terminal", "exit_metric", a.get("exit_metric"), "text", "", ""),
         ("Terminal", "ronic_terminal", term.get("terminal_ronic_pct", 11.0) / 100.0
             if term.get("terminal_ronic_pct") is not None else ctx.drivers.get("ronic_terminal"), "%", "ronic_terminal", ""),
-        ("Terminal", "terminal_blend_gordon_weight", adj.get("terminal_blend_gordon_weight"), "%", "", ""),
-        ("Terminal", "terminal_blend_exit_weight", adj.get("terminal_blend_exit_weight"), "%", "", ""),
+        ("Terminal", "terminal_blend_gordon_weight", ctx.terminal_weight("terminal_blend_gordon_weight", 0.60), "%", "", ""),
+        ("Terminal", "terminal_blend_exit_weight", ctx.terminal_weight("terminal_blend_exit_weight", 0.40), "%", "", ""),
         ("Scenario", "scenario_prob_bear", a.get("scenario_prob_bear"), "%", "", ""),
         ("Scenario", "scenario_prob_base", a.get("scenario_prob_base"), "%", "", ""),
         ("Scenario", "scenario_prob_bull", a.get("scenario_prob_bull"), "%", "", ""),
@@ -1071,31 +1136,39 @@ def _build_wacc(ctx: _Context) -> None:
     _setup(ws)
     _title(ws, "WACC", "Cost of capital build. Edit components via Assumptions overrides.")
     _header(ws, 4, ["Line", "Value", "Notes"])
+
+    def _optional_assumption(key: str) -> str:
+        row = ctx.assumption_rows[key]
+        return f'''=IF(AND('Assumptions'!$C${row}="",'Assumptions'!$D${row}=""),"",'Assumptions'!$E${row})'''
+
+
     rows = [
         ("Backend WACC (used in DCF)", f"={ctx.assump('wacc')}", "Default discount rate from backend", PCT),
         ("Cost of equity", f"={ctx.assump('cost_of_equity')}", "CAPM cost of equity", PCT),
-        ("Risk-free rate", f"={ctx.assump('risk_free_rate')}", "Blank if unavailable", PCT),
-        ("Equity risk premium", f"={ctx.assump('equity_risk_premium')}", "Blank if unavailable", PCT),
+        ("Risk-free rate", _optional_assumption("risk_free_rate"), "Blank if unavailable", PCT),
+        ("Equity risk premium", _optional_assumption("equity_risk_premium"), "Blank if unavailable", PCT),
         ("Relevered beta", f"={ctx.assump('beta_relevered')}", "Peer/structure beta", MULT),
         ("Size premium", f"={ctx.assump('size_premium')}", "Duff & Phelps", PCT),
-        ("Cost of debt", f"={ctx.assump('cost_of_debt')}", "Blank if unavailable", PCT),
+        ("After-tax cost of debt", _optional_assumption("cost_of_debt_after_tax"), "Blank if unavailable", PCT),
         ("Equity weight", f"={ctx.assump('equity_weight')}", "Market-value weight", PCT),
         ("Debt weight", f"={ctx.assump('debt_weight')}", "Market-value weight", PCT),
         ("Rebuilt cost of equity (check)",
-         f"=IF(OR(ISBLANK({ctx.assump('risk_free_rate')}),ISBLANK({ctx.assump('equity_risk_premium')})),"
-         f"{ctx.assump('cost_of_equity')},{ctx.assump('risk_free_rate')}+{ctx.assump('beta_relevered')}*"
-         f"{ctx.assump('equity_risk_premium')}+{ctx.assump('size_premium')})",
+         "=IF(COUNT(B7:B8)<2,B6,B7+B9*B8+B10)",
          "CAPM rebuild; falls back to backend Ke", PCT),
+        ("Quality status", ctx.wacc.get("quality_status", "n/a"), "Degraded quality blocks decision-ready use", None),
+        ("Missing inputs", ", ".join(ctx.wacc.get("missing_inputs") or []), "Load-bearing inputs unavailable", None),
+        ("Beta source", ctx.wacc.get("beta_source", "n/a"), "Explicit beta lineage", None),
     ]
     r = 5
     for line, formula, note, fmt in rows:
         ws.cell(r, 1, line)
         c = ws.cell(r, 2, formula)
-        c.number_format = fmt
+        if fmt:
+            c.number_format = fmt
         ws.cell(r, 3, note)
         r += 1
     _grid(ws, 4, r - 1, 1, 3)
-    _fit(ws, {"A": 30, "B": 14, "C": 44})
+    _fit(ws, {"A": 30, "B": 28, "C": 44})
 
 
 # --------------------------------------------------------------------------- #
@@ -1201,7 +1274,7 @@ def _build_dcf_base(ctx: _Context) -> None:
         ("non_op", "Non-operating assets", f"={ctx.assump('non_operating_assets_mm')}", MM),
         ("claims", "Non-equity claims", f"={ctx.assump('net_debt_mm')}+{ctx.assump('minority_interest_mm')}+{ctx.assump('preferred_equity_mm')}+{ctx.assump('pension_deficit_mm')}+{ctx.assump('lease_liabilities_mm')}+{ctx.assump('options_value_mm')}+{ctx.assump('convertibles_value_mm')}", MM),
         ("equity", "Equity value", "=B{ev_ops}+B{non_op}-B{claims}", MM),
-        ("shares", "Diluted terminal shares", f"={ctx.assump('shares_outstanding_mm')}*POWER(1+{ctx.assump('annual_dilution_pct')},{n})", MM),
+        ("shares", "Current diluted shares", f"={ctx.assump('shares_outstanding_mm')}", MM),
         ("iv", "Intrinsic value / share", "=B{equity}/B{shares}", USD),
         ("iv_gordon", "IV / share — Gordon only", "=(B{pv_fcff_sum}+B{pv_tv_gordon}+B{non_op}-B{claims})/B{shares}", USD),
         ("iv_exit", "IV / share — exit only", "=(B{pv_fcff_sum}+B{pv_tv_exit}+B{non_op}-B{claims})/B{shares}", USD),
@@ -1248,7 +1321,7 @@ def _build_scenarios(ctx: _Context) -> None:
     official = {s["name"]: s for s in (ctx.scenario_policy.get("official_specs") or [])}
     context = ctx.context_scenarios or {}
 
-    _section(ws, 4, "Official scenarios (canonical)", 9)
+    _section(ws, 4, "Legacy v1 scenarios (diagnostic; no PM-approved weighting)", 9)
     _header(ws, 5, ["Scenario", "Prob", "Growth mult", "Margin shift", "WACC shift",
                     "Exit mult", "Backend IV", "Upside", "Prob-weighted IV"])
     iv_map = {"bear": val.get("iv_bear"), "base": val.get("iv_base"), "bull": val.get("iv_bull")}
@@ -1265,7 +1338,7 @@ def _build_scenarios(ctx: _Context) -> None:
         ws.cell(r, 7, _safe(iv_map[name])).number_format = USD
         ws.cell(r, 8, _num(up_map[name]) / 100.0).number_format = PCT
         r += 1
-    ws.cell(r, 1, "Expected (prob-weighted)").font = Font(bold=True)
+    ws.cell(r, 1, "Legacy expected (not PM-approved)").font = Font(bold=True)
     ws.cell(r, 7, _num(val.get("expected_iv"))).number_format = USD
     ws.cell(r, 7).font = Font(bold=True)
     ws.cell(r, 8, _num(val.get("expected_upside_pct")) / 100.0).number_format = PCT
@@ -1305,16 +1378,25 @@ def _build_valuation_bridge(ctx: _Context) -> None:
     val, mkt = ctx.valuation, ctx.market
     _header(ws, 4, ["Method", "Low", "Mid", "High", "Note"])
     base_iv_row = ctx.dcf_base_rows["iv"]
+    exit_iv_ref = f"'DCF_Base'!$B${ctx.dcf_base_rows['iv_exit']}"
+    gordon_iv_ref = f"'DCF_Base'!$B${ctx.dcf_base_rows['iv_gordon']}"
+    comps_endpoints = [
+        value
+        for value in (val.get("comps_iv_ev_ebitda"), val.get("comps_iv_pe"))
+        if isinstance(value, (int, float))
+    ]
+    comps_low = min(comps_endpoints) if comps_endpoints else ""
+    comps_high = max(comps_endpoints) if comps_endpoints else ""
     rows = [
-        ("DCF — scenario range (backend)", val.get("iv_bear"), val.get("iv_base"), val.get("iv_bull"), "Bear / Base / Bull"),
-        ("DCF — terminal method (this wb)",
-         f"='DCF_Base'!$B${ctx.dcf_base_rows['iv_exit']}",
+        ("DCF - scenario range (backend)", val.get("iv_bear"), val.get("iv_base"), val.get("iv_bull"), "Bear / Base / Bull"),
+        ("DCF - terminal method (this wb)",
+         f"=MIN({exit_iv_ref},{gordon_iv_ref})",
          f"='DCF_Base'!$B${base_iv_row}",
-         f"='DCF_Base'!$B${ctx.dcf_base_rows['iv_gordon']}",
-         "Exit / Blended / Gordon (rebuilt)"),
+         f"=MAX({exit_iv_ref},{gordon_iv_ref})",
+         "Low / blended / high across Gordon and exit methods"),
         ("Economic profit (EP) IV", "", val.get("ep_iv_base"), "", "Invested capital + PV economic profit"),
-        ("FCFE IV", "", val.get("fcfe_iv_base"), "", "Direct-to-equity cross-check"),
-        ("Comps", val.get("comps_iv_ev_ebitda"), val.get("comps_iv_base"), val.get("comps_iv_pe"), "EV/EBITDA / blended / P/E"),
+        ("FCFE cross-check", "", "", "", "Unavailable: legacy FCFE omits after-tax interest; debt/interest schedule required"),
+        ("Comps", comps_low, val.get("comps_iv_base"), comps_high, "Low / blended / high across EV/EBITDA and P/E"),
         ("Market / street", mkt.get("price"), mkt.get("analyst_target"), "", "Current price / analyst target"),
     ]
     r = 5
@@ -1353,8 +1435,7 @@ def _build_sensitivities(ctx: _Context) -> None:
     claims = (f"({ctx.assump('net_debt_mm')}+{ctx.assump('minority_interest_mm')}+{ctx.assump('preferred_equity_mm')}"
               f"+{ctx.assump('pension_deficit_mm')}+{ctx.assump('lease_liabilities_mm')}+{ctx.assump('options_value_mm')}"
               f"+{ctx.assump('convertibles_value_mm')})")
-    dil = ctx.assump("annual_dilution_pct")
-    term_shares = f"({shares}*POWER(1+{dil},{n}))"
+    current_shares = shares
 
     waccs = [-0.01, -0.005, 0.0, 0.005, 0.01]
     gs = [-0.01, -0.005, 0.0, 0.005, 0.01]
@@ -1373,7 +1454,7 @@ def _build_sensitivities(ctx: _Context) -> None:
             nopat11 = f"('{base}'!{get_column_letter(last_col)}{rows['nopat_row']}*(1+{gref}))"
             term = (f"({nopat11}*(1-{gref}/{ctx.assump('ronic_terminal')})"
                     f"/({wref}-{gref}))/POWER(1+{wref},{n})")
-            ws.cell(row, col, f"=IF({wref}<={gref},NA(),(({pv})+{term}+{non_op}-{claims})/{term_shares})").number_format = USD
+            ws.cell(row, col, f"=IF({wref}<={gref},NA(),(({pv})+{term}+{non_op}-{claims})/{current_shares})").number_format = USD
 
     start = 13
     _section(ws, start, "IV/share: WACC (cols) vs exit multiple (rows) — exit path", 8)
@@ -1391,7 +1472,7 @@ def _build_sensitivities(ctx: _Context) -> None:
             mref = f"A{row}"
             pv = "+".join(f"{f}/POWER(1+{wref},{i})" for i, f in enumerate(fcff_cells, 1))
             term = f"({exit_metric_base}*{mref})/POWER(1+{wref},{n})"
-            ws.cell(row, col, f"=(({pv})+{term}+{non_op}-{claims})/{term_shares}").number_format = USD
+            ws.cell(row, col, f"=(({pv})+{term}+{non_op}-{claims})/{current_shares}").number_format = USD
 
     r = start + len(mults) + 3
     ws.cell(r, 1, "Backend Base IV").font = Font(bold=True)
@@ -1442,6 +1523,16 @@ def _build_checks(ctx: _Context, recon: dict) -> None:
         ("PM review items outstanding",
          (ctx.resolution.get("counts", {}) or {}).get("review_required", 0),
          '=IF(B13=0,"OK","REVIEW")', None, "See PM_Review_Queue tab"),
+        ("WACC input quality", ctx.wacc.get("quality_status", "n/a"),
+         '=IF(B14="source_backed","OK","REVIEW")', None,
+         f"Missing inputs: {ctx.wacc.get('missing_inputs', [])}; beta source: {ctx.wacc.get('beta_source')}"),
+        ("Source workbook preflight", ctx.source_preflight.get("status", "blocked"),
+         '=IF(OR(B15="ready",B15="ok"),"OK",IF(B15="blocked","BLOCKED","REVIEW"))', None,
+         f"Blockers: {ctx.source_preflight.get('blockers', [])}"),
+        ("Source formula-reference errors",
+         ctx.source_formula_error_count(),
+         '=IF(NOT(ISNUMBER(B16)),"BLOCKED",IF(B16=0,"OK","BLOCKED"))', None,
+         "Cached values do not clear broken source formulas"),
         ("No hidden writeback", "Review artifact only", '="OK"', None,
          "Workbook never mutates the database or approved assumptions"),
     ]

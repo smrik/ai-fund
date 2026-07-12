@@ -412,7 +412,7 @@ class TestBuildNestedStructure:
         out = build_nested_structure(MINIMAL_RESULT)
         for key in ("$schema_version", "generated_at", "ticker", "company_name",
                     "sector", "market", "assumptions", "wacc", "valuation",
-                    "scenarios", "scenario_policy", "context_scenarios",
+                    "method_availability", "scenarios", "scenario_policy", "context_scenarios",
                     "driver_consensus", "terminal", "health_flags", "forecast_bridge",
                     "historical_financials", "source_lineage", "ciq_lineage",
                     "story_profile", "story_adjustments", "default_resolution",
@@ -420,6 +420,34 @@ class TestBuildNestedStructure:
             assert key in out, f"Missing top-level key: {key}"
         assert "assumption_register" in out
         assert "assumption_register_summary" in out
+
+    def test_legacy_fcfe_shortcut_is_fail_closed(self):
+        out = build_nested_structure(MINIMAL_RESULT)
+
+        assert out["valuation"]["fcfe_iv_base"] is None
+        assert out["method_availability"]["fcfe"] == {
+            "status": "unavailable",
+            "reason_code": "integrated_debt_interest_schedule_required",
+            "detail": (
+                "FCFE is withheld until after-tax interest and net borrowing "
+                "tie to an integrated debt and cash schedule."
+            ),
+            "legacy_candidate_omitted": True,
+        }
+        flat = {row["key"]: row["value"] for row in out["excel_flat"]["valuation"]}
+        assert flat["fcfe_iv_base"] is None
+
+    def test_source_preflight_is_preserved(self):
+        source_preflight = {
+            "status": "blocked",
+            "blockers": ["formula_reference_errors:24"],
+            "source": {"sha256": "abc123", "run_id": 77},
+            "workbook": {"formula_error_count": 24},
+        }
+
+        out = build_nested_structure(MINIMAL_RESULT, source_preflight=source_preflight)
+
+        assert out["source_preflight"] == source_preflight
 
     def test_ticker_uppercase(self):
         r = dict(MINIMAL_RESULT)
@@ -776,3 +804,12 @@ class TestJsonDefault:
     def test_raises_on_unknown(self):
         with pytest.raises(TypeError):
             _json_default(object())
+
+
+def test_wacc_debt_cost_keeps_pre_and_after_tax_fields_distinct():
+    result = dict(MINIMAL_RESULT)
+    result["wacc_cost_of_debt_after_tax_raw"] = 0.0316
+    nested = build_nested_structure(result)
+
+    assert nested["wacc"]["cost_of_debt"] == pytest.approx(0.04)
+    assert nested["wacc"]["cost_of_debt_after_tax"] == pytest.approx(0.0316)

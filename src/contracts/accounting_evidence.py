@@ -288,7 +288,7 @@ class AccountingFocusResponse(ContractModel):
 
     focus_key: AccountingFocusKey
     packet_status: AccountingPacketStatus
-    findings: list[AccountingFinding] = Field(default_factory=list)
+    findings: list[AccountingFinding] = Field(default_factory=list, max_length=5)
     coverage_notes: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -303,10 +303,15 @@ class AccountingFocusResponse(ContractModel):
                 raise ValueError(
                     f"finding {finding.finding_id!r} topic does not match response focus_key"
                 )
+        finding_ids = [str(finding.finding_id) for finding in self.findings]
+        if len(finding_ids) != len(set(finding_ids)):
+            raise ValueError("focused responses cannot contain duplicate finding IDs")
         if self.packet_status == AccountingPacketStatus.missing_evidence and not self.coverage_notes:
             raise ValueError("missing_evidence responses require coverage_notes")
-        return self
+        if not self.findings and not self.coverage_notes:
+            raise ValueError("empty focused responses require a coverage disposition")
 
+        return self
 
 class AccountingValidationIssue(ContractModel):
     code: str

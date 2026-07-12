@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import sqlite3
 from datetime import datetime, timezone
 
@@ -91,7 +92,11 @@ def get_business_description(ticker: str) -> dict | None:
         if cached is not None:
             return cached
 
-        payload = _fetch_yfinance_business_description(ticker) or _extract_edgar_item1_business(ticker)
+        market_cache_only = os.getenv("ALPHA_POD_MARKET_CACHE_ONLY", "0").strip().lower() in {
+            "1", "true", "yes"
+        }
+        payload = None if market_cache_only else _fetch_yfinance_business_description(ticker)
+        payload = payload or _extract_edgar_item1_business(ticker)
         if payload is None:
             return None
 

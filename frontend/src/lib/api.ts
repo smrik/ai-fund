@@ -10,6 +10,11 @@ import type {
   PMDecisionQueueListPayload,
   PMDecisionQueueActionPayload,
   PMDecisionQueuePreviewPayload,
+  ProfessionalModelActionPayload,
+  ProfessionalModelReviewItem,
+  ProfessionalModelReviewPreview,
+  ProfessionalModelSheetPayload,
+  ProfessionalModelSummaryPayload,
   RunPayload,
   SavedExport,
   TickerExportRequest,
@@ -36,6 +41,13 @@ import {
   normalizeTickerWorkspace,
   normalizeValuationSummaryPayload,
 } from "@/lib/canonical";
+import {
+  isNormalizedProfessionalModelSummary,
+  normalizeProfessionalModelPreview,
+  normalizeProfessionalModelSheet,
+  normalizeProfessionalModelSummary,
+  professionalModelIdentityMismatch,
+} from "@/lib/professionalModel";
 
 const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
 
@@ -327,6 +339,147 @@ export function openLatestSnapshot(ticker: string): Promise<ArchivedSnapshotPayl
   return requestJSON<ArchivedSnapshotPayload>(`/tickers/${encodeURIComponent(ticker)}/snapshot/open-latest`, {
     method: "POST",
   });
+}
+
+export async function getProfessionalModel(ticker: string): Promise<ProfessionalModelSummaryPayload> {
+  const basePath = `/tickers/${encodeURIComponent(ticker)}/professional-model`;
+  let mismatch = "summary and review identities were not compared";
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const raw = await requestJSON<Record<string, unknown>>(basePath);
+    if (isNormalizedProfessionalModelSummary(raw)) {
+      return normalizeProfessionalModelSummary(raw, null);
+    }
+    const review = await requestJSON<Record<string, unknown>>(`${basePath}/review`);
+    mismatch = professionalModelIdentityMismatch(raw, review);
+    if (!mismatch) {
+      return normalizeProfessionalModelSummary(raw, review);
+    }
+  }
+
+  throw new Error(`Professional-model identity changed during load: ${mismatch}. Refetch required.`);
+}
+
+export function getProfessionalModelSheet(
+  ticker: string,
+  sheet: string,
+  page = 1,
+  pageSize = 50,
+  expectedWorkbookHash = "",
+  expectedModelRunId?: string | number | null,
+): Promise<ProfessionalModelSheetPayload> {
+  const query = new URLSearchParams({
+    start_row: String((Math.max(1, page) - 1) * pageSize + 1),
+    start_column: "1",
+    row_limit: String(pageSize),
+    column_limit: "20",
+  });
+  return requestJSON<Record<string, unknown>>(
+    `/tickers/${encodeURIComponent(ticker)}/professional-model/sheets/${encodeURIComponent(sheet)}?${query.toString()}`,
+  ).then((raw) =>
+    normalizeProfessionalModelSheet(raw, page, pageSize, expectedWorkbookHash, expectedModelRunId),
+  );
+}
+
+export function previewProfessionalModelReview(
+  ticker: string,
+  review: ProfessionalModelReviewItem,
+  reviewedValues: number[],
+  actor: string,
+  rationale: string,
+): Promise<ProfessionalModelReviewPreview> {
+  return requestJSON<Record<string, unknown>>(
+    `/tickers/${encodeURIComponent(ticker)}/professional-model/review/preview`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        approval_key: review.review_id,
+        reviewed_values: reviewedValues,
+        actor,
+        rationale,
+      }),
+    },
+  ).then((raw) => normalizeProfessionalModelPreview(raw, review));
+}
+
+export function approveProfessionalModelReview(
+  ticker: string,
+  previewId: number,
+  fingerprint: string,
+  actor: string,
+  rationale: string,
+): Promise<ProfessionalModelActionPayload> {
+  return requestJSON<ProfessionalModelActionPayload>(
+    `/tickers/${encodeURIComponent(ticker)}/professional-model/review/approve`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        preview_id: previewId,
+        reviewed_value_fingerprint: fingerprint,
+        actor,
+        rationale,
+      }),
+    },
+  );
+}
+
+export function rejectProfessionalModelReview(
+  ticker: string,
+  reviewId: string,
+  actor: string,
+  reason: string,
+): Promise<ProfessionalModelActionPayload> {
+  return requestJSON<ProfessionalModelActionPayload>(
+    `/tickers/${encodeURIComponent(ticker)}/professional-model/review/reject`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        approval_key: reviewId,
+        actor,
+        rationale: reason,
+      }),
+    },
+  );
+}
+
+export function signOffProfessionalModel(
+  ticker: string,
+  workbookHash: string,
+  actor: string,
+  rationale: string,
+): Promise<ProfessionalModelActionPayload> {
+  return requestJSON<ProfessionalModelActionPayload>(
+    `/tickers/${encodeURIComponent(ticker)}/professional-model/signoff`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        workbook_sha256: workbookHash,
+        actor,
+        rationale,
+      }),
+    },
+  );
+}
+
+export function rebuildProfessionalModel(
+  ticker: string,
+  modelRunId: string | number | null | undefined,
+  actor: string,
+  rationale: string,
+): Promise<RunPayload> {
+  const parsedRunId = typeof modelRunId === "number" ? modelRunId : Number(modelRunId);
+  return requestJSON<RunPayload>(`/tickers/${encodeURIComponent(ticker)}/professional-model/rebuild`, {
+    method: "POST",
+    body: JSON.stringify({
+      model_run_id: Number.isInteger(parsedRunId) && parsedRunId > 0 ? parsedRunId : undefined,
+      actor,
+      rationale,
+    }),
+  });
+}
+
+export function getProfessionalModelDownloadUrl(ticker: string): string {
+  return apiUrl(`/tickers/${encodeURIComponent(ticker)}/professional-model/download`);
 }
 
 export function defaultTickerExportRequest(

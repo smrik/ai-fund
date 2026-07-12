@@ -73,7 +73,7 @@ def test_codex_backend_returns_final_message_and_records_provenance(monkeypatch)
     assert calls["check"] is False
     command = calls["command"]
     assert "--ephemeral" in command
-    assert "--ignore-user-config" in command
+    assert "--ignore-user-config" not in command
     assert command[command.index("-s") + 1] == "read-only"
     assert command[command.index("-m") + 1] == "gpt-5.6-luna"
     assert command[command.index("-c") + 1] == "model_reasoning_effort=low"
@@ -82,6 +82,58 @@ def test_codex_backend_returns_final_message_and_records_provenance(monkeypatch)
     # Minimal-context invocation: the user's skills library must not be scanned.
     assert calls["agents_home_skills_exists"] is True
 
+
+def test_codex_backend_honors_explicit_executable(monkeypatch):
+    monkeypatch.setenv("ALPHA_POD_AGENT_BACKEND", "codex")
+    monkeypatch.setenv("ALPHA_POD_CODEX_EXECUTABLE", r"C:\\tmp\\codex-current.exe")
+    calls: dict[str, object] = {}
+
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
+        calls["command"] = command
+        output_path = Path(command[command.index("-o") + 1])
+        output_path.write_text("isolated codex answer", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("src.stage_03_judgment.base_agent.subprocess.run", fake_run)
+
+    assert BaseAgent().run("use the selected executable") == "isolated codex answer"
+    assert calls["command"][0] == r"C:\\tmp\\codex-current.exe"
+
+
+def test_codex_backend_honors_configurable_timeout(monkeypatch):
+    monkeypatch.setenv("ALPHA_POD_AGENT_BACKEND", "codex")
+    monkeypatch.setenv("ALPHA_POD_CODEX_TIMEOUT_SECONDS", "240")
+    calls: dict[str, object] = {}
+
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
+        calls["timeout"] = timeout
+        output_path = Path(command[command.index("-o") + 1])
+        output_path.write_text("patient codex answer", encoding="utf-8")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("src.stage_03_judgment.base_agent.subprocess.run", fake_run)
+
+    assert BaseAgent().run("wait for the real response") == "patient codex answer"
+    assert calls["timeout"] == 240
+
+
+def test_codex_backend_can_fail_closed_without_provider_fallback(monkeypatch):
+    monkeypatch.setenv("ALPHA_POD_AGENT_BACKEND", "codex")
+    monkeypatch.setenv("ALPHA_POD_CODEX_ALLOW_FALLBACK", "0")
+
+    def fake_run(command, *, input, text, capture_output, timeout, check, env=None):
+        return SimpleNamespace(returncode=7, stdout="", stderr="codex failed")
+
+    monkeypatch.setattr("src.stage_03_judgment.base_agent.subprocess.run", fake_run)
+    agent = BaseAgent()
+
+    with pytest.raises(RuntimeError, match="codex exec exited with status 7"):
+        agent.run("do not hide a real-agent failure")
+
+    assert agent.last_run_artifact["codex_error"] == {
+        "type": "RuntimeError",
+        "message": "codex exec exited with status 7: codex failed",
+    }
 
 def test_codex_backend_passes_long_prompt_via_stdin_not_argv(monkeypatch):
     monkeypatch.setenv("ALPHA_POD_AGENT_BACKEND", "codex")

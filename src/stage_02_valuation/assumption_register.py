@@ -81,7 +81,11 @@ RANGE_RULES: dict[str, dict[str, Any]] = {
     "equity_risk_premium": {"low": 0.02, "high": 0.10, "description": "Default PM review range for equity risk premium."},
     "beta_relevered": {"low": 0.20, "high": 3.00, "description": "Default PM review range for relevered beta."},
     "beta_unlevered_median": {"low": 0.20, "high": 3.00, "description": "Default PM review range for unlevered beta."},
-    "size_premium": {"low": 0.00, "high": 0.08, "description": "Default PM review range for size premium."},
+    "size_premium": {
+        "low": -0.001,
+        "high": 0.08,
+        "description": "PM review range for size premium; CRSP mega-cap deciles can be mildly negative.",
+    },
     "cost_of_debt": {"low": 0.00, "high": 0.20, "description": "Default PM review range for pre-tax cost of debt."},
     "equity_weight": {"low": 0.20, "high": 1.00, "description": "Default PM review range for equity weight."},
     "debt_weight": {"low": 0.00, "high": 0.80, "description": "Default PM review range for debt weight."},

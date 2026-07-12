@@ -167,6 +167,20 @@ def test_analyst_prep_pack_maps_drivers_flags_and_public_comps(monkeypatch):
     assert pack.evidence_packet_ids == [7]
 
 
+def test_source_quality_is_partial_when_real_and_partial_profiles_are_mixed():
+    from src.stage_04_pipeline import analyst_prep_pack
+
+    quality = analyst_prep_pack._source_quality_from_packets(
+        [
+            {"run_metadata": {"source_quality": "real"}},
+            {"run_metadata": {"source_quality": "partial"}},
+        ],
+        comps_available=True,
+        dcf_available=True,
+    )
+
+    assert quality == "partial"
+
 def test_analyst_prep_deferred_queue_proposal_does_not_replace_effective_value(monkeypatch):
     from src.stage_04_pipeline import analyst_prep_pack
 

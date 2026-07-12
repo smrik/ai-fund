@@ -257,3 +257,20 @@ def get_ciq_metric_history(conn: sqlite3.Connection, ticker: str, metric_key: st
         [ticker.upper(), metric_key, limit],
     )
     return _rows_to_dicts(cur)
+
+
+def get_ciq_source_facts_v2(
+    conn: sqlite3.Connection,
+    run_id: int,
+) -> list[dict]:
+    """Return one immutable CIQ run's cell-exact facts in source order."""
+    cur = conn.execute(
+        """
+        SELECT *
+        FROM ciq_source_facts_v2
+        WHERE run_id = ?
+        ORDER BY sheet_name, row_index, column_index
+        """,
+        [run_id],
+    )
+    return _rows_to_dicts(cur)

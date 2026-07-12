@@ -13,7 +13,7 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 
-PARSER_VERSION = "ibm_standard_v2"
+PARSER_VERSION = "ibm_standard_v4"
 REQUIRED_SHEETS = [
     "Financial Statements",
     "Common Size",
@@ -47,6 +47,8 @@ _METRIC_MAP = {
     "Capital Expenditures": "capex",
     "Depreciation & Amort.": "da",
     "Depreciation And Amortization": "da",
+    "D&A For EBITDA": "da_for_ebitda",
+    "Depreciation & Amort., Total": "da_total",
     "Income Tax Expense": "tax",
     "EBT Excl Unusual Items": "ebt_excl_unusual",
     "Total Debt": "debt",
@@ -59,6 +61,91 @@ _METRIC_MAP = {
     "FCF Yield": "fcf_yield",
     "Total Debt/": "debt_to_ebitda",
 }
+
+
+_EXCEL_ERROR_TOKENS = (
+    "#REF!",
+    "#DIV/0!",
+    "#VALUE!",
+    "#NAME?",
+    "#N/A",
+    "#NUM!",
+    "#NULL!",
+    "#SPILL!",
+    "#CALC!",
+    "#FIELD!",
+    "#BLOCKED!",
+    "#UNKNOWN!",
+    "#GETTING_DATA",
+)
+
+
+def _json_safe_cell_value(value: Any) -> Any:
+    """Preserve cached values without introducing non-JSON scalar types."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)
+
+
+def _excel_error_token(value: Any, *, embedded: bool) -> str | None:
+    if value is None:
+        return None
+    text = str(value).upper()
+    for token in _EXCEL_ERROR_TOKENS:
+        if (embedded and token in text) or (not embedded and text == token):
+            return token
+    return None
+
+
+def _cell_provenance(
+    ws: Worksheet,
+    formula_ws: Worksheet | None,
+    row_index: int,
+    column_index: int,
+) -> dict[str, Any]:
+    """Return additive, cell-exact provenance for a cached-value worksheet cell."""
+    cached_cell = ws.cell(row_index, column_index)
+    formula_cell = formula_ws.cell(row_index, column_index) if formula_ws is not None else None
+    formula_value = formula_cell.value if formula_cell is not None else None
+    formula_text = (
+        str(formula_value)
+        if isinstance(formula_value, str) and formula_value.startswith("=")
+        else None
+    )
+    cached_value = _json_safe_cell_value(cached_cell.value)
+    has_cached_value = cached_cell.value not in (None, "")
+    formula_error = _excel_error_token(formula_text, embedded=True)
+    cached_error = _excel_error_token(cached_cell.value, embedded=False)
+
+    if formula_error is not None:
+        formula_status = "formula_error"
+    elif cached_error is not None:
+        formula_status = "cached_error"
+    elif formula_text is not None and has_cached_value:
+        formula_status = "formula_cached"
+    elif formula_text is not None:
+        formula_status = "formula_cache_missing"
+    else:
+        formula_status = "literal"
+
+    coordinate = cached_cell.coordinate
+    return {
+        "row_index": row_index,
+        "source_row_id": f"{ws.title}!{row_index}",
+        "a1_locator": coordinate,
+        "cell_locator": f"{ws.title}!{coordinate}",
+        "formula_text": formula_text,
+        "cached_value": cached_value,
+        "has_formula": formula_text is not None,
+        "has_cached_value": has_cached_value,
+        "formula_status": formula_status,
+        "formula_error": formula_error,
+        "cached_error": cached_error,
+    }
 
 
 def _safe_str(value: Any) -> str:
@@ -218,6 +305,8 @@ def _parse_time_series_sheet(
     ws: Worksheet,
     ticker: str,
     source_file: str,
+    *,
+    formula_ws: Worksheet | None = None,
 ) -> list[dict[str, Any]]:
     data_start_row, period_cols, calc_types = _period_columns(ws)
     records: list[dict[str, Any]] = []
@@ -232,7 +321,14 @@ def _parse_time_series_sheet(
             continue
 
         values = [ws.cell(r, c).value for c, _ in period_cols]
-        has_values = any(v not in (None, "") for v in values)
+        formula_values = (
+            [formula_ws.cell(r, c).value for c, _ in period_cols]
+            if formula_ws is not None
+            else []
+        )
+        has_values = any(v not in (None, "") for v in values) or any(
+            isinstance(v, str) and v.startswith("=") for v in formula_values
+        )
 
         if not has_values:
             section = label
@@ -242,7 +338,8 @@ def _parse_time_series_sheet(
         row_metric_key = _metric_key(label)
         for c, period_date in period_cols:
             raw_value = ws.cell(r, c).value
-            if raw_value in (None, ""):
+            provenance = _cell_provenance(ws, formula_ws, r, c)
+            if raw_value in (None, "") and not provenance["has_formula"]:
                 continue
             value_num = _to_num(raw_value)
             records.append(
@@ -256,11 +353,12 @@ def _parse_time_series_sheet(
                     "calc_type": calc_types.get(c),
                     "column_label": period_date,
                     "column_index": c,
-                    "value_raw": str(raw_value),
+                    "value_raw": "" if raw_value is None else str(raw_value),
                     "value_num": value_num,
                     "unit": unit,
                     "scale_factor": scale,
                     "source_file": source_file,
+                    **provenance,
                 }
             )
 
@@ -307,6 +405,7 @@ def _parse_comps_sheet(
     source_file: str,
     *,
     contiguous_headers: bool,
+    formula_ws: Worksheet | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     records: list[dict[str, Any]] = []
     comps_rows: list[dict[str, Any]] = []
@@ -359,7 +458,8 @@ def _parse_comps_sheet(
                 continue
 
             raw_value = ws.cell(r, c).value
-            if raw_value in (None, ""):
+            provenance = _cell_provenance(ws, formula_ws, r, c)
+            if raw_value in (None, "") and not provenance["has_formula"]:
                 continue
 
             value_num = _to_num(raw_value)
@@ -375,11 +475,12 @@ def _parse_comps_sheet(
                     "calc_type": None,
                     "column_label": metric_label,
                     "column_index": c,
-                    "value_raw": str(raw_value),
+                    "value_raw": "" if raw_value is None else str(raw_value),
                     "value_num": value_num,
                     "unit": None,
                     "scale_factor": 1.0,
                     "source_file": source_file,
+                    **provenance,
                 }
             )
 
@@ -436,6 +537,26 @@ def _series(
     return deduped
 
 
+def _preferred_series(
+    records: list[dict[str, Any]],
+    keys_by_priority: tuple[str, ...],
+    *,
+    sheet_names: set[str] | None = None,
+    exclude_calc_types: set[str] | None = None,
+) -> list[tuple[str, float]]:
+    """Return the first available, unambiguous metric series by source priority."""
+    for key in keys_by_priority:
+        values = _series(
+            records,
+            {key},
+            sheet_names=sheet_names,
+            exclude_calc_types=exclude_calc_types,
+        )
+        if values:
+            return values
+    return []
+
+
 def _latest_value(
     records: list[dict[str, Any]],
     keys: set[str],
@@ -464,7 +585,11 @@ def _build_valuation_snapshot(
     revenue = _series(long_records, {"revenue"}, sheet_names=fs_sheets)
     operating_income = _series(long_records, {"operating_income"}, sheet_names=fs_sheets)
     capex = _series(long_records, {"capex"}, sheet_names=fs_sheets)
-    da = _series(long_records, {"da"}, sheet_names=fs_sheets)
+    da = _preferred_series(
+        long_records,
+        ("da_total", "da_for_ebitda", "da"),
+        sheet_names=fs_sheets,
+    )
 
     annual_revenue = _series(
         long_records,
@@ -479,7 +604,12 @@ def _build_valuation_snapshot(
         exclude_calc_types=annual_exclusions,
     )
     annual_capex = _series(long_records, {"capex"}, sheet_names=fs_sheets, exclude_calc_types=annual_exclusions)
-    annual_da = _series(long_records, {"da"}, sheet_names=fs_sheets, exclude_calc_types=annual_exclusions)
+    annual_da = _preferred_series(
+        long_records,
+        ("da_total", "da_for_ebitda", "da"),
+        sheet_names=fs_sheets,
+        exclude_calc_types=annual_exclusions,
+    )
     annual_tax_exp = _series(
         long_records,
         {"tax", "income_tax_expense"},
@@ -681,49 +811,70 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         raise FileNotFoundError(workbook_path)
 
     file_hash = _workbook_hash(workbook_path)
-    wb = load_workbook(workbook_path, data_only=True, read_only=False)
+    cached_wb = load_workbook(workbook_path, data_only=True, read_only=False)
+    formula_wb = None
+    try:
+        formula_wb = load_workbook(workbook_path, data_only=False, read_only=False)
+        fingerprint = _validate_contract(cached_wb)
+        ticker = _resolve_ticker(cached_wb)
 
-    fingerprint = _validate_contract(wb)
-    ticker = _resolve_ticker(wb)
-
-    long_records: list[dict[str, Any]] = []
-    long_records.extend(_parse_time_series_sheet(wb["Financial Statements"], ticker, workbook_path.name))
-    long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
-
-    detailed_records, detailed_comps = _parse_comps_sheet(
-        wb["Detailed Comps"],
-        ticker,
-        workbook_path.name,
-        contiguous_headers=True,
-    )
-    long_records.extend(detailed_records)
-
-    summary_records: list[dict[str, Any]] = []
-    summary_comps: list[dict[str, Any]] = []
-    if "Summary Comps" in wb.sheetnames:
-        try:
-            summary_records, summary_comps = _parse_comps_sheet(
-                wb["Summary Comps"],
+        long_records: list[dict[str, Any]] = []
+        long_records.extend(
+            _parse_time_series_sheet(
+                cached_wb["Financial Statements"],
                 ticker,
                 workbook_path.name,
-                contiguous_headers=False,
+                formula_ws=formula_wb["Financial Statements"],
             )
-            long_records.extend(summary_records)
-        except CIQTemplateContractError:
-            # Summary Comps is optional in newer templates.
-            pass
+        )
+        long_records.extend(
+            _parse_time_series_sheet(
+                cached_wb["Common Size"],
+                ticker,
+                workbook_path.name,
+                formula_ws=formula_wb["Common Size"],
+            )
+        )
 
-    valuation_snapshot = _build_valuation_snapshot(ticker, workbook_path.name, long_records)
-    comps_snapshot = detailed_comps + summary_comps
+        detailed_records, detailed_comps = _parse_comps_sheet(
+            cached_wb["Detailed Comps"],
+            ticker,
+            workbook_path.name,
+            contiguous_headers=True,
+            formula_ws=formula_wb["Detailed Comps"],
+        )
+        long_records.extend(detailed_records)
 
-    return CIQWorkbookPayload(
-        ticker=ticker,
-        source_file=workbook_path.name,
-        file_hash=file_hash,
-        parser_version=PARSER_VERSION,
-        template_fingerprint=json.dumps(fingerprint, sort_keys=True),
-        long_form_records=long_records,
-        valuation_snapshot=valuation_snapshot,
-        comps_snapshot=comps_snapshot,
-        rows_parsed=len(long_records),
-    )
+        summary_comps: list[dict[str, Any]] = []
+        if "Summary Comps" in cached_wb.sheetnames:
+            try:
+                summary_records, summary_comps = _parse_comps_sheet(
+                    cached_wb["Summary Comps"],
+                    ticker,
+                    workbook_path.name,
+                    contiguous_headers=False,
+                    formula_ws=formula_wb["Summary Comps"],
+                )
+                long_records.extend(summary_records)
+            except CIQTemplateContractError:
+                # Summary Comps is optional in newer templates.
+                pass
+
+        valuation_snapshot = _build_valuation_snapshot(ticker, workbook_path.name, long_records)
+        comps_snapshot = detailed_comps + summary_comps
+
+        return CIQWorkbookPayload(
+            ticker=ticker,
+            source_file=workbook_path.name,
+            file_hash=file_hash,
+            parser_version=PARSER_VERSION,
+            template_fingerprint=json.dumps(fingerprint, sort_keys=True),
+            long_form_records=long_records,
+            valuation_snapshot=valuation_snapshot,
+            comps_snapshot=comps_snapshot,
+            rows_parsed=len(long_records),
+        )
+    finally:
+        cached_wb.close()
+        if formula_wb is not None:
+            formula_wb.close()

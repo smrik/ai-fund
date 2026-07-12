@@ -79,6 +79,16 @@ def _mm(v: float | None) -> float | None:
     return v / 1e6 if v is not None else None
 
 
+def _net_debt_from_components(data: dict[str, Any] | None) -> float | None:
+    if not data:
+        return None
+    debt = data.get("total_debt")
+    cash = data.get("cash")
+    if debt is None or cash is None:
+        return None
+    return float(debt) - float(cash)
+
+
 def _bounded(value: float | None, low: float, high: float, default: float) -> float:
     if value is None:
         return default
@@ -171,6 +181,20 @@ def _default_resolution_report(
             "severity": "high",
             "preferred_sources": ["ciq_comps_forward", "ciq_comps_ltm", "comps_detail_median", "pm_override"],
             "why_it_matters": "Directly affects terminal value and equity value.",
+        },
+        "ebit_margin_target": {
+            "value": drivers.ebit_margin_target,
+            "fallback_value": defaults["margin"],
+            "severity": "high",
+            "preferred_sources": ["approved_company_driver", "sector_policy", "pm_override"],
+            "why_it_matters": "The terminal margin path can dominate enterprise value.",
+        },
+        "net_debt": {
+            "value": drivers.net_debt,
+            "fallback_value": 0.0,
+            "severity": "high",
+            "preferred_sources": ["ciq_direct_net_debt", "complete_debt_cash_components", "pm_override"],
+            "why_it_matters": "Net debt is a load-bearing enterprise-to-equity bridge input.",
         },
         "dso_start": {
             "value": drivers.dso_start,
@@ -269,16 +293,42 @@ def _canonical_source(source_detail: str) -> str:
 
 def _get_market_data_cached(ticker: str) -> dict[str, Any]:
     try:
-        return md_client.get_market_data(ticker, use_cache=True)
-    except TypeError:
-        return md_client.get_market_data(ticker)
+        try:
+            return md_client.get_market_data(ticker, use_cache=True) or {}
+        except TypeError:
+            return md_client.get_market_data(ticker) or {}
+    except Exception:
+        return {}
 
 
 def _get_historical_financials_cached(ticker: str) -> dict[str, Any]:
     try:
-        return md_client.get_historical_financials(ticker, use_cache=True)
-    except TypeError:
-        return md_client.get_historical_financials(ticker)
+        try:
+            return md_client.get_historical_financials(ticker, use_cache=True) or {}
+        except TypeError:
+            return md_client.get_historical_financials(ticker) or {}
+    except Exception:
+        return {}
+
+
+def _market_data_from_ciq_comps(ticker: str, comps_detail: dict[str, Any] | None) -> dict[str, Any]:
+    target = (comps_detail or {}).get("target") or {}
+
+    def _mm(field: str) -> float | None:
+        value = target.get(field)
+        return float(value) * 1_000_000.0 if value is not None else None
+
+    return {
+        "ticker": ticker,
+        "name": target.get("company_name") or ticker,
+        "current_price": target.get("stock_price"),
+        "market_cap": _mm("market_cap_mm"),
+        "enterprise_value": _mm("tev_mm"),
+        "shares_outstanding": _mm("shares_out_mm"),
+        "cash": _mm("cash_mm"),
+        "total_debt": _mm("debt_mm"),
+        "revenue_ttm": _mm("revenue_ltm_mm"),
+    }
 
 
 def _growth_period_type(source_detail: str) -> str:
@@ -431,6 +481,16 @@ def build_valuation_inputs(
     ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
     ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)
     edgar_bridge = get_bridge_items_from_xbrl(ticker)
+
+    cached_price_available = bool(mkt.get("current_price"))
+    cached_market_cap_available = bool(mkt.get("market_cap"))
+    ciq_market = _market_data_from_ciq_comps(ticker, ciq_comps_detail)
+    for field, value in ciq_market.items():
+        placeholder_name = field == "name" and str(mkt.get(field) or "").upper() == ticker
+        if (not mkt.get(field) or placeholder_name) and value is not None:
+            mkt[field] = value
+    current_price_source = "market_cache" if cached_price_available else "ciq_comps"
+    market_cap_source = "market_cache" if cached_market_cap_available else "ciq_comps"
 
     price = float(mkt.get("current_price") or 0)
     sector = mkt.get("sector", "") or ""
@@ -644,17 +704,21 @@ def build_valuation_inputs(
         )
     exit_multiple = _bounded(exit_multiple_raw, 4.0, 30.0, defaults["exit_multiple"])
 
+    comps_net_debt = (ciq_comps or {}).get("target_net_debt")
     net_debt_raw, net_debt_source = _pick(
         [
-            (((ciq or {}).get("total_debt") or 0) - ((ciq or {}).get("cash") or 0) if ciq else None, "ciq"),
-            ((((mkt.get("total_debt") or 0) - (mkt.get("cash") or 0)) if (mkt.get("total_debt") is not None or mkt.get("cash") is not None) else None), "yfinance"),
+            (float(comps_net_debt) * 1_000_000.0 if comps_net_debt is not None else None, "ciq_comps_net_debt"),
+            (_net_debt_from_components(ciq), "ciq"),
+            (_net_debt_from_components(mkt), "yfinance"),
         ],
         0.0,
         "default",
     )
+    comps_shares = (ciq_comps or {}).get("target_shares_out")
     shares_raw, shares_source = _pick(
         [
-            ((ciq or {}).get("shares_outstanding"), "ciq"),
+            (float(comps_shares) * 1_000_000.0 if comps_shares is not None else None, "ciq_current_shares"),
+            ((ciq or {}).get("shares_outstanding"), "ciq_weighted_average_shares"),
             (hist.get("diluted_shares"), "yfinance_diluted"),
             (mkt.get("shares_outstanding"), "yfinance_basic"),
         ],
@@ -686,12 +750,18 @@ def build_valuation_inputs(
         defaults["dio"],
         "default",
     )
-    dio_start = _bounded(dio_raw, 5.0, 220.0, defaults["dio"])
+    dio_lower_bound = 0.1 if dio_source == "ciq" else 5.0
+    dio_start = _bounded(dio_raw, dio_lower_bound, 220.0, defaults["dio"])
     if dio_source != "default":
-        dio_target = _bounded(defaults["dio"] * 0.7 + dio_start * 0.3, 5.0, 220.0, defaults["dio"])
+        dio_target = _bounded(
+            defaults["dio"] * 0.7 + dio_start * 0.3,
+            dio_lower_bound,
+            220.0,
+            defaults["dio"],
+        )
         dio_target_source = f"{dio_source}_blend"
     else:
-        dio_target = _bounded(defaults["dio"], 5.0, 220.0, defaults["dio"])
+        dio_target = _bounded(defaults["dio"], dio_lower_bound, 220.0, defaults["dio"])
         dio_target_source = "default"
 
     dpo_raw, dpo_source = _pick(
@@ -727,7 +797,12 @@ def build_valuation_inputs(
     )
     ronic_terminal = _bounded(ronic_terminal_raw, 0.06, 0.30, defaults["ronic_terminal"])
 
-    non_operating_assets, non_operating_assets_source = _derive_non_operating_assets(float(revenue_base), ciq=ciq, mkt=mkt)
+    if net_debt_source != "default":
+        non_operating_assets, non_operating_assets_source = 0.0, "included_in_net_debt"
+    else:
+        non_operating_assets, non_operating_assets_source = _derive_non_operating_assets(
+            float(revenue_base), ciq=ciq, mkt=mkt
+        )
 
     minority_interest_raw, minority_interest_source = _pick(
         [
@@ -795,7 +870,10 @@ def build_valuation_inputs(
 
     # Gap 1: COGS ratio for accurate DIO/DPO projection (denominator fix)
     cogs_pct_raw, cogs_pct_source = _pick(
-        [(hist.get("cogs_pct_of_revenue"), "yfinance")],
+        [
+            ((ciq or {}).get("cogs_pct_of_revenue"), "ciq"),
+            (hist.get("cogs_pct_of_revenue"), "yfinance"),
+        ],
         0.60,
         "default",
     )
@@ -841,7 +919,15 @@ def build_valuation_inputs(
         cogs_pct_of_revenue=float(cogs_pct_of_revenue),
     )
 
+    wacc_quality_status = getattr(wacc_result, "quality_status", "source_backed")
+    if wacc_quality_status == "degraded_fallback":
+        wacc_source = f"{market_cap_source}|market_beta_assumption"
+    else:
+        wacc_source = "yfinance_capm"
+
     source_lineage = {
+        "current_price": current_price_source,
+        "market_cap": market_cap_source,
         "revenue_base": revenue_source,
         "revenue_growth_near": growth_source,
         "revenue_growth_mid": growth_source,
@@ -865,9 +951,9 @@ def build_valuation_inputs(
         "dio_target": dio_target_source,
         "dpo_start": dpo_source,
         "dpo_target": dpo_target_source,
-        "wacc": "yfinance_capm",
-        "cost_of_equity": "yfinance_capm",
-        "debt_weight": "yfinance_capm",
+        "wacc": wacc_source,
+        "cost_of_equity": wacc_source,
+        "debt_weight": wacc_source,
         "exit_multiple": exit_source,
         "exit_metric": "sector_policy",
         "net_debt": net_debt_source,
@@ -887,33 +973,36 @@ def build_valuation_inputs(
     }
 
     story_profile, story_profile_source = resolve_story_driver_profile(ticker=ticker, sector=sector)
-    story_adjustments = apply_story_driver_adjustments(drivers, story_profile)
-    source_lineage["story_profile"] = story_profile_source
+    story_adjustments = apply_story_driver_adjustments(drivers, story_profile) if apply_overrides else None
+    effective_story_adjustments = story_adjustments or {}
+    source_lineage["story_profile"] = (
+        story_profile_source if apply_overrides else f"{story_profile_source}|advisory_not_applied"
+    )
 
-    # Only stamp story as driver source when there is an actual adjustment.
-    growth_story_active = abs(float(story_adjustments.get("growth_add", 0.0))) > 1e-12 or abs(float(story_adjustments.get("cyclicality_growth_multiplier", 1.0)) - 1.0) > 1e-12
+    # Only stamp story as driver source when there is an applied adjustment.
+    growth_story_active = abs(float(effective_story_adjustments.get("growth_add", 0.0))) > 1e-12 or abs(float(effective_story_adjustments.get("cyclicality_growth_multiplier", 1.0)) - 1.0) > 1e-12
     if growth_story_active:
         source_lineage["revenue_growth_near"] = f"{source_lineage['revenue_growth_near']}|{story_profile_source}"
         source_lineage["revenue_growth_mid"] = f"{source_lineage['revenue_growth_mid']}|{story_profile_source}"
 
-    margin_story_active = abs(float(story_adjustments.get("margin_add", 0.0))) > 1e-12
+    margin_story_active = abs(float(effective_story_adjustments.get("margin_add", 0.0))) > 1e-12
     if margin_story_active:
         source_lineage["ebit_margin_target"] = story_profile_source
 
-    wacc_story_active = abs(float(story_adjustments.get("cyclicality_wacc_add", 0.0)) + float(story_adjustments.get("governance_wacc_add", 0.0))) > 1e-12
+    wacc_story_active = abs(float(effective_story_adjustments.get("cyclicality_wacc_add", 0.0)) + float(effective_story_adjustments.get("governance_wacc_add", 0.0))) > 1e-12
     if wacc_story_active:
         source_lineage["wacc"] = f"{source_lineage['wacc']}|{story_profile_source}"
         source_lineage["cost_of_equity"] = f"{source_lineage['cost_of_equity']}|{story_profile_source}"
 
-    capex_story_active = abs(float(story_adjustments.get("capex_target_add", 0.0))) > 1e-12
-    da_story_active = abs(float(story_adjustments.get("da_target_add", 0.0))) > 1e-12
+    capex_story_active = abs(float(effective_story_adjustments.get("capex_target_add", 0.0))) > 1e-12
+    da_story_active = abs(float(effective_story_adjustments.get("da_target_add", 0.0))) > 1e-12
     if capex_story_active:
         source_lineage["capex_pct_target"] = story_profile_source
     if da_story_active:
         source_lineage["da_pct_target"] = story_profile_source
 
-    exit_cyc_mult = float(story_adjustments.get("exit_multiple_cyclicality_multiplier", 1.0))
-    exit_gov_mult = float(story_adjustments.get("exit_multiple_governance_multiplier", 1.0))
+    exit_cyc_mult = float(effective_story_adjustments.get("exit_multiple_cyclicality_multiplier", 1.0))
+    exit_gov_mult = float(effective_story_adjustments.get("exit_multiple_governance_multiplier", 1.0))
     exit_mult_story_active = abs(exit_cyc_mult * exit_gov_mult - 1.0) > 1e-12
     if exit_mult_story_active:
         source_lineage["exit_multiple"] = f"{source_lineage['exit_multiple']}|{story_profile_source}"
@@ -1005,6 +1094,7 @@ def build_valuation_inputs(
             # story adjustments, PM overrides, or methodology selection.
             "wacc": drivers.wacc,
             "cost_of_equity": drivers.cost_of_equity,
+            "cost_of_debt_after_tax": getattr(wacc_result, "cost_of_debt_after_tax", None),
             "beta_relevered": getattr(wacc_result, "beta_relevered", None),
             "beta_unlevered_median": getattr(wacc_result, "beta_unlevered_median", None),
             "size_premium": getattr(wacc_result, "size_premium", None),
@@ -1015,6 +1105,10 @@ def build_valuation_inputs(
             "equity_risk_premium": policy_erp,
             "selected_method_wacc": getattr(wacc_result, "wacc", None),
             "selected_method_cost_of_equity": getattr(wacc_result, "cost_of_equity", None),
+            "quality_status": getattr(wacc_result, "quality_status", "source_backed"),
+            "missing_inputs": getattr(wacc_result, "missing_inputs", []),
+            "beta_source": getattr(wacc_result, "beta_source", None),
+            "market_cap_source": market_cap_source,
             "method_results": {
                 method: {
                     "wacc": getattr(result, "wacc", None),

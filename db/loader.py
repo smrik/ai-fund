@@ -3,10 +3,14 @@ Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
 import sqlite3
+from hashlib import sha256
 import json
 from typing import Any
 
 from src.utils import utc_now_iso
+
+PROFESSIONAL_MODEL_REVIEW_FINGERPRINT_VERSION = "professional-model-review-v1"
+
 
 
 def _now() -> str:
@@ -251,6 +255,208 @@ def insert_ciq_long_form(conn: sqlite3.Connection, run_id: int, rows: list[dict[
         payload,
     )
     conn.commit()
+
+
+def insert_ciq_source_facts_v2(
+    conn: sqlite3.Connection,
+    run_id: int,
+    rows: list[dict[str, Any]],
+):
+    """Persist the complete cell-exact v4 fact set for one immutable CIQ run."""
+    if not rows:
+        return
+
+    optional_defaults: dict[str, Any] = {
+        "section_name": None,
+        "metric_key": None,
+        "period_date": None,
+        "calc_type": None,
+        "column_label": None,
+        "value_raw": None,
+        "value_num": None,
+        "unit": None,
+        "scale_factor": 1.0,
+        "formula_text": None,
+        "cached_value": None,
+        "formula_error": None,
+        "cached_error": None,
+    }
+    required_fields = {
+        "ticker",
+        "sheet_name",
+        "row_index",
+        "source_row_id",
+        "row_label",
+        "column_index",
+        "a1_locator",
+        "cell_locator",
+        "source_file",
+        "has_formula",
+        "has_cached_value",
+        "formula_status",
+    }
+
+    payload: list[dict[str, Any]] = []
+    source_cells: set[tuple[str, int, int]] = set()
+    for position, row in enumerate(rows):
+        item = dict(row)
+        missing = sorted(field for field in required_fields if field not in item)
+        if missing:
+            raise ValueError(
+                f"CIQ source fact {position} is missing v4 provenance fields: "
+                f"{', '.join(missing)}"
+            )
+
+        try:
+            row_index = int(item["row_index"])
+            column_index = int(item["column_index"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"CIQ source fact {position} has invalid row/column identity"
+            ) from exc
+        if row_index <= 0 or column_index <= 0:
+            raise ValueError(
+                f"CIQ source fact {position} has invalid row/column identity"
+            )
+
+        sheet_name = str(item["sheet_name"])
+        source_cell = (sheet_name, row_index, column_index)
+        if source_cell in source_cells:
+            raise ValueError(
+                f"Duplicate CIQ source cell in run {run_id}: "
+                f"{sheet_name}!R{row_index}C{column_index}"
+            )
+        source_cells.add(source_cell)
+
+        source_row_id = f"{sheet_name}!{row_index}"
+        if item["source_row_id"] != source_row_id:
+            raise ValueError(
+                f"CIQ source fact {position} source_row_id does not match row identity"
+            )
+        cell_locator = f"{sheet_name}!{item['a1_locator']}"
+        if item["cell_locator"] != cell_locator:
+            raise ValueError(
+                f"CIQ source fact {position} cell_locator does not match A1 identity"
+            )
+
+        for field, default in optional_defaults.items():
+            item.setdefault(field, default)
+        for field in ("has_formula", "has_cached_value"):
+            if item[field] not in (False, True, 0, 1):
+                raise ValueError(f"CIQ source fact {position} has invalid {field}")
+            item[field] = int(bool(item[field]))
+
+        item["run_id"] = run_id
+        item["row_index"] = row_index
+        item["column_index"] = column_index
+        payload.append(item)
+
+    conn.executemany(
+        """
+        INSERT INTO ciq_source_facts_v2 (
+            run_id, ticker, sheet_name, section_name, row_index,
+            source_row_id, row_label, metric_key, period_date, calc_type,
+            column_label, column_index, a1_locator, cell_locator,
+            value_raw, value_num, unit, scale_factor, source_file,
+            formula_text, cached_value, has_formula, has_cached_value,
+            formula_status, formula_error, cached_error
+        ) VALUES (
+            :run_id, :ticker, :sheet_name, :section_name, :row_index,
+            :source_row_id, :row_label, :metric_key, :period_date, :calc_type,
+            :column_label, :column_index, :a1_locator, :cell_locator,
+            :value_raw, :value_num, :unit, :scale_factor, :source_file,
+            :formula_text, :cached_value, :has_formula, :has_cached_value,
+            :formula_status, :formula_error, :cached_error
+        )
+        ON CONFLICT(run_id, sheet_name, row_index, column_index) DO NOTHING
+        """,
+        payload,
+    )
+    conn.commit()
+
+
+def ensure_ciq_source_facts_v2(
+    conn: sqlite3.Connection,
+    run_id: int,
+    rows: list[dict[str, Any]],
+) -> bool:
+    """Verify a complete v2 fact set, or backfill it only when entirely absent.
+
+    Returns True when an empty compatibility state was backfilled and False
+    when the exact immutable fact set was already present. Partial or
+    identity-inconsistent states fail without being modified.
+    """
+    expected_identities: list[tuple[str, int, int, str, str, str]] = []
+    for position, row in enumerate(rows):
+        try:
+            expected_identities.append(
+                (
+                    str(row["sheet_name"]),
+                    int(row["row_index"]),
+                    int(row["column_index"]),
+                    str(row["source_row_id"]),
+                    str(row["a1_locator"]),
+                    str(row["cell_locator"]),
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"CIQ source fact {position} has incomplete v4 cell identity"
+            ) from exc
+
+    expected_identity_set = set(expected_identities)
+    if len(expected_identity_set) != len(expected_identities):
+        raise ValueError(f"CIQ run {run_id} contains duplicate source-cell identities")
+
+    def _stored_rows() -> list[sqlite3.Row | tuple[Any, ...]]:
+        return conn.execute(
+            """
+            SELECT
+                sheet_name,
+                row_index,
+                column_index,
+                source_row_id,
+                a1_locator,
+                cell_locator
+            FROM ciq_source_facts_v2
+            WHERE run_id = ?
+            """,
+            [run_id],
+        ).fetchall()
+
+    stored_rows = _stored_rows()
+    backfilled = False
+    if not stored_rows:
+        insert_ciq_source_facts_v2(conn, run_id, rows)
+        stored_rows = _stored_rows()
+        backfilled = True
+    elif len(stored_rows) != len(expected_identities):
+        raise RuntimeError(
+            f"Partial ciq_source_facts_v2 state for run {run_id}: "
+            f"expected {len(expected_identities)} facts, found {len(stored_rows)}"
+        )
+
+    stored_identities = {
+        (
+            str(row[0]),
+            int(row[1]),
+            int(row[2]),
+            str(row[3]),
+            str(row[4]),
+            str(row[5]),
+        )
+        for row in stored_rows
+    }
+    if len(stored_identities) != len(stored_rows):
+        raise RuntimeError(
+            f"CIQ source-cell uniqueness check failed for run {run_id}"
+        )
+    if stored_identities != expected_identity_set:
+        raise RuntimeError(
+            f"CIQ source-cell identity mismatch for run {run_id}; "
+            "immutable v2 facts were not modified"
+        )
+    return backfilled
 
 
 def upsert_ciq_valuation_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
@@ -1139,6 +1345,148 @@ def insert_pm_decision_queue_event(conn: sqlite3.Connection, row: dict[str, Any]
     )
     conn.commit()
     return int(cursor.lastrowid)
+
+
+def insert_professional_model_review_event(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+) -> int:
+    """Append one professional-model review event without committing.
+
+    Approval transitions use ``BEGIN IMMEDIATE`` in the stage-04 review
+    service, so this low-level helper deliberately leaves transaction control
+    to its caller.
+    """
+    item = dict(row)
+    for field_name in ("ticker", "approval_key", "approval_scope", "actor"):
+        item[field_name] = str(item.get(field_name) or "").strip()
+        if not item[field_name]:
+            raise ValueError(f"{field_name} is required")
+    item["ticker"] = item["ticker"].upper()
+    reviewed_values = item.get("reviewed_values")
+    metadata = item.get("metadata") or {}
+    fingerprint_version = str(metadata.get("fingerprint_version") or "").strip()
+    if fingerprint_version != PROFESSIONAL_MODEL_REVIEW_FINGERPRINT_VERSION:
+        raise ValueError(
+            "unsupported professional-model review fingerprint version"
+        )
+    item["reviewed_values_json"] = json.dumps(
+        reviewed_values,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    item["metadata_json"] = json.dumps(
+        metadata,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    fingerprint_payload = {
+        "approval_key": item["approval_key"],
+        "fingerprint_version": fingerprint_version,
+        "reviewed_values": reviewed_values,
+        "scope": item["approval_scope"],
+    }
+    if item["approval_scope"].startswith("scenario_driver:"):
+        fingerprint_payload["requirement_hash"] = metadata.get("requirement_hash")
+        fingerprint_payload["review_context"] = metadata.get("review_context") or {}
+    expected_fingerprint = sha256(
+        json.dumps(
+            fingerprint_payload, sort_keys=True, separators=(",", ":"),
+            ensure_ascii=False, allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if str(item.get("reviewed_value_fingerprint") or "").lower() != expected_fingerprint:
+        raise ValueError("reviewed-value fingerprint does not match canonical event content")
+    cursor = conn.execute(
+        """
+        INSERT INTO professional_model_review_events_v3 (
+            created_at, ticker, model_run_id, approval_key, approval_scope,
+            event_type, state, reviewed_values_json,
+            reviewed_value_fingerprint, input_hash, result_hash, source_hash,
+            manifest_hash, workbook_hash, qa_hash, review_evidence_hash, actor,
+            rationale, parent_event_id, supersedes_event_id, metadata_json
+        ) VALUES (
+            :created_at, :ticker, :model_run_id, :approval_key, :approval_scope,
+            :event_type, :state, :reviewed_values_json,
+            :reviewed_value_fingerprint, :input_hash, :result_hash, :source_hash,
+            :manifest_hash, :workbook_hash, :qa_hash, :review_evidence_hash,
+            :actor, :rationale, :parent_event_id, :supersedes_event_id,
+            :metadata_json
+        )
+        """,
+        item,
+    )
+    return int(cursor.lastrowid)
+
+
+def _professional_model_review_row_to_dict(
+    row: sqlite3.Row | dict[str, Any],
+) -> dict[str, Any]:
+    item = dict(row)
+    item["event_id"] = item.pop("id")
+    item["reviewed_values"] = json.loads(item.pop("reviewed_values_json"))
+    item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
+    return item
+
+
+def load_professional_model_review_event(
+    conn: sqlite3.Connection,
+    event_id: int,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT id, created_at, ticker, model_run_id, approval_key,
+               approval_scope, event_type, state, reviewed_values_json,
+               reviewed_value_fingerprint, input_hash, result_hash,
+               source_hash, manifest_hash, workbook_hash, qa_hash,
+               review_evidence_hash, actor, rationale, parent_event_id, supersedes_event_id, metadata_json
+        FROM professional_model_review_events_v3
+        WHERE id = ?
+        """,
+        [int(event_id)],
+    ).fetchone()
+    if row is None:
+        return None
+    return _professional_model_review_row_to_dict(row)
+
+
+def list_professional_model_review_events(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    model_run_id: int | None = None,
+    approval_key: str | None = None,
+    approval_scope: str | None = None,
+) -> list[dict[str, Any]]:
+    where = ["ticker = ?"]
+    params: list[Any] = [str(ticker).upper()]
+    if model_run_id is not None:
+        where.append("model_run_id = ?")
+        params.append(int(model_run_id))
+    if approval_key is not None:
+        where.append("approval_key = ?")
+        params.append(str(approval_key))
+    if approval_scope is not None:
+        where.append("approval_scope = ?")
+        params.append(str(approval_scope))
+    rows = conn.execute(
+        f"""
+        SELECT id, created_at, ticker, model_run_id, approval_key,
+               approval_scope, event_type, state, reviewed_values_json,
+               reviewed_value_fingerprint, input_hash, result_hash,
+               source_hash, manifest_hash, workbook_hash, qa_hash,
+               review_evidence_hash, actor, rationale, parent_event_id, supersedes_event_id, metadata_json
+        FROM professional_model_review_events_v3
+        WHERE {' AND '.join(where)}
+        ORDER BY id ASC
+        """,
+        params,
+    ).fetchall()
+    return [_professional_model_review_row_to_dict(row) for row in rows]
 
 
 def insert_pending_assumption_change(conn: sqlite3.Connection, row: dict[str, Any]) -> int:

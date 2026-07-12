@@ -686,3 +686,351 @@ export interface RunPayload {
   result?: unknown;
   error?: string | null;
 }
+
+export type ProfessionalModelKnownState =
+  | "UNVERIFIED"
+  | "BLOCKED"
+  | "NEEDS_PM_REVIEW"
+  | "PARTIAL"
+  | "FULL";
+
+export interface ProfessionalModelArtifactIdentity {
+  filename?: string | null;
+  artifact_hash?: string | null;
+  workbook_hash?: string | null;
+  manifest_hash?: string | null;
+  model_input_hash?: string | null;
+  result_hash?: string | null;
+  source_hash?: string | null;
+  source_run_id?: string | number | null;
+  build_run_id?: string | number | null;
+  built_at?: string | null;
+  verified_at?: string | null;
+  size_bytes?: number | null;
+}
+
+export interface ProfessionalModelHashTuple {
+  source_sha256: string | null;
+  model_input_sha256: string | null;
+  result_sha256: string | null;
+  manifest_sha256: string | null;
+  workbook_sha256: string | null;
+  qa_report_sha256: string | null;
+  review_evidence_sha256: string | null;
+}
+
+export interface ProfessionalModelTransportIdentity {
+  model_run_id: number;
+  hashes: ProfessionalModelHashTuple;
+}
+
+export interface ProfessionalModelCalculationVerification {
+  state?: string | null;
+  status?: string | null;
+  verified?: boolean | null;
+  engine?: string | null;
+  message?: string | null;
+  verified_at?: string | null;
+}
+
+export interface ProfessionalModelRequirement {
+  requirement_id: string;
+  label: string;
+  status?: string | null;
+  owner?: string | null;
+  explanation?: string | null;
+  remediation?: string | null;
+  action_label?: string | null;
+  action_href?: string | null;
+  sheet?: string | null;
+}
+
+export interface ProfessionalModelBlocker {
+  reason_code: string;
+  message?: string | null;
+  owner?: string | null;
+  remediation?: string | null;
+  severity?: string | null;
+  sheet?: string | null;
+  cell?: string | null;
+}
+
+export interface ProfessionalModelBlockerGroup {
+  category: string;
+  label?: string | null;
+  count?: number | null;
+  blockers: ProfessionalModelBlocker[];
+}
+
+export interface ProfessionalModelCheck extends Record<string, unknown> {
+  check_id: string;
+  status?: string | null;
+  message?: string | null;
+  difference_or_count?: number | string | null;
+  tolerance_or_expected?: number | string | null;
+}
+
+export interface ProfessionalModelWarning {
+  code: string;
+  message?: string | null;
+  severity?: string | null;
+}
+
+export interface ProfessionalModelSheetSummary {
+  name: string;
+  order?: number | null;
+  status?: string | null;
+  finding_count?: number | null;
+  formula_count?: number | null;
+  cell_count?: number | null;
+}
+
+export interface ProfessionalModelSheetFinding {
+  finding_id?: string | null;
+  reason_code: string;
+  status?: string | null;
+  severity?: string | null;
+  sheet?: string | null;
+  cell?: string | null;
+  message?: string | null;
+  remediation?: string | null;
+}
+
+export interface ProfessionalModelSheetCell {
+  address: string;
+  row?: number | null;
+  column?: number | null;
+  period_type?: string | null;
+  classification?: string | null;
+  formula?: string | null;
+  cached_value?: unknown;
+  displayed_value?: string | null;
+  value?: unknown;
+  number_format?: string | null;
+  lineage?: string | Record<string, unknown> | Array<Record<string, unknown>> | null;
+  comment?: string | null;
+}
+
+export interface ProfessionalModelSheetPayload {
+  ticker: string;
+  model_run_id?: number | null;
+  sheet: string;
+  page?: number;
+  page_size?: number;
+  total_cells?: number;
+  total_pages?: number;
+  cells?: ProfessionalModelSheetCell[];
+  findings?: ProfessionalModelSheetFinding[];
+  workbook_hash?: string | null;
+  returned_cells?: number | null;
+}
+
+export interface ProfessionalModelScenarioValue extends Record<string, unknown> {
+  scenario: string;
+  state?: string | null;
+  value_per_share?: number | null;
+  current_price?: number | null;
+  upside_pct?: number | null;
+}
+
+export interface ProfessionalModelForecastPoint extends Record<string, unknown> {
+  period: string | number;
+  period_type?: string | null;
+  revenue?: number | null;
+  ebit_margin?: number | null;
+  eps?: number | null;
+  fcff?: number | null;
+}
+
+export interface ProfessionalModelDecisionUsefulContent {
+  current_price?: number | null;
+  current_price_source?: string | null;
+  current_price_as_of?: string | null;
+  scenario_valuations?: ProfessionalModelScenarioValue[];
+  forecast_path?: ProfessionalModelForecastPoint[];
+  what_price_implies?: Record<string, unknown> | string | null;
+  variant_estimate_gap?: Record<string, unknown> | string | null;
+  downside_mechanism?: Record<string, unknown> | string | null;
+}
+
+export interface ProfessionalModelDriverValue {
+  driver_key?: string;
+  driver_id?: string;
+  scenario?: string | null;
+  approval_state?: string | null;
+  label?: string | null;
+  value?: unknown;
+  unit?: string | null;
+  source_ref?: string | null;
+  period?: string | null;
+}
+
+export interface ProfessionalModelApprovalArtifactIdentity {
+  model_run_id?: number | null;
+  source_sha256?: string | null;
+  model_input_sha256?: string | null;
+  result_sha256?: string | null;
+  workbook_sha256?: string | null;
+}
+
+export interface ProfessionalModelReviewPermissions {
+  preview?: boolean;
+  approve?: boolean;
+  reject?: boolean;
+}
+
+export interface ProfessionalModelReviewItem {
+  review_id: string;
+  scenario: string;
+  driver_key?: string | null;
+  driver_label?: string | null;
+  driver_definition?: string | null;
+  module?: string | null;
+  unit?: string | null;
+  forecast_periods?: string[];
+  method?: string | null;
+  source_ref?: string | null;
+  value_source?: string | null;
+  as_of?: string | null;
+  artifact_current_path?: Array<number | null> | null;
+  current_path?: Array<number | null> | null;
+  artifact_current_path_status?: string | null;
+  proposed_path?: Array<number | null> | null;
+  proposed_path_status?: string | null;
+  approved_path?: Array<number | null> | null;
+  approved_path_status?: string | null;
+  applied_path?: Array<number | null> | null;
+  applied_path_status?: string | null;
+  latest_event?: Record<string, unknown> | null;
+  latest_event_type?: string | null;
+  reviewer?: string | null;
+  rationale?: string | null;
+  timestamp?: string | null;
+  stale_reason?: string | null;
+  review_context?: Record<string, unknown> | null;
+  materiality?: unknown;
+  impact?: unknown;
+  evidence_locator?: unknown;
+  downstream_dependencies?: string[];
+  requirement_hash?: string | null;
+  approval_identity_fingerprint?: string | null;
+  approval_artifact_identity?: ProfessionalModelApprovalArtifactIdentity | null;
+  actor?: string | null;
+  reviewed_at?: string | null;
+  stale_reasons?: string[];
+  contract_valid?: boolean;
+  contract_issues?: string[];
+  status?: string | null;
+  stale?: boolean;
+  fingerprint?: string | null;
+  preview_id?: number | null;
+  explanation?: string | null;
+  driver_values?: ProfessionalModelDriverValue[];
+  permitted_actions?: ProfessionalModelReviewPermissions;
+}
+
+export interface ProfessionalModelReviewPreview {
+  ticker: string;
+  review_id: string;
+  scenario: string;
+  fingerprint?: string;
+  preview_id?: number | null;
+  preview_fingerprint?: string;
+  artifact_hash?: string | null;
+  transport_identity?: ProfessionalModelTransportIdentity | null;
+  previewed_at?: string | null;
+  warnings?: string[];
+  stale?: boolean;
+  status?: string | null;
+  message?: string | null;
+  driver_values: ProfessionalModelDriverValue[];
+  permitted_actions?: ProfessionalModelReviewPermissions;
+}
+
+export interface ProfessionalModelReviewProgress {
+  required_count?: number | null;
+  approved_count?: number | null;
+  counts?: Record<string, number>;
+}
+
+export interface ProfessionalModelSignoff {
+  status?: string | null;
+  current?: boolean;
+  event_id?: number | null;
+  actor?: string | null;
+  signed_at?: string | null;
+  workbook_hash?: string | null;
+  stale_reasons?: string[];
+}
+
+export interface ProfessionalModelAuditEvent extends Record<string, unknown> {
+  event_id?: number | null;
+  model_run_id?: number | null;
+  approval_key?: string | null;
+  approval_scope?: string | null;
+  event_type?: string | null;
+  state?: string | null;
+  reviewed_values?: unknown[] | null;
+  reviewed_value_fingerprint?: string | null;
+  actor?: string | null;
+  rationale?: string | null;
+  created_at?: string | null;
+  stale?: boolean;
+  stale_reasons?: string[];
+  superseded?: boolean;
+  workbook_hash?: string | null;
+  source_hash?: string | null;
+  input_hash?: string | null;
+  result_hash?: string | null;
+}
+
+export interface ProfessionalModelAuditEventPage {
+  total?: number | null;
+  returned?: number | null;
+  truncated?: boolean;
+}
+
+export interface ProfessionalModelPermittedActions {
+  download?: boolean;
+  rebuild?: boolean;
+  signoff?: boolean;
+}
+
+export interface ProfessionalModelSummaryPayload {
+  ticker: string;
+  state?: string | null;
+  decision_ready?: boolean | null;
+  decision_readiness?: string | null;
+  transport_identity?: ProfessionalModelTransportIdentity | null;
+  artifact?: ProfessionalModelArtifactIdentity | null;
+  calculation_verification?: ProfessionalModelCalculationVerification | string | null;
+  requirements?: ProfessionalModelRequirement[];
+  blocker_groups?: ProfessionalModelBlockerGroup[] | Record<string, ProfessionalModelBlocker[]>;
+  blockers?: Array<ProfessionalModelBlocker | string>;
+  warnings?: Array<ProfessionalModelWarning | string>;
+  checks?: ProfessionalModelCheck[];
+  integrity?: Record<string, unknown> | null;
+  valuation_diagnostics?: Record<string, unknown> | null;
+  bridge?: Record<string, unknown> | null;
+  decision_useful?: ProfessionalModelDecisionUsefulContent | null;
+  decision_semantic_qa_verification?: Record<string, unknown> | null;
+  review_contract?: Record<string, unknown> | null;
+  sheets?: ProfessionalModelSheetSummary[];
+  sheet_audit_findings?: ProfessionalModelSheetFinding[];
+  reviews?: ProfessionalModelReviewItem[];
+  review_progress?: ProfessionalModelReviewProgress | null;
+  signoff?: ProfessionalModelSignoff | null;
+  audit_events?: ProfessionalModelAuditEvent[];
+  audit_event_page?: ProfessionalModelAuditEventPage | null;
+  download_request_pinned?: boolean;
+  permitted_actions?: ProfessionalModelPermittedActions | null;
+}
+
+export interface ProfessionalModelActionPayload {
+  ticker: string;
+  status?: string | null;
+  state?: string | null;
+  decision_ready?: boolean | null;
+  message?: string | null;
+  review?: ProfessionalModelReviewItem | null;
+}

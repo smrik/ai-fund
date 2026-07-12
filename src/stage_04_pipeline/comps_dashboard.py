@@ -433,7 +433,26 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             }
 
     if market is None:
-        market = market_data.get_market_data(ticker)
+        try:
+            market = market_data.get_market_data(ticker)
+        except Exception:
+            target_market = comps_detail.get("target") or {}
+            shares_mm = target_market.get("shares_out_mm")
+            market = {
+                "name": target_market.get("company_name") or ticker,
+                "current_price": target_market.get("stock_price"),
+                "shares_outstanding": float(shares_mm) * 1_000_000.0 if shares_mm is not None else None,
+                "market_cap": (
+                    float(target_market["market_cap_mm"]) * 1_000_000.0
+                    if target_market.get("market_cap_mm") is not None
+                    else None
+                ),
+                "enterprise_value": (
+                    float(target_market["tev_mm"]) * 1_000_000.0
+                    if target_market.get("tev_mm") is not None
+                    else None
+                ),
+            }
     peer_rows_source = [row for row in comps_detail.get("peers", []) if row.get("ticker")]
     similarity_scores: dict[str, float] = {}
     similarity_warning: str | None = None
@@ -502,7 +521,15 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     if similarity_warning:
         audit_flags.append(similarity_warning)
 
-    multiples_summary = build_multiples_dashboard_view(ticker)
+    try:
+        multiples_summary = build_multiples_dashboard_view(ticker)
+    except Exception as exc:
+        multiples_summary = {
+            "available": False,
+            "metrics": {},
+            "audit_flags": [f"Historical multiples unavailable: {exc}"],
+        }
+        audit_flags.append(f"Historical multiples unavailable: {exc}")
     metric_options = _metric_options(valuation_by_metric, primary_metric)
     target_vs_peers = _target_vs_peers_payload(
         target,
@@ -525,6 +552,7 @@ def build_comps_dashboard_view(ticker: str) -> dict:
         "ticker": ticker,
         "available": True,
         "target": {
+            "shares_outstanding": market.get("shares_outstanding"),
             **target,
             "current_price": market.get("current_price"),
             "name": market.get("name"),

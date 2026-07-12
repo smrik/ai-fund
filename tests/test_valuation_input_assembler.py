@@ -724,7 +724,7 @@ def test_exit_multiple_uses_opt_in_public_peer_fallback_before_sector_default(mo
     assert out.source_lineage["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
     assert out.ciq_lineage["public_comps_fallback_used"] is True
     assert out.ciq_lineage["public_comps_fallback_peer_count"] == 3
-    assert out.default_resolution["status"] == "review_required"
+    assert out.default_resolution["status"] == "review_required_high"
 
 
 def test_default_resolution_flags_material_unresolved_defaults(monkeypatch):

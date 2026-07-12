@@ -19,7 +19,7 @@ from src.contracts.accounting_evidence import (
     AccountingTopic,
 )
 from src.contracts.assumption_policy import ContractModel
-from src.contracts.evidence_packet import EvidencePacket, EvidencePacketFact, TextEvidenceSnippet
+from src.contracts.evidence_packet import EvidencePacket, EvidencePacketFact, EvidenceSourceRef, TextEvidenceSnippet
 
 
 @dataclass(frozen=True)
@@ -69,7 +69,8 @@ ACCOUNTING_FOCUS_REGISTRY: dict[AccountingFocusKey, AccountingFocusDefinition] =
     AccountingFocusKey.qoe_nonrecurring: _definition(
         AccountingFocusKey.qoe_nonrecurring,
         ("ebit_margin_start", "ebit_margin_target"),
-        ("restructur", "impairment", "nonrecurr", "reorganization", "disposal", "gain", "loss"),
+        ("restructur", "impairment", "nonrecurr", "reorganization", "disposal",
+         "unusual", "severance", "writeoff", "writedown", "abandonment", "settlement"),
         ("note_restructur", "note_impairment", "note_discontinued", "note_other"),
         "Identify disclosed items that may be unusual, non-recurring, or normalization candidates.",
     ),
@@ -121,6 +122,7 @@ class AccountingFocusContext(ContractModel):
     period_vintage_metadata: dict[str, Any] = Field(default_factory=dict)
     selected_facts: list[EvidencePacketFact] = Field(default_factory=list)
     selected_snippets: list[TextEvidenceSnippet] = Field(default_factory=list)
+    selected_source_refs: list[EvidenceSourceRef] = Field(default_factory=list)
     selected_driver_fields: dict[str, Any] = Field(default_factory=dict)
     packet_status: AccountingPacketStatus
     missing_data_status: str
@@ -179,6 +181,8 @@ def _fact_score(fact: EvidencePacketFact, definition: AccountingFocusDefinition)
         score += 15
     if role in {"reported_historical_anchor", "reported_bridge_anchor"}:
         score += 8
+    if metadata.get("dimensions"):
+        score += 20
     return score, _date_key(metadata.get("filing_date")), _date_key(metadata.get("period_end") or fact.metadata.get("period")), fact.fact_id
 
 
@@ -256,9 +260,24 @@ def select_accounting_focus(
     )
     selected_facts: list[EvidencePacketFact] = []
     seen_fact_ids: set[str] = set()
+    fact_name_counts: dict[str, int] = {}
+    fact_name_period_counts: dict[tuple[str, str], int] = {}
     for fact, score in ranked_facts:
         if score[0] < 0 or fact.fact_id in seen_fact_ids:
             continue
+        fact_name_key = _text(fact.fact_name)
+        is_current_driver = _text((fact.metadata or {}).get("fact_role")) == "current_model_driver"
+        period_key = _text(
+            (fact.metadata or {}).get("period_end")
+            or (fact.metadata or {}).get("period")
+            or (fact.metadata or {}).get("period_start")
+        )
+        name_period_key = (fact_name_key, period_key)
+        period_count = fact_name_period_counts.get(name_period_key, 0)
+        if (fact_name_counts.get(fact_name_key, 0) >= 5 or period_count >= 3) and not is_current_driver:
+            continue
+        fact_name_counts[fact_name_key] = fact_name_counts.get(fact_name_key, 0) + 1
+        fact_name_period_counts[name_period_key] = period_count + 1
         selected_facts.append(fact)
         seen_fact_ids.add(fact.fact_id)
         if len(selected_facts) == 25:
@@ -278,6 +297,15 @@ def select_accounting_focus(
         if len(selected_snippets) == 5:
             break
 
+    selected_source_ids = {snippet.source_ref_id for snippet in selected_snippets}
+    selected_source_ids.update(
+        str((fact.metadata or {}).get("source_ref_id"))
+        for fact in selected_facts
+        if (fact.metadata or {}).get("source_ref_id")
+    )
+    selected_source_refs = [
+        source for source in persisted.source_refs if source.source_ref_id in selected_source_ids
+    ]
     selected_driver_fields: dict[str, Any] = {}
     for fact in selected_facts:
         metadata = fact.metadata or {}
@@ -333,6 +361,7 @@ def select_accounting_focus(
         },
         selected_facts=selected_facts,
         selected_snippets=selected_snippets,
+        selected_source_refs=selected_source_refs,
         selected_driver_fields=selected_driver_fields,
         packet_status=status,
         missing_data_status=missing_status,

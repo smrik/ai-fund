@@ -290,6 +290,7 @@ def build_nested_structure(
     comps_detail: dict | None = None,
     comps_analysis: dict | None = None,
     historical_financials: list[dict[str, Any]] | None = None,
+    source_preflight: dict[str, Any] | None = None,
 ) -> dict:
     """
     Transform the flat ~120-key result dict from value_single_ticker() into
@@ -318,6 +319,18 @@ def build_nested_structure(
     driver_consensus = _parse_json_field("driver_consensus_json", [])
     assumption_register = _parse_json_field("assumption_register_json", {})
     assumption_register_summary = _parse_json_field("assumption_register_summary_json", {})
+    source_preflight_payload = source_preflight
+    if source_preflight_payload is None:
+        candidate = r.get("source_preflight")
+        if isinstance(candidate, dict):
+            source_preflight_payload = candidate
+        elif isinstance(candidate, str) and candidate.strip():
+            try:
+                parsed_candidate = json.loads(candidate)
+            except json.JSONDecodeError:
+                parsed_candidate = None
+            if isinstance(parsed_candidate, dict):
+                source_preflight_payload = parsed_candidate
 
     ticker = str(r.get("ticker") or "").upper()
     price = r.get("price")
@@ -408,15 +421,35 @@ def build_nested_structure(
         "wacc": drivers_raw.get("wacc") or _pct_to_dec(r.get("wacc")),
         "cost_of_equity": drivers_raw.get("cost_of_equity") or _pct_to_dec(r.get("cost_of_equity")),
         "cost_of_debt": drivers_raw.get("cost_of_debt"),
-        "risk_free_rate": drivers_raw.get("risk_free_rate"),
-        "equity_risk_premium": drivers_raw.get("equity_risk_premium"),
+        "cost_of_debt_after_tax": r.get("wacc_cost_of_debt_after_tax_raw"),
+        "risk_free_rate": (
+            drivers_raw.get("risk_free_rate")
+            if drivers_raw.get("risk_free_rate") is not None
+            else r.get("wacc_risk_free_rate_raw")
+        ),
+        "equity_risk_premium": (
+            drivers_raw.get("equity_risk_premium")
+            if drivers_raw.get("equity_risk_premium") is not None
+            else r.get("wacc_equity_risk_premium_raw")
+        ),
         "beta_raw": r.get("beta_raw"),
         "beta_unlevered": r.get("beta_unlevered"),
-        "beta_relevered": r.get("beta_relevered"),
-        "size_premium": _size_premium_to_dec(r.get("size_premium")) or 0.0,
+        "beta_relevered": (
+            r.get("wacc_beta_relevered_raw")
+            if r.get("wacc_beta_relevered_raw") is not None
+            else r.get("beta_relevered")
+        ),
+        "size_premium": (
+            r.get("wacc_size_premium_raw")
+            if r.get("wacc_size_premium_raw") is not None
+            else (_size_premium_to_dec(r.get("size_premium")) or 0.0)
+        ),
         "equity_weight": _eq_wt,
         "debt_weight": _dw,
         "peers_used": peers_list,
+        "quality_status": r.get("wacc_quality_status", "source_backed"),
+        "missing_inputs": _parse_json_field("wacc_missing_inputs_json", []),
+        "beta_source": r.get("wacc_beta_source"),
     }
 
     # ── valuation ─────────────────────────────────────────────────────────────
@@ -445,7 +478,12 @@ def build_nested_structure(
         "iv_exit": r.get("iv_exit"),
         "iv_blended": r.get("iv_blended"),
         "ep_iv_base": r.get("ep_iv_base"),
-        "fcfe_iv_base": r.get("fcfe_iv_base"),
+        # The legacy FCFE shortcut is intentionally withheld. A supportable
+        # FCFE value requires an integrated debt roll-forward, after-tax
+        # interest bridge, and net-borrowing schedule; the v1 shortcut does not
+        # meet that standard. Preserve the field with a null value so consumers
+        # fail closed instead of silently using a misleading number.
+        "fcfe_iv_base": None,
         "dcf_ep_gap_pct": r.get("dcf_ep_gap_pct"),
         "comps_iv_ev_ebitda": r.get("comps_iv_ev_ebitda"),
         "comps_iv_ev_ebit": r.get("comps_iv_ev_ebit"),
@@ -456,6 +494,17 @@ def build_nested_structure(
     }
 
     # ── scenarios ─────────────────────────────────────────────────────────────
+    method_availability = {
+        "fcfe": {
+            "status": "unavailable",
+            "reason_code": "integrated_debt_interest_schedule_required",
+            "detail": (
+                "FCFE is withheld until after-tax interest and net borrowing "
+                "tie to an integrated debt and cash schedule."
+            ),
+            "legacy_candidate_omitted": r.get("fcfe_iv_base") is not None,
+        }
+    }
     scenarios = {
         "bear": {
             "probability": r.get("scenario_prob_bear"),
@@ -572,6 +621,7 @@ def build_nested_structure(
         "assumptions": assumptions,
         "wacc": wacc,
         "valuation": valuation,
+        "method_availability": method_availability,
         "scenarios": scenarios,
         "terminal": terminal,
         "health_flags": health_flags,
@@ -589,6 +639,9 @@ def build_nested_structure(
         "assumption_register_summary": assumption_register_summary,
         "drivers_raw": drivers_raw,
     }
+
+    if source_preflight_payload is not None:
+        out["source_preflight"] = source_preflight_payload
 
     if comps_detail is not None:
         out["comps_detail"] = comps_detail
@@ -614,6 +667,7 @@ def export_ticker_json(
     historical_financials: list[dict[str, Any]] | None = None,
     output_dir: Path | str | None = None,
     date_str: str | None = None,
+    source_preflight: dict[str, Any] | None = None,
 ) -> Path:
     """
     Build nested structure and write two JSON files:
@@ -639,6 +693,7 @@ def export_ticker_json(
         comps_detail=comps_detail,
         comps_analysis=comps_analysis,
         historical_financials=historical_financials,
+        source_preflight=source_preflight,
     )
 
     dated_path = output_dir / f"{ticker}_{date_str}.json"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 import threading
 from contextlib import nullcontext
 from pathlib import Path
@@ -651,6 +652,12 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
 
     calls: dict[str, object] = {}
     historicals = [{"period": "FY2025", "revenue": 100.0, "source": "ciq_standard_workbook"}]
+    source_preflight = {
+        "status": "blocked",
+        "blockers": ["formula_reference_errors:24"],
+        "source": {"path": str(tmp_path / "MSFT_Standard.xlsx"), "sha256": "abc123", "run_id": 7},
+        "workbook": {"formula_error_count": 24},
+    }
 
     def _fake_export_ticker_json(result, *, output_dir=None, date_str=None, **kwargs):
         path = Path(output_dir) / f"{result['ticker']}_{date_str}.json"
@@ -668,6 +675,7 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
         calls["export_path"] = path
         calls["export_date_str"] = date_str
         calls["export_historical_financials"] = kwargs.get("historical_financials")
+        calls["export_source_preflight"] = kwargs.get("source_preflight")
         return path
 
     def _fake_build_advanced_dcf_model(ticker, *, json_path=None, guided_workup_path=None, **kwargs):
@@ -685,11 +693,13 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
     monkeypatch.setattr(json_exporter, "export_ticker_json", _fake_export_ticker_json)
     monkeypatch.setattr(advanced_dcf_model, "build_advanced_dcf_model", _fake_build_advanced_dcf_model)
     monkeypatch.setattr(guided, "_historical_financials_for_guided_json", lambda ticker, result: historicals)
+    monkeypatch.setattr(guided, "_source_preflight_for_guided_json", lambda ticker, result, workup: source_preflight)
 
     workup = {
         "ticker": "MSFT",
         "run_stamp": "20260703T000000Z",
         "output_dir": str(tmp_path / "guided"),
+        "database": {"mode": "isolated_snapshot", "path": str(tmp_path / "isolated.db")},
         "analyst_prep": {"thesis_cards": [{"title": "Current run thesis"}]},
         "queue_decisions": [],
         "latest_model": {
@@ -713,12 +723,90 @@ def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path,
     assert calls["export_result"] == workup["latest_model"]["deterministic"]["batch_row"]
     assert calls["export_date_str"] == "20260703T000000Z"
     assert calls["export_historical_financials"] == historicals
+    assert calls["export_source_preflight"] == source_preflight
     assert calls["build_json_path"] == tmp_path / "guided" / "MSFT" / "20260703T000000Z-valuation.json"
     assert Path(result["valuation_json"]).exists()
     assert not Path(calls["export_path"]).exists()
     written_json = json.loads(Path(result["valuation_json"]).read_text(encoding="utf-8"))
     assert written_json["historical_financials"] == historicals
     assert not calls["guided_workup_path"].exists()
+
+
+def test_guided_source_preflight_fingerprints_actual_msft_against_isolated_db(tmp_path: Path) -> None:
+    from ciq.workbook_parser import parse_ciq_workbook
+
+    workbook = Path("data/exports/MSFT_Standard.xlsx").resolve()
+    payload = parse_ciq_workbook(workbook)
+    db_path = tmp_path / "isolated.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE ciq_ingest_runs (
+                id INTEGER PRIMARY KEY,
+                run_key TEXT,
+                source_file TEXT,
+                file_hash TEXT,
+                ticker TEXT,
+                parser_version TEXT,
+                ingest_ts TEXT,
+                status TEXT,
+                error_message TEXT,
+                template_fingerprint TEXT,
+                rows_parsed INTEGER,
+                as_of_date TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO ciq_ingest_runs
+                (id, run_key, source_file, file_hash, ticker, parser_version,
+                 ingest_ts, status, rows_parsed, as_of_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                77,
+                f"{payload.file_hash}:{payload.parser_version}",
+                payload.source_file,
+                payload.file_hash,
+                "MSFT",
+                payload.parser_version,
+                "2026-07-11T20:00:00Z",
+                "completed",
+                payload.rows_parsed,
+                payload.valuation_snapshot["as_of_date"],
+            ),
+        )
+
+    manifest = guided._source_preflight_for_guided_json(
+        "MSFT",
+        {
+            "ciq_source_file": str(workbook),
+            "ciq_run_id": 77,
+            "ciq_comps_run_id": 77,
+        },
+        {"database": {"mode": "isolated_snapshot", "path": str(db_path)}},
+    )
+
+    assert manifest["source"]["path"] == str(workbook)
+    assert manifest["source"]["sha256"] == payload.file_hash
+    assert manifest["source"]["run_id"] == 77
+    assert manifest["source"]["db_path"] == str(db_path.resolve())
+    assert manifest["workbook"]["formula_error_count"] == 24
+    assert manifest["status"] == "blocked"
+    assert manifest["model_binding"]["status"] == "matched"
+
+
+def test_guided_source_preflight_fails_closed_when_source_cannot_be_resolved(tmp_path: Path) -> None:
+    manifest = guided._source_preflight_for_guided_json(
+        "NO_SOURCE",
+        {"ciq_source_file": "missing_standard.xlsx", "ciq_run_id": 9},
+        {"database": {"mode": "isolated_snapshot", "path": str(tmp_path / "missing.db")}},
+    )
+
+    assert manifest["status"] == "blocked"
+    assert manifest["workbook"]["formula_error_count"] == "unavailable"
+    assert any(str(item).startswith("source_preflight_unavailable:") for item in manifest["blockers"])
 
 
 def test_friction_draft_write_never_clobbers_existing_same_day_file(tmp_path: Path, monkeypatch) -> None:

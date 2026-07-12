@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import math
 from typing import Literal
 
 from src.stage_02_valuation.valuation_types import (
@@ -432,19 +433,20 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
 
     equity_value = enterprise_value_total - non_equity_claims
 
-    # Gap 3 (Phase A): project shares through the forecast horizon for dilution/buybacks.
-    terminal_shares = d.shares_outstanding * (1.0 + d.annual_dilution_pct) ** FORECAST_YEARS
-    terminal_shares = max(terminal_shares, 1.0)
+    # Present equity value is divided by valuation-date diluted shares. Forecast
+    # share paths belong in EPS/dilution diagnostics; terminal shares are not a
+    # present-value denominator.
+    current_shares = max(d.shares_outstanding, 1.0)
 
-    iv_blended = equity_value / terminal_shares
+    iv_blended = equity_value / current_shares
 
     iv_gordon = None
     if gordon_valid and pv_tv_gordon is not None:
-        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / terminal_shares
+        iv_gordon = (pv_fcff_sum + pv_tv_gordon + d.non_operating_assets - non_equity_claims) / current_shares
 
     iv_exit = None
     if exit_valid and pv_tv_exit is not None:
-        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / terminal_shares
+        iv_exit = (pv_fcff_sum + pv_tv_exit + d.non_operating_assets - non_equity_claims) / current_shares
 
     terminal_reinvestment = terminal_year.reinvestment
     terminal_reinvestment_rate = terminal_reinvestment / terminal_year.nopat if terminal_year.nopat > 0 else None
@@ -455,9 +457,15 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
     roic_consistency_flag = bool(
         implied_roic is not None and (implied_roic < 0.02 or implied_roic > 0.35)
     )
-    nwc_driver_quality_flag = bool(
-        min(d.dso_start, d.dso_target, d.dio_start, d.dio_target, d.dpo_start, d.dpo_target) > 0
+    nwc_day_inputs = (
+        d.dso_start,
+        d.dso_target,
+        d.dio_start,
+        d.dio_target,
+        d.dpo_start,
+        d.dpo_target,
     )
+    nwc_driver_quality_flag = not all(math.isfinite(value) and value > 0 for value in nwc_day_inputs)
 
     tv_pct_of_ev = None
     if enterprise_value_operations > 0:
@@ -483,7 +491,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
             dcf_ep_gap_pct = (ep_enterprise_value - enterprise_value_operations) / enterprise_value_operations
             ep_reconcile_flag = abs(dcf_ep_gap_pct) <= 0.15
         ep_equity = ep_enterprise_value + d.non_operating_assets - non_equity_claims
-        ep_intrinsic_value_per_share = ep_equity / terminal_shares
+        ep_intrinsic_value_per_share = ep_equity / current_shares
 
     fcfe_iv, fcfe_equity_value, fcfe_terminal_value, cost_of_equity_used = _compute_fcfe(
         d=d,
@@ -491,7 +499,7 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         fcff_11_for_gordon=fcff_11_for_gordon,
         nopat_11=nopat_11,
         non_equity_claims=non_equity_claims,
-        shares_out=terminal_shares,
+        shares_out=current_shares,
     )
 
     health_flags = {

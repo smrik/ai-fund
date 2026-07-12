@@ -61,3 +61,16 @@ def test_get_business_description_falls_back_to_edgar_item1(monkeypatch, tmp_pat
     assert out is not None
     assert out["source"] == "edgar_item1_business"
     assert "consulting solutions" in out["text"]
+
+def test_cache_only_mode_never_calls_yfinance(monkeypatch, tmp_path):
+    db_path = _init_temp_db(tmp_path)
+    monkeypatch.setattr(company_descriptions, "DB_PATH", db_path)
+    monkeypatch.setenv("ALPHA_POD_MARKET_CACHE_ONLY", "1")
+
+    def _unexpected_yfinance(ticker: str):
+        raise AssertionError("cache-only mode attempted a live yfinance request")
+
+    monkeypatch.setattr(company_descriptions, "_fetch_yfinance_business_description", _unexpected_yfinance)
+    monkeypatch.setattr(company_descriptions, "_extract_edgar_item1_business", lambda ticker: None)
+
+    assert company_descriptions.get_business_description("IBM") is None

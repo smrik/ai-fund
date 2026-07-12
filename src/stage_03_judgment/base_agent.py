@@ -12,15 +12,40 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
-from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from typing import Any, Callable
+
+try:
+	from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
+except ModuleNotFoundError:
+	class _MissingOpenAIClient:
+		"""Import-safe placeholder for deterministic and Codex-backed runs."""
+
+		def __init__(self, **_: Any):
+			self.base_url = _.get("base_url", "")
+
+		def __getattr__(self, name: str) -> Any:
+			raise RuntimeError(
+				"The openai package is required for live provider-backed agent calls; "
+				"install requirements.txt or use heuristic/Codex mode."
+			)
+
+	class RateLimitError(Exception):
+		pass
+
+	class APITimeoutError(Exception):
+		pass
+
+	class APIConnectionError(Exception):
+		pass
+
+	OpenAI = _MissingOpenAIClient
 
 from config import LLM_MODEL, LLM_BASE_URL
 
 # Retry config for transient API errors
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = [5, 15, 30]  # seconds to wait before each retry attempt
-_CODEX_DEFAULT_MODEL = "gpt-5.6-luna"
+_CODEX_DEFAULT_MODEL = "gpt-5.5"
 _CODEX_DEFAULT_EFFORT = "low"
 _CODEX_TIMEOUT_SECONDS = 120
 _CODEX_PROMPT_PREAMBLE = (
@@ -51,6 +76,17 @@ class BaseAgent:
 		self._codex_enabled = os.getenv("ALPHA_POD_AGENT_BACKEND", "").strip().lower() == "codex"
 		self._codex_model = os.getenv("ALPHA_POD_CODEX_MODEL", _CODEX_DEFAULT_MODEL).strip() or _CODEX_DEFAULT_MODEL
 		self._codex_effort = os.getenv("ALPHA_POD_CODEX_EFFORT", _CODEX_DEFAULT_EFFORT).strip() or _CODEX_DEFAULT_EFFORT
+		self._codex_allow_fallback = os.getenv(
+			"ALPHA_POD_CODEX_ALLOW_FALLBACK", "1"
+		).strip().lower() in {"1", "true", "yes", "on"}
+		try:
+			self._codex_timeout_seconds = int(
+				os.getenv("ALPHA_POD_CODEX_TIMEOUT_SECONDS", str(_CODEX_TIMEOUT_SECONDS))
+			)
+		except ValueError as exc:
+			raise ValueError("ALPHA_POD_CODEX_TIMEOUT_SECONDS must be an integer") from exc
+		if not 30 <= self._codex_timeout_seconds <= 900:
+			raise ValueError("ALPHA_POD_CODEX_TIMEOUT_SECONDS must be between 30 and 900")
 		self._fallback_model = resolved_model
 		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
 		if openrouter_key and "openrouter.ai" in (resolved_base_url or ""):
@@ -172,15 +208,18 @@ class BaseAgent:
 	def _codex_command(self, output_path: Path) -> list[str]:
 		# On Windows the codex launcher is a .cmd shim; bare "codex" fails
 		# executable resolution under subprocess without shell=True.
-		codex_executable = shutil.which("codex") or "codex"
+		codex_executable = (
+			os.getenv("ALPHA_POD_CODEX_EXECUTABLE", "").strip()
+			or shutil.which("codex")
+			or "codex"
+		)
 		return [
 			codex_executable,
 			"exec",
 			"--ephemeral",
-			# Judgment calls are plain prompt->text: the user's MCP servers,
-			# apps, and skills only burn startup time and context budget
-			# (~12k tokens/call measured). Auth still resolves from CODEX_HOME.
-			"--ignore-user-config",
+			# Keep compatibility with older installed CLIs that do not accept
+			# --ignore-user-config. Callers can supply an isolated CODEX_HOME, while
+			# AGENTS_HOME still points at an empty prompt-only skills directory.
 			"-s",
 			"read-only",
 			"-m",
@@ -222,7 +261,7 @@ class BaseAgent:
 				input=self._codex_prompt(user_message),
 				text=True,
 				capture_output=True,
-				timeout=_CODEX_TIMEOUT_SECONDS,
+				timeout=self._codex_timeout_seconds,
 				check=False,
 				env=self._codex_env(temp_dir),
 			)
@@ -370,6 +409,13 @@ class BaseAgent:
 					artifact=artifact,
 				)
 			except Exception as exc:
+				artifact["codex_error"] = {
+					"type": exc.__class__.__name__,
+					"message": str(exc),
+				}
+				self.last_run_artifact = artifact
+				if not self._codex_allow_fallback:
+					raise
 				fallback_active = True
 				_logger.warning(
 					f"{self.name} Codex backend failed; falling back to OpenAI-compatible client: {exc}"

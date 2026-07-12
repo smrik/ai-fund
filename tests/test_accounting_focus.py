@@ -68,6 +68,7 @@ def test_caps_and_no_mutation_and_dimension_preservation():
     dimensional_fact = next(fact for fact in context.selected_facts if fact.fact_id == "fact:0")
     assert dimensional_fact.metadata["dimensions"] == {"us-gaap:ProductOrServiceAxis": "msft:CloudMember"}
     assert context.period_vintage_metadata["selected_accessions"] == ["000-msft-2026"]
+    assert [source.source_ref_id for source in context.selected_source_refs] == ["filing:000-msft-2026"]
 
 
 def test_current_and_comparative_periods_are_retained():
@@ -86,3 +87,39 @@ def test_missing_focus_returns_valid_context_and_unsupported_parent_is_clear():
     assert context.coverage_notes
     with pytest.raises(ValueError, match="belongs to"):
         select_accounting_focus(packet, AccountingFocusKey.qoe_revenue, parent_topic="ev_equity_bridge")
+
+
+def test_nonrecurring_selector_preserves_explicit_restructuring_under_generic_loss_crowding():
+    packet = _packet()
+    packet["facts"] = [
+        {
+            "fact_id": f"fact:generic:{index}",
+            "fact_name": "us-gaap:OperatingIncomeLoss",
+            "value": 1000 + index,
+            "unit": "USD",
+            "metadata": {
+                "fact_role": "xbrl_structured_fact",
+                "xbrl_fact_name": "OperatingIncomeLoss",
+                "period": "2025-06-30",
+            },
+        }
+        for index in range(30)
+    ] + [
+        {
+            "fact_id": "fact:restructuring",
+            "fact_name": "msft:RestructuringCharges",
+            "value": 120.0,
+            "unit": "USD mm",
+            "metadata": {
+                "fact_role": "xbrl_structured_fact",
+                "xbrl_fact_name": "RestructuringCharges",
+                "period": "2025-06-30",
+            },
+        }
+    ]
+    packet["snippets"] = []
+
+    context = select_accounting_focus(packet, AccountingFocusKey.qoe_nonrecurring)
+
+    assert "fact:restructuring" in {fact.fact_id for fact in context.selected_facts}
+    assert len([fact for fact in context.selected_facts if fact.fact_name.endswith("OperatingIncomeLoss")]) <= 5

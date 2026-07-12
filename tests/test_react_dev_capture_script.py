@@ -44,6 +44,7 @@ def test_react_dev_capture_script_exists_and_exposes_route_selection():
         "valuation-dcf",
         "valuation-multiples",
         "valuation-recommendations",
+        "valuation-professional-model",
         "market",
         "research",
         "audit",

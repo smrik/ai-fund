@@ -1,5 +1,11 @@
 # Quote-Terminal UI Redesign And Streamlit Migration
 
+| Field | Value |
+| --- | --- |
+| Current tranche | Professional-model full-state review workflow |
+| Status | In progress - 2026-07-12 |
+| Serves Vision decisions | 1, 2, 7, 10, 11, and 12 |
+
 > **2026-06-12 update:** Streamlit retirement is now a settled decision ([Vision](../../strategy/vision.md) Decision 7). This plan is the canonical workstream for Milestone 2 of the [Six-Month Execution Roadmap](../future/2026-06-12-six-month-execution-roadmap.md): React parity for loop-critical surfaces only (queue review, watchlist, valuation views, Analyst Prep, exports), then `dashboard/` is deleted. Any "keep both working" language below is superseded — Streamlit is bugfix-only.
 
 ## Summary
@@ -43,6 +49,30 @@ Shipped in this workstream already:
   - the repo now has a canonical React route-review harness in `scripts/manual/review_react_route_matrix.py`, with handbook docs for the React runtime and Playwright debugging flow
 
 ## Remaining Scope
+
+### 0. Make the professional MSFT model reviewable and capable of reaching full state
+
+The 2026-07-12 actual-data build produced a mechanically calculated 26-sheet model, but it remains fail-closed on source defects, unsupported modules, degraded WACC evidence, and PM scenario approvals. This tranche connects that model to the strategic React/FastAPI surface without moving valuation logic into the transport or client layers.
+
+Non-negotiables:
+
+- repair or replace the 24 broken `Detailed Comps` formula references with auditable source evidence; never silently bless cached values
+- resolve segment, WACC, and valuation evidence in deterministic Python before lifting their gates
+- keep PM approval as the only path from reviewed finance semantics to an approved/full model state
+- invalidate approvals when the reviewed driver fingerprint changes
+- expose readiness, blockers, checks, lineage, scenario drivers, valuation diagnostics, sheet-level audit findings, and the generated workbook through FastAPI
+- add a React professional-model workbench under the existing valuation route, preserving `/watchlist` and the current ticker-route invariants
+- keep `api/` transport-only and `frontend/` free of valuation calculations
+- run one independent audit lane per workbook sheet, consolidate findings, remediate material defects, rebuild, recalculate, and re-audit
+
+Acceptance criteria:
+
+- every non-PM blocker is either cleared by evidence/mechanics or remains explicitly unresolved with a precise remediation owner
+- Base, Upside, and Downside approvals are explicit, fingerprinted PM actions; no approval is inferred from opening the page or rebuilding the model
+- the React workbench can show the current state, drill into all 26 sheets, preview the approval consequence, approve/reject where permitted, trigger a rebuild, and download the exact workbook
+- API contract tests, frontend tests/build, workbook integrity checks, formula scans, and the canonical route-matrix browser review pass
+- a final completion audit proves the workbook state shown in React matches the workbook, manifest, QA report, and deterministic source data
+
 
 ### 1. Complete route-by-route frontend parity
 

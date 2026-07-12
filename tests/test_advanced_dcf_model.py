@@ -522,3 +522,109 @@ def test_formula_chain_reconciles_to_backend_iv():
     key = f"'[{out_path.name}]DCF_BASE'!B{iv_row}"
     workbook_iv = float(sol[key].value[0, 0])
     assert abs(workbook_iv - backend_iv) <= RECONCILE_TOLERANCE
+
+
+def test_source_only_payload_uses_driver_terminal_weights_when_story_is_advisory():
+    tmp = _workspace_tempdir("source-only-weights")
+    payload = _sample_payload()
+    payload["story_adjustments"] = {}
+    payload["drivers_raw"]["terminal_blend_gordon_weight"] = 0.6
+    payload["drivers_raw"]["terminal_blend_exit_weight"] = 0.4
+    json_path = tmp / "TEST_latest.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    out_path = tmp / "TEST_source_only.xlsx"
+    result = build_advanced_dcf_model("TEST", json_path=json_path, output_path=out_path)
+    assert result == out_path
+    wb = load_workbook(result, data_only=False)
+    ws = wb["Assumptions"]
+    values = {ws.cell(row, 2).value: ws.cell(row, 3).value for row in range(5, ws.max_row + 1)}
+    assert values["terminal_blend_gordon_weight"] == pytest.approx(0.6)
+    assert values["terminal_blend_exit_weight"] == pytest.approx(0.4)
+    thesis_text = " ".join(
+        str(cell.value)
+        for row in wb["Thesis_Drivers"].iter_rows()
+        for cell in row
+        if cell.value is not None
+    )
+    assert "were not applied" in thesis_text
+    assert "advisory; none applied" in thesis_text
+
+
+def test_diagnostic_workbook_fail_closes_unavailable_wacc_and_fcfe_fields():
+    tmp = _workspace_tempdir("fail-closed-fields")
+    payload = _sample_payload()
+    for row in payload["excel_flat"]["wacc"]:
+        if row["key"] in {"cost_of_debt", "risk_free_rate", "equity_risk_premium"}:
+            row["value"] = None
+    payload["excel_flat"]["wacc"].extend([
+        {"key": "quality_status", "value": "degraded_fallback"},
+        {"key": "missing_inputs", "value": ["beta"]},
+        {"key": "beta_source", "value": "market_beta_assumption"},
+    ])
+    payload["source_preflight"] = {
+        "status": "blocked",
+        "blockers": ["formula_reference_errors:24"],
+        "workbook": {"formula_error_count": 24},
+    }
+    payload["diagnostic_shadow_cases"] = {
+        "hold_current_ebit_margin_iv": 120.0,
+        "margin_policy_delta_per_share": 25.0,
+    }
+    for row in payload["excel_flat"]["valuation"]:
+        if row["key"] == "comps_iv_ev_ebitda":
+            row["value"] = 120.0
+        elif row["key"] == "comps_iv_pe":
+            row["value"] = 90.0
+
+    json_path = tmp / "TEST_latest.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    out = build_advanced_dcf_model(
+        "TEST",
+        json_path=json_path,
+        output_path=tmp / "TEST.xlsx",
+    )
+    wb = load_workbook(out, data_only=False)
+
+    wacc = wb["WACC"]
+    assert "'Assumptions'!$C$" in wacc["B7"].value
+    assert wacc["B14"].value == "=IF(COUNT(B7:B8)<2,B6,B7+B9*B8+B10)"
+    assert wacc["B15"].value == "degraded_fallback"
+
+    cover_text = " ".join(str(cell.value) for row in wb["Cover"].iter_rows() for cell in row if cell.value is not None)
+    assert "Source preflight blocked" in cover_text
+    assert "Hold-current-margin shadow IV 120" in cover_text
+    assert "Margin-policy delta / share 25" in cover_text
+    cover_rows = {wb["Cover"].cell(row, 1).value: wb["Cover"].cell(row, 2).value for row in range(1, wb["Cover"].max_row + 1)}
+    assert cover_rows["Overall decision status"] == "BLOCKED"
+    assert cover_rows["Formula reconciliation status"] == "RECONCILED"
+    checks_text = " ".join(str(cell.value) for row in wb["Checks"].iter_rows() for cell in row if cell.value is not None)
+    assert "formula_reference_errors:24" in checks_text
+
+    bridge = wb["Valuation_Bridge"]
+    rows = {bridge.cell(row, 1).value: row for row in range(5, bridge.max_row + 1)}
+    fcfe_row = rows["FCFE cross-check"]
+    assert bridge.cell(fcfe_row, 3).value in {None, ""}
+    assert "Unavailable" in bridge.cell(fcfe_row, 5).value
+    comps_row = rows["Comps"]
+    assert bridge.cell(comps_row, 2).value == 90.0
+    assert bridge.cell(comps_row, 4).value == 120.0
+
+
+def test_cover_fail_closes_missing_source_preflight_but_keeps_formula_reconciliation_separate():
+    tmp = _workspace_tempdir("missing-source-preflight")
+    payload = _sample_payload()
+    payload.pop("source_preflight", None)
+    json_path = tmp / "TEST_latest.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    out = build_advanced_dcf_model("TEST", json_path=json_path, output_path=tmp / "TEST.xlsx")
+    wb = load_workbook(out, data_only=False)
+    cover_rows = {wb["Cover"].cell(row, 1).value: wb["Cover"].cell(row, 2).value for row in range(1, wb["Cover"].max_row + 1)}
+
+    assert cover_rows["Overall decision status"] == "BLOCKED"
+    assert cover_rows["Source preflight"] == "blocked"
+    assert cover_rows["Source formula blockers"] == "unavailable"
+    assert cover_rows["Formula reconciliation status"] == "RECONCILED"
+    checks_rows = {wb["Checks"].cell(row, 1).value: wb["Checks"].cell(row, 3).value for row in range(1, wb["Checks"].max_row + 1)}
+    assert checks_rows["Source workbook preflight"] == '=IF(OR(B15="ready",B15="ok"),"OK",IF(B15="blocked","BLOCKED","REVIEW"))'
+    assert checks_rows["Source formula-reference errors"] == '=IF(NOT(ISNUMBER(B16)),"BLOCKED",IF(B16=0,"OK","BLOCKED"))'
