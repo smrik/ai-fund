@@ -69,15 +69,352 @@ def _fact(
     )
 
 
-@pytest.mark.skip(
-    reason=(
-        "test_extract_filing_presentation_emits_complete_lineage_and_manifest was "
-        "destroyed by an over-broad regex edit on 2026-07-31 and must be rewritten. "
-        "It covered presentation-tree lineage plus coverage-manifest emission."
-    )
-)
 def test_extract_filing_presentation_emits_complete_lineage_and_manifest():
-    raise NotImplementedError("rewrite required — see skip reason")
+    income_role = "http://example.test/role/IncomeStatement"
+    balance_role = "http://example.test/role/BalanceSheet"
+    cash_flow_role = "http://example.test/role/CashFlowStatement"
+    income_root = "us-gaap_IncomeStatementAbstract"
+    income_section = "us-gaap_OperatingRevenueAbstract"
+    revenue = "us-gaap_Revenues"
+    balance_root = "us-gaap_BalanceSheetAbstract"
+    balance_section = "us-gaap_CurrentAssetsAbstract"
+    assets = "us-gaap_Assets"
+    cash_flow_root = "us-gaap_CashFlowStatementAbstract"
+    cash_flow_section = "us-gaap_OperatingActivitiesAbstract"
+    operating_cash = "us-gaap_NetCashProvidedByUsedInOperatingActivities"
+
+    xbrl = _period_xbrl(
+        period_start="2025-01-01",
+        period_end="2025-12-31",
+        revenue_value=100.0,
+        assets_value=500.0,
+        cash_flow_value=50.0,
+    )
+
+    income_root_node = _node(
+        income_root,
+        children=[income_section],
+        label="Income statement",
+        is_abstract=True,
+    )
+    income_root_node.child_preferred_labels = ["Operating revenue section"]
+    income_section_node = _node(
+        income_section,
+        parent=income_root,
+        children=[revenue],
+        depth=1,
+        order=1.0,
+        label="Operating revenue",
+        is_abstract=True,
+    )
+    income_section_node.child_preferred_labels = ["Net sales label"]
+    revenue_node = _node(
+        revenue,
+        parent=income_section,
+        depth=2,
+        order=2.0,
+        label="Revenue",
+    )
+    income_nodes = [income_root_node, income_section_node, revenue_node]
+
+    balance_root_node = _node(
+        balance_root,
+        children=[balance_section],
+        label="Balance sheet",
+        is_abstract=True,
+    )
+    balance_section_node = _node(
+        balance_section,
+        parent=balance_root,
+        children=[assets],
+        depth=1,
+        order=1.0,
+        label="Current assets",
+        is_abstract=True,
+    )
+    balance_section_node.child_preferred_labels = ["Total assets label"]
+    assets_node = _node(
+        assets,
+        parent=balance_section,
+        depth=2,
+        order=2.0,
+        label="Assets",
+    )
+    balance_nodes = [balance_root_node, balance_section_node, assets_node]
+
+    cash_flow_root_node = _node(
+        cash_flow_root,
+        children=[cash_flow_section],
+        label="Cash flow statement",
+        is_abstract=True,
+    )
+    cash_flow_section_node = _node(
+        cash_flow_section,
+        parent=cash_flow_root,
+        children=[operating_cash],
+        depth=1,
+        order=1.0,
+        label="Operating activities",
+        is_abstract=True,
+    )
+    cash_flow_section_node.child_preferred_labels = ["Cash from operations label"]
+    operating_cash_node = _node(
+        operating_cash,
+        parent=cash_flow_section,
+        depth=2,
+        order=2.0,
+        label="Cash from operations",
+    )
+    cash_flow_nodes = [
+        cash_flow_root_node,
+        cash_flow_section_node,
+        operating_cash_node,
+    ]
+
+    xbrl.presentation_trees = {
+        income_role: _tree(income_role, income_root, income_nodes),
+        balance_role: _tree(balance_role, balance_root, balance_nodes),
+        cash_flow_role: _tree(
+            cash_flow_role,
+            cash_flow_root,
+            cash_flow_nodes,
+        ),
+    }
+    xbrl.contexts["segment"] = SimpleNamespace(
+        context_id="segment",
+        entity={"identifier": "0000000001"},
+        period={
+            "type": "duration",
+            "startDate": "2025-01-01",
+            "endDate": "2025-12-31",
+        },
+        dimensions={"segment": "north-america"},
+    )
+    xbrl.parser.facts.update(
+        {
+            "income_root": _fact(
+                income_root,
+                "duration",
+                "100",
+                numeric_value=100.0,
+                fact_id="income-root-fact",
+            ),
+            "income_section": _fact(
+                income_section,
+                "duration",
+                "100",
+                numeric_value=100.0,
+                fact_id="income-section-fact",
+            ),
+            "income_segment": _fact(
+                revenue,
+                "segment",
+                "90",
+                numeric_value=90.0,
+                fact_id="income-segment-fact",
+            ),
+            "balance_root": _fact(
+                balance_root,
+                "instant",
+                "500",
+                numeric_value=500.0,
+                fact_id="balance-root-fact",
+            ),
+            "balance_section": _fact(
+                balance_section,
+                "instant",
+                "500",
+                numeric_value=500.0,
+                fact_id="balance-section-fact",
+            ),
+            "cash_flow_root": _fact(
+                cash_flow_root,
+                "duration",
+                "50",
+                numeric_value=50.0,
+                fact_id="cash-flow-root-fact",
+            ),
+            "cash_flow_section": _fact(
+                cash_flow_section,
+                "duration",
+                "50",
+                numeric_value=50.0,
+                fact_id="cash-flow-section-fact",
+            ),
+        }
+    )
+    income_section_node.weight = 1.0
+    revenue_node.weight = 1.0
+    xbrl.calculation_trees = {
+        income_role: _tree(
+            income_role,
+            income_root,
+            [income_root_node, income_section_node, revenue_node],
+        )
+    }
+
+    filing = _FakeFiling(
+        form="10-K",
+        filing_date="2026-02-01",
+        accession_no="annual-2025",
+        xbrl=xbrl,
+    )
+    result = extract_filing_presentation(
+        filing,
+        ticker="generic",
+        evidence_cutoff="2026-01-31",
+        source_run_id=17,
+    )
+
+    assert result["ticker"] == "GENERIC"
+    assert result["source"] == "sec_xbrl_filing_presentation_v1"
+    assert result["accession"] == "annual-2025"
+    assert result["status"] == "completed"
+    assert result["errors"] == []
+    assert result["fact_count"] == len(result["facts"]) == 10
+    assert {fact["statement"] for fact in result["facts"]} == {
+        "IncomeStatement",
+        "BalanceSheet",
+        "CashFlowStatement",
+    }
+
+    income_facts = [
+        fact
+        for fact in result["facts"]
+        if fact["hierarchy"]["statement_role"] == income_role
+        and not fact["dimensions"]
+    ]
+    assert [fact["concept"] for fact in income_facts] == [
+        income_root,
+        income_section,
+        revenue,
+    ]
+    assert [
+        fact["hierarchy"]["presentation_path"] for fact in income_facts
+    ] == [
+        [income_root],
+        [income_root, income_section],
+        [income_root, income_section, revenue],
+    ]
+    assert [
+        fact["hierarchy"]["presentation_sibling_path"] for fact in income_facts
+    ] == [[], [0], [0, 0]]
+    assert [fact["hierarchy"]["parent_concept"] for fact in income_facts] == [
+        None,
+        income_root,
+        income_section,
+    ]
+    assert [fact["hierarchy"]["depth"] for fact in income_facts] == [0, 1, 2]
+    assert [fact["hierarchy"]["presentation_order"] for fact in income_facts] == [
+        0.0,
+        1.0,
+        2.0,
+    ]
+    assert [fact["label"] for fact in income_facts] == [
+        "Income statement",
+        "Operating revenue",
+        "Revenue",
+    ]
+    assert [
+        fact["hierarchy"]["preferred_label"] for fact in income_facts
+    ] == [None, "Operating revenue section", "Net sales label"]
+    assert [fact["hierarchy"]["is_abstract"] for fact in income_facts] == [
+        True,
+        True,
+        False,
+    ]
+    assert [
+        fact["hierarchy"]["consolidated_view_eligible"] for fact in income_facts
+    ] == [True, True, True]
+    assert [fact["hierarchy"]["line_item_sequence"] for fact in income_facts] == [
+        7,
+        8,
+        9,
+    ]
+
+    revenue_facts = [
+        fact for fact in result["facts"] if fact["concept"] == revenue
+    ]
+    assert len(revenue_facts) == 2
+    dimensioned_revenue = next(fact for fact in revenue_facts if fact["dimensions"])
+    assert dimensioned_revenue["dimensions"] == {"segment": "north-america"}
+    assert dimensioned_revenue["hierarchy"]["consolidated_view_eligible"] is False
+    assert dimensioned_revenue["hierarchy"]["presentation_path"] == [
+        income_root,
+        income_section,
+        revenue,
+    ]
+
+    manifest = result["coverage_manifest"]
+    assert manifest["contract_version"] == "statement_coverage_manifest.v1"
+    assert manifest["ticker"] == "GENERIC"
+    assert manifest["source"] == result["source"]
+    assert manifest["accession"] == "annual-2025"
+    assert manifest["source_run_id"] == 17
+    assert manifest["status"] == "completed"
+    assert manifest["filing_date"] == "2026-02-01"
+    assert manifest["evidence_cutoff"] == "2026-01-31"
+    assert manifest["manifest_id"] == f"sha256:{manifest['manifest_hash']}"
+    assert len(manifest["manifest_hash"]) == 64
+
+    coverage = manifest["coverage"]
+    entries = coverage["entries"]
+    assert coverage["entry_count"] == len(entries) == 3
+    assert {entry["statement"] for entry in entries} == {
+        "IncomeStatement",
+        "BalanceSheet",
+        "CashFlowStatement",
+    }
+    for entry in entries:
+        entry_facts = [
+            fact
+            for fact in result["facts"]
+            if fact["hierarchy"]["statement_role"] == entry["statement_role"]
+            and fact["statement"] == entry["statement"]
+            and fact["period_start"] == entry["period_start"]
+            and fact["period_end"] == entry["period_end"]
+            and fact["period_type"] == entry["period_type"]
+            and fact["period_kind"] == entry["period_kind"]
+        ]
+        presented_ids = {fact["fact_id"] for fact in entry_facts}
+        consolidated_ids = {
+            fact["fact_id"] for fact in entry_facts if not fact["dimensions"]
+        }
+        dimensioned_ids = {
+            fact["fact_id"] for fact in entry_facts if fact["dimensions"]
+        }
+        assert entry["coverage_key"].startswith("statement-coverage:")
+        assert entry["canonical_roles"] == [entry["statement"]]
+        assert entry["units"] == ["USD"]
+        assert entry["currencies"] == ["USD"]
+        assert set(entry["presented_fact_ids"]) == presented_ids
+        assert set(entry["consolidated_fact_ids"]) == consolidated_ids
+        assert set(entry["dimensioned_fact_ids"]) == dimensioned_ids
+        assert set(entry["presented_fact_ids"]) == (
+            set(entry["consolidated_fact_ids"])
+            | set(entry["dimensioned_fact_ids"])
+        )
+
+    assert manifest["calculation_edge_count"] == len(
+        manifest["calculation_edges"]
+    ) == 2
+    assert {
+        (
+            edge["parent_concept"],
+            edge["child_concept"],
+            edge["weight"],
+            edge["order"],
+        )
+        for edge in manifest["calculation_edges"]
+    } == {
+        (income_root, income_section, 1.0, 1.0),
+        (income_section, revenue, 1.0, 2.0),
+    }
+    assert all(
+        edge["edge_id"].startswith("calculation-edge:")
+        and edge["source_locator"].startswith("https://www.sec.gov/")
+        for edge in manifest["calculation_edges"]
+    )
 
 
 def _period_xbrl(
