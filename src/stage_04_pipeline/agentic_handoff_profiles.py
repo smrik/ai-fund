@@ -2,25 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from src.contracts.assumption_registry import judgment_owned_fields
 from src.contracts.evidence_packet import EvidencePacketKind
 
 
 GROUNDED_OBSERVATION_RUNNER_KEY = "grounded_observation"
 
 
-AGENT_PROPOSABLE_ASSUMPTION_FIELDS = (
-    "revenue_growth_near",
-    "revenue_growth_mid",
-    "ebit_margin_start",
-    "ebit_margin_target",
-    "exit_multiple",
-    "terminal_growth",
-    "ronic_terminal",
-    "wacc",
-    "lease_liabilities",
-    "pension_deficit",
-    "non_operating_assets",
-)
+AGENT_PROPOSABLE_ASSUMPTION_FIELDS = judgment_owned_fields()
 
 
 @dataclass(frozen=True)
@@ -283,6 +272,7 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
             "terminal_value_fragility",
             "wacc_method_disagreement",
             "assumption_inconsistency",
+            "terminal_reinvestment_incoherence",
         ),
         allowed_assumption_fields=(
             "revenue_growth_near",
@@ -290,6 +280,8 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
             "wacc",
             "terminal_growth",
             "ronic_terminal",
+            "capex_pct_target",
+            "da_pct_target",
         ),
         prompt_key="valuation_review",
         translator_rule_group="valuation_review",
@@ -297,6 +289,8 @@ _PROFILES: dict[str, AgenticHandoffProfile] = {
             "Use deterministic valuation facts and scenario outputs already in the packet; do not invent new valuation numbers.",
             "Lead with the expected-value read: the packet includes current_price, per-scenario upside (scenario_upside_pct_*), and probability-weighted expected_upside_pct. State plainly whether the model says the stock is undervalued or overvalued at the current price, and whether the bear/bull asymmetry supports a position.",
             "Stress-test the model's structure, not just its output: a high tv_pct_of_ev means the answer hinges on terminal assumptions (exit_multiple, terminal_growth); check whether growth, margin, and exit-multiple assumptions are internally consistent with each other and with their source_lineage (a sector default deserves more scrutiny than a company-specific input).",
+            "Check terminal reinvestment coherence explicitly. The packet carries capex_pct_target, da_pct_target, terminal_reinvestment_gap_pct and terminal_da_to_capex_ratio. A mature business cannot sustain capex far above D&A forever: in steady state, D&A converges toward capex net of the growth-capex wedge implied by terminal_growth. If terminal_da_to_capex_ratio is well below 1.0, say so and raise terminal_reinvestment_incoherence.",
+            "When you judge terminal reinvestment, ground it in evidence rather than a rule of thumb: use management capex guidance, the stated build-out phase, asset useful lives and depreciation policy from the filing text, and the reported capex and D&A history in the packet. Say which evidence drove the number and name the ratio you are proposing.",
             "Raise structural valuation concerns as observations for PM review, not model edits.",
         ),
     ),

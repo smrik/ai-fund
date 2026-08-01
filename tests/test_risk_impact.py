@@ -144,3 +144,29 @@ def test_quantify_risk_impact_returns_base_when_no_overlays(monkeypatch):
     assert out["overlay_results"] == []
     assert out["risk_adjusted_expected_iv"] == out["base_iv"]
     assert out["risk_adjusted_delta_pct"] == 0.0
+
+
+def test_quantify_risk_impact_does_not_value_blocked_inputs(monkeypatch):
+    from src.stage_04_pipeline.risk_impact import quantify_risk_impact
+
+    inputs = _inputs()
+    inputs.valuation_status = "blocked"
+    inputs.valuation_readiness = {
+        "trust_status": "blocked",
+        "reason_codes": [
+            "claim_ledger.material_unclaimed:ciq:investments"
+        ],
+    }
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.risk_impact.build_valuation_inputs",
+        lambda ticker, as_of_date=None, apply_overrides=True: inputs,
+    )
+
+    out = quantify_risk_impact("IBM", RiskImpactOutput())
+
+    assert out["available"] is False
+    assert out["valuation_status"] == "blocked"
+    assert out["overlay_results"] == []
+    assert "ciq:investments" in " ".join(
+        out["blocker"]["reason_codes"]
+    )

@@ -38,6 +38,7 @@ That launcher serves the built frontend and proxies `/api` to this FastAPI app.
 - `GET /api/tickers/{ticker}/workspace`
 - `GET /api/tickers/{ticker}/overview`
 - `GET /api/tickers/{ticker}/valuation/summary`
+- `GET /api/tickers/{ticker}/valuation/outcomes`
 - `GET /api/tickers/{ticker}/valuation/assumptions`
 - `POST /api/tickers/{ticker}/valuation/assumptions/apply`
 - `GET /api/tickers/{ticker}/valuation/wacc`

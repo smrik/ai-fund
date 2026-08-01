@@ -114,6 +114,17 @@ class RiskAgent(BaseAgent):
         sentiment: SentimentOutput,
     ) -> RiskOutput:
         """Calculate position sizing. Returns RiskOutput."""
+        if valuation.valuation_status == "blocked":
+            return RiskOutput(
+                conviction="low",
+                position_size_usd=0.0,
+                position_pct=0.0,
+                suggested_stop_loss_pct=0.0,
+                rationale=(
+                    "Position sizing is blocked because deterministic "
+                    "valuation is not decision-grade."
+                ),
+            )
         val_ctx = valuation.model_dump_json(indent=2)
         sent_ctx = sentiment.model_dump_json(indent=2)
 

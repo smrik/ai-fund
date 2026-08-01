@@ -5,6 +5,7 @@ Prints live progress to console. Human checkpoint is at the end.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 
 from rich.console import Console
@@ -13,6 +14,11 @@ from rich.panel import Panel
 from src.stage_00_data import edgar_client, filing_retrieval
 from src.stage_00_data import market_data as md_client
 from src.stage_00_data.sec_filing_metrics import get_sec_filing_metrics
+from src.stage_02_valuation.claim_ledger import UnreconciledClaimLedgerError
+from src.stage_02_valuation.input_assembler import (
+    BridgeMutationPathError,
+    build_valuation_inputs,
+)
 from src.stage_02_valuation.templates.ic_memo import (
     EarningsSummary,
     FilingsSummary,
@@ -36,6 +42,10 @@ from src.stage_03_judgment.sentiment_agent import SentimentAgent
 from src.stage_03_judgment.thesis_agent import ThesisAgent
 from src.stage_03_judgment.valuation_agent import ValuationAgent
 from src.stage_04_pipeline.agent_cache import AgentRunCache
+from src.stage_04_pipeline.accounting_discovery_ledger import (
+    DiscoveryAccountingResult,
+    build_discovery_accounting_ledger,
+)
 from src.stage_04_pipeline.risk_impact import quantify_risk_impact
 
 console = Console()
@@ -69,6 +79,9 @@ class PipelineOrchestrator:
 
         self.last_qoe_result: dict = {}
         self.last_accounting_recast_result: dict = {}
+        self.last_accounting_discovery_result: DiscoveryAccountingResult | None = (
+            None
+        )
         self.last_industry_result: dict = {}
         self.last_filings_metrics = None
         self.last_filing_contexts: dict[str, filing_retrieval.FilingContextBundle] = {}
@@ -427,6 +440,55 @@ class PipelineOrchestrator:
 
         accounting_recast_result = {}
         accounting_recast_context = ""
+        bridge_context_blocker: dict | None = None
+        valuation_inputs = None
+        current_model_context = (
+            "Exact-once bridge ledger is unavailable. Do not propose a bridge "
+            "reclassification without a stable reported-line identity."
+        )
+        try:
+            valuation_inputs = build_valuation_inputs(
+                ticker,
+                apply_overrides=False,
+            )
+            if valuation_inputs is not None:
+                current_model_context = (
+                    "Current exact-once EV-bridge claim ledger and "
+                    "operating-cash policy:\n"
+                    + json.dumps(
+                        {
+                            "claim_ledger": valuation_inputs.claim_ledger,
+                            "operating_cash_policy": (
+                                valuation_inputs.operating_cash_policy
+                            ),
+                        },
+                        sort_keys=True,
+                    )
+                )
+        except (
+            BridgeMutationPathError,
+            UnreconciledClaimLedgerError,
+        ) as exc:
+            bridge_context_blocker = exc.to_dict()
+            current_model_context = json.dumps(
+                bridge_context_blocker,
+                sort_keys=True,
+            )
+            self._on_warn(
+                "EV-bridge context blocked: "
+                + bridge_context_blocker["message"]
+            )
+        except Exception as exc:
+            bridge_context_blocker = {
+                "status": "blocked",
+                "reason_code": "bridge_context_assembly_failed",
+                "message": str(exc),
+            }
+            current_model_context = json.dumps(
+                bridge_context_blocker,
+                sort_keys=True,
+            )
+            self._on_warn(f"EV-bridge context blocked: {exc}")
         try:
             accounting_recast_result = self._run_cached_step(
                 ticker=ticker,
@@ -437,26 +499,121 @@ class PipelineOrchestrator:
                     "ticker": ticker,
                     "reported_ebit": reported_ebit,
                     "filing_text": filing_context_texts.get("accounting_recast", ""),
+                    "business_context": filings.raw_summary,
+                    "industry_context": industry_context,
+                    "current_model_context": current_model_context,
                 },
                 runner=lambda: self.accounting_recast_agent.analyze(
                     ticker=ticker,
                     reported_ebit=reported_ebit,
                     filing_text=filing_context_texts.get("accounting_recast"),
+                    business_context=filings.raw_summary,
+                    industry_context=industry_context,
+                    current_model_context=current_model_context,
                 ),
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: (
                     f"Recast confidence: {result.get('confidence', 'low')}"
                     f"  |  Adj: {len(result.get('income_statement_adjustments') or [])}"
-                    f"  |  Reclasses: {len(result.get('balance_sheet_reclassifications') or [])}"
+                    f"  |  Reclasses: {len(result.get('reclassify') or [])}"
                 ),
             )
+            routing_payload: dict[str, object]
+            if valuation_inputs is None:
+                routing_payload = bridge_context_blocker or {
+                    "status": "blocked",
+                    "reason_code": "claim_ledger_unavailable",
+                    "message": (
+                        "A reconciled claim ledger is required before an "
+                        "accounting reclassification can enter the PM queue."
+                    ),
+                }
+            else:
+                bundle = filing_contexts.get("accounting_recast")
+                matched_section_ids = sorted(
+                    {
+                        f"{chunk.accession_no}::{chunk.section_key}"
+                        for chunk in (
+                            getattr(bundle, "selected_chunks", []) or []
+                        )
+                    }
+                )
+                retrieval_summary = {
+                    **(
+                        getattr(bundle, "retrieval_summary", {}) or {}
+                    ),
+                    "matched_section_ids": matched_section_ids,
+                }
+                discovery_result = build_discovery_accounting_ledger(
+                    ticker=ticker,
+                    focused_analyses=[
+                        {
+                            "question_id": "orchestrator_accounting_recast",
+                            "question": (
+                                "Which evidenced accounting treatments require "
+                                "a reconciled valuation change?"
+                            ),
+                            "retrieval_summary": retrieval_summary,
+                            "recast": accounting_recast_result,
+                        }
+                    ],
+                    evidence_packet_id=(
+                        f"orchestrator:{ticker}:accounting_recast"
+                    ),
+                    claim_ledger=valuation_inputs.claim_ledger,
+                )
+                self.last_accounting_discovery_result = discovery_result
+                routing_payload = {
+                    "status": (
+                        "blocked"
+                        if discovery_result.rejected_findings
+                        else "reconciled"
+                    ),
+                    "queue_item_count": len(discovery_result.queue_items),
+                    "rejected_findings": (
+                        discovery_result.rejected_findings
+                    ),
+                    "persistence_status": "not_persisted",
+                    "reconciled_claim_ledger": (
+                        discovery_result.reconciled_claim_ledger
+                    ),
+                }
+            accounting_recast_result = {
+                **accounting_recast_result,
+                "bridge_routing": routing_payload,
+            }
             self.last_accounting_recast_result = accounting_recast_result
             if accounting_recast_result.get("approval_required"):
-                self._on_warn("Accounting recast remains advisory — approve any values manually in config/valuation_overrides.yaml")
+                self._on_warn(
+                    "Accounting recast remains advisory — bridge changes require "
+                    "an approved reconciled PM queue pack."
+                )
             accounting_recast_context = build_accounting_recast_context(accounting_recast_result)
         except Exception as exc:
-            self._on_warn(f"AccountingRecastAgent error: {exc}")
+            blocker = (
+                exc.to_dict()
+                if hasattr(exc, "to_dict")
+                else {
+                    "status": "blocked",
+                    "reason_code": "accounting_recast_routing_failed",
+                    "message": str(exc),
+                    "exception_type": type(exc).__name__,
+                }
+            )
+            accounting_recast_result = {
+                **accounting_recast_result,
+                "bridge_routing": blocker,
+                "approval_required": True,
+            }
+            self.last_accounting_recast_result = accounting_recast_result
+            accounting_recast_context = build_accounting_recast_context(
+                accounting_recast_result
+            )
+            self._on_warn(
+                "Accounting recast routing blocked: "
+                + str(blocker.get("message") or exc)
+            )
 
         try:
             valuation = self._run_cached_step(
@@ -469,13 +626,34 @@ class PipelineOrchestrator:
                 use_cache=use_cache,
                 force_refresh_agents=force_refresh_agents,
                 detail_builder=lambda result: (
-                    f"Bear ${result.bear:.0f}  |  Base ${result.base:.0f}  |  Bull ${result.bull:.0f}"
+                    (
+                        f"Bear ${result.bear:.0f}  |  "
+                        f"Base ${result.base:.0f}  |  "
+                        f"Bull ${result.bull:.0f}"
+                    )
+                    if (
+                        result.bear is not None
+                        and result.base is not None
+                        and result.bull is not None
+                    )
+                    else "Blocked: valuation unavailable"
                 ),
             )
         except Exception as exc:
             self._on_warn(f"ValuationAgent error: {exc}")
-            p = mkt.get("current_price", 0) if mkt else 0
-            valuation = ValuationRange(bear=p * 0.7, base=p, bull=p * 1.3, current_price=p)
+            valuation = ValuationRange(
+                current_price=(
+                    mkt.get("current_price") if mkt else None
+                ),
+                valuation_status="blocked",
+                valuation_output_mode="none",
+                blocker={
+                    "status": "blocked",
+                    "reason_code": "valuation_agent_failed",
+                    "message": str(exc),
+                    "exception_type": type(exc).__name__,
+                },
+            )
 
         try:
             sentiment = self._run_cached_step(
@@ -515,14 +693,15 @@ class PipelineOrchestrator:
             )
         except Exception as exc:
             self._on_warn(f"RiskAgent error: {exc}")
-            from config import CONVICTION_SIZING, PORTFOLIO_SIZE_USD
-
             risk = RiskOutput(
                 conviction="low",
-                position_size_usd=PORTFOLIO_SIZE_USD * CONVICTION_SIZING["low"],
-                position_pct=CONVICTION_SIZING["low"],
-                suggested_stop_loss_pct=0.20,
-                rationale=f"Error: {exc}",
+                position_size_usd=0.0,
+                position_pct=0.0,
+                suggested_stop_loss_pct=0.0,
+                rationale=(
+                    "Position sizing blocked because the risk step failed: "
+                    + str(exc)
+                ),
             )
 
         risk_impact = RiskImpactOutput()
@@ -671,4 +850,5 @@ class PipelineOrchestrator:
             current_drivers=drivers,
             current_iv_base=current_iv_base,
             filings_metrics=self.last_filings_metrics,
+            source_lineage=inputs.source_lineage if inputs else {},
         )

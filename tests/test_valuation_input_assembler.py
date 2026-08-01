@@ -1,3 +1,6 @@
+import ast
+from pathlib import Path
+
 import pytest
 from types import SimpleNamespace
 
@@ -6,6 +9,7 @@ from src.stage_02_valuation.input_assembler import (
     determine_model_applicability,
     select_exit_metric_for_sector,
 )
+from src.stage_02_valuation.valuation_types import ForecastDrivers
 
 
 def test_sector_exit_metric_mapping():
@@ -78,7 +82,7 @@ def test_build_valuation_inputs_applies_ciq_precedence(monkeypatch):
             "revenue_cagr_3yr": 0.14,
             "op_margin_avg_3yr": 0.21,
             "capex_pct_avg_3yr": 0.07,
-            "da_pct_avg_3yr": 0.04,
+            "da_pct_avg_3yr": 0.0,
             "effective_tax_rate_avg": 0.19,
             "total_debt": 250_000_000.0,
             "cash": 120_000_000.0,
@@ -125,6 +129,16 @@ def test_build_valuation_inputs_applies_ciq_precedence(monkeypatch):
     assert out.drivers.exit_multiple == 15.0
     assert out.source_lineage["revenue_base"] == "ciq"
     assert out.source_lineage["exit_multiple"] == "ciq_comps_tev_ebitda_ltm"
+    da_event = next(
+        event
+        for event in out.clamp_events
+        if event.field_name == "da_pct_start"
+    )
+    assert out.drivers.da_pct_start == 0.005
+    assert da_event.raw_value == 0.0
+    assert da_event.resolved_value == 0.005
+    assert da_event.bound_hit == "lower"
+    assert da_event.source == "ciq"
 
 
 def test_build_valuation_inputs_uses_sector_exit_metric_multiple(monkeypatch):
@@ -404,6 +418,44 @@ def test_nwc_drivers_fallback_to_yfinance_and_respect_bounds(monkeypatch):
     assert out.source_lineage["dso_start"] == "yfinance"
     assert out.source_lineage["dio_start"] == "yfinance"
     assert out.source_lineage["dpo_start"] == "yfinance"
+    events = {event.field_name: event for event in out.clamp_events}
+    assert events["dso_start"].raw_value == 500.0
+    assert events["dso_start"].resolved_value == 180.0
+    assert events["dso_start"].bound_hit == "upper"
+    assert events["dso_start"].source == "yfinance"
+    assert events["dio_start"].bound_hit == "lower"
+    assert events["dpo_start"].bound_hit == "upper"
+
+
+def test_every_bounded_call_emits_canonical_clamp_audit_metadata() -> None:
+    from src.stage_02_valuation import input_assembler as ia
+
+    tree = ast.parse(Path(ia.__file__).read_text(encoding="utf-8"))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_bounded"
+    ]
+
+    assert calls, "input assembler must retain auditable bounded resolutions"
+    driver_fields = set(ForecastDrivers.__dataclass_fields__)
+    for call in calls:
+        keywords = {
+            keyword.arg: keyword.value
+            for keyword in call.keywords
+            if keyword.arg is not None
+        }
+        assert {"field_name", "source", "events"} <= set(keywords), (
+            f"silent _bounded call at line {call.lineno}"
+        )
+        field_node = keywords["field_name"]
+        assert isinstance(field_node, ast.Constant)
+        assert field_node.value in driver_fields, (
+            f"non-canonical clamp field at line {call.lineno}: "
+            f"{field_node.value!r}"
+        )
 
 
 def test_revenue_alignment_flags_when_growth_comes_from_cagr(monkeypatch):
@@ -717,7 +769,10 @@ def test_exit_multiple_uses_opt_in_public_peer_fallback_before_sector_default(mo
     )
     monkeypatch.setattr(ia, "resolve_story_driver_profile", lambda ticker, sector: (StoryDriverProfile(), "story_global"))
 
-    out = build_valuation_inputs("TEST")
+    out = build_valuation_inputs(
+        "TEST",
+        allow_public_comps_fallback=True,
+    )
 
     assert out is not None
     assert out.drivers.exit_multiple == pytest.approx(14.0)
@@ -725,6 +780,99 @@ def test_exit_multiple_uses_opt_in_public_peer_fallback_before_sector_default(mo
     assert out.ciq_lineage["public_comps_fallback_used"] is True
     assert out.ciq_lineage["public_comps_fallback_peer_count"] == 3
     assert out.default_resolution["status"] == "review_required"
+
+
+def test_default_path_never_uses_legacy_public_peer_fallback(monkeypatch):
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_market_data",
+        lambda ticker, as_of_date=None: _make_mkt(sector="Technology"),
+    )
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_historical_financials",
+        lambda ticker, as_of_date=None: {},
+    )
+    monkeypatch.setattr(
+        ia,
+        "get_ciq_snapshot",
+        lambda ticker, as_of_date=None: None,
+    )
+    monkeypatch.setattr(
+        ia,
+        "get_ciq_comps_valuation",
+        lambda ticker, as_of_date=None: None,
+    )
+    monkeypatch.setattr(
+        ia,
+        "get_ciq_comps_detail",
+        lambda ticker, as_of_date=None: None,
+    )
+
+    public_fallback_calls = 0
+
+    def tracked_public_fallback(peers):
+        nonlocal public_fallback_calls
+        public_fallback_calls += 1
+        return [
+            {
+                "ticker": "AAA",
+                "market_cap_mm": 1000.0,
+                "ev_ebitda": 10.0,
+                "pe_trailing": 18.0,
+            },
+            {
+                "ticker": "BBB",
+                "market_cap_mm": 1200.0,
+                "ev_ebitda": 14.0,
+                "pe_trailing": 20.0,
+            },
+            {
+                "ticker": "CCC",
+                "market_cap_mm": 1400.0,
+                "ev_ebitda": 16.0,
+                "pe_trailing": 22.0,
+            },
+        ]
+
+    monkeypatch.setattr(
+        ia.md_client,
+        "get_peer_multiples",
+        tracked_public_fallback,
+    )
+    monkeypatch.setattr(
+        ia,
+        "compute_wacc_from_yfinance",
+        lambda ticker, hist=None: _make_wacc_stub(),
+    )
+    monkeypatch.setattr(
+        ia,
+        "load_valuation_overrides",
+        lambda: {
+            "tickers": {"TEST": {"public_comps_fallback": True}},
+            "sectors": {},
+            "global": {},
+        },
+    )
+    monkeypatch.setattr(
+        ia,
+        "resolve_story_driver_profile",
+        lambda ticker, sector: (StoryDriverProfile(), "story_global"),
+    )
+
+    out = build_valuation_inputs("TEST")
+
+    assert public_fallback_calls == 0
+    assert out is not None
+    assert out.drivers.exit_multiple == pytest.approx(
+        ia.SECTOR_DEFAULTS["Technology"]["exit_multiple"]
+    )
+    assert out.source_lineage["exit_multiple"] == "default"
+    assert out.ciq_lineage["public_comps_fallback_used"] is False
+    assert out.ciq_lineage["public_comps_fallback_peer_count"] is None
 
 
 def test_default_resolution_flags_material_unresolved_defaults(monkeypatch):
@@ -862,8 +1010,8 @@ def test_growth_fade_ratio_differs_by_sector(monkeypatch):
 # ── P0: Lease double-count fix ───────────────────────────────────────────────
 
 
-def test_lease_liabilities_zeroed_when_folded_into_net_debt(monkeypatch):
-    """P0 — leases folded into net_debt must not also appear as standalone claim."""
+def test_yfinance_lease_split_keeps_equity_bridge_unchanged(monkeypatch):
+    """Leases stay separate and every debt/cash balance is consumed exactly once."""
     from src.stage_02_valuation import input_assembler as ia
 
     monkeypatch.setattr(
@@ -902,19 +1050,27 @@ def test_lease_liabilities_zeroed_when_folded_into_net_debt(monkeypatch):
     out = build_valuation_inputs("LSCO")
 
     assert out is not None
-    # net_debt should include leases: (2000 - 300 + 1500) mm = 3200 mm
-    assert out.source_lineage["net_debt"] == "yfinance+leases"
-    # lease_liabilities field must be 0 — already captured in net_debt
-    assert out.drivers.lease_liabilities == 0.0
-    assert out.source_lineage["lease_liabilities"] == "folded_into_net_debt"
-    assert out.drivers.net_debt == pytest.approx(3_200_000_000.0, rel=0.01)
+    assert (
+        out.source_lineage["net_debt"]
+        == "yfinance_debt_ex_leases_minus_operating_cash"
+    )
+    assert out.drivers.net_debt == pytest.approx(1_900_000_000.0)
+    assert out.drivers.lease_liabilities == pytest.approx(1_500_000_000.0)
+    assert out.source_lineage["lease_liabilities"] == "yfinance_separate_claim"
+    assert out.drivers.non_operating_assets == pytest.approx(200_000_000.0)
+    assert (
+        out.drivers.net_debt
+        + out.drivers.lease_liabilities
+        - out.drivers.non_operating_assets
+        == pytest.approx(3_200_000_000.0)
+    )
 
 
 # ── Gap 2: Story driver exit multiple ────────────────────────────────────────
 
 
-def test_high_cyclicality_compresses_exit_multiple(monkeypatch):
-    """Gap 2 — high cyclicality story should compress exit_multiple by ~10%."""
+def test_story_profile_is_context_only_in_official_numeric_inputs(monkeypatch):
+    """Forward values stay mechanical until the judgment layer authors them."""
     from src.stage_02_valuation import input_assembler as ia
     from src.stage_02_valuation.story_drivers import StoryDriverProfile
 
@@ -940,10 +1096,40 @@ def test_high_cyclicality_compresses_exit_multiple(monkeypatch):
     out = build_valuation_inputs("CYC")
 
     assert out is not None
-    # cyc_exit_mult=0.90, gov_exit_mult=1.00 → 10.0 * 0.90 = 9.0
-    assert out.drivers.exit_multiple == pytest.approx(9.0, abs=0.01)
-    # lineage should record the story adjustment
-    assert "story_ticker" in out.source_lineage["exit_multiple"]
+    assert out.drivers.exit_multiple == pytest.approx(10.0, abs=0.01)
+    assert out.story_adjustments is None
+    assert out.source_lineage["story_profile"] == "story_ticker"
+    assert "story_ticker" not in out.source_lineage["exit_multiple"]
+
+
+def test_sector_story_provenance_compresses_exit_multiple_less_than_reasoned(monkeypatch):
+    """A sector row scores every ticker in the sector alike, so it must not swing the model
+    as hard as an assessment of one business. Same profile, weaker provenance, smaller move."""
+    from src.stage_02_valuation import input_assembler as ia
+    from src.stage_02_valuation.story_drivers import StoryDriverProfile
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt(sector="Industrials"))
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: {})
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_ciq_comps_valuation", lambda ticker, as_of_date=None: {
+        "peer_median_tev_ebit_ltm": 10.0,
+    })
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(ia, "load_valuation_overrides", lambda: {"tickers": {}, "sectors": {}, "global": {}})
+    monkeypatch.setattr(
+        ia,
+        "resolve_story_driver_profile",
+        lambda ticker, sector: (
+            StoryDriverProfile(cyclicality="high", governance_risk="medium"),
+            "story_sector",
+        ),
+    )
+
+    out = build_valuation_inputs("CYC", apply_story_overlay=True)
+
+    assert out is not None
+    # authority 0.4 → multiplier is 1.0 + (0.85 - 1.0) * 0.4 = 0.94 → 10.0 * 0.94 = 9.4
+    assert out.drivers.exit_multiple == pytest.approx(9.4, abs=0.01)
 
 
 def test_story_exit_multiple_unchanged_for_medium_cyclicality(monkeypatch):
@@ -972,3 +1158,361 @@ def test_story_exit_multiple_unchanged_for_medium_cyclicality(monkeypatch):
 
     assert out is not None
     assert out.drivers.exit_multiple == pytest.approx(10.0, abs=0.01)
+
+
+def _lease_case(monkeypatch, *, ciq_snapshot, hist):
+    """Assemble drivers with a controlled debt/lease source, returning (drivers, lineage)."""
+    out = _lease_inputs_case(
+        monkeypatch,
+        ciq_snapshot=ciq_snapshot,
+        hist=hist,
+    )
+    return out.drivers, out.source_lineage
+
+
+def _lease_inputs_case(
+    monkeypatch,
+    *,
+    ciq_snapshot,
+    hist,
+    overrides=None,
+    ciq_comps=None,
+):
+    """Assemble a full valuation-input artifact with controlled bridge sources."""
+    from src.stage_02_valuation import input_assembler as ia
+
+    monkeypatch.setattr(ia.md_client, "get_market_data", lambda ticker, as_of_date=None: _make_mkt())
+    monkeypatch.setattr(ia.md_client, "get_historical_financials", lambda ticker, as_of_date=None: hist)
+    monkeypatch.setattr(ia, "get_ciq_snapshot", lambda ticker, as_of_date=None: ciq_snapshot)
+    monkeypatch.setattr(
+        ia,
+        "get_ciq_comps_valuation",
+        lambda ticker, as_of_date=None: ciq_comps,
+    )
+    monkeypatch.setattr(ia, "get_ciq_comps_detail", lambda ticker, as_of_date=None: None)
+    monkeypatch.setattr(ia, "get_bridge_items_from_xbrl", lambda ticker: {})
+    monkeypatch.setattr(ia, "compute_wacc_from_yfinance", lambda ticker, hist=None: _make_wacc_stub())
+    monkeypatch.setattr(
+        ia,
+        "load_valuation_overrides",
+        lambda: overrides or {"tickers": {}, "sectors": {}, "global": {}},
+    )
+
+    out = ia.build_valuation_inputs("LEASE")
+    assert out is not None
+    return out
+
+
+def test_ciq_bridge_uses_split_cash_and_lease_claims_exactly_once(monkeypatch):
+    """The PM split convention changes presentation, never the total debt-minus-cash claim."""
+
+    out = _lease_inputs_case(
+        monkeypatch,
+        ciq_snapshot={
+            "revenue_ttm": 318_273_000_000.0,
+            "total_debt": 125_432_000_000.0,
+            "cash": 32_105_000_000.0,
+            "lease_liabilities": 85_170_000_000.0,
+            "shares_outstanding": 7_432_000_000.0,
+        },
+        hist={},
+    )
+
+    operating_cash = 0.02 * 318_273_000_000.0
+    excess_cash = 32_105_000_000.0 - operating_cash
+    debt_ex_leases = 125_432_000_000.0 - 85_170_000_000.0
+
+    assert out.drivers.net_debt == pytest.approx(debt_ex_leases - operating_cash)
+    assert out.drivers.lease_liabilities == pytest.approx(85_170_000_000.0)
+    assert out.drivers.non_operating_assets == pytest.approx(excess_cash)
+    bridge_adjustment = (
+        out.drivers.net_debt
+        + out.drivers.lease_liabilities
+        - out.drivers.non_operating_assets
+    )
+    assert bridge_adjustment == pytest.approx(93_327_000_000.0)
+    assert out.claim_ledger["reconciliation"]["is_reconciled"] is True
+    assert out.claim_ledger["reconciliation"]["is_decision_grade"] is True
+    assert out.bridge_cutover["mode"] == "shadow"
+    assert out.bridge_cutover["reconciled"]["ev_to_equity_adjustment_usd"] == (
+        pytest.approx(93_327_000_000.0)
+    )
+    assert out.bridge_cutover["legacy"]["ev_to_equity_adjustment_usd"] == (
+        pytest.approx(67_587_460_000.0)
+    )
+    assert out.valuation_status == "provisional"
+    assert "readiness.not_supplied" in out.valuation_readiness["reason_codes"]
+    assert out.operating_cash_policy == {
+        "policy": "min(total_cash, revenue_base * rate)",
+        "rate": 0.02,
+        "source": "pm_decision_2026-07-25",
+        "operating_cash_usd": pytest.approx(operating_cash),
+        "classification_range_usd": [0.0, pytest.approx(operating_cash)],
+        "equity_value_effect_range_usd": [0.0, 0.0],
+    }
+
+
+def test_ciq_comps_prices_use_same_full_reconciled_bridge_as_dcf(monkeypatch):
+    out = _lease_inputs_case(
+        monkeypatch,
+        ciq_snapshot={
+            "revenue_ttm": 10_000_000_000.0,
+            "total_debt": 2_000_000_000.0,
+            "cash": 1_000_000_000.0,
+            "lease_liabilities": 200_000_000.0,
+            "minority_interest": 300_000_000.0,
+            "shares_outstanding": 100_000_000.0,
+        },
+        hist={},
+        ciq_comps={
+            "peer_median_tev_ebitda_ltm": 10.0,
+            "target_ebitda_ltm": 1_000.0,
+            "target_shares_out": 100.0,
+            "target_net_debt": 1_000.0,
+            "implied_price_ev_ebitda": 90.0,
+            "implied_price_base": 90.0,
+        },
+    )
+
+    # 10x $1,000mm less debt/cash plus the $300mm minority claim.
+    assert out.ciq_lineage["comps_iv_ev_ebitda"] == pytest.approx(87.0)
+    assert out.ciq_lineage["comps_iv_base"] == pytest.approx(87.0)
+    assert out.ciq_lineage["comps_bridge_basis"] == (
+        "reconciled_claim_ledger"
+    )
+    assert out.ciq_lineage["comps_ev_to_equity_adjustment_mm"] == (
+        pytest.approx(1_300.0)
+    )
+
+
+def test_bridge_assembly_fails_closed_with_named_untied_reported_line(monkeypatch):
+    with pytest.raises(ValueError) as exc_info:
+        _lease_inputs_case(
+            monkeypatch,
+            ciq_snapshot={
+                "total_debt": 100_000_000.0,
+                "cash": 50_000_000.0,
+                "lease_liabilities": 500_000_000.0,
+                "shares_outstanding": 100_000_000.0,
+            },
+            hist={},
+        )
+
+    message = str(exc_info.value)
+    assert "total_debt" in message
+    assert "does not tie" in message
+    assert "reported=" in message
+    assert "allocated=" in message
+
+
+def test_raw_bridge_override_is_rejected_before_driver_mutation(monkeypatch):
+    from src.stage_02_valuation.input_assembler import BridgeMutationPathError
+
+    with pytest.raises(BridgeMutationPathError) as exc_info:
+        _lease_inputs_case(
+            monkeypatch,
+            ciq_snapshot={
+                "revenue_ttm": 10_000_000_000.0,
+                "total_debt": 2_000_000_000.0,
+                "cash": 1_000_000_000.0,
+                "lease_liabilities": 200_000_000.0,
+                "shares_outstanding": 100_000_000.0,
+            },
+            hist={},
+            overrides={
+                "global": {},
+                "sectors": {},
+                "tickers": {
+                    "LEASE": {"lease_liabilities": 2_500_000_000.0}
+                },
+            },
+        )
+
+    assert exc_info.value.fields == ("lease_liabilities",)
+    assert exc_info.value.to_dict()["reason_code"] == (
+        "bridge_mutation_requires_reconciled_claim_ledger"
+    )
+
+
+def test_snapshot_investment_is_unclaimed_and_blocks_decision_grade(monkeypatch):
+    out = _lease_inputs_case(
+        monkeypatch,
+        ciq_snapshot={
+            "as_of_date": "2025-12-31",
+            "currency": "USD",
+            "revenue_ttm": 10_000_000_000.0,
+            "total_debt": 2_000_000_000.0,
+            "cash": 1_000_000_000.0,
+            "lease_liabilities": 200_000_000.0,
+            "shares_outstanding": 100_000_000.0,
+            "investments": 500_000_000.0,
+        },
+        hist={},
+    )
+
+    reported = {
+        line["line_id"]: line for line in out.claim_ledger["reported_lines"]
+    }
+    assert reported["ciq:investments"]["semantic_type"] == "asset"
+    allocation = next(
+        item
+        for item in out.claim_ledger["allocations"]
+        if item["allocation_id"] == "ciq:investments"
+    )
+    assert allocation["component"] == "unclaimed"
+    assert out.claim_ledger["reconciliation"][
+        "material_unclaimed_allocation_ids"
+    ] == ["ciq:investments"]
+    assert out.claim_ledger["reconciliation"]["is_reconciled"] is True
+    assert out.claim_ledger["reconciliation"]["is_decision_grade"] is False
+    assert out.valuation_status == "blocked"
+    assert "ciq:investments" in " ".join(
+        out.valuation_readiness["reason_codes"]
+    )
+
+
+def test_snapshot_bridge_metadata_mismatch_fails_with_named_line(monkeypatch):
+    with pytest.raises(ValueError) as exc_info:
+        _lease_inputs_case(
+            monkeypatch,
+            ciq_snapshot={
+                "as_of_date": "2025-12-31",
+                "currency": "USD",
+                "revenue_ttm": 10_000_000_000.0,
+                "total_debt": 2_000_000_000.0,
+                "cash": 1_000_000_000.0,
+                "lease_liabilities": 200_000_000.0,
+                "shares_outstanding": 100_000_000.0,
+                "bridge_unclaimed_lines": [
+                    {
+                        "line_id": "ciq:foreign_investment",
+                        "value": 500_000_000.0,
+                        "source_ref": "ciq:foreign_investment",
+                        "currency": "EUR",
+                        "period_end": "2025-12-31",
+                        "period_type": "instant",
+                        "semantic_type": "asset",
+                    }
+                ],
+            },
+            hist={},
+        )
+
+    assert "currency mismatch" in str(exc_info.value)
+    assert "ciq:foreign_investment" in str(exc_info.value)
+
+
+def test_bridge_override_without_claim_reclassification_fails_closed(monkeypatch):
+    with pytest.raises(ValueError) as exc_info:
+        _lease_inputs_case(
+            monkeypatch,
+            ciq_snapshot={
+                "revenue_ttm": 1_000_000_000.0,
+                "total_debt": 200_000_000.0,
+                "cash": 50_000_000.0,
+                "shares_outstanding": 100_000_000.0,
+            },
+            hist={},
+            overrides={
+                "global": {},
+                "sectors": {},
+                "tickers": {
+                    "LEASE": {
+                        "non_operating_assets": 111_955_000_000.0,
+                    }
+                },
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "non_operating_assets" in message
+    assert "does not tie" in message
+
+
+def test_other_bridge_claim_override_must_tie_to_reported_source(monkeypatch):
+    with pytest.raises(ValueError) as exc_info:
+        _lease_inputs_case(
+            monkeypatch,
+            ciq_snapshot={
+                "revenue_ttm": 1_000_000_000.0,
+                "total_debt": 200_000_000.0,
+                "cash": 50_000_000.0,
+                "shares_outstanding": 100_000_000.0,
+            },
+            hist={},
+            overrides={
+                "global": {},
+                "sectors": {},
+                "tickers": {
+                    "LEASE": {
+                        "minority_interest": 500_000_000.0,
+                    }
+                },
+            },
+        )
+
+    message = str(exc_info.value)
+    assert "minority_interest" in message
+    assert "does not tie" in message
+
+
+def test_ciq_leases_are_not_double_counted(monkeypatch):
+    """CIQ's `debt` already includes leases. Leaving `lease_liabilities` populated as well made
+    `_claims_total()` count them twice — measured at ~$7.06/share on MSFT."""
+    drivers, lineage = _lease_case(
+        monkeypatch,
+        ciq_snapshot={
+            # CIQ reports raw dollars; `total_debt` already contains the 851m of leases.
+            "total_debt": 1_254_000_000.0,
+            "cash": 321_000_000.0,
+            "lease_liabilities": 851_000_000.0,
+            "shares_outstanding": 100_000_000.0,
+        },
+        hist={},
+    )
+
+    assert drivers.lease_liabilities == 851_000_000.0
+    assert lineage["lease_liabilities"] == "ciq_separate_claim"
+    assert drivers.net_debt == pytest.approx(403_000_000.0 - 20_000_000.0)
+    assert drivers.non_operating_assets == pytest.approx(301_000_000.0)
+    assert (
+        drivers.net_debt
+        + drivers.lease_liabilities
+        - drivers.non_operating_assets
+        == pytest.approx(1_254_000_000.0 - 321_000_000.0)
+    )
+
+
+def test_yfinance_leases_are_a_separate_claim(monkeypatch):
+    """Public-market debt ex leases and leases remain separate but reconcile."""
+    drivers, lineage = _lease_case(
+        monkeypatch,
+        ciq_snapshot=None,
+        hist={"lease_liabilities_bs": 851_000_000.0},
+    )
+
+    assert drivers.lease_liabilities == 851_000_000.0
+    assert lineage["lease_liabilities"] == "yfinance_separate_claim"
+    assert (
+        lineage["net_debt"]
+        == "yfinance_debt_ex_leases_minus_operating_cash"
+    )
+    assert drivers.net_debt == pytest.approx(200_000_000.0 - 20_000_000.0)
+    assert drivers.non_operating_assets == pytest.approx(30_000_000.0)
+    assert (
+        drivers.net_debt
+        + drivers.lease_liabilities
+        - drivers.non_operating_assets
+        == pytest.approx(200_000_000.0 - 50_000_000.0 + 851_000_000.0)
+    )
+
+
+def test_no_lease_data_leaves_the_claim_untouched(monkeypatch):
+    """Absent lease data must not invent a lineage marker."""
+    drivers, lineage = _lease_case(
+        monkeypatch,
+        ciq_snapshot={"total_debt": 400_000_000.0, "cash": 100_000_000.0, "shares_outstanding": 100_000_000.0},
+        hist={},
+    )
+    assert drivers.lease_liabilities == 0.0
+    assert lineage["lease_liabilities"] == "default"

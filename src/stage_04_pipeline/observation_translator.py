@@ -15,6 +15,11 @@ from src.stage_04_pipeline.agentic_handoff_profiles import (
     AGENT_PROPOSABLE_ASSUMPTION_FIELDS,
     get_agentic_handoff_profile,
 )
+from src.stage_04_pipeline.accounting_ledger import (
+    merge_findings_into_ledger,
+    translate_accounting_findings_to_queue_items,
+    translate_accounting_ledger_to_queue_items,
+)
 
 
 TRANSLATOR_RULES: dict[str, dict[str, dict[str, Any]]] = {
@@ -210,6 +215,60 @@ TRANSLATOR_RULES["risk_review"] = {
     },
 }
 
+# accounting_finding: dedicated types live on AccountingFinding and are translated via
+# accounting_ledger (not the generic observation-type delta table). These entries exist so
+# profile rule-group lookups remain explicit and never fall through to execution_risk_increased.
+TRANSLATOR_RULES["accounting_finding"] = {
+    "qoe_adjustment_candidate": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "qoe_no_adjustment_identified": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "qoe_missing_evidence": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "ev_equity_bridge_candidate": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "ev_equity_bridge_no_adjustment_identified": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "ev_equity_bridge_missing_evidence": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "contingency_or_tax_candidate": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "contingency_or_tax_no_adjustment_identified": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "contingency_or_tax_missing_evidence": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "segment_or_disclosure_candidate": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "segment_or_disclosure_no_adjustment_identified": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+    "segment_or_disclosure_missing_evidence": {
+        "rule_type": "accounting_ledger",
+        "translator_confidence": "high",
+    },
+}
+
 # valuation_review: model-structural observations produce advisory findings for PM review.
 # assumption_inconsistency may also recommend assumption_change_pack for margin/wacc fields.
 TRANSLATOR_RULES["valuation_review"] = {
@@ -224,6 +283,21 @@ TRANSLATOR_RULES["valuation_review"] = {
     "assumption_inconsistency": {
         "rule_type": "advisory_finding",
         "translator_confidence": "medium",
+    },
+    # Terminal capex and D&A fade independently, so the model can imply perpetual
+    # reinvestment far above depreciation. The agent judges the right convergence from
+    # management guidance and depreciation policy; this lands as a PM queue proposal on
+    # da_pct_target, never as a direct model edit.
+    "terminal_reinvestment_incoherence": {
+        "rule_type": "assumption_change_pack",
+        "translator_confidence": "medium",
+        "proposals": [
+            {
+                "assumption_name": "da_pct_target",
+                "proposal_mode": "delta",
+                "proposed_delta": 0.01,
+            }
+        ],
     },
 }
 
@@ -260,6 +334,10 @@ def _proposal_delta_bounds(assumption_name: str) -> tuple[float, float]:
         "ebit_margin_start": (0.0015, 0.015),
         "ebit_margin_target": (0.0015, 0.02),
         "exit_multiple": (0.15, 1.5),
+        # D&A and capex are percent-of-revenue drivers; a terminal convergence step is
+        # measured in whole percentage points, not basis points.
+        "da_pct_target": (0.005, 0.08),
+        "capex_pct_target": (0.005, 0.08),
     }
     return bounds.get(assumption_name, (0.001, 0.05))
 
@@ -466,6 +544,9 @@ def translate_observations_to_queue_items(
         rule = rules.get(observation.observation_type)
         if rule is None:
             continue
+        # Accounting profiles use the dedicated ledger path; generic delta rules must not apply.
+        if rule.get("rule_type") == "accounting_ledger":
+            continue
         observation_metadata = {
             "observation_id": observation.observation_id,
             "materiality": (
@@ -514,6 +595,17 @@ def translate_observations_to_queue_items(
         proposal_pack = AssumptionChangePack(
             pack_id=f"pack:{profile_name}:{observation.observation_id}",
             proposals=proposals,
+            notes={
+                "numeric_authority": "legacy_provisional_diagnostic",
+                "decision_grade_eligible": False,
+            },
+        )
+        observation_metadata.update(
+            {
+                "numeric_authority": "legacy_provisional_diagnostic",
+                "trust_ceiling": "provisional",
+                "decision_grade_eligible": False,
+            }
         )
         items.append(
             PMDecisionQueueItem(
@@ -533,3 +625,13 @@ def translate_observations_to_queue_items(
             )
         )
     return items
+
+
+# Re-export accounting ledger helpers so callers can use one translator surface.
+__all__ = [
+    "TRANSLATOR_RULES",
+    "merge_findings_into_ledger",
+    "translate_accounting_findings_to_queue_items",
+    "translate_accounting_ledger_to_queue_items",
+    "translate_observations_to_queue_items",
+]

@@ -21,6 +21,7 @@ from src.contracts.accounting_evidence import (
 _FINDING_STATUSES = {"candidate", "no_adjustment_identified", "missing_evidence"}
 _VALUATION_TREATMENTS = {
     "normalized_ebit",
+    "historical_recast",
     "ev_equity_bridge",
     "scenario_only",
     "disclosure_only",
@@ -164,9 +165,19 @@ def validate_accounting_finding(
         for value in packet.get("allowed_driver_fields") or []
         if str(value).strip()
     }
+    model_change_required = bool(finding.get("model_change_required"))
+    model_change_request = str(finding.get("model_change_request") or "").strip()
+    if model_change_required and not model_change_request:
+        issues.append(
+            ValidationIssue(
+                "missing_model_change_request",
+                "model_change_required findings must explain the requested model capability",
+                "model_change_request",
+            )
+        )
     claim_driver = str(finding.get("claim_driver_field") or "").strip()
     proposed_driver = str(finding.get("proposed_driver_field") or "").strip()
-    if status == "candidate" and not claim_driver:
+    if status == "candidate" and not claim_driver and not model_change_required:
         issues.append(
             ValidationIssue(
                 "missing_claim_driver",
@@ -174,7 +185,7 @@ def validate_accounting_finding(
                 "claim_driver_field",
             )
         )
-    if claim_driver and claim_driver not in allowed_fields:
+    if claim_driver and claim_driver not in allowed_fields and not model_change_required:
         issues.append(
             ValidationIssue(
                 "claim_driver_not_allowed",
@@ -182,7 +193,7 @@ def validate_accounting_finding(
                 "claim_driver_field",
             )
         )
-    if proposed_driver and proposed_driver not in allowed_fields:
+    if proposed_driver and proposed_driver not in allowed_fields and not model_change_required:
         issues.append(
             ValidationIssue(
                 "proposed_driver_not_allowed",
@@ -191,7 +202,7 @@ def validate_accounting_finding(
             )
         )
     if status == "candidate" and treatment not in _NON_MUTATING_TREATMENTS:
-        if not proposed_driver:
+        if not proposed_driver and not model_change_required:
             issues.append(
                 ValidationIssue(
                     "missing_proposed_driver",
@@ -199,7 +210,7 @@ def validate_accounting_finding(
                     "proposed_driver_field",
                 )
             )
-        elif claim_driver and proposed_driver != claim_driver:
+        elif claim_driver and proposed_driver != claim_driver and not model_change_required:
             issues.append(
                 ValidationIssue(
                     "driver_mismatch",

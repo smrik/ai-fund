@@ -260,6 +260,80 @@ def test_get_ciq_snapshot_includes_nwc_day_drivers_from_long_form(monkeypatch):
     assert out["dpo"] == 40.0
 
 
+def test_get_ciq_snapshot_exposes_structural_bridge_items_from_long_form(monkeypatch):
+    db_path = _workspace_tempdir("snapshot-bridge") / "ciq_snapshot_bridge.sqlite"
+    monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
+
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        """
+        CREATE TABLE ciq_valuation_snapshot (
+            ticker TEXT, as_of_date TEXT, run_id INTEGER, source_file TEXT,
+            revenue_mm REAL, operating_income_mm REAL, capex_mm REAL, da_mm REAL,
+            total_debt_mm REAL, cash_mm REAL, shares_out_mm REAL,
+            ebit_margin REAL, op_margin_avg_3yr REAL, capex_pct_avg_3yr REAL,
+            da_pct_avg_3yr REAL, effective_tax_rate REAL, effective_tax_rate_avg REAL,
+            revenue_cagr_3yr REAL, debt_to_ebitda REAL, roic REAL, fcf_yield REAL
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE ciq_long_form (
+            run_id INTEGER, ticker TEXT, metric_key TEXT, value_num REAL,
+            period_date TEXT, column_index INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE ciq_comps_snapshot (
+            target_ticker TEXT, peer_ticker TEXT, as_of_date TEXT, run_id INTEGER,
+            source_file TEXT, metric_key TEXT, value_num REAL, is_target INTEGER
+        )
+        """
+    )
+    conn.execute(
+        """INSERT INTO ciq_valuation_snapshot
+           (ticker, as_of_date, run_id, source_file, revenue_mm, operating_income_mm,
+            capex_mm, da_mm, total_debt_mm, cash_mm, shares_out_mm)
+           VALUES ('MSFT', '2026-03-31', 12, 'ciq.xlsx', 318273, 148957, 97225,
+                   30300, 125432, 32105, 7457)"""
+    )
+    conn.executemany(
+        """INSERT INTO ciq_long_form
+           (run_id, ticker, metric_key, value_num, period_date, column_index)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
+            (12, "MSFT", "total_leases", 80_000.0, "2025-03-31", 1),
+            (12, "MSFT", "total_leases", 85_170.0, "2026-03-31", 2),
+            (12, "MSFT", "minority_interest", 250.0, "2026-03-31", 2),
+            (12, "MSFT", "preferred_equity", 125.0, "2026-03-31", 2),
+            (12, "MSFT", "marketable_securities", 12_000.0, "2026-03-31", 2),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    out = ciq_adapter.get_ciq_snapshot("MSFT")
+
+    assert out is not None
+    assert out["lease_liabilities"] == 85_170_000_000.0
+    assert out["minority_interest"] == 250_000_000.0
+    assert out["preferred_equity"] == 125_000_000.0
+    assert out["bridge_unclaimed_lines"] == [
+        {
+            "line_id": "ciq:marketable_securities",
+            "value": 12_000_000_000.0,
+            "source_ref": "ciq_long_form:marketable_securities",
+            "currency": "USD",
+            "period_end": "2026-03-31",
+            "period_type": "instant",
+            "semantic_type": "asset",
+        }
+    ]
+
+
 def test_get_ciq_snapshot_derives_nwc_day_drivers_when_direct_metrics_missing(monkeypatch):
     db_path = _workspace_tempdir("snapshot-derived") / "ciq_snapshot_derived.sqlite"
     monkeypatch.setattr(ciq_adapter, "DB_PATH", db_path)
@@ -474,3 +548,60 @@ def test_get_ciq_snapshot_includes_forward_revenue_from_comps(monkeypatch):
     assert out is not None
     assert out["revenue_fy1"] == pytest.approx(1_100_000_000.0)
     assert out["revenue_fy2"] == pytest.approx(1_200_000_000.0)
+
+
+def test_comps_resolve_to_latest_snapshot_at_or_before_the_analysis_date():
+    """A comps snapshot is dated when the workbook was pulled, not when you analyse.
+
+    `_fetch_ciq_comps_rows` required an exact `as_of_date` match, so an analysis run on
+    any day other than the pull date found nothing: MSFT has 702 rows at 2026-03-31 and
+    an as-of of 2026-07-31 returned empty, surfacing as `materials.comps.missing`.
+    """
+
+    import sqlite3
+
+    from src.stage_00_data import ciq_adapter
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.execute(
+        """
+        CREATE TABLE ciq_comps_snapshot (
+            target_ticker TEXT, peer_ticker TEXT, as_of_date TEXT, run_id INTEGER,
+            source_file TEXT, metric_key TEXT, value_num REAL, is_target INTEGER
+        )
+        """
+    )
+    conn.executemany(
+        "INSERT INTO ciq_comps_snapshot VALUES (?,?,?,?,?,?,?,?)",
+        [
+            ("MSFT", "MSFT", "2026-03-31", 1, "MSFT.xlsx", "tev_ebitda", 20.0, 1),
+            ("MSFT", "ORCL", "2026-03-31", 1, "MSFT.xlsx", "tev_ebitda", 18.0, 0),
+            # A later snapshot must not be used by an earlier analysis date.
+            ("MSFT", "MSFT", "2026-09-30", 2, "MSFT.xlsx", "tev_ebitda", 99.0, 1),
+        ],
+    )
+
+    class _KeepOpen:
+        """The adapter closes what it opens; the test reuses one in-memory DB."""
+
+        def __init__(self, inner):
+            self._inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def close(self):
+            return None
+
+    original = ciq_adapter._connect
+    ciq_adapter._connect = lambda: _KeepOpen(conn)
+    try:
+        rows = ciq_adapter._fetch_ciq_comps_rows("MSFT", "2026-07-31")
+        assert rows, "expected the 2026-03-31 snapshot to resolve"
+        assert {row["as_of_date"] for row in rows} == {"2026-03-31"}
+
+        # Nothing on or before the date is still empty, not a silent future snapshot.
+        assert ciq_adapter._fetch_ciq_comps_rows("MSFT", "2026-01-01") == []
+    finally:
+        ciq_adapter._connect = original

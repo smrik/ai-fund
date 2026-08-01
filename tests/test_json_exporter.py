@@ -617,6 +617,49 @@ class TestBuildNestedStructure:
         assert out["assumption_register"]["entries"][0]["assumption_name"] == "wacc"
         assert out["assumption_register_summary"]["model_trust_state"] == "clean"
 
+    def test_reconciled_bridge_contract_is_exposed_to_api_payload(self):
+        r = dict(MINIMAL_RESULT)
+        r.update(
+            {
+                "valuation_status": "provisional",
+                "valuation_output_mode": "shadow_preview",
+                "claim_ledger_json": json.dumps(
+                    {
+                        "fingerprint": "claim-ledger-hash",
+                        "reconciliation": {"is_reconciled": True},
+                    }
+                ),
+                "operating_cash_policy_json": json.dumps(
+                    {"rate": 0.02, "operating_cash_usd": 120.0}
+                ),
+                "bridge_cutover_json": json.dumps(
+                    {
+                        "mode": "shadow",
+                        "selected_bridge": "reconciled_shadow",
+                    }
+                ),
+                "valuation_readiness_json": json.dumps(
+                    {
+                        "trust_status": "provisional",
+                        "reason_codes": ["readiness.not_supplied"],
+                    }
+                ),
+            }
+        )
+
+        out = build_nested_structure(r)
+
+        assert out["valuation"]["status"] == "provisional"
+        assert out["valuation"]["output_mode"] == "shadow_preview"
+        assert out["claim_ledger"]["fingerprint"] == "claim-ledger-hash"
+        assert out["operating_cash_policy"]["rate"] == pytest.approx(0.02)
+        assert out["bridge_cutover"]["selected_bridge"] == (
+            "reconciled_shadow"
+        )
+        assert out["valuation_readiness"]["reason_codes"] == [
+            "readiness.not_supplied"
+        ]
+
 
 # ── Tests: export_ticker_json ─────────────────────────────────────────────────
 

@@ -53,6 +53,12 @@ FIELD_METADATA: dict[str, dict[str, Any]] = {
     "terminal_blend_exit_weight": {"stage": "terminal_value", "scope": "terminal_value", "lines": ["terminal_value", "enterprise_value", "equity_value"], "class": "pct_driver"},
     "ronic_terminal": {"stage": "terminal_value", "scope": "terminal_value", "lines": ["terminal_value", "enterprise_value", "equity_value"], "class": "pct_driver"},
     "net_debt": {"stage": "input_assembly", "scope": "capital_structure", "lines": ["equity_value"], "class": "money"},
+    "minority_interest": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
+    "preferred_equity": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
+    "pension_deficit": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
+    "lease_liabilities": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
+    "options_value": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
+    "convertibles_value": {"stage": "input_assembly", "scope": "ev_bridge", "lines": ["equity_value"], "class": "money"},
     "shares_outstanding": {"stage": "input_assembly", "scope": "capital_structure", "lines": ["equity_value"], "class": "money"},
 }
 
@@ -90,6 +96,12 @@ RANGE_RULES: dict[str, dict[str, Any]] = {
     "terminal_blend_exit_weight": {"low": 0.0, "high": 1.0, "description": "Exit terminal blend weight should be a probability-like weight."},
     "ronic_terminal": {"low": 0.00, "high": 0.40, "description": "Default PM review range for terminal RONIC."},
     "net_debt": {"low": None, "high": None, "description": "Capital-structure money field retained for review and audit."},
+    "minority_interest": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
+    "preferred_equity": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
+    "pension_deficit": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
+    "lease_liabilities": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
+    "options_value": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
+    "convertibles_value": {"low": 0.0, "high": None, "description": "EV-to-equity claim must be non-negative."},
     "shares_outstanding": {"low": 1.0, "high": None, "description": "Share count should be positive."},
 }
 

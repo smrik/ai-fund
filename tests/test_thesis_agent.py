@@ -58,3 +58,50 @@ def test_thesis_agent_synthesize_emits_structured_pillars_and_catalysts(monkeypa
     assert memo.thesis_pillars[0].title == "Software mix shift"
     assert memo.structured_catalysts[0].title == "Mainframe cycle"
     assert memo.key_catalysts == ["Consulting margin recovery"]
+
+
+def test_thesis_agent_cannot_issue_buy_on_blocked_valuation(monkeypatch):
+    agent = ThesisAgent()
+    monkeypatch.setattr(
+        agent,
+        "run",
+        lambda prompt: """
+        {
+          "one_liner": "Looks cheap",
+          "action": "BUY",
+          "conviction": "high",
+          "bull_case": "Bull",
+          "bear_case": "Bear",
+          "base_case": "Base",
+          "variant_thesis_prompt": "What is missing?",
+          "key_catalysts": [],
+          "key_risks": [],
+          "open_questions": [],
+          "thesis_pillars": [],
+          "structured_catalysts": []
+        }
+        """,
+    )
+
+    memo = agent.synthesize(
+        ticker="IBM",
+        company_name="IBM",
+        sector="Technology",
+        filings=FilingsSummary(),
+        earnings=EarningsSummary(),
+        valuation=ValuationRange(
+            valuation_status="blocked",
+            valuation_output_mode="none",
+            blocker={
+                "message": (
+                    "material line ciq:investments is unclaimed"
+                )
+            },
+        ),
+        sentiment=SentimentOutput(),
+        risk=RiskOutput(),
+    )
+
+    assert memo.action == "WATCH"
+    assert memo.conviction == "low"
+    assert "ciq:investments" in memo.one_liner

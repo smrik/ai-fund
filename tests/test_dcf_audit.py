@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from src.stage_02_valuation.input_assembler import ValuationInputsWithLineage
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
 
@@ -55,6 +57,11 @@ def _inputs() -> ValuationInputsWithLineage:
         wacc_inputs={},
         story_profile=None,
         story_adjustments=None,
+        claim_ledger={"fingerprint": "claim-ledger-hash"},
+        operating_cash_policy={"rate": 0.02},
+        bridge_cutover={"mode": "shadow"},
+        valuation_readiness={"trust_status": "provisional"},
+        valuation_status="provisional",
     )
 
 
@@ -94,6 +101,11 @@ def test_build_dcf_audit_view_shapes_key_tables(monkeypatch):
     assert len(audit["chart_series"]["scenario_iv"]) == 4
     assert len(audit["chart_series"]["ev_bridge_waterfall"]) >= 4
     assert audit["chart_series"]["risk_overlay"] == []
+    assert audit["valuation_status"] == "provisional"
+    assert audit["valuation_output_mode"] == "shadow_preview"
+    assert audit["claim_ledger"]["fingerprint"] == "claim-ledger-hash"
+    assert audit["operating_cash_policy"]["rate"] == pytest.approx(0.02)
+    assert audit["bridge_cutover"]["mode"] == "shadow"
 
 
 def test_build_dcf_audit_view_returns_unavailable_when_inputs_missing(monkeypatch):
@@ -107,3 +119,21 @@ def test_build_dcf_audit_view_returns_unavailable_when_inputs_missing(monkeypatc
     audit = build_dcf_audit_view("IBM")
 
     assert audit == {"ticker": "IBM", "available": False}
+
+
+def test_build_dcf_audit_view_returns_structured_input_blocker(monkeypatch):
+    from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
+
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.dcf_audit.build_valuation_inputs",
+        lambda ticker, as_of_date=None, apply_overrides=True: (
+            _ for _ in ()
+        ).throw(ValueError("reported line ciq:investments does not tie")),
+    )
+
+    audit = build_dcf_audit_view("IBM")
+
+    assert audit["available"] is False
+    assert audit["valuation_status"] == "blocked"
+    assert audit["blocker"]["reason_code"] == "dcf_input_assembly_failed"
+    assert "ciq:investments" in audit["blocker"]["message"]

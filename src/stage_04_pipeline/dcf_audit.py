@@ -328,7 +328,30 @@ def build_dcf_audit_view(
     risk_output: RiskImpactOutput | None = None,
 ) -> dict:
     ticker = ticker.upper().strip()
-    inputs = build_valuation_inputs(ticker, as_of_date=as_of_date, apply_overrides=apply_overrides)
+    try:
+        inputs = build_valuation_inputs(
+            ticker,
+            as_of_date=as_of_date,
+            apply_overrides=apply_overrides,
+        )
+    except Exception as exc:
+        blocker = (
+            exc.to_dict()
+            if hasattr(exc, "to_dict")
+            else {
+                "status": "blocked",
+                "reason_code": "dcf_input_assembly_failed",
+                "message": str(exc),
+                "exception_type": type(exc).__name__,
+            }
+        )
+        return {
+            "ticker": ticker,
+            "available": False,
+            "valuation_status": "blocked",
+            "valuation_output_mode": "none",
+            "blocker": blocker,
+        }
     if inputs is None:
         return {"ticker": ticker, "available": False}
 
@@ -369,6 +392,31 @@ def build_dcf_audit_view(
     audit = {
         "ticker": ticker,
         "available": True,
+        "valuation_status": getattr(
+            inputs,
+            "valuation_status",
+            "provisional",
+        ),
+        "valuation_output_mode": (
+            "official"
+            if getattr(inputs, "valuation_status", "provisional")
+            == "decision_grade"
+            else "shadow_preview"
+        ),
+        "claim_ledger": getattr(inputs, "claim_ledger", {}) or {},
+        "operating_cash_policy": getattr(
+            inputs,
+            "operating_cash_policy",
+            {},
+        )
+        or {},
+        "bridge_cutover": getattr(inputs, "bridge_cutover", {}) or {},
+        "valuation_readiness": getattr(
+            inputs,
+            "valuation_readiness",
+            {},
+        )
+        or {},
         "company_name": inputs.company_name,
         "sector": inputs.sector,
         "industry": inputs.industry,

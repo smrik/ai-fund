@@ -465,6 +465,7 @@ def create_tables(conn: sqlite3.Connection | None = None):
 
     CREATE TABLE IF NOT EXISTS pm_decision_queue_items (
         id                              INTEGER PRIMARY KEY AUTOINCREMENT,
+        dedupe_key                      TEXT,
         created_at                      TEXT NOT NULL,
         updated_at                      TEXT NOT NULL,
         ticker                          TEXT NOT NULL,
@@ -838,6 +839,189 @@ def create_tables(conn: sqlite3.Connection | None = None):
         FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
     );
 
+    CREATE TABLE IF NOT EXISTS statement_facts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        fact_id TEXT NOT NULL,
+        ingestion_fingerprint TEXT NOT NULL UNIQUE,
+        ticker TEXT NOT NULL,
+        entity_id TEXT,
+        source TEXT NOT NULL,
+        source_run_id INTEGER,
+        statement TEXT NOT NULL,
+        concept TEXT NOT NULL,
+        label TEXT,
+        value_raw TEXT,
+        numeric_value REAL,
+        unit TEXT,
+        currency TEXT,
+        scale REAL,
+        scale_factor REAL NOT NULL DEFAULT 1.0,
+        period_label TEXT,
+        period_kind TEXT NOT NULL,
+        period_type TEXT,
+        period_start TEXT,
+        period_end TEXT,
+        fiscal_year INTEGER,
+        fiscal_period TEXT,
+        filing_date TEXT,
+        form_type TEXT,
+        accession TEXT,
+        context_ref TEXT,
+        context_json TEXT NOT NULL DEFAULT '{}',
+        fiscal_calendar_json TEXT NOT NULL DEFAULT '{}',
+        dimensions_json TEXT NOT NULL DEFAULT '{}',
+        hierarchy_json TEXT NOT NULL DEFAULT '{}',
+        source_locator TEXT,
+        is_derived INTEGER NOT NULL DEFAULT 0,
+        derivation_json TEXT,
+        ingested_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS statement_source_manifests (
+        manifest_id TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        source TEXT NOT NULL,
+        source_run_id INTEGER,
+        accession TEXT,
+        status TEXT NOT NULL,
+        contract_version TEXT NOT NULL,
+        evidence_cutoff TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS valuation_statement_reconciliation_runs (
+        run_hash TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        as_of_date TEXT NOT NULL,
+        facts_fingerprint TEXT NOT NULL,
+        selected_fact_ids_json TEXT NOT NULL,
+        readiness_json TEXT NOT NULL,
+        readiness_hash TEXT NOT NULL,
+        manifest_ids_json TEXT NOT NULL DEFAULT '[]',
+        selected_view_hash TEXT NOT NULL DEFAULT '',
+        raw_ledger_hash TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'provisional',
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS treatment_decisions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ticker TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        focus_key TEXT,
+        treatment TEXT NOT NULL,
+        valuation_treatment TEXT NOT NULL,
+        driver_field TEXT,
+        model_change_request TEXT,
+        evidence_anchor_ids_json TEXT NOT NULL DEFAULT '[]',
+        rationale TEXT NOT NULL,
+        decided_at TEXT NOT NULL,
+        approved_by TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1,
+        superseded_by INTEGER,
+        evidence_corpus_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (superseded_by) REFERENCES treatment_decisions(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS analysis_snapshots (
+        snapshot_hash TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        as_of_date TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        captured_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS judgment_run_envelopes (
+        run_id TEXT PRIMARY KEY,
+        idempotency_key TEXT NOT NULL,
+        semantic_task_hash TEXT NOT NULL,
+        invocation_hash TEXT NOT NULL,
+        snapshot_hash TEXT NOT NULL,
+        ticker TEXT NOT NULL,
+        family TEXT NOT NULL,
+        role TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        requested_model TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS approved_valuation_replays (
+        replay_key TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        analysis_snapshot_hash TEXT NOT NULL,
+        readiness_fingerprint TEXT NOT NULL,
+        output_hash TEXT NOT NULL,
+        case_json TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ticker_terminal_outcomes (
+        outcome_id TEXT PRIMARY KEY,
+        execution_run_id TEXT NOT NULL,
+        batch_run_id TEXT,
+        ticker TEXT NOT NULL,
+        identity_key TEXT NOT NULL,
+        context_fingerprint TEXT NOT NULL,
+        checkpoint_fingerprint TEXT NOT NULL,
+        analysis_snapshot_hash TEXT NOT NULL,
+        readiness_fingerprint TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (
+            status IN ('decision_grade', 'provisional', 'blocked')
+        ),
+        reason_code TEXT NOT NULL,
+        reason_codes_json TEXT NOT NULL,
+        retryable INTEGER NOT NULL CHECK (retryable IN (0, 1)),
+        result_fingerprint TEXT,
+        attempt_count INTEGER NOT NULL CHECK (attempt_count >= 0),
+        record_hash TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE (execution_run_id, identity_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS valuation_model_change_requests (
+        request_id TEXT PRIMARY KEY,
+        ticker TEXT NOT NULL,
+        analysis_snapshot_hash TEXT NOT NULL,
+        category TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS valuation_model_change_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        request_id TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        actor TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS valuation_artifact_integrity (
+        artifact_type TEXT NOT NULL,
+        artifact_key TEXT NOT NULL,
+        payload_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (artifact_type, artifact_key)
+    );
+
+    CREATE TABLE IF NOT EXISTS judgment_invocation_reservations (
+        invocation_hash TEXT PRIMARY KEY,
+        owner_run_id TEXT NOT NULL,
+        reserved_at_epoch REAL NOT NULL,
+        lease_expires_at_epoch REAL NOT NULL
+    );
+
     -- CIQ compute-ready deterministic snapshot
     CREATE TABLE IF NOT EXISTS ciq_valuation_snapshot (
         ticker                  TEXT NOT NULL,
@@ -938,6 +1122,20 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_ticker_dossier_snapshots_ticker_updated ON ticker_dossier_snapshots(ticker, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ciq_runs_ticker ON ciq_ingest_runs(ticker, ingest_ts);
     CREATE INDEX IF NOT EXISTS idx_ciq_long_form_lookup ON ciq_long_form(ticker, metric_key, period_date);
+    CREATE INDEX IF NOT EXISTS idx_statement_facts_lookup ON statement_facts(ticker, statement, period_end, source);
+    CREATE INDEX IF NOT EXISTS idx_statement_facts_concept ON statement_facts(ticker, concept, period_end);
+    CREATE INDEX IF NOT EXISTS idx_statement_manifests_ticker_source ON statement_source_manifests(ticker, source, status, evidence_cutoff DESC);
+    CREATE INDEX IF NOT EXISTS idx_valuation_statement_runs_ticker_asof ON valuation_statement_reconciliation_runs(ticker, as_of_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_treatment_decisions_ticker_active ON treatment_decisions(ticker, active, topic, focus_key, decided_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_analysis_snapshots_ticker_asof ON analysis_snapshots(ticker, as_of_date DESC);
+    CREATE INDEX IF NOT EXISTS idx_judgment_envelopes_idempotency ON judgment_run_envelopes(idempotency_key, status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_judgment_envelopes_ticker_role ON judgment_run_envelopes(ticker, role, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_approved_replays_ticker ON approved_valuation_replays(ticker, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ticker_terminal_outcomes_ticker_created ON ticker_terminal_outcomes(ticker, created_at DESC, outcome_id DESC);
+    CREATE INDEX IF NOT EXISTS idx_ticker_terminal_outcomes_batch ON ticker_terminal_outcomes(batch_run_id, ticker);
+    CREATE INDEX IF NOT EXISTS idx_model_change_requests_ticker_status ON valuation_model_change_requests(ticker, status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_model_change_events_request ON valuation_model_change_events(request_id, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_judgment_reservations_expiry ON judgment_invocation_reservations(lease_expires_at_epoch);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
 
@@ -1007,6 +1205,40 @@ def create_tables(conn: sqlite3.Connection | None = None):
     }
     if "prompt_version" not in agent_run_log_columns:
         conn.execute("ALTER TABLE agent_run_log ADD COLUMN prompt_version TEXT")
+
+    pm_queue_columns = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute(
+            "PRAGMA table_info(pm_decision_queue_items)"
+        ).fetchall()
+    }
+    if "dedupe_key" not in pm_queue_columns:
+        conn.execute(
+            "ALTER TABLE pm_decision_queue_items ADD COLUMN dedupe_key TEXT"
+        )
+    conn.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS
+            idx_pm_decision_queue_dedupe_key
+        ON pm_decision_queue_items(dedupe_key)
+        WHERE dedupe_key IS NOT NULL
+        """
+    )
+
+    statement_fact_columns = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute("PRAGMA table_info(statement_facts)").fetchall()
+    }
+    statement_fact_lineage_columns = {
+        "entity_id": "TEXT",
+        "context_json": "TEXT NOT NULL DEFAULT '{}'",
+        "fiscal_calendar_json": "TEXT NOT NULL DEFAULT '{}'",
+    }
+    for column, definition in statement_fact_lineage_columns.items():
+        if column not in statement_fact_columns:
+            conn.execute(
+                f"ALTER TABLE statement_facts ADD COLUMN {column} {definition}"
+            )
 
     conn.commit()
     if close_after:

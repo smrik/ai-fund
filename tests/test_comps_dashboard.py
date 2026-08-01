@@ -3,6 +3,23 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 
+def _bridge_context(comps_dashboard, *, adjustment_usd=20_000_000_000.0):
+    return {
+        "inputs": SimpleNamespace(
+            drivers=SimpleNamespace(shares_outstanding=900_000_000.0)
+        ),
+        "bridge": comps_dashboard.ReconciledEVBridge(
+            net_debt=adjustment_usd
+        ),
+        "bridge_basis": "reconciled_claim_ledger",
+        "claim_ledger": {"fingerprint": "claim-ledger-hash"},
+        "operating_cash_policy": {"rate": 0.02},
+        "bridge_cutover": {"mode": "shadow"},
+        "valuation_readiness": {"trust_status": "provisional"},
+        "valuation_status": "provisional",
+    }
+
+
 def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(monkeypatch):
     from src.stage_04_pipeline import comps_dashboard
 
@@ -78,8 +95,20 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     )
     monkeypatch.setattr(
         comps_dashboard,
-        "run_comps_model",
-        lambda comps_detail, net_debt_mm=None, shares_mm=None, similarity_scores=None: SimpleNamespace(
+        "_bridge_context",
+        lambda ticker: _bridge_context(comps_dashboard),
+    )
+    comps_call = {}
+
+    def _run_comps(
+        comps_detail,
+        net_debt_mm=None,
+        shares_mm=None,
+        similarity_scores=None,
+        ev_to_equity_adjustment_mm=None,
+    ):
+        comps_call["bridge_mm"] = ev_to_equity_adjustment_mm
+        return SimpleNamespace(
             bear_iv=95.0,
             base_iv=110.0,
             bull_iv=125.0,
@@ -111,7 +140,12 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
                     bull_iv=129.0,
                 ),
             },
-        ),
+        )
+
+    monkeypatch.setattr(
+        comps_dashboard,
+        "run_comps_model",
+        _run_comps,
     )
     monkeypatch.setattr(
         comps_dashboard,
@@ -165,6 +199,9 @@ def test_build_comps_dashboard_view_returns_metric_switching_and_football_field(
     assert status_rows[("ORCL", "tev_ebitda_ltm")] == "outlier_removed"
     assert status_rows[("ACN", "tev_ebitda_ltm")] == "included"
     assert view["peer_table"][0]["display_name"] == "ACN"
+    assert comps_call["bridge_mm"] == 20_000.0
+    assert view["comps_bridge"]["basis"] == "reconciled_claim_ledger"
+    assert view["valuation_output_mode"] == "shadow_preview"
 
 
 def test_build_comps_dashboard_view_survives_similarity_failure(monkeypatch):
@@ -192,6 +229,11 @@ def test_build_comps_dashboard_view_survives_similarity_failure(monkeypatch):
     monkeypatch.setattr(comps_dashboard, "run_comps_model", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         comps_dashboard,
+        "_bridge_context",
+        lambda ticker: _bridge_context(comps_dashboard),
+    )
+    monkeypatch.setattr(
+        comps_dashboard,
         "build_multiples_dashboard_view",
         lambda ticker, period="5y": {"available": False, "metrics": {}, "audit_flags": ["history unavailable"]},
     )
@@ -201,6 +243,41 @@ def test_build_comps_dashboard_view_survives_similarity_failure(monkeypatch):
     assert view["available"] is True
     assert "Peer similarity unavailable: embedding cache offline" in view["audit_flags"]
     assert view["historical_multiples_summary"]["available"] is False
+
+
+def test_build_comps_dashboard_view_returns_structured_bridge_blocker(
+    monkeypatch,
+):
+    from src.stage_04_pipeline import comps_dashboard
+
+    monkeypatch.setattr(
+        comps_dashboard,
+        "get_ciq_comps_detail",
+        lambda ticker: {
+            "target": {"ticker": "IBM"},
+            "peers": [{"ticker": "ORCL"}],
+            "medians": {},
+        },
+    )
+    monkeypatch.setattr(
+        comps_dashboard.market_data,
+        "get_market_data",
+        lambda ticker: {"current_price": 105.0},
+    )
+    monkeypatch.setattr(
+        comps_dashboard,
+        "_bridge_context",
+        lambda ticker: (_ for _ in ()).throw(
+            ValueError("reported line ciq:investments does not tie")
+        ),
+    )
+
+    view = comps_dashboard.build_comps_dashboard_view("IBM")
+
+    assert view["available"] is False
+    assert view["valuation_status"] == "blocked"
+    assert view["blocker"]["reason_code"] == "comps_bridge_unavailable"
+    assert "ciq:investments" in view["blocker"]["message"]
 
 
 def test_build_comps_dashboard_view_handles_missing_ciq_data(monkeypatch):
@@ -264,6 +341,14 @@ def test_build_comps_dashboard_view_uses_public_market_fallback_when_ciq_missing
         comps_dashboard.peer_similarity,
         "score_peer_similarity",
         lambda ticker, peers, embedding_model: {row["ticker"]: 0.5 for row in peers},
+    )
+    monkeypatch.setattr(
+        comps_dashboard,
+        "_bridge_context",
+        lambda ticker: _bridge_context(
+            comps_dashboard,
+            adjustment_usd=-50_000_000_000.0,
+        ),
     )
     monkeypatch.setattr(
         comps_dashboard,

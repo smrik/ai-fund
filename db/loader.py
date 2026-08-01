@@ -2,8 +2,10 @@
 Alpha Pod — Database Loader
 Insert/update functions for all tables. All operations are idempotent (upsert).
 """
+import hashlib
 import sqlite3
 import json
+import re
 from typing import Any
 
 from src.utils import utc_now_iso
@@ -234,23 +236,410 @@ def insert_ciq_long_form(conn: sqlite3.Connection, run_id: int, rows: list[dict[
         item["run_id"] = run_id
         payload.append(item)
 
-    conn.executemany(
-        """
-        INSERT OR REPLACE INTO ciq_long_form (
-            run_id, ticker, sheet_name, section_name, row_label,
-            metric_key, period_date, calc_type, column_label,
-            column_index, value_raw, value_num, unit, scale_factor,
-            source_file
-        ) VALUES (
-            :run_id, :ticker, :sheet_name, :section_name, :row_label,
-            :metric_key, :period_date, :calc_type, :column_label,
-            :column_index, :value_raw, :value_num, :unit, :scale_factor,
-            :source_file
+    statement_records = _ciq_statement_records(conn, run_id, rows)
+    try:
+        conn.executemany(
+            """
+            INSERT OR REPLACE INTO ciq_long_form (
+                run_id, ticker, sheet_name, section_name, row_label,
+                metric_key, period_date, calc_type, column_label,
+                column_index, value_raw, value_num, unit, scale_factor,
+                source_file
+            ) VALUES (
+                :run_id, :ticker, :sheet_name, :section_name, :row_label,
+                :metric_key, :period_date, :calc_type, :column_label,
+                :column_index, :value_raw, :value_num, :unit, :scale_factor,
+                :source_file
+            )
+            """,
+            payload,
         )
-        """,
-        payload,
+        if statement_records:
+            insert_statement_facts(conn, statement_records, commit=False)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+
+
+_STATEMENT_HIERARCHY_KEYS = (
+    "line_item_sequence",
+    "depth",
+    "parent_concept",
+    "section",
+    "is_abstract",
+    "is_total",
+    "presentation_order",
+)
+
+
+def _json_dump(value: Any) -> str:
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
     )
-    conn.commit()
+
+
+def _statement_fact_payload(record: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(record.get("metadata") or {})
+    dimensions = dict(record.get("dimensions") or metadata.get("dimensions") or {})
+    context = dict(record.get("context") or {})
+    if not context:
+        context = {
+            "context_ref": metadata.get("context_ref"),
+            "semantic_tags": metadata.get("semantic_tags") or [],
+            "business_context": metadata.get("business_context"),
+            "calculation_context": metadata.get("calculation_context"),
+        }
+    fiscal_calendar = dict(record.get("fiscal_calendar") or {})
+    if not fiscal_calendar:
+        fiscal_calendar = {
+            "fiscal_year": metadata.get("fiscal_year"),
+            "fiscal_period": metadata.get("fiscal_period"),
+            "period_start": metadata.get("period_start"),
+            "period_end": metadata.get("period_end"),
+        }
+    hierarchy = dict(record.get("hierarchy") or {})
+    for key in _STATEMENT_HIERARCHY_KEYS:
+        if key not in hierarchy and key in metadata:
+            hierarchy[key] = metadata[key]
+
+    statement = record.get("statement") or metadata.get("statement_type")
+    concept = record.get("concept") or record.get("fact_name")
+    fingerprint = record.get("ingestion_fingerprint")
+    if not fingerprint:
+        raise ValueError("statement fact requires ingestion_fingerprint")
+    if not statement:
+        raise ValueError("statement fact requires statement")
+    if not concept:
+        raise ValueError("statement fact requires concept")
+
+    value = record.get("value")
+    return {
+        "fact_id": str(record["fact_id"]),
+        "ingestion_fingerprint": str(fingerprint),
+        "ticker": str(record["ticker"]).upper(),
+        "entity_id": record.get("entity_id") or metadata.get("entity_id"),
+        "source": str(record["source"]),
+        "source_run_id": record.get("source_run_id"),
+        "statement": str(statement),
+        "concept": str(concept),
+        "label": record.get("label") or metadata.get("label"),
+        "value_raw": _json_dump(value) if value is not None else None,
+        "numeric_value": record.get("numeric_value"),
+        "unit": record.get("unit"),
+        "currency": record.get("currency"),
+        "scale": record.get("scale", metadata.get("scale")),
+        "scale_factor": record.get("scale_factor", 1.0),
+        "period_label": record.get("period"),
+        "period_kind": str(record.get("period_kind") or "reported"),
+        "period_type": record.get("period_type") or metadata.get("period_type"),
+        "period_start": record.get("period_start") or metadata.get("period_start"),
+        "period_end": record.get("period_end") or metadata.get("period_end"),
+        "fiscal_year": record.get("fiscal_year", metadata.get("fiscal_year")),
+        "fiscal_period": record.get("fiscal_period") or metadata.get("fiscal_period"),
+        "filing_date": record.get("filing_date") or metadata.get("filing_date"),
+        "form_type": record.get("form_type") or metadata.get("form_type"),
+        "accession": record.get("accession") or metadata.get("accession"),
+        "context_ref": record.get("context_ref") or metadata.get("context_ref"),
+        "context_json": _json_dump(context),
+        "fiscal_calendar_json": _json_dump(fiscal_calendar),
+        "dimensions_json": _json_dump(dimensions),
+        "hierarchy_json": _json_dump(hierarchy),
+        "source_locator": record.get("source_locator"),
+        "is_derived": int(bool(record.get("is_derived"))),
+        "derivation_json": (
+            _json_dump(record["derivation"])
+            if record.get("derivation") is not None
+            else None
+        ),
+        "ingested_at": record.get("ingested_at") or _now(),
+    }
+
+
+def insert_statement_facts(
+    conn: sqlite3.Connection,
+    records: list[dict[str, Any]],
+    *,
+    commit: bool = True,
+) -> int:
+    """Append source statement facts, ignoring byte-equivalent re-ingestion.
+
+    ``ingestion_fingerprint`` is the immutable identity. A later filing vintage
+    or changed source value gets a different fingerprint and remains alongside
+    the earlier evidence rather than overwriting it.
+    """
+
+    if not records:
+        return 0
+    payload = [_statement_fact_payload(dict(record)) for record in records]
+    before = conn.total_changes
+    try:
+        conn.executemany(
+            """
+            INSERT INTO statement_facts (
+                fact_id, ingestion_fingerprint, ticker, entity_id, source, source_run_id,
+                statement, concept, label, value_raw, numeric_value, unit,
+                currency, scale, scale_factor, period_label, period_kind, period_type,
+                period_start, period_end, fiscal_year, fiscal_period, filing_date,
+                form_type, accession, context_ref, context_json,
+                fiscal_calendar_json, dimensions_json,
+                hierarchy_json, source_locator, is_derived, derivation_json,
+                ingested_at
+            ) VALUES (
+                :fact_id, :ingestion_fingerprint, :ticker, :entity_id, :source, :source_run_id,
+                :statement, :concept, :label, :value_raw, :numeric_value, :unit,
+                :currency, :scale, :scale_factor, :period_label, :period_kind, :period_type,
+                :period_start, :period_end, :fiscal_year, :fiscal_period, :filing_date,
+                :form_type, :accession, :context_ref, :context_json,
+                :fiscal_calendar_json, :dimensions_json,
+                :hierarchy_json, :source_locator, :is_derived, :derivation_json,
+                :ingested_at
+            )
+            ON CONFLICT(ingestion_fingerprint) DO NOTHING
+            """,
+            payload,
+        )
+    except Exception:
+        if commit:
+            conn.rollback()
+        raise
+    inserted = conn.total_changes - before
+    if commit:
+        conn.commit()
+    return int(inserted)
+
+
+def load_statement_facts(
+    conn: sqlite3.Connection,
+    ticker: str,
+    *,
+    sources: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Load immutable statement evidence with structured lineage restored."""
+
+    params: list[Any] = [str(ticker).upper()]
+    source_clause = ""
+    if sources:
+        source_clause = f" AND source IN ({','.join('?' for _ in sources)})"
+        params.extend(str(source) for source in sources)
+    cursor = conn.execute(
+        f"""
+        SELECT *
+        FROM statement_facts
+        WHERE ticker = ?{source_clause}
+        ORDER BY period_end DESC, filing_date DESC, statement, id
+        """,
+        params,
+    )
+    columns = [description[0] for description in cursor.description]
+    out: list[dict[str, Any]] = []
+    for raw_row in cursor.fetchall():
+        item = (
+            dict(raw_row)
+            if isinstance(raw_row, sqlite3.Row)
+            else dict(zip(columns, raw_row))
+        )
+        item["value"] = (
+            json.loads(item.pop("value_raw"))
+            if item.get("value_raw") is not None
+            else None
+        )
+        item["dimensions"] = json.loads(item.pop("dimensions_json") or "{}")
+        item["context"] = json.loads(item.pop("context_json") or "{}")
+        item["fiscal_calendar"] = json.loads(
+            item.pop("fiscal_calendar_json") or "{}"
+        )
+        item["hierarchy"] = json.loads(item.pop("hierarchy_json") or "{}")
+        item["derivation"] = (
+            json.loads(item.pop("derivation_json"))
+            if item.get("derivation_json")
+            else None
+        )
+        item["is_derived"] = bool(item["is_derived"])
+        out.append(item)
+    return out
+
+
+def _ciq_statement_type(section_name: Any) -> str | None:
+    token = re.sub(r"[^a-z0-9]+", "", str(section_name or "").lower())
+    if "cashflow" in token:
+        return "CashFlowStatement"
+    if "balancesheet" in token or "financialposition" in token:
+        return "BalanceSheet"
+    if "income" in token or "operation" in token or "profitandloss" in token:
+        return "IncomeStatement"
+    return None
+
+
+def _ciq_concept(row: dict[str, Any]) -> str:
+    metric_key = str(row.get("metric_key") or "").strip()
+    if metric_key:
+        return metric_key
+    return (
+        re.sub(r"[^a-z0-9]+", "_", str(row.get("row_label") or "").lower())
+        .strip("_")
+        or "unknown"
+    )
+
+
+def _ciq_statement_records(
+    conn: sqlite3.Connection,
+    run_id: int,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    cursor = conn.execute(
+        """
+        SELECT file_hash, parser_version, source_file
+        FROM ciq_ingest_runs
+        WHERE id = ?
+        """,
+        [run_id],
+    )
+    raw_run = cursor.fetchone()
+    if raw_run is None:
+        raise ValueError(f"unknown CIQ ingest run: {run_id}")
+    run_meta = (
+        dict(raw_run)
+        if isinstance(raw_run, sqlite3.Row)
+        else dict(zip([item[0] for item in cursor.description], raw_run))
+    )
+
+    records: list[dict[str, Any]] = []
+    for ordinal, raw in enumerate(rows, start=1):
+        row = dict(raw)
+        if str(row.get("sheet_name") or "") != "Financial Statements":
+            continue
+        statement = row.get("statement") or _ciq_statement_type(
+            row.get("section_name")
+        )
+        if statement is None:
+            continue
+        ticker = str(row.get("ticker") or "").upper()
+        raw_scale_factor = row.get("scale_factor")
+        scale_factor = float(
+            1.0 if raw_scale_factor is None else raw_scale_factor
+        )
+        unit = str(row.get("unit") or "").strip() or None
+        currency = str(row.get("currency") or "").strip().upper() or None
+        if currency is None and unit is not None and len(unit) == 3 and unit.isalpha():
+            currency = unit.upper()
+        calc_type = str(row.get("calc_type") or "").upper()
+        period_kind = str(
+            row.get("period_kind")
+            or (
+                "ltm"
+                if calc_type == "LTM"
+                else "annual"
+                if calc_type in {"", "REP", "RUP", "ACTUAL"}
+                else "source_other"
+            )
+        )
+        period_end = row.get("period_end") or row.get("period_date")
+        fiscal_year = row.get("fiscal_year")
+        if fiscal_year is None and period_end:
+            fiscal_year = int(str(period_end)[:4])
+        presentation_order = row.get("presentation_order") or ordinal
+        source_locator = (
+            f"{row.get('source_file') or run_meta['source_file']}"
+            f"#{row.get('sheet_name')}/{row.get('section_name')}"
+            f"/{row.get('row_label')}/row-{presentation_order}"
+            f"/column-{row.get('column_index')}"
+        )
+        fingerprint_payload = {
+            "source": "ciq_workbook_v1",
+            "file_hash": run_meta["file_hash"],
+            "parser_version": run_meta["parser_version"],
+            "row_ordinal": ordinal,
+            "row": row,
+        }
+        fingerprint = hashlib.sha256(
+            _json_dump(fingerprint_payload).encode("utf-8")
+        ).hexdigest()
+        records.append(
+            {
+                "fact_id": f"ciq:{ticker}:{fingerprint[:24]}",
+                "ingestion_fingerprint": fingerprint,
+                "ticker": ticker,
+                "entity_id": None,
+                "source": "ciq_workbook_v1",
+                "source_run_id": run_id,
+                "statement": statement,
+                "concept": _ciq_concept(row),
+                "label": row.get("row_label"),
+                "value": row.get("value_raw"),
+                "numeric_value": row.get("value_num"),
+                "unit": unit,
+                "currency": currency,
+                "scale": scale_factor,
+                "scale_factor": scale_factor,
+                "period": row.get("period_label") or period_end,
+                "period_kind": period_kind,
+                "period_type": row.get("period_type")
+                or (
+                    "instant"
+                    if statement == "BalanceSheet"
+                    else "duration"
+                ),
+                "period_start": row.get("period_start"),
+                "period_end": period_end,
+                "fiscal_year": fiscal_year,
+                "fiscal_period": row.get("fiscal_period")
+                or row.get("calc_type"),
+                "filing_date": row.get("filing_date"),
+                "form_type": "CIQ_WORKBOOK",
+                "accession": None,
+                "context_ref": (
+                    f"{row.get('sheet_name')}:{row.get('column_label')}"
+                ),
+                "context": {
+                    "sheet_name": row.get("sheet_name"),
+                    "section_name": row.get("section_name"),
+                    "column_label": row.get("column_label"),
+                    "column_index": row.get("column_index"),
+                    "calculation_type": row.get("calc_type"),
+                    "period_label": row.get("period_label"),
+                    "period_kind": period_kind,
+                    "period_type": row.get("period_type"),
+                    "period_start": row.get("period_start"),
+                    "period_end": period_end,
+                    "period_length_months": row.get(
+                        "period_length_months"
+                    ),
+                    "currency": currency,
+                    "scale_factor": scale_factor,
+                    "conversion_code": row.get("conversion_code"),
+                },
+                "fiscal_calendar": {
+                    "fiscal_year": fiscal_year,
+                    "fiscal_period": row.get("fiscal_period")
+                    or row.get("calc_type"),
+                    "period_start": row.get("period_start"),
+                    "period_end": period_end,
+                },
+                "dimensions": {},
+                "hierarchy": {
+                    "line_item_sequence": presentation_order,
+                    "depth": None,
+                    "parent_concept": None,
+                    "section": row.get("section_name"),
+                    "is_abstract": False,
+                    "is_total": None,
+                    "presentation_order": presentation_order,
+                    "statement_role": row.get("statement_role"),
+                    "canonical_role": row.get("canonical_role"),
+                    "coverage_entry_key": row.get(
+                        "coverage_entry_key"
+                    ),
+                },
+                "source_locator": source_locator,
+                "is_derived": False,
+                "derivation": None,
+            }
+        )
+    return records
 
 
 def upsert_ciq_valuation_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
@@ -942,12 +1331,30 @@ def _find_duplicate_pm_queue_item(conn: sqlite3.Connection, item: dict[str, Any]
     return None
 
 
-def insert_pm_decision_queue_item(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+def insert_pm_decision_queue_item(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+    *,
+    commit: bool = True,
+) -> int:
     item = dict(row)
     item["ticker"] = str(item["ticker"]).upper()
-    duplicate = _find_duplicate_pm_queue_item(conn, item)
-    if duplicate is not None:
-        return int(duplicate["item_id"])
+    item["dedupe_key"] = str(item.get("dedupe_key") or "").strip() or None
+    if item["dedupe_key"] is not None:
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM pm_decision_queue_items
+            WHERE dedupe_key = ?
+            """,
+            (item["dedupe_key"],),
+        ).fetchone()
+        if existing is not None:
+            return int(existing[0])
+    else:
+        duplicate = _find_duplicate_pm_queue_item(conn, item)
+        if duplicate is not None:
+            return int(duplicate["item_id"])
     item["evidence_anchor_ids_json"] = json.dumps(item.get("evidence_anchor_ids") or [], separators=(",", ":"))
     item["evidence_packet_ids_json"] = json.dumps(item.get("evidence_packet_ids") or [], separators=(",", ":"))
     item["proposal_pack_json"] = (
@@ -973,27 +1380,53 @@ def insert_pm_decision_queue_item(conn: sqlite3.Connection, row: dict[str, Any])
     item["adapter_links_json"] = json.dumps(item.get("adapter_links") or {}, separators=(",", ":"))
     item["decision_history_json"] = json.dumps(item.get("decision_history") or [], separators=(",", ":"))
     item["metadata_json"] = json.dumps(item.get("metadata") or {}, separators=(",", ":"))
-    cursor = conn.execute(
-        """
-        INSERT INTO pm_decision_queue_items (
-            created_at, updated_at, ticker, profile_name, item_type, status,
-            qualitative_importance, valuation_impact_bucket, title, summary,
-            evidence_anchor_ids_json, evidence_packet_ids_json, proposal_pack_json,
-            pm_edited_proposal_pack_json, approved_proposal_pack_json,
-            agent_confidence, translator_confidence, pm_confidence, valuation_impact_json,
-            adapter_links_json, decision_history_json, metadata_json
-        ) VALUES (
-            :created_at, :updated_at, :ticker, :profile_name, :item_type, :status,
-            :qualitative_importance, :valuation_impact_bucket, :title, :summary,
-            :evidence_anchor_ids_json, :evidence_packet_ids_json, :proposal_pack_json,
-            :pm_edited_proposal_pack_json, :approved_proposal_pack_json,
-            :agent_confidence, :translator_confidence, :pm_confidence, :valuation_impact_json,
-            :adapter_links_json, :decision_history_json, :metadata_json
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO pm_decision_queue_items (
+                dedupe_key, created_at, updated_at, ticker, profile_name,
+                item_type, status, qualitative_importance,
+                valuation_impact_bucket, title, summary,
+                evidence_anchor_ids_json, evidence_packet_ids_json,
+                proposal_pack_json, pm_edited_proposal_pack_json,
+                approved_proposal_pack_json, agent_confidence,
+                translator_confidence, pm_confidence,
+                valuation_impact_json, adapter_links_json,
+                decision_history_json, metadata_json
+            ) VALUES (
+                :dedupe_key, :created_at, :updated_at, :ticker, :profile_name,
+                :item_type, :status, :qualitative_importance,
+                :valuation_impact_bucket, :title, :summary,
+                :evidence_anchor_ids_json, :evidence_packet_ids_json,
+                :proposal_pack_json, :pm_edited_proposal_pack_json,
+                :approved_proposal_pack_json, :agent_confidence,
+                :translator_confidence, :pm_confidence,
+                :valuation_impact_json, :adapter_links_json,
+                :decision_history_json, :metadata_json
+            )
+            """,
+            item,
         )
-        """,
-        item,
-    )
-    conn.commit()
+    except sqlite3.IntegrityError:
+        if item["dedupe_key"] is None:
+            if commit:
+                conn.rollback()
+            raise
+        existing = conn.execute(
+            """
+            SELECT id
+            FROM pm_decision_queue_items
+            WHERE dedupe_key = ?
+            """,
+            (item["dedupe_key"],),
+        ).fetchone()
+        if existing is None:
+            if commit:
+                conn.rollback()
+            raise
+        return int(existing[0])
+    if commit:
+        conn.commit()
     return int(cursor.lastrowid)
 
 
@@ -1054,6 +1487,7 @@ def update_pm_decision_queue_item(
     *,
     item_id: int,
     updates: dict[str, Any],
+    commit: bool = True,
 ) -> dict[str, Any]:
     if not updates:
         row = conn.execute(
@@ -1113,7 +1547,8 @@ def update_pm_decision_queue_item(
         """,
         params,
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     row = conn.execute(
         "SELECT * FROM pm_decision_queue_items WHERE id = ?",
         [int(item_id)],
@@ -1123,7 +1558,12 @@ def update_pm_decision_queue_item(
     return _pm_queue_row_to_dict(row)
 
 
-def insert_pm_decision_queue_event(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+def insert_pm_decision_queue_event(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+    *,
+    commit: bool = True,
+) -> int:
     item = dict(row)
     item["ticker"] = str(item["ticker"]).upper()
     item["payload_json"] = json.dumps(item.get("payload") or {}, separators=(",", ":"))
@@ -1137,7 +1577,8 @@ def insert_pm_decision_queue_event(conn: sqlite3.Connection, row: dict[str, Any]
         """,
         item,
     )
-    conn.commit()
+    if commit:
+        conn.commit()
     return int(cursor.lastrowid)
 
 
@@ -1371,6 +1812,101 @@ def load_approved_assumption_entries(conn: sqlite3.Connection, ticker: str) -> l
         item["metadata"] = json.loads(item.pop("metadata_json") or "{}")
         out.append(item)
     return out
+
+
+def _treatment_decision_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    item = dict(row)
+    item["evidence_anchor_ids"] = json.loads(
+        item.pop("evidence_anchor_ids_json") or "[]"
+    )
+    item["active"] = bool(item["active"])
+    return item
+
+
+def insert_treatment_decision(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+    """Record an approved treatment and supersede the prior decision for its focus."""
+    item = dict(row)
+    item["ticker"] = str(item["ticker"]).upper()
+    item["focus_key"] = item.get("focus_key")
+    item["driver_field"] = item.get("driver_field")
+    item["model_change_request"] = item.get("model_change_request")
+    item["evidence_anchor_ids_json"] = json.dumps(
+        item.get("evidence_anchor_ids") or [],
+        separators=(",", ":"),
+    )
+    item["created_at"] = item.get("created_at") or item["decided_at"]
+    item["updated_at"] = item.get("updated_at") or item["decided_at"]
+
+    with conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO treatment_decisions (
+                ticker, topic, focus_key, treatment, valuation_treatment,
+                driver_field, model_change_request, evidence_anchor_ids_json,
+                rationale, decided_at, approved_by, active, superseded_by,
+                evidence_corpus_hash, created_at, updated_at
+            ) VALUES (
+                :ticker, :topic, :focus_key, :treatment, :valuation_treatment,
+                :driver_field, :model_change_request, :evidence_anchor_ids_json,
+                :rationale, :decided_at, :approved_by, 1, NULL,
+                :evidence_corpus_hash, :created_at, :updated_at
+            )
+            """,
+            item,
+        )
+        decision_id = int(cursor.lastrowid)
+        conn.execute(
+            """
+            UPDATE treatment_decisions
+            SET active = 0, superseded_by = ?, updated_at = ?
+            WHERE ticker = ?
+              AND topic = ?
+              AND COALESCE(focus_key, '') = COALESCE(?, '')
+              AND active = 1
+              AND id <> ?
+            """,
+            [
+                decision_id,
+                item["updated_at"],
+                item["ticker"],
+                item["topic"],
+                item["focus_key"],
+                decision_id,
+            ],
+        )
+    return decision_id
+
+
+def load_active_treatment_decisions(
+    conn: sqlite3.Connection,
+    ticker: str,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM treatment_decisions
+        WHERE ticker = ? AND active = 1
+        ORDER BY decided_at DESC, id DESC
+        """,
+        [str(ticker).upper()],
+    ).fetchall()
+    return [_treatment_decision_row_to_dict(row) for row in rows]
+
+
+def load_treatment_decision_history(
+    conn: sqlite3.Connection,
+    ticker: str,
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        """
+        SELECT *
+        FROM treatment_decisions
+        WHERE ticker = ?
+        ORDER BY decided_at DESC, id DESC
+        """,
+        [str(ticker).upper()],
+    ).fetchall()
+    return [_treatment_decision_row_to_dict(row) for row in rows]
 
 
 def insert_pipeline_report_archive(conn: sqlite3.Connection, row: dict[str, Any]) -> int:

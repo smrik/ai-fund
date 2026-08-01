@@ -103,7 +103,15 @@ class _StubAccountingRecastAgent:
     system_prompt = "recast"
     prompt_version = "v-test"
 
-    def analyze(self, ticker, reported_ebit=None, filing_text=None):
+    def analyze(
+        self,
+        ticker,
+        reported_ebit=None,
+        filing_text=None,
+        business_context="",
+        industry_context="",
+        current_model_context="",
+    ):
         _bump("AccountingRecastAgent")
         return {
             "ticker": ticker,

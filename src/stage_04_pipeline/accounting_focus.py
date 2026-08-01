@@ -14,9 +14,12 @@ from pydantic import Field
 
 from src.contracts.accounting_evidence import (
     ACCOUNTING_FOCUS_TO_TOPIC,
+    AccountingEvidenceAnchor,
     AccountingFocusKey,
     AccountingPacketStatus,
+    AccountingSourceFact,
     AccountingTopic,
+    FocusedAccountingEvidencePacket,
 )
 from src.contracts.assumption_policy import ContractModel
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketFact, TextEvidenceSnippet
@@ -137,7 +140,10 @@ def _text(value: Any) -> str:
 
 def _dump(value: Any) -> dict[str, Any]:
     if isinstance(value, Mapping):
-        return dict(value)
+        payload = dict(value)
+        payload.pop("created_at", None)
+        payload.pop("updated_at", None)
+        return payload
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="python")
     raise TypeError("packet must be an EvidencePacket or mapping/model dump")
@@ -340,9 +346,83 @@ def select_accounting_focus(
     )
 
 
+def to_focused_accounting_packet(
+    context: AccountingFocusContext,
+    source_packet: EvidencePacket | Mapping[str, Any],
+) -> FocusedAccountingEvidencePacket:
+    """Adapt a deterministic focus projection into the agent/validator contract."""
+
+    persisted = EvidencePacket.model_validate(_dump(source_packet))
+    if persisted.ticker != context.ticker:
+        raise ValueError("focus context and source packet ticker must match")
+
+    definition = ACCOUNTING_FOCUS_REGISTRY[context.focus_key]
+    facts = [
+        AccountingSourceFact(
+            fact_id=fact.fact_id,
+            fact_name=fact.fact_name,
+            value=fact.value,
+            unit=fact.unit,
+            currency=(fact.metadata or {}).get("currency"),
+            period=(fact.metadata or {}).get("period")
+            or (fact.metadata or {}).get("period_end"),
+            evidence_anchor_ids=[fact.fact_id],
+            metadata=dict(fact.metadata or {}),
+        )
+        for fact in context.selected_facts
+    ]
+    anchors = [
+        AccountingEvidenceAnchor(
+            anchor_id=fact.fact_id,
+            source_ref=(fact.metadata or {}).get("source_ref_id"),
+            locator=(fact.metadata or {}).get("source_locator"),
+            citation_text=f"{fact.fact_name}: {fact.value}"
+            + (f" {fact.unit}" if fact.unit else ""),
+            metadata=dict(fact.metadata or {}),
+        )
+        for fact in context.selected_facts
+    ]
+    anchors.extend(
+        AccountingEvidenceAnchor(
+            anchor_id=snippet.snippet_id,
+            source_ref=snippet.source_ref_id,
+            locator=(snippet.metadata or {}).get("source_locator"),
+            citation_text=snippet.text,
+            metadata=dict(snippet.metadata or {}),
+        )
+        for snippet in context.selected_snippets
+    )
+
+    return FocusedAccountingEvidencePacket(
+        packet_id=(
+            f"accounting:{context.ticker}:{context.focus_key.value}:"
+            f"{context.parent_packet_id if context.parent_packet_id is not None else 'unpersisted'}"
+        ),
+        ticker=context.ticker,
+        topic=context.parent_topic,
+        base_packet_id=context.parent_packet_id if isinstance(context.parent_packet_id, int) else None,
+        source_refs=list(persisted.source_refs),
+        facts=facts,
+        evidence_anchors=anchors,
+        snippets=list(context.selected_snippets),
+        allowed_driver_fields=list(definition.allowed_driver_fields),
+        current_model_fields=dict(context.selected_driver_fields),
+        metadata={
+            "focus_key": context.focus_key.value,
+            "focus_purpose": definition.purpose,
+            "packet_status": context.packet_status.value,
+            "missing_data_status": context.missing_data_status,
+            "coverage_notes": list(context.coverage_notes),
+            "period_vintage_metadata": dict(context.period_vintage_metadata),
+            "source_profile_name": persisted.profile_name,
+        },
+    )
+
+
 __all__ = [
     "ACCOUNTING_FOCUS_REGISTRY",
     "AccountingFocusContext",
     "AccountingFocusDefinition",
     "select_accounting_focus",
+    "to_focused_accounting_packet",
 ]

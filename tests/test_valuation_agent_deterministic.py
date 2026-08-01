@@ -44,19 +44,47 @@ def test_valuation_agent_uses_deterministic_batch_runner(monkeypatch):
     assert abs((result.upside_pct_base or 0) - 0.111) < 1e-9
 
 
-def test_valuation_agent_fallback_when_deterministic_result_missing(monkeypatch):
+def test_valuation_agent_fails_closed_when_deterministic_result_missing(monkeypatch):
     monkeypatch.setattr("src.stage_03_judgment.valuation_agent.BaseAgent.__init__", _fake_base_init)
     monkeypatch.setattr("src.stage_03_judgment.valuation_agent.value_single_ticker", lambda ticker: None)
-    monkeypatch.setattr(
-        "src.stage_03_judgment.valuation_agent.md_client.get_market_data",
-        lambda ticker: {"current_price": 50.0},
-    )
 
     agent = ValuationAgent()
     result = agent.analyze("MISS", FilingsSummary())
 
+    assert result.valuation_status == "blocked"
+    assert result.valuation_output_mode == "none"
+    assert result.bear is None
+    assert result.base is None
+    assert result.bull is None
+    assert result.blocker["reason_code"] == (
+        "deterministic_valuation_unavailable"
+    )
+
+
+def test_valuation_agent_preserves_structured_bridge_blocker(monkeypatch):
+    monkeypatch.setattr(
+        "src.stage_03_judgment.valuation_agent.BaseAgent.__init__",
+        _fake_base_init,
+    )
+    monkeypatch.setattr(
+        "src.stage_03_judgment.valuation_agent.value_single_ticker",
+        lambda ticker: {
+            "ticker": ticker,
+            "price": 50.0,
+            "valuation_status": "blocked",
+            "valuation_blocker_json": (
+                '{"status":"blocked","reason_code":'
+                '"claim_ledger_not_decision_grade","message":'
+                '"material line ciq:investments is unclaimed"}'
+            ),
+        },
+    )
+
+    result = ValuationAgent().analyze("MISS", FilingsSummary())
+
+    assert result.base is None
     assert result.current_price == 50.0
-    assert result.bear == 35.0
-    assert result.base == 50.0
-    assert result.bull == 65.0
-    assert (result.upside_pct_base or 0) == 0.0
+    assert result.blocker["reason_code"] == (
+        "claim_ledger_not_decision_grade"
+    )
+    assert "ciq:investments" in result.blocker["message"]

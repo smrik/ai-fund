@@ -952,3 +952,34 @@ def test_missing_profile_sources_mark_packets_partial_or_placeholder(monkeypatch
     assert comps_packet.run_metadata["source_quality"] == "placeholder"
     assert comps_packet.run_metadata["reason"] == "missing_real_comps_inputs"
     assert comps_packet.facts == []
+
+
+def test_terminal_reinvestment_facts_expose_capex_da_gap():
+    """Without these derived facts the agent cannot see that terminal capex sits far above
+    terminal D&A, because the two drivers are only ever reported separately."""
+    from types import SimpleNamespace
+
+    from src.stage_04_pipeline.evidence_packets import _terminal_reinvestment_facts
+
+    drivers = SimpleNamespace(capex_pct_target=0.167, da_pct_target=0.0588)
+    facts = {f["fact_name"]: f["value"] for f in _terminal_reinvestment_facts(drivers, "ref:1")}
+
+    assert facts["terminal_reinvestment_gap_pct"] == pytest.approx(10.82, abs=0.01)
+    assert facts["terminal_da_to_capex_ratio"] == pytest.approx(0.352, abs=0.001)
+
+
+def test_terminal_reinvestment_facts_skip_when_drivers_missing():
+    from types import SimpleNamespace
+
+    from src.stage_04_pipeline.evidence_packets import _terminal_reinvestment_facts
+
+    assert _terminal_reinvestment_facts(SimpleNamespace(), "ref:1") == []
+
+    facts = {
+        f["fact_name"]
+        for f in _terminal_reinvestment_facts(
+            SimpleNamespace(capex_pct_target=0.0, da_pct_target=0.0),
+            "ref:1",
+        )
+    }
+    assert "terminal_da_to_capex_ratio" not in facts

@@ -20,9 +20,9 @@ from db.schema import create_tables, get_connection
 from src.stage_00_data import edgar_client
 from src.utils import utc_now_iso
 
-_SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v5"
+SECTION_PARSER_VERSION = f"{EDGAR_PARSER_VERSION}_sections_v6"
 _CHUNK_VERSION = "v2"
-_QUERY_VERSION = "v5"
+_QUERY_VERSION = "v9"
 _EMBEDDING_MODEL = PEER_SIMILARITY_MODEL
 _CHUNK_SIZE = 1400
 _CHUNK_OVERLAP = 200
@@ -83,24 +83,16 @@ _PROFILE_CONFIGS: dict[str, dict[str, Any]] = {
     },
     "accounting_recast": {
         "priorities": [
-            "note_leases",
-            "note_pension",
-            "note_debt",
-            "note_taxes",
-            "note_contingencies",
-            "note_segments",
-            "note_fair_value",
-            "note_impairment",
-            "note_revenue",
-            "note_sbc",
             "notes_to_financials",
             "notes_to_financials_q",
+            "mda",
+            "mda_q",
         ],
         "queries": [
-            "lease liabilities operating lease finance lease right of use",
-            "pension obligation postretirement underfunded status",
-            "minority interest noncontrolling preferred stock equity investment affiliate",
-            "debt contingencies taxes fair value bridge one time ebit adjustment",
+            "unusual nonrecurring recurring accounting policy estimate change restatement correction",
+            "economic substance operating financing obligation off balance sheet commitment guarantee related party",
+            "capitalization expensing useful life impairment reserve contingent deferred noncash",
+            "valuation adjustment normalized earnings free cash flow invested capital enterprise equity bridge",
         ],
     },
     "industry": {
@@ -336,6 +328,57 @@ def _item_heading_pattern(item: str, label: str | None = None, *, part: str | No
     return rf"{part_prefix}item\s+{item_text}\.?\s*(?:\n\s*){{1,4}}"
 
 
+def _extract_numbered_note_sections(notes_source: str) -> tuple[str, list[tuple[str, str, str]]]:
+    matches = list(
+        re.finditer(
+            r"(?im)(?:^|\n)\s*(?P<heading>note\s+(?P<number>\d+)(?P<suffix>[a-z])?(?:[.:\-\s]+)[^\n]{0,140})",
+            notes_source,
+        )
+    )
+    if not matches:
+        return "", []
+
+    notes_end = len(notes_source)
+    tail = notes_source[matches[-1].end() :]
+    for pattern in (
+        r"(?im)^\s*report\s+of\s+independent\s+(?:regist\s*ered\s+public\s+accounting\s+firm|auditors?)\b",
+        _item_heading_pattern("1", part="i"),
+        _item_heading_pattern("2", part="i"),
+        _item_heading_pattern("9", part="ii"),
+        r"(?im)^\s*item\s+9\.?\b",
+        r"(?im)^\s*signatures?\b",
+    ):
+        tail_match = re.search(pattern, tail, flags=re.IGNORECASE | re.MULTILINE)
+        if tail_match:
+            notes_end = min(notes_end, matches[-1].end() + tail_match.start())
+
+    numbered_sections: list[tuple[str, str, str]] = []
+    for index, match in enumerate(matches):
+        start = match.start("heading")
+        end = matches[index + 1].start("heading") if index + 1 < len(matches) else notes_end
+        if end <= start:
+            continue
+        number = int(match.group("number"))
+        suffix = (match.group("suffix") or "").lower()
+        heading = " ".join(match.group("heading").split())
+        block = notes_source[start:end].strip()
+        numbered_sections.append((f"note_{number:03d}{suffix}", heading, block))
+
+    if not numbered_sections:
+        return "", []
+    notes_start = matches[0].start("heading")
+    heading_matches = list(
+        re.finditer(
+            r"(?im)^\s*notes\s+to\s+(?:(?:condensed|consolidated)\s+)*financial\s+statements\b[^\n]*",
+            notes_source[:notes_start],
+        )
+    )
+    if heading_matches:
+        notes_start = heading_matches[-1].start()
+    notes_text = notes_source[notes_start:notes_end].strip()
+    return notes_text, numbered_sections
+
+
 def _extract_note_subsections(form_type: str, notes_text: str) -> list[tuple[str, str]]:
     if not notes_text:
         return []
@@ -518,6 +561,15 @@ def _extract_sections_for_filing(form_type: str, text: str) -> list[tuple[str, s
         if section_text:
             sections.append((section_key, label, section_text))
 
+    statement_key = "financial_statements" if form_type == "10-K" else "financial_statements_q"
+    broad_notes_key = "notes_to_financials" if form_type == "10-K" else "notes_to_financials_q"
+    statement_text = next((value for key, _, value in sections if key == statement_key), "")
+    numbered_notes_text, numbered_notes = _extract_numbered_note_sections(statement_text)
+    if numbered_notes:
+        sections = [section for section in sections if section[0] != broad_notes_key]
+        sections.append((broad_notes_key, "Notes to Financial Statements", numbered_notes_text))
+        sections.extend(numbered_notes)
+
     if form_type == "10-K":
         notes_text = next((value for key, _, value in sections if key == "notes_to_financials"), "")
         for note_key, note_text in _extract_note_subsections(form_type, notes_text):
@@ -589,7 +641,7 @@ def _load_cached_sections(
         WHERE ticker = ? AND accession_no = ? AND doc_name = ? AND parser_version = ?
         ORDER BY section_key
         """,
-        [ticker.upper(), accession_no, doc_name, _SECTION_PARSER_VERSION],
+        [ticker.upper(), accession_no, doc_name, SECTION_PARSER_VERSION],
     ).fetchall()
     return [
         FilingSection(
@@ -631,7 +683,7 @@ def _load_cached_chunks(
         WHERE c.ticker = ? AND c.accession_no = ? AND c.doc_name = ? AND c.chunk_version = ?
         ORDER BY c.section_key, c.chunk_index
         """,
-        [_SECTION_PARSER_VERSION, ticker.upper(), accession_no, doc_name, _CHUNK_VERSION],
+        [SECTION_PARSER_VERSION, ticker.upper(), accession_no, doc_name, _CHUNK_VERSION],
     ).fetchall()
     return [
         FilingChunk(
@@ -687,51 +739,97 @@ def _section_priority_score(section_key: str, priorities: list[str]) -> float:
     return 0.1
 
 
+def _lexical_query_score(text: str, queries: list[str]) -> float:
+    stopwords = {
+        "and",
+        "are",
+        "for",
+        "from",
+        "into",
+        "that",
+        "the",
+        "this",
+        "use",
+        "was",
+        "were",
+        "with",
+    }
+    text_terms = {
+        term
+        for term in re.findall(r"[a-z][a-z0-9]{2,}", text.lower())
+        if term not in stopwords
+    }
+    scores: list[float] = []
+    for query in queries:
+        query_terms = {
+            term
+            for term in re.findall(r"[a-z][a-z0-9]{2,}", query.lower())
+            if term not in stopwords
+        }
+        if query_terms:
+            scores.append(len(text_terms & query_terms) / len(query_terms))
+    return max(scores, default=0.0)
+
+
 def _select_profile_chunks(
     scored_chunks: list[FilingChunk],
     *,
     profile_name: str,
     priorities: list[str],
 ) -> list[FilingChunk]:
-    """Select focused-profile evidence with section diversity.
+    """Select ranked evidence without turning profile hints into eligibility gates."""
 
-    Accounting profiles must not spend the full twelve-chunk budget on the
-    broad notes section when topic-specific sections are available. One chunk
-    per available priority section gives the agent a coverage map; remaining
-    capacity is filled by the normal score ordering.
-    """
-
-    if profile_name not in {"qoe", "accounting_recast"}:
-        return scored_chunks[:_MAX_SELECTED_CHUNKS]
+    ranked_chunks = sorted(scored_chunks, key=lambda item: item.score or 0.0, reverse=True)
+    if len(priorities) < 2:
+        return ranked_chunks[:_MAX_SELECTED_CHUNKS]
 
     selected: list[FilingChunk] = []
     selected_keys: set[tuple[str, str, int]] = set()
+    section_counts: dict[str, int] = {}
 
     def _chunk_key(chunk: FilingChunk) -> tuple[str, str, int]:
         return (chunk.accession_no, chunk.section_key, int(chunk.chunk_index))
 
-    candidates_by_section: dict[str, list[FilingChunk]] = {
-        section_key: [chunk for chunk in scored_chunks if chunk.section_key == section_key]
-        for section_key in priorities
-    }
-    # Round-robin across sections. This keeps a large topic (for example
-    # taxes) from consuming the remainder of the packet budget.
-    for round_index in range(_MAX_SELECTED_CHUNKS):
-        progressed = False
-        for section_key in priorities:
-            candidates = candidates_by_section.get(section_key, [])
-            if round_index >= len(candidates):
-                continue
-            candidate = candidates[round_index]
-            key = _chunk_key(candidate)
-            if key in selected_keys:
-                continue
+    def _append(candidate: FilingChunk) -> None:
+        key = _chunk_key(candidate)
+        if key not in selected_keys:
             selected.append(candidate)
             selected_keys.add(key)
-            progressed = True
-            if len(selected) >= _MAX_SELECTED_CHUNKS:
-                return selected
-        if not progressed:
+            section_counts[candidate.section_key] = section_counts.get(candidate.section_key, 0) + 1
+
+    # Use at most one third of the budget to anchor known profile sections. The
+    # remaining budget must stay open to raw numbered notes and ranked surprises.
+    anchor_budget = max(1, _MAX_SELECTED_CHUNKS // 3)
+    for section_key in priorities:
+        candidate = next((chunk for chunk in ranked_chunks if chunk.section_key == section_key), None)
+        if candidate is not None:
+            _append(candidate)
+        if len(selected) >= anchor_budget:
+            break
+
+    raw_note_sections: set[str] = set()
+    for candidate in ranked_chunks:
+        if not re.fullmatch(r"note_\d{3}[a-z]?", candidate.section_key):
+            continue
+        if candidate.section_key in raw_note_sections:
+            continue
+        _append(candidate)
+        raw_note_sections.add(candidate.section_key)
+        if len(raw_note_sections) >= anchor_budget or len(selected) >= _MAX_SELECTED_CHUNKS:
+            break
+
+    for candidate in ranked_chunks:
+        if section_counts.get(candidate.section_key, 0) >= 2:
+            continue
+        _append(candidate)
+        if len(selected) >= _MAX_SELECTED_CHUNKS:
+            break
+
+    # Small synthetic corpora may not have enough diverse sections. In that case
+    # fill the remainder by score rather than returning an unnecessarily thin packet.
+    for candidate in ranked_chunks:
+        _append(candidate)
+        if len(selected) >= _MAX_SELECTED_CHUNKS:
             break
     return selected
 
@@ -796,13 +894,13 @@ def _store_context_cache(conn: sqlite3.Connection, bundle: FilingContextBundle, 
     )
 
 
-def _load_filing_payloads(ticker: str, *, include_10k: bool, ten_q_limit: int) -> list[dict[str, Any]]:
+def _load_filing_payloads(ticker: str, *, include_10k: bool, ten_q_limit: int | None) -> list[dict[str, Any]]:
     cik = edgar_client.get_cik(ticker)
     filings: list[dict[str, Any]] = []
 
     if include_10k:
-        for meta in edgar_client.get_recent_filing_metadata(ticker, "10-K", limit=1):
-            text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=250_000)
+        for meta in edgar_client.get_recent_filing_metadata(ticker, "10-K", limit=None):
+            text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=None)
             if text:
                 filings.append(
                     {
@@ -817,7 +915,7 @@ def _load_filing_payloads(ticker: str, *, include_10k: bool, ten_q_limit: int) -
                 )
 
     for meta in edgar_client.get_recent_filing_metadata(ticker, "10-Q", limit=ten_q_limit):
-        text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=180_000)
+        text = edgar_client.get_filing_text_by_accession(ticker, meta["accession_no"], max_chars=None)
         if text:
             filings.append(
                 {
@@ -869,7 +967,7 @@ def _build_sections_and_chunks(conn: sqlite3.Connection, filing: dict[str, Any])
                 "section_label": section_label,
                 "section_text": section_text,
                 "section_hash": section.text_hash,
-                "parser_version": _SECTION_PARSER_VERSION,
+                "parser_version": SECTION_PARSER_VERSION,
                 "extracted_at": utc_now_iso(),
             }
         )
@@ -915,7 +1013,7 @@ def build_filing_corpus(
     ticker: str,
     *,
     include_10k: bool = True,
-    ten_q_limit: int = 2,
+    ten_q_limit: int | None = 2,
 ) -> dict:
     ticker = ticker.upper().strip()
     filings = _load_filing_payloads(ticker, include_10k=include_10k, ten_q_limit=ten_q_limit)
@@ -997,6 +1095,348 @@ def render_filing_context(bundle: FilingContextBundle, max_chars: int) -> str:
         rendered.append(block)
         total_chars += len(block)
     return "\n".join(rendered).strip()
+
+
+def build_accounting_section_inventory(
+    sections: list[FilingSection],
+    *,
+    preview_chars: int = 240,
+) -> list[dict[str, Any]]:
+    """Build the complete note map used by the accounting discovery agent."""
+
+    inventory: list[dict[str, Any]] = []
+    eligible = [
+        section
+        for section in sections
+        if re.fullmatch(r"note_\d{3}[a-z]?", section.section_key)
+        or (
+            section.section_key.startswith("note_")
+            and not section.section_key.startswith("notes_to_")
+        )
+    ]
+    eligible.sort(key=lambda section: (section.accession_no, section.section_key))
+    eligible.sort(key=lambda section: section.filing_date or "", reverse=True)
+
+    for section in eligible:
+        raw_note = bool(re.fullmatch(r"note_\d{3}[a-z]?", section.section_key))
+        preview = " ".join(section.text.split())
+        if preview_chars > 0 and len(preview) > preview_chars:
+            preview = preview[:preview_chars].rstrip() + "…"
+        inventory.append(
+            {
+                "section_id": f"{section.accession_no}::{section.section_key}",
+                "form_type": section.form_type,
+                "accession_no": section.accession_no,
+                "filing_date": section.filing_date,
+                "section_key": section.section_key,
+                "heading": section.section_label,
+                "preview": preview,
+                "inventory_role": (
+                    "raw_numbered_note" if raw_note else "semantic_alias"
+                ),
+            }
+        )
+    return inventory
+
+
+def render_accounting_section_inventory(
+    inventory: list[dict[str, Any]],
+    *,
+    max_chars: int | None = None,
+) -> str:
+    lines: list[str] = []
+    used_chars = 0
+    for item in inventory:
+        line = (
+            f"[{item.get('section_id')} | {item.get('form_type')} | "
+            f"{item.get('filing_date') or 'unknown-date'} | "
+            f"{item.get('inventory_role')}]\n"
+            f"{item.get('heading') or item.get('section_key')}\n"
+            f"Preview: {item.get('preview') or 'none'}\n"
+        )
+        if max_chars is not None and used_chars + len(line) > max_chars:
+            break
+        lines.append(line)
+        used_chars += len(line)
+    return "\n".join(lines).strip()
+
+
+def get_accounting_section_inventory(
+    ticker: str,
+    *,
+    include_10k: bool = True,
+    ten_q_limit: int | None = None,
+) -> list[dict[str, Any]]:
+    corpus = build_filing_corpus(
+        ticker,
+        include_10k=include_10k,
+        ten_q_limit=ten_q_limit,
+    )
+    return build_accounting_section_inventory(corpus["sections"])
+
+
+# Filings whose notes to the financial statements form the accounting corpus. 8-Ks are
+# cached as supplemental business/earnings sources and must never be counted as
+# accounting-note coverage.
+ACCOUNTING_CORPUS_FORM_TYPES = ("10-K", "10-Q")
+
+
+def summarize_accounting_corpus_coverage(
+    *,
+    ticker: str,
+    filings: list[Any],
+    parsed_counts: dict[tuple[str, str], dict[str, int]],
+    parser_version: str | None = None,
+) -> dict[str, Any]:
+    """Pure coverage summary over cached filings and current-parser section counts.
+
+    ``complete`` requires two separate things, because they fail separately:
+
+    1. every cached 10-K/10-Q parsed under the current parser version, and
+    2. every one of those filings produced at least one raw numbered note.
+
+    Condition 2 exists because "parsed" is not "complete". IBM had four required
+    filings present and parsed that yielded zero numbered notes between them, so a
+    presence-only gate would have handed the discovery agent an empty inventory
+    while reporting a complete corpus.
+    """
+
+    required = [
+        row for row in filings
+        if str(row["form_type"]) in ACCOUNTING_CORPUS_FORM_TYPES
+    ]
+    missing: list[dict[str, Any]] = []
+    without_notes: list[dict[str, Any]] = []
+    for row in required:
+        key = (str(row["accession_no"]), str(row["doc_name"]))
+        descriptor = {
+            "form_type": str(row["form_type"]),
+            "filing_date": row["filing_date"],
+            "accession_no": key[0],
+            "doc_name": key[1],
+        }
+        counts = parsed_counts.get(key)
+        if counts is None:
+            missing.append(descriptor)
+        elif not counts.get("raw_notes"):
+            without_notes.append({**descriptor, "sections": counts.get("sections", 0)})
+    return {
+        "ticker": ticker.upper().strip(),
+        "parser_version": parser_version or SECTION_PARSER_VERSION,
+        "cached_filing_count": len(filings),
+        "required_filing_count": len(required),
+        "parsed_filing_count": len(required) - len(missing),
+        "missing_filings": missing,
+        "filings_without_notes": without_notes,
+        "complete": bool(required) and not missing and not without_notes,
+    }
+
+
+def get_accounting_corpus_coverage(
+    ticker: str,
+    *,
+    conn: sqlite3.Connection | None = None,
+    parser_version: str | None = None,
+) -> dict[str, Any]:
+    """Report cached filing inventory against current-parser accounting coverage.
+
+    Historical parser rows stay in SQLite for lineage but must not inflate the
+    current coverage count, so parsed filings are counted at
+    ``SECTION_PARSER_VERSION`` only.
+
+    Pass ``conn`` to read from a caller-owned connection (the manual inspector uses
+    a read-only handle); a supplied connection is not closed here.
+    """
+
+    ticker = ticker.upper().strip()
+    parser_version = parser_version or SECTION_PARSER_VERSION
+    owned = conn is None
+    conn = conn if conn is not None else _connect()
+    try:
+        filings = conn.execute(
+            """
+            SELECT form_type, filing_date, accession_no, doc_name
+            FROM edgar_filing_cache
+            WHERE ticker = ?
+            ORDER BY filing_date DESC, accession_no DESC
+            """,
+            [ticker],
+        ).fetchall()
+        parsed = conn.execute(
+            """
+            SELECT accession_no, doc_name,
+                   COUNT(*) AS sections,
+                   SUM(CASE WHEN section_key GLOB 'note_[0-9][0-9][0-9]*' THEN 1 ELSE 0 END)
+                       AS raw_notes
+            FROM edgar_section_cache
+            WHERE ticker = ? AND parser_version = ?
+            GROUP BY accession_no, doc_name
+            """,
+            [ticker, parser_version],
+        ).fetchall()
+    finally:
+        if owned:
+            conn.close()
+
+    parsed_counts = {
+        (str(row["accession_no"]), str(row["doc_name"])): {
+            "sections": int(row["sections"]),
+            "raw_notes": int(row["raw_notes"] or 0),
+        }
+        for row in parsed
+    }
+    return summarize_accounting_corpus_coverage(
+        ticker=ticker,
+        filings=filings,
+        parsed_counts=parsed_counts,
+        parser_version=parser_version,
+    )
+
+
+def _raise_for_incomplete_coverage(coverage: dict[str, Any]) -> dict[str, Any]:
+    """Fail closed with the specific reason: absent filings, or filings without notes."""
+
+    if coverage["complete"]:
+        return coverage
+    reasons: list[str] = []
+    if coverage["missing_filings"]:
+        reasons.append(
+            f"parsed {coverage['parsed_filing_count']}/"
+            f"{coverage['required_filing_count']} required accounting filings"
+        )
+    if coverage["filings_without_notes"]:
+        listed = ", ".join(
+            f"{item['form_type']} {item['accession_no']} ({item['sections']} sections)"
+            for item in coverage["filings_without_notes"]
+        )
+        reasons.append(f"no numbered notes extracted from {listed}")
+    if not reasons:
+        reasons.append("no cached 10-K or 10-Q filings")
+    raise RuntimeError(
+        f"Accounting corpus incomplete for {coverage['ticker']} at parser "
+        f"{coverage['parser_version']}: "
+        + "; ".join(reasons)
+        + "; refusing to run classification judgment."
+    )
+
+
+def require_accounting_corpus_coverage(ticker: str) -> dict[str, Any]:
+    """Fail closed unless every cached 10-K/10-Q parsed *and* yielded numbered notes."""
+
+    return _raise_for_incomplete_coverage(get_accounting_corpus_coverage(ticker))
+
+
+def get_discovery_filing_context(
+    ticker: str,
+    discovery_result: dict[str, Any],
+    *,
+    include_10k: bool = True,
+    ten_q_limit: int | None = None,
+    max_selected_chunks: int = 24,
+    chunks_per_section: int = 2,
+) -> FilingContextBundle:
+    """Retrieve only the sections and terms requested by accounting discovery."""
+
+    ticker = ticker.upper().strip()
+    corpus = build_filing_corpus(
+        ticker,
+        include_10k=include_10k,
+        ten_q_limit=ten_q_limit,
+    )
+    section_terms: dict[str, list[str]] = {}
+    question_ids: list[str] = []
+    for question in discovery_result.get("questions") or []:
+        if not isinstance(question, dict):
+            continue
+        question_id = str(question.get("question_id") or "").strip()
+        if question_id:
+            question_ids.append(question_id)
+        terms = [
+            str(term).strip()
+            for term in (question.get("search_terms") or [])
+            if str(term).strip()
+        ]
+        for section_id in question.get("requested_section_ids") or []:
+            section_id = str(section_id).strip()
+            if not section_id:
+                continue
+            existing_terms = section_terms.setdefault(section_id, [])
+            existing_terms.extend(term for term in terms if term not in existing_terms)
+
+    chunks_by_section: dict[str, list[FilingChunk]] = {}
+    for chunk in corpus["chunks"]:
+        section_id = f"{chunk.accession_no}::{chunk.section_key}"
+        if section_id in section_terms:
+            chunks_by_section.setdefault(section_id, []).append(chunk)
+
+    requested_section_ids = list(section_terms)
+    unmatched_section_ids = [
+        section_id
+        for section_id in requested_section_ids
+        if section_id not in chunks_by_section
+    ]
+    ranked_by_section: dict[str, list[FilingChunk]] = {}
+    for section_id, chunks in chunks_by_section.items():
+        terms = section_terms[section_id]
+        queries = [" ".join(terms)] if terms else []
+        ranked = [
+            FilingChunk(
+                form_type=chunk.form_type,
+                accession_no=chunk.accession_no,
+                filing_date=chunk.filing_date,
+                section_key=chunk.section_key,
+                chunk_index=chunk.chunk_index,
+                text=chunk.text,
+                chunk_hash=chunk.chunk_hash,
+                score=_lexical_query_score(chunk.text, queries),
+            )
+            for chunk in chunks
+        ]
+        ranked.sort(key=lambda chunk: (-(chunk.score or 0.0), chunk.chunk_index))
+        ranked_by_section[section_id] = ranked
+
+    selected_chunks: list[FilingChunk] = []
+    for round_index in range(max(1, chunks_per_section)):
+        for section_id in requested_section_ids:
+            ranked = ranked_by_section.get(section_id) or []
+            if round_index < len(ranked):
+                selected_chunks.append(ranked[round_index])
+            if len(selected_chunks) >= max_selected_chunks:
+                break
+        if len(selected_chunks) >= max_selected_chunks:
+            break
+
+    requested_accessions = {
+        section_id.split("::", 1)[0]
+        for section_id in requested_section_ids
+        if "::" in section_id
+    }
+    sources = [
+        source
+        for source in corpus["sources"]
+        if source.get("accession_no") in requested_accessions
+    ]
+    bundle = FilingContextBundle(
+        ticker=ticker,
+        profile_name="accounting_discovery_focus",
+        corpus_hash=corpus["corpus_hash"],
+        sources=sources,
+        selected_chunks=selected_chunks,
+        rendered_text="",
+        retrieval_summary={
+            "profile_name": "accounting_discovery_focus",
+            "query_version": _QUERY_VERSION,
+            "corpus_hash": corpus["corpus_hash"],
+            "question_ids": question_ids,
+            "requested_section_ids": requested_section_ids,
+            "matched_section_ids": sorted(chunks_by_section),
+            "unmatched_section_ids": unmatched_section_ids,
+            "selected_chunk_count": len(selected_chunks),
+            "corpus_chunk_count": len(corpus.get("chunks", [])),
+        },
+    )
+    bundle.rendered_text = render_filing_context(bundle, max_chars=40_000)
+    return bundle
 
 
 def query_filing_corpus(ticker: str, query_text: str, *, top_k: int = 5, include_10k: bool = True, ten_q_limit: int = 2) -> FilingContextBundle:
@@ -1130,6 +1570,7 @@ def get_agent_filing_context(
         scored_chunks: list[FilingChunk] = []
         for chunk in candidate_chunks:
             section_score = _section_priority_score(chunk.section_key, priorities)
+            lexical_score = _lexical_query_score(chunk.text, config["queries"])
             semantic_score = 0.0
             if query_embeddings:
                 try:
@@ -1141,7 +1582,14 @@ def get_agent_filing_context(
                 except Exception:
                     fallback_mode = True
                     semantic_score = 0.0
-            final_score = 0.60 * semantic_score + 0.40 * section_score
+            if query_embeddings:
+                final_score = (
+                    0.55 * semantic_score
+                    + 0.25 * lexical_score
+                    + 0.20 * section_score
+                )
+            else:
+                final_score = 0.75 * lexical_score + 0.25 * section_score
             scored_chunks.append(
                 FilingChunk(
                     form_type=chunk.form_type,

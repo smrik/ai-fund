@@ -81,6 +81,53 @@ def test_cache_only_reads_env_db_path_set_after_import(tmp_path, monkeypatch):
     assert text == "cached annual filing text"
 
 
+def test_get_recent_filing_metadata_without_limit_returns_every_cached_filing(tmp_path, monkeypatch):
+    db_path = tmp_path / "isolated.db"
+    _init_db(db_path)
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.setenv("ALPHA_POD_EDGAR_CACHE_ONLY", "1")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            """
+            INSERT INTO edgar_filing_cache (
+                ticker, cik, form_type, accession_no, filing_date, doc_name,
+                source_url, raw_path, clean_path, raw_text_hash, clean_text_hash,
+                parser_version, fetched_at, cleaned_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    "MSFT",
+                    "0000789019",
+                    "10-K",
+                    f"annual-{year}",
+                    f"{year}-07-30",
+                    f"annual-{year}.htm",
+                    f"https://sec.example/{year}",
+                    None,
+                    None,
+                    "hash",
+                    "hash",
+                    "v1",
+                    "2026-07-25T00:00:00+00:00",
+                    "2026-07-25T00:00:00+00:00",
+                )
+                for year in (2025, 2024, 2023, 2022)
+            ],
+        )
+        conn.commit()
+
+    metadata = edgar_client.get_recent_filing_metadata("MSFT", "10-K", limit=None)
+
+    assert [row["accession_no"] for row in metadata] == [
+        "annual-2025",
+        "annual-2024",
+        "annual-2023",
+        "annual-2022",
+    ]
+
+
 def test_get_recent_10q_texts_returns_list_of_texts(monkeypatch):
     mock_company = MagicMock()
     mock_filings_list = [MagicMock(), MagicMock()]

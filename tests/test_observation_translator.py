@@ -55,6 +55,11 @@ def test_translator_maps_guidance_upside_to_delta_proposal():
     assert proposal.proposal_mode == ProposalMode.delta
     assert proposal.proposed_delta == pytest.approx(0.01)
     assert item.translator_confidence is not None
+    assert item.metadata["trust_ceiling"] == "provisional"
+    assert item.metadata["decision_grade_eligible"] is False
+    assert item.proposal_pack.notes["numeric_authority"] == (
+        "legacy_provisional_diagnostic"
+    )
 
 
 def test_translator_maps_target_observation_to_target_mode():
@@ -329,3 +334,46 @@ def test_translator_can_fail_closed_when_public_handoff_omits_packet():
             ],
             require_evidence_packet=True,
         )
+
+
+def test_translator_routes_terminal_reinvestment_incoherence_to_da_target_proposal():
+    """Terminal capex and D&A fade independently, so the model can imply perpetual
+    reinvestment far above depreciation. The judgment layer decides the right convergence
+    from management guidance; it must arrive as a PM queue proposal, never a direct edit."""
+    items = translator.translate_observations_to_queue_items(
+        ticker="MSFT",
+        profile_name="valuation_review",
+        evidence_packet_id=1,
+        observations=[
+            _observation(
+                observation_type="terminal_reinvestment_incoherence",
+                anchors=["fact:valuation_review:terminal_da_to_capex_ratio"],
+            )
+        ],
+    )
+
+    assert len(items) == 1
+    item = items[0]
+    assert item.item_type == PMDecisionQueueItemType.assumption_change_pack
+    proposals = item.proposal_pack.proposals
+    assert [p.assumption_name for p in proposals] == ["da_pct_target"]
+    assert proposals[0].proposal_mode == ProposalMode.delta
+    # Percent-of-revenue driver: the step must be whole percentage points, not basis points.
+    assert proposals[0].proposed_delta == pytest.approx(0.01)
+
+
+def test_reinvestment_drivers_are_agent_proposable():
+    """Forward reinvestment targets are judgment-owned; reported starts are not."""
+    from src.stage_04_pipeline.agentic_handoff_profiles import (
+        AGENT_PROPOSABLE_ASSUMPTION_FIELDS,
+        get_agentic_handoff_profile,
+    )
+
+    for field in ("capex_pct_target", "da_pct_target"):
+        assert field in AGENT_PROPOSABLE_ASSUMPTION_FIELDS
+    for field in ("capex_pct_start", "da_pct_start"):
+        assert field not in AGENT_PROPOSABLE_ASSUMPTION_FIELDS
+
+    profile = get_agentic_handoff_profile("valuation_review")
+    assert "terminal_reinvestment_incoherence" in profile.allowed_observation_types
+    assert "da_pct_target" in profile.allowed_assumption_fields

@@ -161,6 +161,24 @@ def test_builder_creates_numeric_effective_ticker_entries_for_dcf_wacc_and_termi
     assert by_name["wacc"].notes["selected_methodology"]["selected_method"] == "peer_bottom_up"
 
 
+def test_builder_registers_every_structural_ev_bridge_claim():
+    register = build_assumption_register("test", _inputs())
+    by_name = {entry.assumption_name: entry for entry in register.entries}
+    bridge_fields = {
+        "minority_interest",
+        "preferred_equity",
+        "pension_deficit",
+        "lease_liabilities",
+        "options_value",
+        "convertibles_value",
+    }
+
+    assert bridge_fields <= set(by_name)
+    assert all(by_name[field].scope == "ev_bridge" for field in bridge_fields)
+    assert all(by_name[field].accepted_low == 0.0 for field in bridge_fields)
+    assert all(by_name[field].accepted_high is None for field in bridge_fields)
+
+
 def test_builder_flags_out_of_range_without_blocking_register_generation():
     register = build_assumption_register("TEST", _inputs(revenue_growth_near=0.45))
     growth = next(entry for entry in register.entries if entry.assumption_name == "revenue_growth_near")

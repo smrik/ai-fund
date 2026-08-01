@@ -144,6 +144,48 @@ def test_driver_mismatch_returns_machine_readable_rejection_reason():
     assert "ebit_margin_start" in issue.message
 
 
+def test_novel_treatment_can_request_a_model_change_without_forced_mapping():
+    finding = {
+        **_bad_target_finding(),
+        "finding_type": "capitalized_customer_acquisition_costs",
+        "line_item": "Capitalized customer acquisition costs",
+        "claim": "The asset should be recast to produce comparable historical operating costs.",
+        "claim_driver_field": "historical_customer_acquisition_cost_recast",
+        "proposed_driver_field": "historical_customer_acquisition_cost_recast",
+        "valuation_treatment": "historical_recast",
+        "model_change_required": True,
+        "model_change_request": (
+            "Add a historical customer-acquisition-cost recast schedule and feed the normalized "
+            "cost series into the DCF forecast base."
+        ),
+    }
+
+    accepted = validate_accounting_finding(finding, _packet())
+    unmapped_model_change = validate_accounting_finding(
+        {
+            **finding,
+            "claim_driver_field": None,
+            "proposed_driver_field": None,
+        },
+        _packet(),
+    )
+    rejected = validate_accounting_finding(
+        {
+            **finding,
+            "model_change_required": False,
+            "model_change_request": None,
+        },
+        _packet(),
+    )
+
+    assert accepted.valid
+    assert unmapped_model_change.valid
+    assert {issue.code for issue in rejected.issues} >= {
+        "claim_driver_not_allowed",
+        "proposed_driver_not_allowed",
+    }
+
+
 def test_repair_request_returns_original_finding_reason_allowed_fields_and_evidence():
     validation = validate_accounting_finding(_bad_target_finding(), _packet())
     request = build_repair_request(

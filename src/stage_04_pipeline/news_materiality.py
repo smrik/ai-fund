@@ -267,7 +267,14 @@ def build_news_materiality_view(ticker: str, limit: int = 25) -> dict:
             }
         )
     ranked.sort(key=lambda row: (row["materiality_score"], row.get("date") or ""), reverse=True)
-    quarterly_headlines = [row for row in ranked if (_days_old(row.get("date")) or 9999) <= 120]
+    quarterly_headlines = [
+        row
+        for row in ranked
+        if (
+            (days_old := _days_old(row.get("date"))) is not None
+            and days_old <= 120
+        )
+    ]
     historical_brief, history_flags = _build_historical_brief(ticker)
     audit_flags = list(history_flags)
     if not ranked:

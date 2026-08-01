@@ -592,6 +592,8 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
             exit_multiple=14.0,
             exit_metric="ev_ebitda",
             net_debt=100.0,
+            minority_interest=20.0,
+            non_operating_assets=10.0,
             shares_outstanding=50.0,
         ),
         source_lineage={"revenue_base": "ciq", "exit_multiple": "ciq_comps", "revenue_growth_near": "ciq", "ebit_margin_start": "ciq", "capex_pct_start": "ciq", "da_pct_start": "ciq", "tax_rate_start": "ciq", "net_debt": "ciq", "shares_outstanding": "ciq"},
@@ -641,10 +643,19 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
         return {"ACN": 0.91}
 
     monkeypatch.setattr(batch_runner, "score_peer_similarity", _fake_score_peer_similarity)
-    monkeypatch.setattr(
-        batch_runner,
-        "run_comps_model",
-        lambda comps_detail, net_debt_mm=None, shares_mm=None, similarity_scores=None: type(
+    comps_call = {}
+
+    def _fake_run_comps_model(
+        comps_detail,
+        net_debt_mm=None,
+        shares_mm=None,
+        similarity_scores=None,
+        ev_to_equity_adjustment_mm=None,
+    ):
+        comps_call["ev_to_equity_adjustment_mm"] = (
+            ev_to_equity_adjustment_mm
+        )
+        return type(
             "CompsStub",
             (),
             {
@@ -658,7 +669,12 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
                 "similarity_model": "all-MiniLM-L6-v2",
                 "similarity_weighted": True,
             },
-        )(),
+        )()
+
+    monkeypatch.setattr(
+        batch_runner,
+        "run_comps_model",
+        _fake_run_comps_model,
     )
 
     out = batch_runner.value_single_ticker("TEST")
@@ -668,3 +684,6 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
     assert out["comps_similarity_method"] == "embedding_cosine"
     assert out["comps_similarity_model"] == "all-MiniLM-L6-v2"
     assert out["comps_similarity_weighted_flag"] is True
+    assert comps_call["ev_to_equity_adjustment_mm"] == (
+        110.0 / 1_000_000.0
+    )

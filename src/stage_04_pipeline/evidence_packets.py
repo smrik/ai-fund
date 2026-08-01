@@ -1032,7 +1032,6 @@ def _collect_accounting_inputs(ticker: str, profile_name: str) -> dict[str, Any]
         tuple(config.get("xbrl_concepts") or ()),
     )
     facts.extend(xbrl_facts)
-    source_refs.extend(xbrl_refs)
     statuses.append(xbrl_status)
 
     try:
@@ -1065,12 +1064,20 @@ def _collect_accounting_inputs(ticker: str, profile_name: str) -> dict[str, Any]
                 }
             )
         selected_chunks = list(getattr(bundle, "selected_chunks", []) or [])
-        allowed_snippet_sections = set(config["note_keys"]) | {
-            "notes_to_financials",
-            "notes_to_financials_q",
+        bundle_summary = getattr(bundle, "retrieval_summary", {}) or {}
+        selected_section_filter = {
+            str(key)
+            for key in (
+                bundle_summary.get("selected_section_keys", [])
+                if isinstance(bundle_summary, dict)
+                else []
+            )
         }
         for chunk in selected_chunks:
-            if chunk.section_key not in allowed_snippet_sections:
+            if (
+                selected_section_filter
+                and str(chunk.section_key) not in selected_section_filter
+            ):
                 continue
             text = _clean_text(chunk.text, max_chars=max(_evidence_chars(), 900))
             if not text:
@@ -1102,6 +1109,8 @@ def _collect_accounting_inputs(ticker: str, profile_name: str) -> dict[str, Any]
                 selected_chunk_count=len(selected_chunks),
             )
         )
+
+    source_refs.extend(xbrl_refs)
 
     try:
         model_inputs = build_valuation_inputs(ticker)
@@ -1298,6 +1307,9 @@ def _collect_accounting_inputs(ticker: str, profile_name: str) -> dict[str, Any]
             if snippet.get("metadata", {}).get("section_key")
         }
     )
+    authoritative_selected_section_keys = (
+        retrieval_selected_section_keys or selected_section_keys
+    )
     source_quality = (
         EvidenceSourceQuality.real.value
         if snippets
@@ -1330,8 +1342,9 @@ def _collect_accounting_inputs(ticker: str, profile_name: str) -> dict[str, Any]
             "profile_name": profile_name,
             "accounting_topic": topic,
             "retrieval_profile": retrieval_profile,
-            "selected_section_keys": selected_section_keys,
+            "selected_section_keys": authoritative_selected_section_keys,
             "retrieval_selected_section_keys": retrieval_selected_section_keys,
+            "packet_section_keys": selected_section_keys,
             "selected_source_locators": selected_source_locators,
             "packet_source_locators": packet_source_locators,
             "section_coverage": _accounting_section_counts(bundle),
@@ -1485,6 +1498,47 @@ def _collect_industry_analysis_inputs(ticker: str) -> dict[str, Any]:
     }
 
 
+def _terminal_reinvestment_facts(drivers: Any, source_ref_id: str) -> list[dict[str, Any]]:
+    """Expose the terminal capex-vs-D&A relationship as deterministic facts.
+
+    The model fades capex and D&A downward independently, so a business can end up
+    reinvesting far above its depreciation in perpetuity — an incoherent steady state that
+    is invisible unless the gap is stated. These facts describe the gap; deciding what the
+    ratio *should* be is a judgment call for the agent, grounded in management capex
+    guidance and depreciation policy, and routed through the PM Decision Queue.
+    """
+    capex_target = getattr(drivers, "capex_pct_target", None)
+    da_target = getattr(drivers, "da_pct_target", None)
+    if capex_target is None or da_target is None:
+        return []
+
+    try:
+        capex_target = float(capex_target)
+        da_target = float(da_target)
+    except (TypeError, ValueError):
+        return []
+
+    derived: dict[str, Any] = {
+        "terminal_reinvestment_gap_pct": round((capex_target - da_target) * 100, 4),
+    }
+    if capex_target > 0:
+        derived["terminal_da_to_capex_ratio"] = round(da_target / capex_target, 4)
+
+    return [
+        {
+            "fact_id": f"fact:valuation_review:{fact_name}",
+            "fact_name": fact_name,
+            "value": value,
+            "metadata": {
+                "source_ref_id": source_ref_id,
+                "source_lineage": "deterministic_derived",
+                "fact_role": "terminal_reinvestment_coherence",
+            },
+        }
+        for fact_name, value in derived.items()
+    ]
+
+
 def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
     statuses: list[dict[str, Any]] = []
     source_refs: list[dict[str, Any]] = []
@@ -1497,6 +1551,28 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
     except Exception as exc:
         statuses.append(_collector_status("valuation_inputs", "error", message=str(exc)))
     else:
+        if (
+            inputs is not None
+            and getattr(inputs, "valuation_status", "provisional")
+            == "blocked"
+        ):
+            readiness = getattr(inputs, "valuation_readiness", {}) or {}
+            reason_codes = readiness.get("reason_codes", [])
+            statuses.append(
+                _collector_status(
+                    "valuation_inputs",
+                    "error",
+                    message=(
+                        "valuation inputs are blocked"
+                        + (
+                            ": " + ", ".join(str(code) for code in reason_codes)
+                            if reason_codes
+                            else ""
+                        )
+                    ),
+                )
+            )
+            inputs = None
         if inputs is not None:
             source_ref_id = f"valuation-inputs:{ticker}"
             source_refs.append(
@@ -1508,7 +1584,18 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
                     "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
                 }
             )
-            for field_name in ("revenue_growth_near", "revenue_growth_mid", "ebit_margin_target", "wacc", "exit_multiple"):
+            for field_name in (
+                "revenue_growth_near",
+                "revenue_growth_mid",
+                "ebit_margin_target",
+                "wacc",
+                "exit_multiple",
+                "revenue_growth_terminal",
+                "capex_pct_start",
+                "capex_pct_target",
+                "da_pct_start",
+                "da_pct_target",
+            ):
                 if not hasattr(inputs.drivers, field_name):
                     continue
                 facts.append(
@@ -1522,6 +1609,7 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
                         },
                     }
                 )
+            facts.extend(_terminal_reinvestment_facts(inputs.drivers, source_ref_id))
             statuses.append(_collector_status("valuation_inputs", "ok", fact_count=len(facts)))
         else:
             statuses.append(_collector_status("valuation_inputs", "missing"))
@@ -1531,6 +1619,20 @@ def _collect_valuation_review_inputs(ticker: str) -> dict[str, Any]:
     except Exception as exc:
         statuses.append(_collector_status("dcf_audit_view", "error", message=str(exc)))
     else:
+        if dcf_view.get("valuation_status") == "blocked":
+            statuses.append(
+                _collector_status(
+                    "dcf_audit_view",
+                    "error",
+                    message=str(
+                        (dcf_view.get("blocker") or {}).get(
+                            "message",
+                            "DCF audit is blocked",
+                        )
+                    ),
+                )
+            )
+            dcf_view = {}
         integrity = dcf_view.get("model_integrity") if isinstance(dcf_view.get("model_integrity"), dict) else {}
         terminal = dcf_view.get("terminal_bridge") if isinstance(dcf_view.get("terminal_bridge"), dict) else {}
         if integrity or terminal:
@@ -1745,7 +1847,11 @@ def _collect_comps_analysis_inputs(ticker: str) -> dict[str, Any]:
     except Exception as exc:
         statuses.append(_collector_status("comps_dashboard", "error", message=str(exc)))
     else:
-        if view and view.get("available"):
+        if (
+            view
+            and view.get("available")
+            and view.get("valuation_status") != "blocked"
+        ):
             audit_flags = [str(flag) for flag in (view.get("audit_flags") or [])]
             source_ref_id = "comps:dashboard"
             source_refs.append(
@@ -1893,6 +1999,19 @@ def _collect_comps_analysis_inputs(ticker: str) -> dict[str, Any]:
                     fact_count=len(facts),
                     audit_flags=audit_flags,
                     primary_metric=view.get("primary_metric"),
+                )
+            )
+        elif view and view.get("valuation_status") == "blocked":
+            statuses.append(
+                _collector_status(
+                    "comps_dashboard",
+                    "error",
+                    message=str(
+                        (view.get("blocker") or {}).get(
+                            "message",
+                            "comps valuation is blocked",
+                        )
+                    ),
                 )
             )
         else:

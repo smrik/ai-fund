@@ -3,7 +3,12 @@ from copy import deepcopy
 import pytest
 
 from src.contracts.accounting_evidence import AccountingFocusKey, AccountingPacketStatus
-from src.stage_04_pipeline.accounting_focus import ACCOUNTING_FOCUS_REGISTRY, select_accounting_focus
+from src.stage_04_pipeline.accounting_focus import (
+    ACCOUNTING_FOCUS_REGISTRY,
+    select_accounting_focus,
+    to_focused_accounting_packet,
+)
+from src.stage_04_pipeline.accounting_validation import validate_accounting_finding
 
 
 KEYS = tuple(AccountingFocusKey)
@@ -86,3 +91,44 @@ def test_missing_focus_returns_valid_context_and_unsupported_parent_is_clear():
     assert context.coverage_notes
     with pytest.raises(ValueError, match="belongs to"):
         select_accounting_focus(packet, AccountingFocusKey.qoe_revenue, parent_topic="ev_equity_bridge")
+
+
+def test_focus_adapter_preserves_evidence_and_crosses_the_validator_seam():
+    source = _packet()
+    context = select_accounting_focus(source, AccountingFocusKey.qoe_revenue)
+
+    focused = to_focused_accounting_packet(context, source)
+    anchor_id = context.selected_facts[0].fact_id
+    finding = {
+        "topic": "qoe",
+        "focus_key": "qoe_revenue",
+        "finding_status": "candidate",
+        "finding_type": "revenue_recast",
+        "line_item": "Revenue",
+        "claim": "Reported revenue requires a historical classification review.",
+        "claim_driver_field": "revenue_growth_near",
+        "proposed_driver_field": "revenue_growth_near",
+        "accounting_treatment": "reclassify",
+        "valuation_treatment": "normalized_ebit",
+        "evidence_anchor_ids": [anchor_id],
+    }
+
+    result = validate_accounting_finding(finding, focused.model_dump(mode="json"))
+
+    assert result.valid
+    assert focused.base_packet_id == 42
+    assert anchor_id in {fact.fact_id for fact in focused.facts}
+    assert focused.source_refs[0].source_ref_id == "filing:000-msft-2026"
+    assert focused.allowed_driver_fields == list(
+        ACCOUNTING_FOCUS_REGISTRY[AccountingFocusKey.qoe_revenue].allowed_driver_fields
+    )
+
+
+def test_focus_accepts_packet_loaded_from_the_persistence_store():
+    packet = _packet()
+    packet["created_at"] = "2026-07-25T00:00:00Z"
+    packet["updated_at"] = "2026-07-25T00:00:00Z"
+
+    context = select_accounting_focus(packet, AccountingFocusKey.qoe_revenue)
+
+    assert context.parent_packet_id == 42

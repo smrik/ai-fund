@@ -26,8 +26,18 @@ from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
 from src.stage_02_valuation.comps_model import build_comps_detail_from_yfinance
 from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
+from src.stage_02_valuation.claim_ledger import (
+    ClaimLedger,
+    EV_BRIDGE_COMPONENTS,
+    ReconciledEVBridge,
+    UnreconciledClaimLedgerError,
+)
 from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
-from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
+from src.stage_02_valuation.input_assembler import (
+    BridgeMutationPathError,
+    build_valuation_inputs,
+    load_valuation_overrides,
+)
 from src.stage_02_valuation.assumption_register import (
     build_assumption_register,
     summarize_assumption_register,
@@ -52,6 +62,52 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
+
+
+def _reconciled_bridge_for_inputs(
+    inputs,
+) -> tuple[ReconciledEVBridge, str]:
+    payload = getattr(inputs, "claim_ledger", None)
+    if payload:
+        ledger = ClaimLedger.from_dict(payload)
+        ledger.require_reconciled()
+        return ReconciledEVBridge.from_ledger(ledger), "claim_ledger"
+    # Compatibility for test fixtures and archived callers created before the
+    # ledger contract. Live input assembly always supplies the claim ledger.
+    return (
+        ReconciledEVBridge(
+            **{
+                component: float(
+                    getattr(inputs.drivers, component, 0.0) or 0.0
+                )
+                for component in EV_BRIDGE_COMPONENTS
+            }
+        ),
+        "driver_compatibility",
+    )
+
+
+def _blocked_ticker_result(ticker: str, exc: Exception) -> dict:
+    detail = (
+        exc.to_dict()
+        if hasattr(exc, "to_dict")
+        else {
+            "status": "blocked",
+            "reason_code": "valuation_execution_failed",
+            "message": str(exc),
+            "exception_type": type(exc).__name__,
+        }
+    )
+    return {
+        "ticker": ticker.upper().strip(),
+        "valuation_status": "blocked",
+        "valuation_output_mode": "none",
+        "valuation_blocker_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
 
 def _ciq_workbook_candidates(ticker: str, result: dict) -> list[Path]:
     candidates: list[Path] = []
@@ -291,6 +347,9 @@ def value_single_ticker(ticker: str) -> dict | None:
         if inputs is None:
             return None
 
+        reconciled_bridge, bridge_source = _reconciled_bridge_for_inputs(
+            inputs
+        )
         mkt = md_client.get_market_data(ticker)
         price = inputs.current_price
         lineage = inputs.source_lineage
@@ -309,6 +368,8 @@ def value_single_ticker(ticker: str) -> dict | None:
 
         row = {
             "ticker": ticker,
+            "valuation_architecture_path": "legacy_provisional_diagnostic",
+            "valuation_trust_ceiling": "provisional",
             "company_name": inputs.company_name,
             "sector": inputs.sector,
             "industry": inputs.industry,
@@ -419,10 +480,47 @@ def value_single_ticker(ticker: str) -> dict | None:
             "comps_similarity_method": None,
             "comps_similarity_model": None,
             "comps_similarity_weighted_flag": None,
+            "comps_status": "unavailable",
+            "comps_blocker_json": None,
+            "comps_bridge_basis": bridge_source,
+            "comps_ev_to_equity_adjustment_mm": (
+                reconciled_bridge.ev_to_equity_adjustment / 1e6
+            ),
             "analyst_target": mkt.get("analyst_target_mean"),
             "analyst_recommendation": mkt.get("analyst_recommendation"),
             "num_analysts": mkt.get("number_of_analysts"),
             "drivers_json": json.dumps(asdict(inputs.drivers), separators=(",", ":")),
+            "claim_ledger_json": json.dumps(
+                getattr(inputs, "claim_ledger", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "operating_cash_policy_json": json.dumps(
+                getattr(inputs, "operating_cash_policy", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "bridge_cutover_json": json.dumps(
+                getattr(inputs, "bridge_cutover", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "valuation_readiness_json": json.dumps(
+                getattr(inputs, "valuation_readiness", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "valuation_status": getattr(
+                inputs,
+                "valuation_status",
+                "provisional",
+            ),
+            "valuation_output_mode": (
+                "official"
+                if getattr(inputs, "valuation_status", "provisional")
+                == "decision_grade"
+                else "shadow_preview"
+            ),
         }
 
         # ── Comps model (IQR-cleaned, similarity-weighted) ───────────────────
@@ -452,11 +550,14 @@ def value_single_ticker(ticker: str) -> dict | None:
                     )
                 comps_model_result = run_comps_model(
                     comps_detail_raw,
-                    net_debt_mm=inputs.drivers.net_debt / 1e6,
                     shares_mm=inputs.drivers.shares_outstanding / 1e6,
                     similarity_scores=similarity_scores,
+                    ev_to_equity_adjustment_mm=(
+                        reconciled_bridge.ev_to_equity_adjustment / 1e6
+                    ),
                 )
                 if comps_model_result:
+                    row["comps_status"] = "available"
                     row["comps_model_bear"] = comps_model_result.bear_iv
                     row["comps_model_base"] = comps_model_result.base_iv
                     row["comps_model_bull"] = comps_model_result.bull_iv
@@ -470,8 +571,24 @@ def value_single_ticker(ticker: str) -> dict | None:
                         row["comps_model_upside_pct"] = round(
                             (comps_model_result.base_iv / price - 1.0) * 100, 1
                         )
-        except Exception:
-            pass  # comps model is supplementary; never block DCF
+        except Exception as exc:
+            row["comps_status"] = "blocked"
+            row["comps_blocker_json"] = json.dumps(
+                {
+                    "status": "blocked",
+                    "reason_code": "comps_execution_failed",
+                    "message": str(exc),
+                    "exception_type": type(exc).__name__,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            logger.warning(
+                "  Comps blocked for %s: %s",
+                ticker,
+                exc,
+                extra={"ticker": ticker, "step": "comps"},
+            )
 
         if inputs.model_applicability_status != "dcf_applicable":
             row.update(
@@ -662,9 +779,17 @@ def value_single_ticker(ticker: str) -> dict | None:
 
         return row
 
+    except (BridgeMutationPathError, UnreconciledClaimLedgerError) as exc:
+        logger.warning(
+            "  Valuation bridge blocked for %s: %s",
+            ticker,
+            exc,
+            extra={"ticker": ticker, "step": "valuation"},
+        )
+        return _blocked_ticker_result(ticker, exc)
     except Exception as exc:
         logger.warning("  Failed to value %s: %s", ticker, exc, extra={"ticker": ticker, "step": "valuation"})
-        return None
+        return _blocked_ticker_result(ticker, exc)
 
 
 def export_to_excel(results: list[dict], output_path: Path):
@@ -1164,7 +1289,7 @@ def _print_ic_memo(memo) -> None:
         accounting_recast = getattr(memo, "accounting_recast", {}) or {}
         if accounting_recast:
             adjustments = len(accounting_recast.get("income_statement_adjustments") or [])
-            reclasses = len(accounting_recast.get("balance_sheet_reclassifications") or [])
+            reclasses = len(accounting_recast.get("reclassify") or [])
             confidence = accounting_recast.get("confidence", "low")
             t.add_row(
                 "Accounting recast",
@@ -1449,7 +1574,6 @@ if __name__ == "__main__":
         # ── --story-profile: generate LLM story driver profile ────────────────
         if getattr(args, "story_profile", False):
             from src.stage_03_judgment.thesis_agent import ThesisAgent, write_story_driver_pending
-            from src.stage_02_valuation.templates.ic_memo import FilingsSummary, EarningsSummary
             logger.info(
                 "\n%s\nStory Profile Generation — %s\n%s",
                 "=" * 60,
@@ -1458,18 +1582,38 @@ if __name__ == "__main__":
                 extra={"ticker": args.ticker.upper(), "step": "story_profile"},
             )
             try:
+                from src.stage_04_pipeline.evidence_packets import build_evidence_packet
+                from src.stage_04_pipeline.story_profile_context import build_story_profile_context
+
                 agent = ThesisAgent()
-                # Use lightweight stubs so we don't need a full pipeline run
-                filings = FilingsSummary(raw_summary="No filings context — direct story profile run")
-                earnings = EarningsSummary(raw_summary="No earnings context — direct story profile run")
                 mkt = __import__("src.stage_00_data.market_data", fromlist=["get_market_data"]).get_market_data(args.ticker)
-                profile = agent.generate_story_profile(
-                    ticker=args.ticker,
+
+                # Real filing evidence, not stubs. Scoring a moat from ticker + sector alone is
+                # model recall, and the resulting profile would carry full driver authority.
+                packet = build_evidence_packet(args.ticker, "company_analysis")
+                context = build_story_profile_context(
+                    packet,
                     company_name=mkt.get("name") or args.ticker,
                     sector=mkt.get("sector") or "Unknown",
-                    filings=filings,
-                    earnings=earnings,
+                    industry=mkt.get("industry") or "Unknown",
                 )
+                if not context.is_usable:
+                    logger.error(
+                        "  No story profile written - %s",
+                        context.detail or context.status,
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
+                    profile = None
+                else:
+                    logger.info(
+                        "  Evidence: %s filing excerpt(s), %s fact(s), %s anchor(s)",
+                        context.snippet_count,
+                        context.fact_count,
+                        len(context.evidence_anchor_ids),
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
+                    profile = agent.generate_story_profile_from_evidence(context)
+
                 if profile:
                     path = write_story_driver_pending(args.ticker, profile)
                     logger.info(

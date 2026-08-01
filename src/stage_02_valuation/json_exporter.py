@@ -318,6 +318,20 @@ def build_nested_structure(
     driver_consensus = _parse_json_field("driver_consensus_json", [])
     assumption_register = _parse_json_field("assumption_register_json", {})
     assumption_register_summary = _parse_json_field("assumption_register_summary_json", {})
+    claim_ledger = _parse_json_field("claim_ledger_json", {})
+    operating_cash_policy = _parse_json_field(
+        "operating_cash_policy_json",
+        {},
+    )
+    bridge_cutover = _parse_json_field("bridge_cutover_json", {})
+    valuation_readiness = _parse_json_field(
+        "valuation_readiness_json",
+        {},
+    )
+    valuation_blocker = _parse_json_field(
+        "valuation_blocker_json",
+        None,
+    )
 
     ticker = str(r.get("ticker") or "").upper()
     price = r.get("price")
@@ -430,6 +444,10 @@ def build_nested_structure(
         return round((iv / price - 1.0) * 100.0, 1)
 
     valuation = {
+        "status": r.get("valuation_status") or "provisional",
+        "output_mode": r.get("valuation_output_mode")
+        or "shadow_preview",
+        "blocker": valuation_blocker,
         "iv_bear": iv_bear,
         "iv_base": iv_base,
         "iv_bull": iv_bull,
@@ -587,6 +605,10 @@ def build_nested_structure(
         "driver_consensus": driver_consensus,
         "assumption_register": assumption_register,
         "assumption_register_summary": assumption_register_summary,
+        "claim_ledger": claim_ledger,
+        "operating_cash_policy": operating_cash_policy,
+        "bridge_cutover": bridge_cutover,
+        "valuation_readiness": valuation_readiness,
         "drivers_raw": drivers_raw,
     }
 

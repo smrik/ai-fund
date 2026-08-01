@@ -101,6 +101,7 @@ class AccountingTreatment(str, Enum):
 
 class ValuationTreatment(str, Enum):
     normalized_ebit = "normalized_ebit"
+    historical_recast = "historical_recast"
     ev_equity_bridge = "ev_equity_bridge"
     scenario_only = "scenario_only"
     disclosure_only = "disclosure_only"
@@ -250,6 +251,8 @@ class AccountingFinding(ContractModel):
     what_would_change_mind: str | None = None
     no_adjustment_reason: str | None = None
     missing_evidence_reason: str | None = None
+    model_change_required: bool = False
+    model_change_request: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("finding_type", "line_item", "claim")

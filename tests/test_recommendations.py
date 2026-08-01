@@ -134,25 +134,33 @@ class TestExtractRecommendations:
         recs = extract_recommendations("IBM", result, {}, {}, drivers)
         assert not any(r.agent == "qoe" for r in recs.recommendations)
 
-    def test_accounting_recast_ev_bridge_fields(self):
+    def test_legacy_accounting_recast_bridge_amounts_never_become_recommendations(self):
         drivers = _make_drivers()
         recs = extract_recommendations("IBM", {}, ACCOUNTING_RECAST_RESULT, {}, drivers)
         ar_recs = [r for r in recs.recommendations if r.agent == "accounting_recast"]
-        # Only lease_liabilities has a non-None value AND material delta
-        assert len(ar_recs) == 1
-        rec = ar_recs[0]
-        assert rec.field == "lease_liabilities"
-        assert rec.proposed_value == 2_500_000_000
-        assert rec.citation == "Note 14: Operating lease right-of-use assets"
+        assert ar_recs == []
 
-    def test_accounting_recast_immaterial_delta_skipped(self):
-        # If proposed is within $1M of current, skip
+    def test_accounting_recast_legacy_amount_is_ignored_regardless_of_size(self):
         recast = copy.deepcopy(ACCOUNTING_RECAST_RESULT)
         recast["override_candidates"]["lease_liabilities"] = 200_500_000  # only $500k delta
         drivers = _make_drivers(lease_liabilities=200_000_000)
         recs = extract_recommendations("IBM", {}, recast, {}, drivers)
         ar_recs = [r for r in recs.recommendations if r.agent == "accounting_recast"]
-        assert not any(r.field == "lease_liabilities" for r in ar_recs)
+        assert ar_recs == []
+
+    def test_accounting_recast_lease_override_skipped_when_already_in_net_debt(self):
+        drivers = _make_drivers(lease_liabilities=0.0)
+        recs = extract_recommendations(
+            "IBM",
+            {},
+            ACCOUNTING_RECAST_RESULT,
+            {},
+            drivers,
+            source_lineage={"lease_liabilities": "already_in_ciq_net_debt"},
+        )
+
+        ar_recs = [r for r in recs.recommendations if r.agent == "accounting_recast"]
+        assert ar_recs == []
 
     def test_industry_growth_and_margin_recs(self):
         drivers = _make_drivers()
@@ -311,6 +319,48 @@ class TestApplyApproved:
         write_recommendations(recs)
         count = apply_approved_to_overrides("IBM")
         assert count == 0  # dict type skipped
+
+    def test_reconciled_bridge_field_cannot_be_written_via_legacy_yaml_path(
+        self,
+        tmp_path,
+        monkeypatch,
+    ):
+        monkeypatch.setattr(
+            "src.stage_04_pipeline.recommendations.RECS_DIR",
+            tmp_path,
+        )
+        overrides_path = tmp_path / "valuation_overrides.yaml"
+        monkeypatch.setattr(
+            "src.stage_04_pipeline.recommendations.OVERRIDES_PATH",
+            overrides_path,
+        )
+        recs = TickerRecommendations(
+            ticker="IBM",
+            generated_at="2026-01-01",
+            current_iv_base=None,
+            recommendations=[
+                Recommendation(
+                    agent="accounting_recast",
+                    field="lease_liabilities",
+                    current_value=200_000_000.0,
+                    proposed_value=2_500_000_000.0,
+                    confidence="high",
+                    rationale="Legacy raw bridge amount.",
+                    status="approved",
+                )
+            ],
+        )
+        write_recommendations(recs)
+
+        result = apply_approved_to_overrides("IBM")
+
+        assert result["applied_count"] == 0
+        assert result["blocked_fields"] == ["lease_liabilities"]
+        if overrides_path.exists():
+            data = yaml.safe_load(overrides_path.read_text()) or {}
+            assert "lease_liabilities" not in (
+                data.get("tickers", {}).get("IBM", {})
+            )
 
     def test_preserves_existing_overrides(self, tmp_path, monkeypatch):
         monkeypatch.setattr("src.stage_04_pipeline.recommendations.RECS_DIR", tmp_path)
