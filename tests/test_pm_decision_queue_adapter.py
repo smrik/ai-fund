@@ -7,7 +7,9 @@ from db.loader import (
     insert_pm_decision_queue_item,
     list_pm_decision_queue_items,
     load_approved_assumption_entries,
+    load_active_treatment_decisions,
     load_pending_assumption_changes,
+    load_treatment_decision_history,
 )
 from db.schema import create_tables
 from src.stage_04_pipeline.pm_decision_queue import (
@@ -381,3 +383,243 @@ def test_pm_decision_queue_adapter_preview_edit_approve_reject_defer(monkeypatch
     assert statuses[unpreviewed_item_id] == "pending"
     assert statuses[rejected_item_id] == "rejected"
     assert statuses[deferred_item_id] == "deferred"
+
+
+def test_approving_accounting_treatment_persists_and_supersedes(monkeypatch):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+    monkeypatch.setattr("src.stage_04_pipeline.pending_assumption_changes.get_connection", lambda: conn)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.pm_decision_queue.preview_pending_assumption_stack",
+        lambda ticker, change_ids, manual_values=None: {
+            "ticker": ticker,
+            "change_ids": change_ids,
+            "manual_values": manual_values or {},
+        },
+    )
+    monkeypatch.setattr(
+        "src.stage_02_valuation.input_assembler.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            drivers=SimpleNamespace(revenue_growth_near=0.07),
+        ),
+    )
+
+    def _row(suffix: str, anchor: str) -> dict:
+        return {
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T00:00:00Z",
+            "ticker": "msft",
+            "profile_name": "accounting_qoe",
+            "item_type": "assumption_change_pack",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Accounting treatment review",
+            "summary": "The approved accounting treatment changes the near-term growth anchor.",
+            "evidence_anchor_ids": [anchor],
+            "evidence_packet_ids": ["214"],
+            "proposal_pack": {
+                "pack_id": f"pack:accounting:{suffix}",
+                "proposals": [
+                    {
+                        "assumption_name": "revenue_growth_near",
+                        "proposal_mode": "target",
+                        "proposed_target_value": 0.08,
+                    }
+                ],
+            },
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {
+                "source": "accounting_ledger",
+                "topic": "qoe",
+                "focus_key": "qoe_revenue",
+                "accounting_treatment": "normalize",
+                "valuation_treatment": "historical_recast",
+                "proposed_driver_field": "revenue_growth_near",
+                "model_change_request": None,
+                "evidence_corpus_hash": "corpus-v1",
+            },
+        }
+
+    first_id = insert_pm_decision_queue_item(conn, _row("one", "filing:msft:note_001"))
+    preview_pm_decision_queue_item("MSFT", first_id)
+    first_approval = approve_pm_decision_queue_item("MSFT", first_id, actor="pm-one")
+
+    second_id = insert_pm_decision_queue_item(conn, _row("two", "filing:msft:note_002"))
+    preview_pm_decision_queue_item("MSFT", second_id)
+    second_approval = approve_pm_decision_queue_item("MSFT", second_id, actor="pm-two")
+
+    history = load_treatment_decision_history(conn, "MSFT")
+    active = load_active_treatment_decisions(conn, "MSFT")
+
+    assert first_approval["status"] == "approved"
+    assert second_approval["status"] == "approved"
+    assert len(history) == 2
+    prior = next(row for row in history if row["approved_by"] == "pm-one")
+    current = next(row for row in history if row["approved_by"] == "pm-two")
+    assert prior["active"] is False
+    assert prior["superseded_by"] == current["id"]
+    assert current["active"] is True
+    assert current["topic"] == "qoe"
+    assert current["focus_key"] == "qoe_revenue"
+    assert current["treatment"] == "normalize"
+    assert current["valuation_treatment"] == "historical_recast"
+    assert current["driver_field"] == "revenue_growth_near"
+    assert current["model_change_request"] is None
+    assert current["evidence_anchor_ids"] == ["filing:msft:note_002"]
+    assert current["rationale"] == "The approved accounting treatment changes the near-term growth anchor."
+    assert current["evidence_corpus_hash"] == "corpus-v1"
+    assert len(active) == 1
+    assert active[0]["id"] == current["id"]
+
+
+def test_approving_queue_item_without_accounting_treatment_writes_no_treatment(monkeypatch):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+
+    item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T00:00:00Z",
+            "ticker": "msft",
+            "profile_name": "company_analysis",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "medium",
+            "valuation_impact_bucket": None,
+            "title": "General diligence item",
+            "summary": "This item does not carry an accounting treatment.",
+            "evidence_anchor_ids": ["filing:msft:note_003"],
+            "evidence_packet_ids": ["214"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "medium",
+            "translator_confidence": "medium",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {},
+        },
+    )
+
+    approved = approve_pm_decision_queue_item("MSFT", item_id, actor="pm")
+
+    assert approved["status"] == "approved"
+    assert load_active_treatment_decisions(conn, "MSFT") == []
+
+
+def test_accounting_treatment_write_rolls_back_when_queue_approval_fails(monkeypatch):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+
+    item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T00:00:00Z",
+            "ticker": "msft",
+            "profile_name": "accounting_qoe",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Accounting treatment review",
+            "summary": "The treatment requires PM approval before the forecast runs.",
+            "evidence_anchor_ids": ["filing:msft:note_004"],
+            "evidence_packet_ids": ["214"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {
+                "source": "accounting_ledger",
+                "topic": "qoe",
+                "focus_key": "qoe_revenue",
+                "accounting_treatment": "normalize",
+                "valuation_treatment": "historical_recast",
+                "evidence_corpus_hash": "corpus-v1",
+            },
+        },
+    )
+
+    def _fail_queue_update(*args, **kwargs):
+        raise RuntimeError("queue update failed")
+
+    monkeypatch.setattr("db.loader.update_pm_decision_queue_item", _fail_queue_update)
+    with pytest.raises(RuntimeError, match="queue update failed"):
+        approve_pm_decision_queue_item("MSFT", item_id, actor="pm")
+
+    stored_item = list_pm_decision_queue_items(conn, ticker="MSFT", status=None)[0]
+    assert stored_item["status"] == "pending"
+    assert load_active_treatment_decisions(conn, "MSFT") == []
+
+
+def test_accounting_approval_fails_closed_without_a_corpus_hash(monkeypatch):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+
+    item_id = insert_pm_decision_queue_item(
+        conn,
+        {
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T00:00:00Z",
+            "ticker": "msft",
+            "profile_name": "accounting_qoe",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "high",
+            "valuation_impact_bucket": "high",
+            "title": "Accounting treatment review",
+            "summary": "The item has no corpus hash in its approved evidence.",
+            "evidence_anchor_ids": ["filing:msft:note_005"],
+            "evidence_packet_ids": ["orchestrator:MSFT:accounting_recast"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "high",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {
+                "source": "accounting_ledger",
+                "topic": "qoe",
+                "focus_key": "qoe_revenue",
+                "accounting_treatment": "normalize",
+                "valuation_treatment": "historical_recast",
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="genuine evidence corpus hash"):
+        approve_pm_decision_queue_item("MSFT", item_id, actor="pm")
+
+    stored_item = list_pm_decision_queue_items(conn, ticker="MSFT", status=None)[0]
+    assert stored_item["status"] == "pending"
+    assert load_active_treatment_decisions(conn, "MSFT") == []

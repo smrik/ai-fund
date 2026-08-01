@@ -1823,7 +1823,12 @@ def _treatment_decision_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return item
 
 
-def insert_treatment_decision(conn: sqlite3.Connection, row: dict[str, Any]) -> int:
+def insert_treatment_decision(
+    conn: sqlite3.Connection,
+    row: dict[str, Any],
+    *,
+    commit: bool = True,
+) -> int:
     """Record an approved treatment and supersede the prior decision for its focus."""
     item = dict(row)
     item["ticker"] = str(item["ticker"]).upper()
@@ -1837,7 +1842,7 @@ def insert_treatment_decision(conn: sqlite3.Connection, row: dict[str, Any]) -> 
     item["created_at"] = item.get("created_at") or item["decided_at"]
     item["updated_at"] = item.get("updated_at") or item["decided_at"]
 
-    with conn:
+    try:
         cursor = conn.execute(
             """
             INSERT INTO treatment_decisions (
@@ -1874,6 +1879,12 @@ def insert_treatment_decision(conn: sqlite3.Connection, row: dict[str, Any]) -> 
                 decision_id,
             ],
         )
+        if commit:
+            conn.commit()
+    except Exception:
+        if commit:
+            conn.rollback()
+        raise
     return decision_id
 
 

@@ -91,6 +91,117 @@ def _driver_family_pack(
     return pack if pack.family is not None else None
 
 
+def _accounting_treatment_metadata(item: dict[str, Any]) -> dict[str, Any] | None:
+    """Return ledger metadata only for queue items produced by accounting review."""
+    metadata = item.get("metadata")
+    if not isinstance(metadata, dict) or metadata.get("source") != "accounting_ledger":
+        return None
+    finding_metadata = metadata.get("finding_metadata")
+    if not isinstance(finding_metadata, dict):
+        return dict(metadata)
+    merged = dict(finding_metadata)
+    merged.update(metadata)
+    return merged
+
+
+def _evidence_corpus_hash(
+    conn: Any,
+    item: dict[str, Any],
+    metadata: dict[str, Any],
+) -> str | None:
+    """Read an explicitly supplied corpus hash without substituting a fingerprint."""
+    for key in ("evidence_corpus_hash", "corpus_hash"):
+        value = metadata.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+
+    # Some queue producers retain only the persisted evidence packet id. If that
+    # packet contains an explicit hash, use it; otherwise the provenance is
+    # genuinely unavailable at approval time.
+    from db.loader import load_evidence_packet
+
+    hashes: set[str] = set()
+    for packet_id in item.get("evidence_packet_ids") or []:
+        try:
+            packet = load_evidence_packet(conn, int(packet_id))
+        except (TypeError, ValueError):
+            continue
+        if not packet:
+            continue
+        containers: list[dict[str, Any]] = []
+        run_metadata = packet.get("run_metadata")
+        if isinstance(run_metadata, dict):
+            containers.append(run_metadata)
+        for source_ref in packet.get("source_refs") or []:
+            if not isinstance(source_ref, dict):
+                continue
+            containers.append(source_ref)
+            source_metadata = source_ref.get("metadata")
+            if isinstance(source_metadata, dict):
+                containers.append(source_metadata)
+        for container in containers:
+            for key in ("evidence_corpus_hash", "corpus_hash"):
+                value = container.get(key)
+                if value is not None and str(value).strip():
+                    hashes.add(str(value).strip())
+    return next(iter(hashes)) if len(hashes) == 1 else None
+
+
+def _accounting_treatment_row(
+    conn: Any,
+    item: dict[str, Any],
+    *,
+    ticker: str,
+    actor: str,
+    decided_at: str,
+) -> dict[str, Any] | None:
+    """Translate an approved accounting queue item into a register row.
+
+    Generic queue items and driver-family packs deliberately return ``None``.
+    Required register fields are not inferred from proposal values or hashes.
+    """
+    metadata = _accounting_treatment_metadata(item)
+    if metadata is None:
+        return None
+
+    def _text(value: Any) -> str | None:
+        cleaned = str(value).strip() if value is not None else ""
+        return cleaned or None
+
+    topic = _text(metadata.get("topic"))
+    treatment = _text(metadata.get("accounting_treatment"))
+    valuation_treatment = _text(metadata.get("valuation_treatment"))
+    rationale = (
+        _text(item.get("summary"))
+        or _text(metadata.get("rationale"))
+        or _text(metadata.get("materiality_rationale"))
+    )
+    evidence_corpus_hash = _evidence_corpus_hash(conn, item, metadata)
+    if not topic or not treatment or not valuation_treatment or not rationale:
+        return None
+    if not evidence_corpus_hash:
+        # treatment_decisions.evidence_corpus_hash is NOT NULL. Do not write a
+        # made-up value when the approved queue item carries no corpus hash.
+        return None
+
+    return {
+        "ticker": ticker,
+        "topic": topic,
+        "focus_key": _text(metadata.get("focus_key")),
+        "treatment": treatment,
+        "valuation_treatment": valuation_treatment,
+        "driver_field": _text(metadata.get("proposed_driver_field")),
+        "model_change_request": _text(metadata.get("model_change_request")),
+        "evidence_anchor_ids": list(item.get("evidence_anchor_ids") or []),
+        "rationale": rationale,
+        "decided_at": decided_at,
+        "approved_by": actor,
+        "evidence_corpus_hash": evidence_corpus_hash,
+        "created_at": decided_at,
+        "updated_at": decided_at,
+    }
+
+
 def _driver_family_review(
     conn: Any,
     *,
@@ -548,7 +659,11 @@ def approve_pm_decision_queue_item(
     ts = _now()
     with get_connection() as conn:
         create_tables(conn)
-        from db.loader import insert_pm_decision_queue_event, update_pm_decision_queue_item
+        from db.loader import (
+            insert_pm_decision_queue_event,
+            insert_treatment_decision,
+            update_pm_decision_queue_item,
+        )
 
         item = _load_queue_item_or_raise(conn, ticker, item_id)
         _require_status(item, {"pending", "previewed"}, "approved")
@@ -684,6 +799,21 @@ def approve_pm_decision_queue_item(
             "change_ids": [],
             "approval_ref": None,
         }
+        treatment_row = _accounting_treatment_row(
+            conn,
+            item,
+            ticker=ticker,
+            actor=actor,
+            decided_at=ts,
+        )
+        if _accounting_treatment_metadata(item) is not None and treatment_row is None:
+            raise ValueError(
+                "accounting queue item cannot be persisted: treatment register "
+                "requires topic, treatment, valuation treatment, rationale, and "
+                "a genuine evidence corpus hash"
+            )
+        if treatment_row is not None:
+            insert_treatment_decision(conn, treatment_row, commit=False)
         approved_pack = resolved_pack if resolved_pack and resolved_pack.get("proposals") else None
         adapter_links = dict(item.get("adapter_links") or {})
         adapter_links["pending_assumption_change_ids"] = pending_ids
@@ -713,6 +843,7 @@ def approve_pm_decision_queue_item(
                 "decision_history": history,
                 "updated_at": ts,
             },
+            commit=False,
         )
         insert_pm_decision_queue_event(
             conn,
@@ -727,6 +858,7 @@ def approve_pm_decision_queue_item(
                     "approval_ref": approval_result.get("approval_ref"),
                 },
             },
+            commit=False,
         )
     return updated
 

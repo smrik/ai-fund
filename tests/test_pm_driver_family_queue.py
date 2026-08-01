@@ -6,6 +6,7 @@ import pytest
 
 from db.loader import (
     insert_pm_decision_queue_item,
+    load_active_treatment_decisions,
 )
 from db.schema import create_tables
 from src.contracts.analysis_snapshot import AnalysisSnapshot
@@ -301,6 +302,7 @@ def test_pm_preview_and_approval_preserve_atomic_scenarios_without_scalar_rows(
     assert conn.execute(
         "SELECT COUNT(*) FROM pending_assumption_changes"
     ).fetchone()[0] == 0
+    assert load_active_treatment_decisions(conn, "TEST") == []
     assert approved["adapter_links"]["scalar_pending_rows_created"] == 0
     with pytest.raises(ValueError, match="scalar apply is not supported"):
         apply_pm_decision_queue_item("TEST", item_id, actor="pm")
