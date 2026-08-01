@@ -455,6 +455,9 @@ def test_approving_accounting_treatment_persists_and_supersedes(monkeypatch):
     preview_pm_decision_queue_item("MSFT", first_id)
     first_approval = approve_pm_decision_queue_item("MSFT", first_id, actor="pm-one")
 
+    assert len(load_treatment_decision_history(conn, "MSFT")) == 1
+    assert len(load_active_treatment_decisions(conn, "MSFT")) == 1
+
     second_id = insert_pm_decision_queue_item(conn, _row("two", "filing:msft:note_002"))
     preview_pm_decision_queue_item("MSFT", second_id)
     second_approval = approve_pm_decision_queue_item("MSFT", second_id, actor="pm-two")
@@ -522,6 +525,69 @@ def test_approving_queue_item_without_accounting_treatment_writes_no_treatment(m
 
     assert approved["status"] == "approved"
     assert load_active_treatment_decisions(conn, "MSFT") == []
+
+
+def test_approving_three_advisory_findings_does_not_create_or_supersede_treatments(monkeypatch):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+
+    monkeypatch.setattr("src.stage_04_pipeline.pm_decision_queue.get_connection", lambda: conn)
+
+    def _row(index: int) -> dict:
+        return {
+            "created_at": "2026-08-01T00:00:00Z",
+            "updated_at": "2026-08-01T00:00:00Z",
+            "ticker": "msft",
+            "profile_name": "accounting_qoe",
+            "item_type": "advisory_finding",
+            "status": "pending",
+            "qualitative_importance": "medium",
+            "valuation_impact_bucket": None,
+            "title": f"Advisory finding {index}",
+            "summary": f"The evidence supports no action for finding {index}.",
+            "evidence_anchor_ids": [f"filing:msft:note_{index:03d}"],
+            "evidence_packet_ids": ["214"],
+            "proposal_pack": None,
+            "pm_edited_proposal_pack": None,
+            "approved_proposal_pack": None,
+            "agent_confidence": "medium",
+            "translator_confidence": "high",
+            "pm_confidence": None,
+            "valuation_impact": None,
+            "adapter_links": {},
+            "decision_history": [],
+            "metadata": {
+                "source": "accounting_ledger",
+                "topic": "qoe",
+                "focus_key": "qoe_revenue",
+                "accounting_treatment": "unclear",
+                "valuation_treatment": "none",
+                "evidence_corpus_hash": "corpus-v1",
+            },
+        }
+
+    item_ids = [insert_pm_decision_queue_item(conn, _row(index)) for index in (194, 195, 196)]
+
+    approvals = [
+        approve_pm_decision_queue_item("MSFT", item_id, actor=f"pm-{item_id}")
+        for item_id in item_ids
+    ]
+
+    assert [item["status"] for item in approvals] == ["approved", "approved", "approved"]
+    assert conn.execute("SELECT COUNT(*) FROM treatment_decisions").fetchone()[0] == 0
+    assert [
+        (row["item_id"], row["event_type"])
+        for row in conn.execute(
+            "SELECT item_id, event_type FROM pm_decision_queue_events ORDER BY id"
+        ).fetchall()
+    ] == [(item_id, "approve") for item_id in item_ids]
+
+    stored_items = list_pm_decision_queue_items(conn, ticker="MSFT", status=None)
+    for item_id in item_ids:
+        stored = next(item for item in stored_items if item["item_id"] == item_id)
+        assert stored["decision_history"][-1]["event"] == "approve"
+        assert stored["decision_history"][-1]["actor"] == f"pm-{item_id}"
 
 
 def test_accounting_treatment_write_rolls_back_when_queue_approval_fails(monkeypatch):

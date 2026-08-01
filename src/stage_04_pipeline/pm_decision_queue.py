@@ -8,12 +8,14 @@ from typing import Any
 
 from db.schema import create_tables, get_connection
 from src.contracts.assumption_policy import PendingAssumptionChange, PendingAssumptionSourceType
+from src.contracts.accounting_evidence import AccountingTreatment, ValuationTreatment
 from src.contracts.driver_families import DriverFamilyCritique
 from src.contracts.judgment_runs import (
     AgentRunStatus,
     canonical_semantic_hash,
 )
 from src.contracts.pm_decision_queue import AssumptionChangePack
+from src.stage_04_pipeline.accounting_ledger import _NON_MUTATING_TREATMENTS
 from src.stage_04_pipeline.driver_family_queue import (
     approved_scenario_values_from_queue_pack,
     driver_family_proposal_from_queue_pack,
@@ -147,6 +149,36 @@ def _evidence_corpus_hash(
     return next(iter(hashes)) if len(hashes) == 1 else None
 
 
+def _is_non_treatment_advisory(metadata: dict[str, Any]) -> bool:
+    """Return whether accounting metadata records a conclusion not to act.
+
+    The accounting contract owns the permitted treatment values. The ledger owns
+    the valuation treatments that are explicitly non-mutating. Invalid or
+    incomplete metadata is not treated as an advisory so approval remains
+    fail-closed for malformed treatment-bearing items.
+    """
+    accounting_value = metadata.get("accounting_treatment")
+    valuation_value = metadata.get("valuation_treatment")
+    if accounting_value is None or valuation_value is None:
+        return False
+    try:
+        accounting_treatment = AccountingTreatment(str(accounting_value).strip())
+        valuation_treatment = ValuationTreatment(str(valuation_value).strip())
+    except ValueError:
+        return False
+
+    non_treatment_accounting = {
+        AccountingTreatment.no_adjustment,
+        AccountingTreatment.scenario_only,
+        AccountingTreatment.disclosure_only,
+        AccountingTreatment.unclear,
+    }
+    return (
+        accounting_treatment in non_treatment_accounting
+        and valuation_treatment.value in _NON_MUTATING_TREATMENTS
+    )
+
+
 def _accounting_treatment_row(
     conn: Any,
     item: dict[str, Any],
@@ -162,6 +194,8 @@ def _accounting_treatment_row(
     """
     metadata = _accounting_treatment_metadata(item)
     if metadata is None:
+        return None
+    if _is_non_treatment_advisory(metadata):
         return None
 
     def _text(value: Any) -> str | None:
@@ -799,6 +833,7 @@ def approve_pm_decision_queue_item(
             "change_ids": [],
             "approval_ref": None,
         }
+        accounting_metadata = _accounting_treatment_metadata(item)
         treatment_row = _accounting_treatment_row(
             conn,
             item,
@@ -806,7 +841,11 @@ def approve_pm_decision_queue_item(
             actor=actor,
             decided_at=ts,
         )
-        if _accounting_treatment_metadata(item) is not None and treatment_row is None:
+        if (
+            accounting_metadata is not None
+            and not _is_non_treatment_advisory(accounting_metadata)
+            and treatment_row is None
+        ):
             raise ValueError(
                 "accounting queue item cannot be persisted: treatment register "
                 "requires topic, treatment, valuation treatment, rationale, and "
