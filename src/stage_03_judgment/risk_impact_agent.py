@@ -30,14 +30,11 @@ Rules:
 - Return at most 3 overlays
 - Be specific and economically coherent. Avoid extreme values unless the evidence supports it.
 """
-DEFAULT_RISK_IMPACT_MODEL = "gemini-3-flash-preview"
 
 
 class RiskImpactAgent(BaseAgent):
     def __init__(self):
-        super().__init__(
-            model=os.getenv("RISK_IMPACT_AGENT_MODEL", DEFAULT_RISK_IMPACT_MODEL)
-        )
+        super().__init__()
         self.name = "RiskImpactAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []

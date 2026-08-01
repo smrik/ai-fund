@@ -314,7 +314,7 @@ Treat heuristic queue items as workflow checks only. They are useful for verifyi
 To test live agents with an OpenRouter free model, first confirm that sending the ticker evidence packet to OpenRouter is acceptable for the ticker/data being reviewed, then run:
 
 ```powershell
-rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model openrouter/free
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model deepseek/deepseek-v4-flash-0731
 ```
 
 ## Analyst Prep Pack MVP

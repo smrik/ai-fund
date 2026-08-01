@@ -35,6 +35,7 @@ from src.stage_04_pipeline.accounting_discovery_ledger import (
     DiscoveryJudgmentContext,
     run_discovery_accounting_pass,
 )
+from config.llm_routing import format_llm_resolution, resolve_llm_route
 
 
 def _latest_packet(ticker: str, profile_name: str) -> dict[str, Any] | None:
@@ -86,11 +87,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ticker", required=True)
     parser.add_argument(
         "--codex-model",
-        default=os.getenv("ALPHA_POD_CODEX_MODEL", "gpt-5.4-mini"),
+        default=None,
+        help="Codex model override; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument(
         "--codex-effort",
-        default=os.getenv("ALPHA_POD_CODEX_EFFORT", "low"),
+        default=None,
+        help="Codex reasoning effort override; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument(
         "--output-dir",
@@ -113,11 +116,24 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     ticker = args.ticker.upper().strip()
+    llm_routing = resolve_llm_route(
+        "accounting",
+        cli_provider=(
+            "codex"
+            if args.codex_model is not None or args.codex_effort is not None
+            else None
+        ),
+        cli_model=args.codex_model,
+        cli_effort=args.codex_effort,
+    )
+    print(format_llm_resolution(llm_routing))
     os.environ["ALPHA_POD_EDGAR_CACHE_ONLY"] = "1"
     os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
-    os.environ["ALPHA_POD_AGENT_BACKEND"] = "codex"
-    os.environ["ALPHA_POD_CODEX_MODEL"] = args.codex_model
-    os.environ["ALPHA_POD_CODEX_EFFORT"] = args.codex_effort
+    os.environ["ALPHA_POD_AGENT_BACKEND"] = str(llm_routing["provider"])
+    if args.codex_model:
+        os.environ["ALPHA_POD_CODEX_MODEL"] = args.codex_model
+    if args.codex_effort:
+        os.environ["ALPHA_POD_CODEX_EFFORT"] = args.codex_effort
 
     stage0_evidence(ticker, require_complete=True)
     inventory = get_accounting_section_inventory(ticker)
@@ -207,8 +223,10 @@ def main(argv: list[str] | None = None) -> int:
     artifact = {
         "ticker": ticker,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "model": args.codex_model,
-        "effort": args.codex_effort,
+        "provider": llm_routing["provider"],
+        "model": llm_routing["model"],
+        "effort": llm_routing["effort"],
+        "llm_routing": llm_routing,
         "inventory_count": len(inventory),
         "raw_note_count": sum(
             item.get("inventory_role") == "raw_numbered_note"

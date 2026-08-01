@@ -9,7 +9,6 @@ from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_w
 from src.stage_03_judgment.base_agent import BaseAgent
 
 
-DEFAULT_COMPS_MODEL = "gemini-3-flash-preview"
 
 
 SYSTEM_PROMPT = """You are a buy-side valuation analyst reviewing a deterministic peer comps packet.
@@ -20,7 +19,7 @@ Your job is to emit anchored observations for PM review, not to directly edit th
 
 class CompsAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("COMPS_AGENT_MODEL", DEFAULT_COMPS_MODEL))
+        super().__init__(role="valuation")
         self.name = "CompsAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []

@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from config.llm_routing import format_llm_resolution, resolve_llm_route
+
 
 DEFAULT_PROFILES = (
     "earnings_update",
@@ -32,7 +34,6 @@ AGENT_MODEL_ENV_VARS = (
     "GROUNDED_OBSERVATION_AGENT_MODEL",
     "EARNINGS_AGENT_MODEL",
     "FILINGS_AGENT_MODEL",
-    "INDUSTRY_AGENT_MODEL",
     "COMPS_AGENT_MODEL",
     "RISK_AGENT_MODEL",
     "VALUATION_AGENT_MODEL",
@@ -265,7 +266,14 @@ def collect_edgar_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> dict[str, Any]:
+def configure_openrouter_free(
+    model: str,
+    fallback_models: list[str] | None = None,
+    *,
+    set_backend: bool = True,
+) -> dict[str, Any]:
+    if set_backend:
+        os.environ["ALPHA_POD_AGENT_BACKEND"] = "openrouter"
     os.environ["LLM_BASE_URL"] = "https://openrouter.ai/api/v1"
     os.environ["LLM_MODEL"] = model
     os.environ["LLM_MODEL_FAST"] = model
@@ -825,8 +833,14 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
+    llm_routing = resolve_llm_route(
+        "judgment",
+        cli_provider="openrouter" if args.use_openrouter_free else None,
+        cli_model=args.openrouter_model if args.use_openrouter_free else None,
+    )
     if args.use_openrouter_free:
-        configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+        configure_openrouter_free(llm_routing["model"], args.openrouter_fallback_models)
+    print(f"[ticker-flow] {format_llm_resolution(llm_routing)}", file=sys.stderr)
 
     preflight_errors: list[dict[str, str]] = []
     ciq_refresh_result: dict[str, Any] | None = None
@@ -864,13 +878,10 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         "ticker": ticker,
         "run_started_at": run_started_at,
         "openrouter_free": bool(args.use_openrouter_free),
+        "llm_routing": llm_routing,
         "edgar_cache_only": bool(args.edgar_cache_only),
         "market_cache_only": bool(args.market_cache_only),
-        "agent_model": (
-            "local_heuristic"
-            if args.agent_mode == "heuristic"
-            else args.openrouter_model if args.use_openrouter_free else os.getenv("LLM_MODEL")
-        ),
+        "agent_model": "local_heuristic" if args.agent_mode == "heuristic" else llm_routing["model"],
         "agent_mode": args.agent_mode,
         "deterministic": {},
         "profile_runs": [],
@@ -1455,7 +1466,8 @@ def main() -> int:
     parser.add_argument("--use-openrouter-free", action="store_true")
     parser.add_argument(
         "--openrouter-model",
-        default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"),
+        default=None,
+        help="OpenRouter model override; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument(
         "--openrouter-fallback-models",

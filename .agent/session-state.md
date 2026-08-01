@@ -1,47 +1,46 @@
 # Session State
 
-**Updated:** 2026-08-01 20:25 +02:00
+**Updated:** 2026-08-02 00:02 +02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Propagate genuine evidence corpus hashes through accounting producers so PM-approved treatments can
-be persisted.
+Implement role-based runtime model routing and opt-in CIQ auto-refresh for guided ticker workups.
 
 ## Recent Actions
 
-- Traced the canonical SHA-256 corpus hash from filing retrieval through discovery retrieval
-  summaries and persisted evidence-packet metadata/source references.
-- Propagated discovery hashes into findings and queue metadata; propagated focused source-packet
-  hashes into the transient focused packet, validated findings, and queue metadata.
-- Added end-to-end approval and fail-closed regressions. The requested accounting suites pass:
-  56 passed including the focused runner tests.
-- Full tracked offline suite: 1,307 passed, 9 failed, 2 deselected. Eight failures are the known
-  advanced workbook Windows-temp permission issue; one is an unrelated concurrent API contract
-  change in `tests/test_api_contracts.py`.
+- Added the role/provider/model/effort resolver and seeded `config/config.yaml` with the PM-approved
+  pinned model IDs and review date.
+- Migrated BaseAgent-backed agents, guided/accounting/ticker/analyst-prep runners, the valuation
+  provider bindings/CLI, and the dashboard model caption; preserved the Gemini Search adapter as
+  provider-specific.
+- Added guided `--auto-refresh-ciq` with staged/ingested diagnostics and four mocked outcome tests;
+  CIQ status metadata now distinguishes failed validation from timeout without changing process
+  kill behavior.
+- Verification: targeted routing/CIQ/runner tests pass; broad offline suite passed 1,326 tests
+  with `tests/test_advanced_dcf_model.py` excluded for the known Windows temp ACL failures.
 
 ## Next Steps
 
-- Review/stage the five requested source/test files and commit on the feature branch when `.git`
-  write access is available.
-- If the base evidence-packet producer is later changed, propagate its retrieval bundle hash into
-  persisted `run_metadata` or source refs; the current persisted packet-213 path has no genuine
-  corpus hash and correctly remains fail closed.
+- Review the uncommitted diff and decide whether to stage/commit this feature branch.
+- If desired, rerun the full suite including `tests/test_advanced_dcf_model.py` after fixing the
+  external Windows temp-directory ACL issue.
 
 ## Known Issues
 
-- The managed sandbox denies `.git/index` writes, so the implementation could not be committed.
-- The worktree also contains unrelated concurrent valuation/API/docs/frontend changes and generated
-  cache/export/debug artifacts; none were staged or reverted.
+- The user explicitly requested no commit; all changes remain uncommitted.
+- Existing unrelated dirty files and generated MSFT/cache/export/debug artifacts are preserved.
+- The repository-root pytest collection can encounter an unreadable generated `output/pytest-tmp`
+  tree; the meaningful `tests/` run was executed with `-p no:cacheprovider`.
 
 ## Notes
 
 - Runtime: `C:/Users/patri/miniconda3/envs/ai-fund/python.exe`.
 - Current branch: `codex/focused-accounting-evidence-repair`.
-- Corpus hashes come from SHA-256 over the filing retrieval corpus's chunk-identity records with
-  deterministic JSON key ordering. An unchanged corpus is stable when retrieval order is unchanged;
-  the current hash is not order-independent, so retrieval-order changes produce a new hash.
+- Canonical plan: `docs/plans/active/2026-08-01-runtime-model-routing-and-ciq-auto-refresh.md`.
+- No valuation math, DCF/WACC/comps engines, `professional_dcf.py`, `input_assembler.py`, or
+  `batch_runner.py` were modified, and no production database write was performed by this task.
 
 ## First end-to-end valuation attempt — 2026-07-31
 

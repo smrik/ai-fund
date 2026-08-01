@@ -38,12 +38,11 @@ Stop loss logic:
 - Higher volatility stocks warrant tighter stops or smaller size
 
 Be conservative. It is better to start small and add on confirmation."""
-DEFAULT_RISK_MODEL = "gemini-3-flash-preview"
 
 
 class RiskAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("RISK_AGENT_MODEL", DEFAULT_RISK_MODEL))
+        super().__init__()
         self.name = "RiskAgent"
         self.system_prompt = SYSTEM_PROMPT
 

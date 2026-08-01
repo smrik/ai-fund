@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import streamlit as st
 
-from config import LLM_MODEL
+from config.llm_routing import resolve_llm_route
 from dashboard.design_system import DASHBOARD_CSS, render_shell_header, render_ticker_strip
 from dashboard.dossier_companion import render_dossier_companion
 from dashboard.sections import SECTION_REGISTRY
@@ -178,7 +178,10 @@ def _render_sidebar() -> tuple[str, bool, bool, list[str]]:
             )
 
         st.divider()
-        st.caption(f"**LLM:** {LLM_MODEL}")
+        llm_route = resolve_llm_route("judgment")
+        st.caption(
+            f"**LLM:** {llm_route['provider']} / {llm_route['model']}"
+        )
         st.caption("**Data:** SEC EDGAR · yfinance · CIQ")
 
         with st.expander("Dev: Quick Load", expanded=False):

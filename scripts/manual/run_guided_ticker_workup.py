@@ -29,6 +29,10 @@ from src.stage_04_pipeline.analyst_prep_pack import (  # noqa: E402
     build_analyst_prep_payload,
     render_analyst_prep_markdown,
 )
+from config.llm_routing import (  # noqa: E402
+    format_llm_resolution,
+    resolve_llm_route,
+)
 
 
 GUIDED_OUTPUT_DIR = ROOT / "output" / "guided_workups"
@@ -112,86 +116,56 @@ def _historical_financials_for_guided_json(ticker: str, result: dict[str, Any]) 
     return []
 
 
-def _config_llm_defaults() -> dict[str, str]:
+def _config_llm_defaults() -> dict[str, Any]:
     try:
-        from config import LLM_BASE_URL, LLM_MODEL
-
-        return {"model": str(LLM_MODEL or ""), "base_url": str(LLM_BASE_URL or "")}
+        route = resolve_llm_route("judgment")
+        return {
+            "provider": str(route["provider"]),
+            "model": str(route["model"]),
+            "effort": route.get("effort"),
+            "base_url": str(route["base_url"]),
+        }
     except Exception:
-        return {"model": "", "base_url": ""}
+        return {"provider": "", "model": "", "effort": None, "base_url": ""}
 
 
 def build_llm_routing(
     *,
     source: str,
     configured: dict[str, Any] | None = None,
+    role: str = "judgment",
 ) -> dict[str, Any]:
-    defaults = _config_llm_defaults()
     configured = configured or {}
-    backend = str(configured.get("backend") or os.getenv("ALPHA_POD_AGENT_BACKEND") or "").strip().lower()
-    if backend == "codex":
-        model = str(
-            configured.get("model")
-            or os.getenv("ALPHA_POD_CODEX_MODEL")
-            or "gpt-5.6-luna"
-        )
-        effort = str(
-            configured.get("effort")
-            or os.getenv("ALPHA_POD_CODEX_EFFORT")
-            or "low"
-        )
-        fallback = str(configured.get("fallback") or "")
-        fallback_models = configured.get("fallback_models")
-        if fallback_models is None:
-            fallback_models = [fallback] if fallback else []
-        fallback_values = _split_model_list(fallback_models)
-        if not fallback and fallback_values:
-            fallback = fallback_values[0]
-        return {
-            "backend": "codex",
-            "model": model,
-            "effort": effort,
-            "fallback": fallback or "not configured",
-            "base_url": _host_only(configured.get("base_url") or os.getenv("LLM_BASE_URL")),
-            "fallbacks": fallback_values,
-            "cost": str(configured.get("cost") or "subscription"),
-            "source": source,
-        }
-    model = str(configured.get("model") or os.getenv("LLM_MODEL") or defaults.get("model") or "not configured")
-    base_url = (
-        configured.get("base_url")
-        or os.getenv("LLM_BASE_URL")
-        or os.getenv("OPENAI_BASE_URL")
-        or defaults.get("base_url")
-        or ""
+    route = resolve_llm_route(
+        role,
+        cli_provider=configured.get("backend") or configured.get("provider"),
+        cli_model=configured.get("model"),
+        cli_effort=configured.get("effort"),
     )
     fallback_models = configured.get("fallback_models")
     if fallback_models is None:
         fallback_models = _split_model_list(os.getenv("LLM_FALLBACK_MODELS"))
+    fallback_values = _split_model_list(fallback_models)
+    fallback = str(configured.get("fallback") or (fallback_values[0] if fallback_values else ""))
     return {
-        "model": model,
-        "base_url": _host_only(base_url),
-        "fallbacks": _split_model_list(fallback_models),
-        "source": source,
+        **route,
+        "base_url": _host_only(route.get("base_url")),
+        "fallback": fallback or "not configured",
+        "fallbacks": fallback_values,
+        "cost": str(configured.get("cost") or ("subscription" if route["provider"] == "codex" else "metered")),
+        "run_source": source,
     }
 
 
 def format_llm_routing_line(routing: dict[str, Any]) -> str:
     fallbacks = _as_list(routing.get("fallbacks"))
     fallback_label = ", ".join(str(value) for value in fallbacks) if fallbacks else "none"
-    if routing.get("backend") == "codex":
-        return (
-            f"Agent LLM routing: backend=codex model={routing.get('model') or 'not configured'} "
-            f"effort={routing.get('effort') or 'low'} "
-            f"fallback={routing.get('fallback') or fallback_label} "
-            f"cost={routing.get('cost') or 'subscription'} "
-            f"(source: {routing.get('source') or 'unknown'})"
-        )
     return (
-        f"Agent LLM routing: model={routing.get('model') or 'not configured'} "
+        f"{format_llm_resolution(routing)} "
         f"base_url={routing.get('base_url') or 'not configured'} "
-        f"fallbacks={fallback_label} "
-        f"(source: {routing.get('source') or 'unknown'})"
+        f"fallback={routing.get('fallback') or fallback_label} "
+        f"fallbacks={fallback_label} cost={routing.get('cost') or 'metered'} "
+        f"(run source: {routing.get('run_source') or 'unknown'})"
     )
 
 
@@ -431,6 +405,7 @@ class GuidedIO:
 @dataclass(slots=True)
 class GuidedDependencies:
     prepare_ciq_refresh: Callable[..., Path] | None = None
+    refresh_and_ingest_ciq: Callable[..., dict[str, Any]] | None = None
     resolve_ciq_symbol: Callable[..., str] | None = None
     ingest_ciq_folder: Callable[..., Any] | None = None
     prefetch_filings: Callable[..., Any] | None = None
@@ -454,10 +429,19 @@ class GuidedDependencies:
     collect_freshness: Callable[[str], dict[str, Any]] = collect_data_freshness
 
     def resolve(self) -> "GuidedDependencies":
-        if self.prepare_ciq_refresh is None or self.resolve_ciq_symbol is None:
-            from ciq.ciq_refresh import prepare_single_ticker_refresh, resolve_ciq_symbol
+        if (
+            self.prepare_ciq_refresh is None
+            or self.refresh_and_ingest_ciq is None
+            or self.resolve_ciq_symbol is None
+        ):
+            from ciq.ciq_refresh import (
+                prepare_single_ticker_refresh,
+                refresh_and_ingest_single_ticker,
+                resolve_ciq_symbol,
+            )
 
             self.prepare_ciq_refresh = self.prepare_ciq_refresh or prepare_single_ticker_refresh
+            self.refresh_and_ingest_ciq = self.refresh_and_ingest_ciq or refresh_and_ingest_single_ticker
             self.resolve_ciq_symbol = self.resolve_ciq_symbol or resolve_ciq_symbol
         if self.ingest_ciq_folder is None:
             from ciq.ingest import ingest_ciq_folder
@@ -689,7 +673,69 @@ def build_model_snapshot(
 
 def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedDependencies, io: GuidedIO) -> dict[str, Any]:
     if args.skip_ciq_stage:
-        return {"skipped": True, "reason": "skip_ciq_stage"}
+        return {
+            "skipped": True,
+            "staged": False,
+            "ingested": False,
+            "reason": "skipped-by-flag",
+            "auto_refresh": False,
+        }
+
+    if getattr(args, "auto_refresh_ciq", False):
+        try:
+            if deps.refresh_and_ingest_ciq is None:
+                raise RuntimeError("CIQ auto-refresh dependency is not configured")
+            refresh_result = _as_dict(
+                deps.refresh_and_ingest_ciq(
+                    ticker=ticker,
+                    ciq_symbol=args.ciq_symbol,
+                    exchange=args.exchange,
+                    as_of_date=args.as_of_date,
+                    currency=args.currency,
+                    template_path=args.ciq_template,
+                    input_json_path=args.ciq_input_json,
+                    output_folder=args.ciq_folder,
+                )
+            )
+        except Exception as exc:
+            io.write(f"CIQ auto-refresh failed after staging attempt: {exc}")
+            return {
+                "skipped": False,
+                "staged": True,
+                "ingested": False,
+                "reason": "refresh-failed",
+                "auto_refresh": True,
+                "error": str(exc),
+            }
+
+        ingest_report = _as_dict(_jsonable(refresh_result.get("ingest_report")))
+        refresh_timed_out = bool(
+            refresh_result.get("refresh_timed_out")
+            or refresh_result.get("refresh_status") == "timed_out"
+        )
+        ingested = bool(refresh_result.get("refreshed")) and (
+            int(ingest_report.get("failed") or 0) == 0
+            and int(ingest_report.get("processed") or 0) + int(ingest_report.get("skipped") or 0) > 0
+        )
+        reason = "refresh-timed-out" if refresh_timed_out else (
+            "refreshed-and-ingested" if ingested else "refresh-failed"
+        )
+        io.write(
+            "CIQ auto-refresh outcome: "
+            f"{reason} (symbol={refresh_result.get('ciq_symbol') or args.ciq_symbol or 'resolved'})"
+        )
+        return {
+            "skipped": False,
+            "staged": bool(refresh_result.get("workbook_path")),
+            "ingested": ingested,
+            "reason": reason,
+            "auto_refresh": True,
+            "ciq_symbol": refresh_result.get("ciq_symbol") or args.ciq_symbol,
+            "workbook_path": refresh_result.get("workbook_path"),
+            "input_json_path": refresh_result.get("input_json_path") or str(args.ciq_input_json),
+            "archive_path": refresh_result.get("archive_path"),
+            "refresh_result": _jsonable(refresh_result),
+        }
 
     symbol = deps.resolve_ciq_symbol(ticker, ciq_symbol=args.ciq_symbol, exchange=args.exchange)  # type: ignore[misc]
     workbook_path = deps.prepare_ciq_refresh(  # type: ignore[misc]
@@ -710,7 +756,10 @@ def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedD
         io.write("- Non-interactive mode: CIQ workbook was staged, ingest is skipped.")
         return {
             "skipped": True,
-            "reason": "non_interactive_after_stage",
+            "staged": True,
+            "ingested": False,
+            "reason": "skipped-by-flag",
+            "auto_refresh": False,
             "ciq_symbol": symbol,
             "workbook_path": str(workbook_path),
             "input_json_path": str(args.ciq_input_json),
@@ -723,6 +772,10 @@ def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedD
     report = deps.ingest_ciq_folder(args.ciq_folder)  # type: ignore[misc]
     return {
         "skipped": False,
+        "staged": True,
+        "ingested": True,
+        "reason": "manual-ingested",
+        "auto_refresh": False,
         "ciq_symbol": symbol,
         "workbook_path": str(workbook_path),
         "input_json_path": str(args.ciq_input_json),
@@ -1479,29 +1532,20 @@ def run_guided_workup(
     evidence_chars = _EVIDENCE_BUDGETS.get(args.evidence_budget, _EVIDENCE_BUDGETS["standard"])
     os.environ["ALPHA_POD_EVIDENCE_CHARS"] = str(evidence_chars)
 
-    configured_llm_routing: dict[str, Any] | None = None
+    configured_llm_routing: dict[str, Any] = {}
     if args.use_codex:
-        os.environ["ALPHA_POD_AGENT_BACKEND"] = "codex"
-        os.environ["ALPHA_POD_CODEX_MODEL"] = args.codex_model
-        os.environ["ALPHA_POD_CODEX_EFFORT"] = args.codex_effort
-        fallback_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
-        fallback_models: list[str] = []
-        for candidate in [args.openrouter_model, *fallback_routing.get("fallback_models", [])]:
-            candidate_text = str(candidate).strip()
-            if candidate_text and candidate_text not in fallback_models:
-                fallback_models.append(candidate_text)
         configured_llm_routing = {
-            **fallback_routing,
             "backend": "codex",
             "model": args.codex_model,
             "effort": args.codex_effort,
-            "fallback": args.openrouter_model,
-            "fallback_models": fallback_models,
-            "cost": "subscription",
         }
         routing_source = "--use-codex"
     elif args.use_openrouter_free:
-        configured_llm_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+        configured_llm_routing = {
+            "backend": "openrouter",
+            "model": args.openrouter_model,
+            "fallback_models": args.openrouter_fallback_models,
+        }
         routing_source = f"--model {args.model_shortcut}" if args.model_shortcut else "--use-openrouter-free"
     else:
         routing_source = ".env/config"
@@ -1509,6 +1553,30 @@ def run_guided_workup(
         source=routing_source,
         configured=configured_llm_routing,
     )
+
+    if args.use_codex:
+        os.environ["ALPHA_POD_AGENT_BACKEND"] = "codex"
+        os.environ["ALPHA_POD_CODEX_MODEL"] = str(llm_routing["model"])
+        os.environ["ALPHA_POD_CODEX_EFFORT"] = str(llm_routing.get("effort") or "low")
+        fallback_route = resolve_llm_route(
+            "judgment",
+            cli_provider="openrouter",
+            cli_model=args.openrouter_model,
+        )
+        fallback_routing = configure_openrouter_free(
+            fallback_route["model"],
+            args.openrouter_fallback_models,
+            set_backend=False,
+        )
+        fallback_models: list[str] = []
+        for candidate in [fallback_route["model"], *fallback_routing.get("fallback_models", [])]:
+            candidate_text = str(candidate).strip()
+            if candidate_text and candidate_text not in fallback_models:
+                fallback_models.append(candidate_text)
+        llm_routing["fallback"] = fallback_models[0] if fallback_models else "not configured"
+        llm_routing["fallbacks"] = fallback_models
+    elif args.use_openrouter_free:
+        configure_openrouter_free(llm_routing["model"], args.openrouter_fallback_models)
     io.write(format_llm_routing_line(llm_routing))
 
     result: dict[str, Any] = {
@@ -1702,6 +1770,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ciq-template", default=str(ROOT / "ciq" / "templates" / "ciq_cleandata.xlsx"))
     parser.add_argument("--ciq-input-json", default=str(ROOT / "ciq" / "templates" / "financials_input.json"))
     parser.add_argument("--ciq-folder", default=str(ROOT / "data" / "exports"))
+    parser.add_argument(
+        "--auto-refresh-ciq",
+        action="store_true",
+        help="Explicitly launch Excel to refresh and ingest CIQ before the workup; off by default.",
+    )
 
     # --- Model routing ---
     parser.add_argument(
@@ -1711,17 +1784,21 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--codex-model",
-        default=os.getenv("ALPHA_POD_CODEX_MODEL", "gpt-5.6-luna"),
-        help="Codex CLI model (default: gpt-5.6-luna).",
+        default=None,
+        help="Codex CLI model; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument(
         "--codex-effort",
         choices=["low", "medium", "high", "xhigh"],
-        default=os.getenv("ALPHA_POD_CODEX_EFFORT", "low"),
-        help="Codex reasoning effort (default: low).",
+        default=None,
+        help="Codex reasoning effort; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument("--use-openrouter-free", action="store_true")
-    parser.add_argument("--openrouter-model", default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"))
+    parser.add_argument(
+        "--openrouter-model",
+        default=None,
+        help="OpenRouter model; otherwise resolve from environment, config, then fallback.",
+    )
     parser.add_argument("--openrouter-fallback-models", nargs="*", default=[])
     parser.add_argument(
         "--model",

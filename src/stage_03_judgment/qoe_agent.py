@@ -73,12 +73,11 @@ If no 10-K text is provided, still return the schema with null signal_explanatio
 empty flags, narrative_credibility "low", confidence "low", and a pm_summary noting
 that only deterministic signals are available.
 """
-DEFAULT_QOE_MODEL = "gemini-3-flash-preview"
 
 
 class QoEAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("QOE_AGENT_MODEL", DEFAULT_QOE_MODEL))
+        super().__init__(model_env_names=("QOE_AGENT_MODEL",))
         self.name = "QoEAgent"
         self.system_prompt = SYSTEM_PROMPT
 

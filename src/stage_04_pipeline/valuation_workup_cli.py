@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from datetime import date, datetime, timezone
 import json
+import logging
 import os
 import sys
 from typing import Any, Callable, Mapping, Sequence, TextIO
@@ -14,9 +15,12 @@ from src.stage_04_pipeline.valuation_provider_bindings import (
     ProviderBindingSettings,
     build_driver_family_bindings,
 )
+from config.llm_routing import format_llm_resolution, resolve_llm_route
 from src.stage_04_pipeline.valuation_workup_service import (
     run_persisted_valuation_workups,
 )
+
+_logger = logging.getLogger(__name__)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -106,9 +110,32 @@ def main(
     source_environment = (
         os.environ if environment is None else environment
     )
+    settings_environment = _settings_environment(
+        arguments, source_environment
+    )
+    llm_routing = resolve_llm_route(
+        "valuation",
+        cli_provider=arguments.provider,
+        cli_model=arguments.primary_model,
+        cli_effort=arguments.reasoning_effort,
+        env=settings_environment,
+        model_env_names=("ALPHA_POD_JUDGMENT_PRIMARY_MODEL",),
+    )
+    settings_environment.setdefault(
+        "ALPHA_POD_JUDGMENT_BACKEND", str(llm_routing["provider"])
+    )
+    settings_environment.setdefault(
+        "ALPHA_POD_JUDGMENT_PRIMARY_MODEL", str(llm_routing["model"])
+    )
+    if llm_routing.get("effort"):
+        settings_environment.setdefault(
+            "ALPHA_POD_JUDGMENT_REASONING_EFFORT",
+            str(llm_routing["effort"]),
+        )
+    _logger.info(format_llm_resolution(llm_routing))
     try:
         settings = ProviderBindingSettings.from_environment(
-            _settings_environment(arguments, source_environment)
+            settings_environment
         )
     except ValueError as exc:
         parser.error(str(exc))
@@ -137,6 +164,7 @@ def main(
         "provider": settings.backend,
         "primary_model": settings.primary_model,
         "critic_model": settings.critic_model,
+        "llm_routing": llm_routing,
         "analysis_as_of": analysis_as_of.isoformat(),
         "captured_at": captured_at,
         "manifest": manifest.model_dump(mode="json"),

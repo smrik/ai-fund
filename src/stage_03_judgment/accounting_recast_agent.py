@@ -115,7 +115,6 @@ _BRIDGE_COMPONENTS = frozenset(
 )
 _RECLASSIFICATION_FROM_COMPONENTS = _BRIDGE_COMPONENTS | {"unclaimed"}
 _PROPOSABLE_DRIVER_FIELDS = frozenset(AGENT_PROPOSABLE_ASSUMPTION_FIELDS) - _BRIDGE_COMPONENTS
-DEFAULT_ACCOUNTING_RECAST_MODEL = "gemini-3-flash-preview"
 
 
 DISCOVERY_SYSTEM_PROMPT = """You are a senior buy-side accounting and valuation analyst.
@@ -156,13 +155,8 @@ Return ONLY valid JSON:
 class AccountingDiscoveryAgent(BaseAgent):
     def __init__(self):
         super().__init__(
-            model=os.getenv(
-                "ACCOUNTING_DISCOVERY_AGENT_MODEL",
-                os.getenv(
-                    "ACCOUNTING_RECAST_AGENT_MODEL",
-                    DEFAULT_ACCOUNTING_RECAST_MODEL,
-                ),
-            )
+            role="accounting",
+            model_env_names=("ACCOUNTING_RECAST_AGENT_MODEL",),
         )
         self.name = "AccountingDiscoveryAgent"
         self.system_prompt = DISCOVERY_SYSTEM_PROMPT
@@ -304,11 +298,7 @@ class AccountingDiscoveryAgent(BaseAgent):
 
 class AccountingRecastAgent(BaseAgent):
     def __init__(self):
-        super().__init__(
-            model=os.getenv(
-                "ACCOUNTING_RECAST_AGENT_MODEL", DEFAULT_ACCOUNTING_RECAST_MODEL
-            )
-        )
+        super().__init__(role="accounting")
         self.name = "AccountingRecastAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []

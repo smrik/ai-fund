@@ -15,13 +15,11 @@ from pathlib import Path
 from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from typing import Any, Callable
 
-from config import LLM_MODEL, LLM_BASE_URL
+from config.llm_routing import format_llm_resolution, resolve_llm_route
 
 # Retry config for transient API errors
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = [5, 15, 30]  # seconds to wait before each retry attempt
-_CODEX_DEFAULT_MODEL = "gpt-5.6-luna"
-_CODEX_DEFAULT_EFFORT = "low"
 _CODEX_TIMEOUT_SECONDS = 120
 _CODEX_PROMPT_PREAMBLE = (
 	"Reply with plain text only. Do not use tools, do not read or write files, do not run commands."
@@ -45,13 +43,43 @@ class BaseAgent:
 	- self.tool_handlers: dict mapping tool name → callable(input_dict) → str
 	"""
 
-	def __init__(self, model: str | None = None):
-		resolved_base_url = os.getenv("LLM_BASE_URL") or LLM_BASE_URL
-		resolved_model = model or os.getenv("LLM_MODEL") or LLM_MODEL
-		self._codex_enabled = os.getenv("ALPHA_POD_AGENT_BACKEND", "").strip().lower() == "codex"
-		self._codex_model = os.getenv("ALPHA_POD_CODEX_MODEL", _CODEX_DEFAULT_MODEL).strip() or _CODEX_DEFAULT_MODEL
-		self._codex_effort = os.getenv("ALPHA_POD_CODEX_EFFORT", _CODEX_DEFAULT_EFFORT).strip() or _CODEX_DEFAULT_EFFORT
+	def __init__(
+		self,
+		model: str | None = None,
+		*,
+		role: str = "judgment",
+		provider: str | None = None,
+		effort: str | None = None,
+		model_env_names: tuple[str, ...] = (),
+	):
+		class_name = self.__class__.__name__
+		legacy_model_env = f"{re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).upper()}_MODEL"
+		route = resolve_llm_route(
+			role,
+			cli_provider=provider,
+			cli_model=model,
+			cli_effort=effort,
+			model_env_names=(*model_env_names, legacy_model_env),
+		)
+		self.llm_route = route
+		self.provider = str(route["provider"])
+		self._codex_enabled = self.provider == "codex"
+		self._codex_model = str(route["model"])
+		self._codex_effort = str(route.get("effort") or "low")
+		if self._codex_enabled:
+			# Codex's OpenAI-compatible fallback should use the judgment role,
+			# not the Codex model as an OpenAI model. Explicit environment values
+			# remain the highest-priority fallback inputs.
+			fallback_env = dict(os.environ)
+			fallback_env["ALPHA_POD_AGENT_BACKEND"] = "openrouter"
+			fallback_route = resolve_llm_route("judgment", env=fallback_env)
+			resolved_model = str(fallback_route["model"])
+			resolved_base_url = str(fallback_route.get("base_url") or "")
+		else:
+			resolved_model = str(route["model"])
+			resolved_base_url = str(route.get("base_url") or "")
 		self._fallback_model = resolved_model
+		_logger.info(format_llm_resolution(route))
 		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
 		if openrouter_key and "openrouter.ai" in (resolved_base_url or ""):
 			api_key = openrouter_key
@@ -349,6 +377,8 @@ class BaseAgent:
 		artifact: dict[str, Any] = {
 			"system_prompt": self.system_prompt,
 			"user_prompt": user_message,
+			"provider": self.provider,
+			"model_resolution": self.llm_route,
 			"requested_model": self.model,
 			"candidate_models": self.candidate_models(self.model),
 			"tool_schema": self.tools,

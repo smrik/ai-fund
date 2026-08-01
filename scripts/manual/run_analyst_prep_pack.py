@@ -61,7 +61,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ciq-no-refresh", action="store_true")
     parser.add_argument("--ciq-template-folder", default=str(ROOT / "ciq" / "templates"))
     parser.add_argument("--use-openrouter-free", action="store_true")
-    parser.add_argument("--openrouter-model", default="openrouter/free")
+    parser.add_argument(
+        "--openrouter-model",
+        default=None,
+        help="OpenRouter model override; otherwise resolve from environment, config, then fallback.",
+    )
     parser.add_argument("--openrouter-fallback-models", nargs="*", default=[])
     parser.add_argument("--export-xlsx", action="store_true")
     parser.add_argument("--output-dir", default=str(ROOT / "output" / "analyst_prep"))

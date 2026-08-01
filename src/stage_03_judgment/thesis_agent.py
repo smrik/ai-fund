@@ -17,7 +17,6 @@ from pathlib import Path
 import yaml
 
 from src.stage_03_judgment.base_agent import BaseAgent
-from config import LLM_SYNTHESIS_MODEL
 from src.stage_02_valuation.templates.ic_memo import (
     ICMemo, FilingsSummary, EarningsSummary,
     ValuationRange, SentimentOutput, RiskOutput,
@@ -46,7 +45,6 @@ The variant thesis prompt is the most important output. Examples of good prompts
 
 Avoid generic analysis. Be specific to THIS company. Do not hedge everything.
 A good IC memo is a forcing function — it makes you decide."""
-DEFAULT_THESIS_MODEL = "gemini-2.5-pro"
 
 
 def _normalize_structured_fields(data: dict) -> dict:
@@ -90,7 +88,7 @@ def _normalize_structured_fields(data: dict) -> dict:
 
 class ThesisAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("THESIS_AGENT_MODEL", LLM_SYNTHESIS_MODEL or DEFAULT_THESIS_MODEL))
+        super().__init__()
         self.name = "ThesisAgent"
         self.system_prompt = SYSTEM_PROMPT
         # No external tools — synthesizes from context only

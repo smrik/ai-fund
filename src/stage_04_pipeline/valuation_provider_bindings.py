@@ -7,6 +7,7 @@ import os
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
+from config.llm_routing import resolve_llm_route
 from src.contracts.assumption_registry import DriverFamily
 from src.contracts.judgment_runs import ProviderRoute, SamplingControls
 from src.stage_03_judgment.judgment_backends import (
@@ -49,7 +50,24 @@ class ProviderBindingSettings:
     ) -> "ProviderBindingSettings":
         """Resolve one explicit provider configuration without hidden fallback."""
 
-        source = os.environ if environment is None else environment
+        source = dict(os.environ if environment is None else environment)
+        if environment is None:
+            route = resolve_llm_route(
+                "valuation",
+                env=source,
+                model_env_names=("ALPHA_POD_JUDGMENT_PRIMARY_MODEL",),
+            )
+            source.setdefault(
+                "ALPHA_POD_JUDGMENT_BACKEND", str(route["provider"])
+            )
+            source.setdefault(
+                "ALPHA_POD_JUDGMENT_PRIMARY_MODEL", str(route["model"])
+            )
+            if route.get("effort"):
+                source.setdefault(
+                    "ALPHA_POD_JUDGMENT_REASONING_EFFORT",
+                    str(route["effort"]),
+                )
         backend = _value(source, "ALPHA_POD_JUDGMENT_BACKEND").lower()
         if not backend:
             raise ValueError(

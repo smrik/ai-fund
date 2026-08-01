@@ -282,7 +282,9 @@ def _context_from_any(context: IndustryResearchContext | dict[str, Any]) -> Indu
 
 class IndustryAgent(BaseAgent):
     def __init__(self, client: IndustryResearchClient | None = None):
-        super().__init__(model=os.getenv("INDUSTRY_AGENT_MODEL", DEFAULT_INDUSTRY_MODEL))
+        # The parent agent follows the shared judgment route. The optional Gemini
+        # grounding adapter remains a separate provider-specific integration below.
+        super().__init__()
         self.name = "IndustryAgent"
         self.system_prompt = SYSTEM_PROMPT
         self.tools = []
