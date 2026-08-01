@@ -11,6 +11,7 @@ deterministically guarded override must never reach an assumption change pack.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 from pathlib import Path
@@ -41,12 +42,13 @@ UNGUARDED_ARTIFACT = (
 
 SECTION_A = "0000950170-25-100235::note_013"
 SECTION_B = "0001193125-26-191507::note_012"
+FIXTURE_CORPUS_HASH = hashlib.sha256(b"fixture accounting filing corpus").hexdigest()
 
 
 def _retrieval_summary(section_ids: list[str]) -> dict:
     return {
         "profile_name": "accounting_discovery_focus",
-        "corpus_hash": "corpus-hash",
+        "corpus_hash": FIXTURE_CORPUS_HASH,
         "requested_section_ids": list(section_ids),
         "matched_section_ids": list(section_ids),
         "unmatched_section_ids": [],
@@ -1401,3 +1403,4 @@ def test_forward_driver_proposal_remains_queueable():
         result.queue_items[0].proposal_pack.proposals[0].assumption_name
         == "ebit_margin_target"
     )
+    assert result.queue_items[0].metadata["evidence_corpus_hash"] == FIXTURE_CORPUS_HASH

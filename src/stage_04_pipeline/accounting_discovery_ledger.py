@@ -696,6 +696,10 @@ def recast_to_findings(
                 or "The focused evidence supported no change to the current model.",
             }
         )
+    corpus_hash = _text((retrieval_summary or {}).get("corpus_hash"))
+    if corpus_hash:
+        for finding in findings:
+            finding["evidence_corpus_hash"] = corpus_hash
     return findings
 
 

@@ -1,14 +1,47 @@
 # Session State
 
-**Updated:** 2026-07-27 19:20 +02:00
-**Agent:** Codex
+**Updated:** 2026-08-01 20:25 +02:00
+**Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Execute the reconciled, judgment-authored valuation plan: complete multi-period statements,
-exact-once DCF/comps bridge, direct primary-plus-critic driver packs, atomic PM approval, and
-provider-independent replay across the full ticker universe. MSFT is only the first tracer bullet.
+Propagate genuine evidence corpus hashes through accounting producers so PM-approved treatments can
+be persisted.
+
+## Recent Actions
+
+- Traced the canonical SHA-256 corpus hash from filing retrieval through discovery retrieval
+  summaries and persisted evidence-packet metadata/source references.
+- Propagated discovery hashes into findings and queue metadata; propagated focused source-packet
+  hashes into the transient focused packet, validated findings, and queue metadata.
+- Added end-to-end approval and fail-closed regressions. The requested accounting suites pass:
+  56 passed including the focused runner tests.
+- Full tracked offline suite: 1,307 passed, 9 failed, 2 deselected. Eight failures are the known
+  advanced workbook Windows-temp permission issue; one is an unrelated concurrent API contract
+  change in `tests/test_api_contracts.py`.
+
+## Next Steps
+
+- Review/stage the five requested source/test files and commit on the feature branch when `.git`
+  write access is available.
+- If the base evidence-packet producer is later changed, propagate its retrieval bundle hash into
+  persisted `run_metadata` or source refs; the current persisted packet-213 path has no genuine
+  corpus hash and correctly remains fail closed.
+
+## Known Issues
+
+- The managed sandbox denies `.git/index` writes, so the implementation could not be committed.
+- The worktree also contains unrelated concurrent valuation/API/docs/frontend changes and generated
+  cache/export/debug artifacts; none were staged or reverted.
+
+## Notes
+
+- Runtime: `C:/Users/patri/miniconda3/envs/ai-fund/python.exe`.
+- Current branch: `codex/focused-accounting-evidence-repair`.
+- Corpus hashes come from SHA-256 over the filing retrieval corpus's chunk-identity records with
+  deterministic JSON key ordering. An unchanged corpus is stable when retrieval order is unchanged;
+  the current hash is not order-independent, so retrieval-order changes produce a new hash.
 
 ## First end-to-end valuation attempt — 2026-07-31
 

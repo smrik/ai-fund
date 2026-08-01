@@ -329,6 +329,10 @@ def _finding_metadata(
     duplicate_finding_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     finding = entry.finding
+    extra = finding.get("metadata")
+    corpus_hash = finding.get("evidence_corpus_hash") or finding.get("corpus_hash")
+    if not corpus_hash and isinstance(extra, Mapping):
+        corpus_hash = extra.get("evidence_corpus_hash") or extra.get("corpus_hash")
     metadata = {
         "observation_id": entry.finding_id,
         "finding_id": entry.finding_id,
@@ -354,6 +358,7 @@ def _finding_metadata(
         "pm_question": _text(finding.get("pm_question")) or None,
         "what_would_change_mind": _text(finding.get("what_would_change_mind")) or None,
         "citation_text": _text(finding.get("citation_text")) or None,
+        "evidence_corpus_hash": _text(corpus_hash) or None,
         "model_change_required": bool(finding.get("model_change_required")),
         "model_change_request": _text(finding.get("model_change_request")) or None,
         "conflict_group_id": entry.conflict_group_id,
@@ -363,9 +368,14 @@ def _finding_metadata(
     }
     # Producer-specific provenance (e.g. the discovery question that generated the
     # finding) travels with the queue item so PM review can trace it back.
-    extra = finding.get("metadata")
     if isinstance(extra, Mapping) and extra:
-        metadata["finding_metadata"] = dict(extra)
+        finding_metadata = {
+            key: value
+            for key, value in extra.items()
+            if key not in {"evidence_corpus_hash", "corpus_hash"}
+        }
+        if finding_metadata:
+            metadata["finding_metadata"] = finding_metadata
     return {key: value for key, value in metadata.items() if value not in (None, [], {})}
 
 
