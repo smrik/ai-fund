@@ -65,6 +65,48 @@ def _fmt_pct(value: Any) -> str:
         return "n/a"
 
 
+def _intrinsic_value_bridge(batch_row: dict[str, Any], dcf: dict[str, Any]) -> dict[str, Any]:
+    terminal_bridge = _as_dict(dcf.get("terminal_bridge"))
+    method_used = terminal_bridge.get("method_used") or dcf.get("method_used")
+    drivers_payload = batch_row.get("drivers_json")
+    if isinstance(drivers_payload, str):
+        try:
+            drivers = json.loads(drivers_payload)
+        except (TypeError, ValueError):
+            drivers = {}
+    elif isinstance(drivers_payload, dict):
+        drivers = drivers_payload
+    else:
+        drivers = {}
+    if not isinstance(drivers, dict):
+        drivers = {}
+
+    method_labels = {
+        "blend": "Blend",
+        "gordon_only": "Gordon-only",
+        "exit_only": "Exit-only",
+        "none": "None",
+    }
+    method_label = method_labels.get(str(method_used), str(method_used or "n/a"))
+    if method_used == "blend":
+        try:
+            gordon_weight = float(drivers["terminal_blend_gordon_weight"])
+            exit_weight = float(drivers["terminal_blend_exit_weight"])
+            weight_status = f"{gordon_weight:.0%} Gordon / {exit_weight:.0%} Exit"
+        except (KeyError, TypeError, ValueError):
+            weight_status = "Blend weights unavailable."
+    else:
+        weight_status = "Blend weights were not applied."
+
+    return {
+        "iv_base": batch_row.get("iv_base") if batch_row.get("iv_base") is not None else batch_row.get("iv_blended"),
+        "iv_gordon": batch_row.get("iv_gordon"),
+        "iv_exit": batch_row.get("iv_exit"),
+        "method_label": method_label,
+        "weight_status": weight_status,
+    }
+
+
 def _float_or_none(value: Any) -> float | None:
     try:
         if value is None:
@@ -976,6 +1018,7 @@ def render_markdown(result: dict[str, Any]) -> str:
     comps = _as_dict(deterministic.get("comps"))
     assumptions = _as_dict(deterministic.get("assumptions"))
     batch_row = _as_dict(deterministic.get("batch_row"))
+    bridge = _intrinsic_value_bridge(batch_row, dcf)
     nums = _extract_summary_numbers(summary, dcf)
     price = nums.get("price") or batch_row.get("price")
     base_iv = nums.get("base_iv") or batch_row.get("iv_base")
@@ -1022,6 +1065,12 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         f"- Current price: {_fmt_money(price)}",
         f"- Bear / Base / Bull IV: {_fmt_money(nums.get('bear_iv') or batch_row.get('iv_bear'))} / {_fmt_money(base_iv)} / {_fmt_money(nums.get('bull_iv') or batch_row.get('iv_bull'))}",
+        "### Intrinsic Value Bridge",
+        f"- Headline blended IV (Base): {_fmt_money(bridge['iv_base'])}",
+        f"- Gordon component: {_fmt_money(bridge['iv_gordon'])}",
+        f"- Exit component: {_fmt_money(bridge['iv_exit'])}",
+        f"- Method used: {bridge['method_label']}",
+        f"- Blend weights: {bridge['weight_status']}",
         f"- Base upside: {_fmt_pct(base_upside)}",
         f"- Initial deterministic read: {conclusion}",
         f"- Model trust state: {nums.get('trust_state') or batch_row.get('model_trust_state') or assumption_summary.get('model_trust_state') or 'n/a'}",

@@ -142,10 +142,19 @@ export interface TickerDossierPayload {
   optional_overlays: Record<string, unknown>;
 }
 
-export interface ValuationSummaryPayload {
+export interface IntrinsicValueBridgePayload {
+  base_iv?: number | null;
+  iv_base?: number | null;
+  iv_gordon?: number | null;
+  iv_exit?: number | null;
+  method_used?: "blend" | "gordon_only" | "exit_only" | "none" | string | null;
+  gordon_weight?: number | null;
+  exit_weight?: number | null;
+}
+
+export interface ValuationSummaryPayload extends IntrinsicValueBridgePayload {
   ticker: string;
   current_price?: number | null;
-  base_iv?: number | null;
   bear_iv?: number | null;
   bull_iv?: number | null;
   weighted_iv?: number | null;
@@ -273,7 +282,7 @@ export interface HistoricalMultiplePoint {
   multiple?: number | null;
 }
 
-export interface ValuationDcfPayload extends Record<string, unknown> {
+export interface ValuationDcfPayload extends Record<string, unknown>, IntrinsicValueBridgePayload {
   ticker: string;
   scenario_summary?: Array<Record<string, unknown>>;
   forecast_bridge?: Array<Record<string, unknown>>;

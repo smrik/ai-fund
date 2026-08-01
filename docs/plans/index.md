@@ -26,6 +26,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Intrinsic-Value Bridge](./active/2026-08-01-intrinsic-value-bridge.md) — expose Gordon, exit, and blended DCF values together on PM review surfaces without changing valuation math
 - [Reconciled, Judgment-Authored Valuation](./active/2026-07-25-reconciled-statement-ledger.md) — complete reconciled statements, exact-once DCF/comps bridge, direct evidence-grounded driver packs, provider-independent replay, and universe-scale execution
 - [Weekly Loop v1 (Milestone 1)](./active/2026-06-12-weekly-loop-v1.md) — session runbook, preflight, friction log, full-suite CI, queue-in-anger verification
 - [Evidence Acquisition: EDGAR End-To-End And Quartr Transcripts](./active/2026-06-13-evidence-acquisition-edgar-quartr.md) — unblocks 4 of 6 agent profiles; transcript contract with REST/import dual transport

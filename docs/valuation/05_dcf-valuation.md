@@ -154,6 +154,7 @@ Best practice:
 
 Deterministic outputs:
 
+- the production headline blend: `60% Gordon / 40% Exit` when both methods are valid
 - Gordon value
 - exit-multiple value
 - blended terminal value

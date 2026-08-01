@@ -23,7 +23,8 @@ python scripts/manual/build_advanced_dcf_model.py --ticker BAH
 ```
 
 The Base-case DCF is a transparent rebuild (PV of explicit FCFF + value-driver Gordon TV +
-exit-multiple TV, blended with the **story-derived** weight, equity bridge, diluted shares) and
+exit-multiple TV, blended `60% Gordon / 40% Exit` under a PM-level weighting decision,
+with 60/40 as the standing default pending PM review, plus the equity bridge and diluted shares) and
 the build **refuses to emit unless the workbook Base IV reconciles to the backend `iv_base` to
 within $0.10/share**. Tabs: Cover, Thesis_Drivers, PM_Review_Queue, Assumptions (with provenance
 + register flags), Historical_Financials, Input_Forecast, WACC, DCF_Base, Scenarios,

@@ -657,6 +657,71 @@ function CompactThesisBridge({ ticker, pack }: { ticker: string; pack?: AnalystP
   );
 }
 
+function formatIntrinsicWeight(value: unknown): string | null {
+  const weight = asNumber(value);
+  return weight == null ? null : `${Math.round(weight * 100)}%`;
+}
+
+export function IntrinsicValueBridgePanel({ payload }: { payload: Record<string, unknown> | null | undefined }) {
+  const baseValue = asNumber(payload?.iv_base ?? payload?.base_iv);
+  const method = asText(payload?.method_used);
+  const gordonValue = asNumber(method === "exit_only" || method === "none" ? null : payload?.iv_gordon);
+  const exitValue = asNumber(method === "gordon_only" || method === "none" ? null : payload?.iv_exit);
+  const methodLabel =
+    method === "blend"
+      ? "Blend"
+      : method === "gordon_only"
+        ? "Gordon-only"
+        : method === "exit_only"
+          ? "Exit-only"
+          : method === "none"
+            ? "None"
+            : method ?? "Unavailable";
+  const gordonWeight = formatIntrinsicWeight(payload?.gordon_weight);
+  const exitWeight = formatIntrinsicWeight(payload?.exit_weight);
+  const weightStatus =
+    method === "blend" && gordonWeight != null && exitWeight != null
+      ? `${gordonWeight} Gordon / ${exitWeight} Exit`
+      : method === "blend"
+        ? "Blend weights unavailable."
+        : "Blend weights were not applied.";
+
+  return (
+    <section className="panel intrinsic-value-bridge">
+      <h2>Intrinsic Value Bridge</h2>
+      <div className="grid-cards grid-cards--tight">
+        <article className="mini-card scenario-base">
+          <span>Blended IV (Headline)</span>
+          <strong>{formatCurrency(baseValue)}</strong>
+          <p>Base IV headline</p>
+        </article>
+        <article className="mini-card">
+          <span>Gordon component</span>
+          <strong>{formatCurrency(gordonValue)}</strong>
+          <p>Component of the headline blend</p>
+        </article>
+        <article className="mini-card">
+          <span>Exit component</span>
+          <strong>{formatCurrency(exitValue)}</strong>
+          <p>Component of the headline blend</p>
+        </article>
+      </div>
+      <p>
+        Method used: <strong>{methodLabel}</strong>
+      </p>
+      <p>
+        {method === "blend" ? (
+          <>
+            Applied weights: <strong>{weightStatus}</strong>
+          </>
+        ) : (
+          weightStatus
+        )}
+      </p>
+    </section>
+  );
+}
+
 function SummaryPanel({
   summary,
   workspace,
@@ -703,6 +768,7 @@ function SummaryPanel({
         <h2>Scenario Summary</h2>
         <ScenarioCards rows={payloadScenarioRows.length ? payloadScenarioRows : fallbackScenarioRows} />
       </section>
+      <IntrinsicValueBridgePanel payload={summary} />
       <section className="grid-cards">
         <article className="panel">
           <h2>Decision Snapshot</h2>
@@ -788,6 +854,7 @@ function DcfPanel({
   return (
     <section className="page-stack">
       <CompactThesisBridge ticker={ticker} pack={analystPrep} />
+      <IntrinsicValueBridgePanel payload={dcf} />
       <section className="panel">
         <h2>Scenario Summary</h2>
         {renderValueTable(scenarioRows, [

@@ -191,6 +191,12 @@ beforeEach(() => {
             ticker: "IBM",
             current_price: 100,
             base_iv: 120,
+            iv_base: 228.89,
+            iv_gordon: 161.4,
+            iv_exit: 330.11,
+            method_used: "blend",
+            gordon_weight: 0.6,
+            exit_weight: 0.4,
             bear_iv: 90,
             bull_iv: 150,
             weighted_iv: 126,
@@ -247,7 +253,14 @@ beforeEach(() => {
             forecast_bridge: [
               { year: 1, revenue_mm: 1000, growth_pct: 8, ebit_margin_pct: 12, fcff_mm: 90, roic_pct: 14 },
             ],
-            terminal_bridge: { method_used: "blended", terminal_growth_pct: 3, tv_pct_of_ev: 68 },
+            base_iv: 228.89,
+            iv_base: 228.89,
+            iv_gordon: 161.4,
+            iv_exit: 330.11,
+            method_used: "blend",
+            gordon_weight: 0.6,
+            exit_weight: 0.4,
+            terminal_bridge: { method_used: "blend", terminal_growth_pct: 3, tv_pct_of_ev: 68 },
             ev_bridge: { enterprise_value_total_mm: 1800, equity_value_mm: 1500, intrinsic_value_per_share: 120 },
             driver_rows: [{ label: "WACC", value: 8.2, unit: "pct", source: "company" }],
             health_flags: { tv_high_flag: false, nwc_driver_quality_flag: true },
@@ -1159,12 +1172,22 @@ describe("frontend routes", () => {
     expect(await screen.findByText("Probability +60.0%" )).toBeInTheDocument();
     expect(screen.getAllByText("Probability +20.0%" )).toHaveLength(2);
     expect(screen.queryByText("Probability +25.0%" )).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Intrinsic Value Bridge" })).toBeInTheDocument();
+    expect(screen.getByText("$228.89")).toBeInTheDocument();
+    expect(screen.getByText("$161.40")).toBeInTheDocument();
+    expect(screen.getByText("$330.11")).toBeInTheDocument();
+    expect(screen.getByText("60% Gordon / 40% Exit")).toBeInTheDocument();
   });
 
   it("renders data-rich valuation content for dcf, comparables, and multiples tabs", async () => {
     const { container } = renderRoute("/ticker/IBM/valuation?view=DCF");
 
     expect(await screen.findByText("Scenario Summary")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Intrinsic Value Bridge" })).toBeInTheDocument();
+    expect(screen.getByText("$228.89")).toBeInTheDocument();
+    expect(screen.getByText("$161.40")).toBeInTheDocument();
+    expect(screen.getByText("$330.11")).toBeInTheDocument();
+    expect(screen.getByText("60% Gordon / 40% Exit")).toBeInTheDocument();
     expect(screen.getByText("Forecast Bridge")).toBeInTheDocument();
     expect(screen.getByText("Health Flags")).toBeInTheDocument();
     expect(screen.getByText("Sensitivity Tables")).toBeInTheDocument();

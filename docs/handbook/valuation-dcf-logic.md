@@ -197,6 +197,12 @@ TV_10   = EBIT_10 × Exit_Multiple  (or EBITDA_10 × Exit_Multiple)
 PV_TV   = TV_10 / (1 + WACC)^10
 ```
 
+When both terminal methods are valid, the production headline is the persisted
+`60% Gordon / 40% Exit` blend and the presentation bridge shows both components.
+This weighting is a PM-level decision and is the standing default pending PM review;
+this handbook does not assign a rationale for it. If only one method is valid, the
+authoritative method status is shown and the unavailable component remains null.
+
 ### 2.3 Discounting
 
 ```

@@ -847,3 +847,61 @@ def test_pm_queue_review_index_does_not_emit_dead_commands_for_deferred_items(tm
     assert "pm_decision_queue.py --ticker MSFT preview --item-id 33" not in markdown
     assert "pm_decision_queue.py --ticker MSFT defer --item-id 33" not in markdown
     assert "No direct mutation command: item 33 is deferred" in markdown
+
+
+def test_guided_workup_renders_intrinsic_value_bridge_from_persisted_row() -> None:
+    markdown = guided.render_guided_markdown(
+        {
+            "ticker": "MSFT",
+            "run_started_at": "2026-08-01T09:00:00Z",
+            "agent_mode": "heuristic",
+            "database": {},
+            "profiles": [],
+            "queue_decisions": [],
+            "profile_runs": [],
+            "data_freshness": {},
+            "latest_model": {
+                "deterministic": {
+                    "dcf": {"terminal_bridge": {"method_used": "blend"}},
+                    "batch_row": {
+                        "price": 300.0,
+                        "iv_base": 228.89,
+                        "iv_blended": 228.89,
+                        "iv_gordon": 161.40,
+                        "iv_exit": 330.11,
+                        "drivers_json": '{"terminal_blend_gordon_weight": 0.6, "terminal_blend_exit_weight": 0.4}',
+                    },
+                }
+            },
+        }
+    )
+
+    assert "### Intrinsic Value Bridge" in markdown
+    assert "Headline blended IV (Base): $228.89" in markdown
+    assert "Gordon component: $161.40" in markdown
+    assert "Exit component: $330.11" in markdown
+    assert "Method used: Blend" in markdown
+    assert "60% Gordon / 40% Exit" in markdown
+
+
+def test_guided_workup_reports_degenerate_intrinsic_value_methods() -> None:
+    for method_label, method_used in (("Gordon-only", "gordon_only"), ("Exit-only", "exit_only")):
+        markdown = guided.render_guided_markdown(
+            {
+                "ticker": "MSFT",
+                "latest_model": {
+                    "deterministic": {
+                        "dcf": {"terminal_bridge": {"method_used": method_used}},
+                        "batch_row": {
+                            "iv_base": 228.89,
+                            "iv_gordon": 161.40,
+                            "iv_exit": 330.11,
+                            "drivers_json": '{"terminal_blend_gordon_weight": 0.6, "terminal_blend_exit_weight": 0.4}',
+                        },
+                    }
+                },
+            }
+        )
+
+        assert f"Method used: {method_label}" in markdown
+        assert "Blend weights: Blend weights were not applied." in markdown
