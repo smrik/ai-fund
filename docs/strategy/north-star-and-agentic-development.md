@@ -5,7 +5,7 @@
 | Status | Canonical long-term guidance |
 | Audience | The PM (Patrik) and every coding agent working in this repo |
 | Horizon | 12-24 months |
-| Last updated | 2026-06-12 |
+| Last updated | 2026-07-24 (Architecture Invariants amended for Vision Decision 13) |
 
 This document answers two questions that no other doc owns:
 
@@ -43,7 +43,7 @@ These rules already exist and have proven their worth. Agents must treat them as
 
 | Invariant | Why it survives |
 | --- | --- |
-| LLM code never touches the deterministic computation layer | The entire trust model rests on this; valuations must be reproducible |
+| LLM code never *executes inside* the deterministic computation layer | The entire trust model rests on this; valuations must be replayable from a fixed assumption set. Note the scope: this governs where code runs, not who authors the assumptions — authoring them is the judgment layer's job (Vision Decision 13) |
 | The PM Decision Queue is the only bridge from judgment to model mutation | One auditable choke point instead of scattered overrides |
 | Every observation needs an Evidence Anchor | Kills hallucinated inputs at the contract boundary |
 | Translator rules are deterministic and testable | Numbers come from code, not prose |

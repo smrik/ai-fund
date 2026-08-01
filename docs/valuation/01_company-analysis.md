@@ -386,9 +386,15 @@ Required fields:
 
 Translation rule:
 
-- qualitative interpretation may propose a driver
+- the judgment layer **authors** the driver proposal — this translation is its job, not an
+  optional extra ([Vision Decision 13](../strategy/vision.md#the-division-of-labor))
 - deterministic evidence should anchor it numerically where possible
 - only PM-approved ranges should be allowed to flow into the forecast layer
+
+A business-analysis output that stops at description has not completed this seam. "The company
+has good bargaining power" is an input to the translation, not the deliverable; the deliverable
+is a proposed driver value with a cited evidence basis, which the PM then approves, edits, or
+rejects.
 
 This is the main "narrative to numbers" seam. Damodaran's *Narrative and Numbers* is the anchor mental model here: qualitative business stories are useful only when translated into numeric assumptions that can be tested, rejected, or approved.
 Reference: https://cup.columbia.edu/book/narrative-and-numbers/9780231180481/
@@ -418,8 +424,8 @@ The system should eventually produce these artifacts from company analysis:
 | Customer / supplier concentration block | summarizes concentration risk | deterministic + LLM |
 | Competitive-position summary | explains moat, rivalry, and advantage durability | LLM-augmented, PM-reviewed |
 | Management capital-allocation notes | captures dilution, leverage, and reinvestment behavior | mixed |
-| Forecast driver shortlist | identifies the key assumptions that must carry into the model | PM-owned |
-| Analysis-to-forecast handoff table | turns business conclusions into explicit driver records and approved numeric ranges | deterministic + PM |
+| Forecast driver shortlist | identifies the key assumptions that must carry into the model | judgment layer, PM-approved |
+| Analysis-to-forecast handoff table | turns business conclusions into explicit driver records and numeric ranges | judgment layer authors, PM approves |
 
 ## Forecast Handoff And Validation Block
 

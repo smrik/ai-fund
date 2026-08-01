@@ -36,8 +36,14 @@ The loop runs end-to-end with the PM pressing the buttons. Goal is proving the w
 | Friction log | Each session logs friction in a running note (`docs/reviews/`); top friction items become the next week's fixes |
 | Finish handoff hardening | ✅ Shipped 2026-06-12 ([Agentic Handoff MVP Hardening](../completed/2026-05-22-agentic-handoff-mvp-hardening.md)): no synthetic evidence, visible agent failures, delta/target preview-approve parity. M1 execution continues in [Weekly Loop v1](../active/2026-06-12-weekly-loop-v1.md) |
 | Queue workflow in anger | PM-Edited Proposals, Advisory Findings, and Assumption Change Packs exercised on real names, not fixtures |
+| **Judgment layer authors the drivers** (added 2026-07-24) | Forward-looking `*_target` drivers, terminal growth, and terminal reinvestment are agent-authored from filing evidence and management guidance, not sector constants — per [Vision Decision 13](../../strategy/vision.md#the-division-of-labor). Starting point: business analysis → industry analysis as durable upstream context (Decision 14), feeding driver agents |
 
-**Exit criteria:** Four consecutive weekly sessions completed. One full ticker investigation fits in ≤1 PM-hour. Every manual-data-surgery incident is logged and has a fix or a ticket.
+**Exit criteria:** Four consecutive weekly sessions completed. One full ticker investigation fits in ≤1 PM-hour. Every manual-data-surgery incident is logged and has a fix or a ticket. A shipped model's provenance audit shows the key forward-looking drivers agent-reasoned with a named evidence basis, not `llm_reasoned: 0`.
+
+> **Why this sits in M1 rather than a later milestone.** Decisions 13-14 postdate this roadmap
+> (amended 2026-07-24). The weekly loop is the vehicle for finding friction, and a loop that
+> ships sector-default assumptions produces a valuation the PM cannot act on — so this is loop
+> friction, not new feature work, and it does not displace the M1→M4 ordering.
 
 ## Milestone 2 — React Parity And Streamlit Retirement (July → September)
 
@@ -89,7 +95,7 @@ The system starts working overnight so the daily 30-60 minute session becomes re
 | Milestone | Serves decisions |
 | --- | --- |
 | M0 Consolidate | 7 (UI), platform health prerequisite for all |
-| M1 Weekly loop | 12 (loop for real), 10/11 (workflow rules in practice) |
+| M1 Weekly loop | 12 (loop for real), 10/11 (workflow rules in practice), 13/14 (judgment layer authors the drivers; business → industry → driver ordering) |
 | M2 One surface | 7 (retire Streamlit, React+FastAPI) |
 | M3 Autonomy v0 | 2 (cadence), 5 (event-driven runs), known tensions |
 | M4 Review | 9 (data checkpoint), sets up 6 (IBKR monitoring) |

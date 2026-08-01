@@ -12,6 +12,13 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 
 ## Read First
 
+> Before any valuation, assumption, or judgment-agent work, read
+> [Vision: The Division Of Labor](../strategy/vision.md#the-division-of-labor) and
+> [Deterministic Vs LLM Boundary](../valuation/12_deterministic-vs-llm-boundary.md).
+> The design docs below describe structure and dependency rules; those two describe **who authors
+> the forward-looking assumptions** (the judgment layer, PM-approved), which several older pages
+> here predate.
+
 - [Architecture Overview](./architecture-overview.md)
 - [Core Beliefs](./core-beliefs.md)
 - [TickerDossier Contract](./ticker-dossier-contract.md)

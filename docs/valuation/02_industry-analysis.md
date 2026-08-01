@@ -61,8 +61,14 @@ PM judgment is still required for:
 
 ### Hard Boundary
 
-Industry analysis can inform deterministic assumptions, but it should not directly rewrite them without explicit approval.
-LLM-generated industry narratives should remain advisory until the PM converts them into forecast choices or scenario framing.
+Industry analysis must not directly rewrite deterministic assumptions — every proposal passes
+through the PM Decision Queue first.
+
+But the conversion from industry narrative to forecast constraint is the **judgment layer's**
+work, not something the PM performs by hand: industry analysis should output bounded growth and
+margin ranges with an evidence basis, which downstream driver agents consume as context
+([Vision Decision 14](../strategy/vision.md#the-division-of-labor)) and the PM approves, edits,
+or rejects. A narrative that never resolves into a constraint has not finished the job.
 
 ## Full Workflow
 

@@ -37,7 +37,18 @@ The deterministic layer should own:
 
 ### LLM-augmented
 
-LLMs can help explain why terminal assumptions may be fragile or contextually implausible, but they should not set the numeric terminal framework.
+The judgment layer **authors the terminal assumptions** — terminal growth, terminal reinvestment
+(what capex and D&A converge to and why), and the durability of competitive advantage that
+justifies them — each with a named evidence basis from filings and management guidance. See
+[Vision Decision 13](../strategy/vision.md#the-division-of-labor).
+
+It also explains why those assumptions may be fragile or contextually implausible.
+
+What stays deterministic is the terminal *framework*: which formula is used, the Gordon/exit
+blend mechanics, and the guardrail checks. Proposed terminal values reach the model only through
+the PM Decision Queue. Note that terminal assumptions typically drive the majority of enterprise
+value, so leaving them to a sector constant concentrates the largest part of the answer in the
+least company-specific input.
 
 ### Human / PM Judgment
 

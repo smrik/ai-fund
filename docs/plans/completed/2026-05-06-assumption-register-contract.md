@@ -1,5 +1,8 @@
 # Assumption Register Contract Implementation Plan
 
+> **Status:** Completed historical V1 plan. Judgment-authored scenario packs are governed by the
+> current reconciled-statement-ledger plan and Vision Decisions 13–16.
+
 ## Summary
 
 Build the first executable assumption-register layer for Alpha Pod.

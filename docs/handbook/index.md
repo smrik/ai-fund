@@ -12,6 +12,7 @@ Use it for workflow guidance, local run paths, review loops, and implementation-
 
 ## Read First
 
+- [Project Catch-Up](./project-catch-up.md)
 - [End-to-End Workflow](./workflow-end-to-end.md)
 - [Weekly Loop Session](./weekly-loop-session.md)
 - [PM Queue Review Checklist](./pm-queue-review-checklist.md)

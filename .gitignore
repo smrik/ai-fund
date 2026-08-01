@@ -71,3 +71,10 @@ src/data/cache/
 src/data/
 src/config/
 nppBackup/
+
+# Serena code-intelligence cache (generated, machine-local)
+.serena/
+
+# Permission-locked pytest scratch dirs created by earlier Codex/Windows sessions
+.codex-pytest-temp/
+.pre-commit-cache-run*/

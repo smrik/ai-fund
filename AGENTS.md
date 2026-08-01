@@ -45,23 +45,31 @@ Alpha Pod is an AI-augmented fundamental long/short equity research pipeline for
 The system is split into three layers:
 
 1. Data layer: deterministic ingestion and caching
-2. Computation layer: deterministic screening, WACC, DCF, and portfolio math
-3. Judgment layer: LLM agents used selectively for narrative and qualitative analysis
+2. Computation layer: deterministic screening, WACC, DCF, and portfolio math — and marshalling the relevant evidence for a specific analytical question
+3. Judgment layer: LLM agents that reason over qualitative and quantitative evidence to **set the key forward-looking assumptions** (Vision Decision 13), routed through the PM Decision Queue
 
-The hard rule is unchanged: LLM code never touches the deterministic computation layer.
+The hard rule is unchanged: LLM code never *executes inside* the deterministic computation layer,
+and the PM Decision Queue is the only bridge to model mutation.
+
+Note what that rule does **not** say. It constrains where code runs; it does not demote the
+judgment layer to commentary. Forward-looking drivers are meant to be agent-reasoned from filings,
+management guidance, and history — sector constants and mechanical transforms are fallbacks that
+signal missing judgment. A model whose `*_target` drivers all come from lookup tables is not the
+product, however many agents ran alongside it. See [The Division Of Labor](./docs/strategy/vision.md#the-division-of-labor).
 
 ## Read These In Order
 
-1. [`docs/strategy/vision.md`](./docs/strategy/vision.md) — the PM's settled decisions; plans must serve these and must not re-litigate them
-2. [`docs/PLANS.md`](./docs/PLANS.md) — repository guidance, docs taxonomy, and planning rules
-3. [`docs/index.md`](./docs/index.md) — docs home
-4. [`docs/design-docs/architecture-overview.md`](./docs/design-docs/architecture-overview.md) — architecture and boundaries
-5. [`docs/design-docs/core-beliefs.md`](./docs/design-docs/core-beliefs.md) — design principles
-6. [`docs/handbook/workflow-end-to-end.md`](./docs/handbook/workflow-end-to-end.md) — operator workflow
-7. [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) — React/API runtime map
-8. [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) — canonical UI review workflow
-9. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
-10. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
+1. [`docs/strategy/vision.md`](./docs/strategy/vision.md) — the PM's settled decisions; plans must serve these and must not re-litigate them. **Decisions 13-14 and [The Division Of Labor](./docs/strategy/vision.md#the-division-of-labor) are the point of the project — read them before any valuation or agent work**
+2. [`docs/valuation/index.md`](./docs/valuation/index.md) — **the finance methodology in analyst order, and where the division of labor is worked out per driver.** Required before touching valuation, assumptions, or judgment agents; [12_deterministic-vs-llm-boundary.md](./docs/valuation/12_deterministic-vs-llm-boundary.md) is the ownership map
+3. [`docs/PLANS.md`](./docs/PLANS.md) — repository guidance, docs taxonomy, and planning rules
+4. [`docs/index.md`](./docs/index.md) — docs home
+5. [`docs/design-docs/architecture-overview.md`](./docs/design-docs/architecture-overview.md) — architecture and boundaries
+6. [`docs/design-docs/core-beliefs.md`](./docs/design-docs/core-beliefs.md) — design principles
+7. [`docs/handbook/workflow-end-to-end.md`](./docs/handbook/workflow-end-to-end.md) — operator workflow
+8. [`docs/handbook/react-frontend-setup.md`](./docs/handbook/react-frontend-setup.md) — React/API runtime map
+9. [`docs/handbook/react-playwright-review-loop.md`](./docs/handbook/react-playwright-review-loop.md) — canonical UI review workflow
+10. [`docs/plans/index.md`](./docs/plans/index.md) — canonical plan registry
+11. [`.agent/session-state.md`](./.agent/session-state.md) — current handoff state if it exists
 
 If you are touching `dashboard/`, `frontend/`, `api/`, or browser validation, also read:
 
@@ -115,6 +123,40 @@ When working on the React shell:
 6. Use the route-matrix runner in [`scripts/manual/review_react_route_matrix.py`](./scripts/manual/review_react_route_matrix.py) before claiming a React route set is healthy.
 7. Do not trust `200 OK` or a clean browser console by themselves; inspect screenshots and distinguish true empty-state data from render bugs.
 8. If a frontend route looks wrong, compare the rendered page against the direct API payload before changing UI code.
+
+## Commit Cadence (default on)
+
+**Commit as you go. This is the default, not an option.** Do not wait until the end of a session,
+and do not ask permission for each commit — the PM has standing approval for commits on a feature
+branch. Skip it only when the PM explicitly says not to commit.
+
+Commit after each of these, whichever comes first:
+
+1. a test goes from red to green;
+2. a bug is fixed and its regression passes;
+3. a file is created or substantially rewritten;
+4. roughly thirty minutes of work, or before any risky or wide-reaching edit.
+
+Why this is a hard requirement, from real damage in this repository:
+
+- On 2026-07-31 an over-broad regex destroyed ~180 lines of
+  `tests/test_filing_presentation.py`. The file was **untracked**, so there was no version to
+  restore and the test had to be abandoned.
+- On 2026-08-01 a delegated `opencode` run corrupted
+  `statement_reconciliation_service.py` and its test file, and edited an existing test it had been
+  told not to touch. Recovery only worked because a manual snapshot had been taken first.
+
+Both were recoverable-in-principle failures that became unrecoverable because work sat uncommitted.
+A commit is the cheapest possible undo.
+
+Rules that follow from that:
+
+- **Never leave new source or test files untracked.** `git add` a new file in the same change that
+  creates it, even if it is incomplete.
+- **Commit before delegating to another agent** (`opencode`, `codex exec`, a subagent) and before
+  any bulk or regex-driven edit.
+- Commit messages state what changed and why, and end with the co-author trailer.
+- Committing is not the same as pushing. Push only when the PM asks.
 
 ## Branch Hygiene
 

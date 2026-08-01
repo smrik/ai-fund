@@ -92,8 +92,25 @@ growth in the next 5 years.
 
 Resolution note:
 
-- Resolved for docs by [`01_company-analysis.md`](./01_company-analysis.md), section 8, which now defines the analysis-to-forecast handoff object and explicitly frames the narrative-to-numbers translation as the PM-owned seam.
+- Resolved for docs by [`01_company-analysis.md`](./01_company-analysis.md), section 8, which now defines the analysis-to-forecast handoff object.
 - Coding follow-up remains: turn the handoff object into an executable contract in the next PR.
+
+**Superseded 2026-07-24 — ownership of this seam changed.** The note above (and section 8 of
+`01_company-analysis.md`) framed the narrative-to-numbers translation as *PM-owned*. Under
+[Vision Decision 13](../strategy/vision.md#the-division-of-labor) that seam is **owned by the
+judgment layer**, with the PM approving, editing, or rejecting the result.
+
+The original complaint stands and is in fact the thing Decision 13 fixes: an LLM summary that
+does not resolve to a number is not useful, and *"going from 'The company has good bargaining
+power' -> +1.5% revenue growth"* is exactly the step that matters. The change is who performs it.
+The agent now performs that translation with a cited evidence basis; the PM's judgment is
+exercised on the proposal rather than by hand-authoring the number. If the PM finds themselves
+typing in a driver value because nothing proposed one, that is a pipeline gap to fix, not the
+intended workflow.
+
+*This supersedes a PM-authored annotation. Flagged explicitly rather than edited away — if the
+original intent was that this specific seam stays hand-authored regardless of Decision 13, say
+so and it goes back.*
 
 ## 3. Historical Financial Analysis
 

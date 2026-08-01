@@ -68,6 +68,15 @@
 
 **`input_assembler.py` assumption priority chains:**
 
+> These chains are how the deterministic layer **seeds** a driver before judgment runs. For
+> historical `*_start` values that is the whole story — they are extracts. For forward-looking
+> values (`*_target`, terminal growth, growth fade, RONIC) a chain terminating in
+> `sector default` marks an **unfilled slot**: under
+> [Vision Decision 13](../strategy/vision.md#the-division-of-labor) those are meant to be
+> authored by the judgment layer from filing evidence and management guidance, then PM-approved
+> through the Decision Queue. The chains below describe today's fallback behaviour, not the
+> target design.
+
 | Assumption | Priority order |
 |---|---|
 | Near-term revenue growth | CIQ consensus FY1/FY2 → CIQ 3yr CAGR → yfinance 3yr CAGR → yfinance TTM YoY → sector default |

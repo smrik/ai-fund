@@ -39,7 +39,14 @@ DCF math, bridge math, scenario math, and diagnostic outputs should be fully det
 
 ### LLM-augmented
 
-LLMs can help explain why a result looks fragile, contradictory, or unusually sensitive, but they should not control the numeric engine.
+The judgment layer explains why a result looks fragile, contradictory, or unusually sensitive —
+and authors the forward-looking driver values the engine consumes (see
+[04](./04_financial-forecasting.md) and [Vision Decision 13](../strategy/vision.md#the-division-of-labor)).
+
+It does not *run* the engine: the DCF math itself stays deterministic and replayable, and no
+proposed driver reaches it except through the PM Decision Queue. The separation is between
+authoring the inputs and executing the arithmetic — not between "commentary" and "the real
+numbers".
 
 ### Human / PM Judgment
 

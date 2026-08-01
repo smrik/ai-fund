@@ -1,21 +1,281 @@
 # Accounting Evidence Packs And Focused Repair Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
-> **For Codex:** Use this plan task-by-task with TDD where practical. Stop at the PM finance-semantics checkpoint before implementing unresolved treatment rules.
+> **For Codex:** Use this plan task-by-task with TDD where practical. The PM finance-semantics checkpoint was resolved on 2026-07-25; follow that recorded scope rather than reintroducing fixed treatment rules.
 
-**Goal:** Make the guided weekly loop produce finance-useful accounting/QoE evidence and repair semantically invalid proposals once before dropping them, while keeping all valuation mutations behind the PM Decision Queue.
+**Vision decisions served:** 1, 2, 10–16.
 
-**Architecture:** Add a deterministic accounting evidence assembly layer that retrieves note-specific filing sections and existing balance-sheet/QoE facts, then dispatch several narrow topic packets to focused judgment calls. Each call returns a small typed finding or an explicit no-adjustment/missing-evidence result. A deterministic validator checks schema, evidence anchors, accounting-topic completeness, and proposed-driver alignment; parse or semantic failures receive one targeted repair prompt with the exact rejection reason before the finding is discarded. Valid findings merge into an accounting adjustment ledger and only material PM-review candidates enter the queue.
+**Goal:** Make the guided weekly loop produce finance-useful accounting/QoE evidence, support
+open-ended classifications and historical recasts, and repair semantically invalid proposals
+once before dropping them, while keeping all valuation mutations behind the PM Decision Queue.
 
-**Tech Stack:** Python 3.13, typed dataclasses/Pydantic contracts, SQLite evidence-packet persistence, EDGAR section/chunk retrieval, existing CIQ/yfinance valuation inputs, `BaseAgent` Codex routing, pytest offline fixtures, Markdown run artifacts.
+**Architecture:** Use broad deterministic discovery over the populated historical record, then
+retrieve note-specific filing sections and quantitative facts for narrow judgment questions.
+Each call returns typed findings or explicit no-adjustment/missing-evidence results. The validator
+checks schema, anchors, completeness, and driver alignment without treating the current model
+schema as a ceiling: a sound unsupported treatment becomes a model-change request. Valid findings
+merge into an accounting ledger and anchored PM-review candidates enter the queue. Approved
+treatments persist separately from flattened numeric overrides and can be revalidated when the
+evidence corpus changes.
+
+**Tech Stack:** Python 3.11, typed dataclasses/Pydantic contracts, SQLite evidence-packet persistence, EDGAR section/chunk retrieval, existing CIQ/yfinance valuation inputs, `BaseAgent` Codex routing, pytest offline fixtures, Markdown run artifacts.
 
 ## Implementation Status
 
-- **Tasks 1–3 complete:** the item-123 semantic failure is frozen in offline tests; typed accounting packet/finding/repair contracts exist; and four deterministic topic packet builders now preserve filing locators, selected section keys, bridge facts, QoE signals, and explicit retrieval coverage states.
-- **Retrieval hardening complete:** parser version `sections_v5` repairs split `FINANCI AL` headings, avoids the broad TOC span, extracts body headings such as leases/taxes/fair value/revenue/SBC, and query version `v5` uses section-diverse focused selection. Packet collectors filter unrelated topic sections before handoff.
+- **Core focused chain complete:** typed packet/finding/repair contracts, focus projection,
+  selector-to-validator adapter, per-item repair, deterministic ledger, conflict preservation,
+  and PM Queue translation are connected by `run_accounting_evidence_trial`.
+- **Broad CIQ discovery complete:** every latest populated non-zero CIQ line is eligible;
+  ranking and paging help review but no fixed topic list or materiality threshold decides what
+  the judgment layer may inspect.
+- **Open-ended treatment seam complete:** findings can propose a historical recast or an explicit
+  `model_change_required` request when no current driver can represent a financially sound
+  treatment.
+- **Durable treatment register complete:** `treatment_decisions` preserves evidence anchors,
+  rationale, approval, corpus hash, active/superseded history, and novel model-change requests.
+- **Bridge repair complete:** CIQ structural claims are exposed, all structural EV-to-equity
+  fields are registered, and CIQ lease liabilities are not counted twice.
+- **Evidence-corpus repair complete:** `sections_v6` parses complete filing text, distinguishes
+  note bodies from table-of-contents and auditor/MD&A boundaries, preserves stable raw
+  `note_001`...`note_NNN` sections, and processes every cached 10-K and 10-Q in the accounting
+  corpus. Topic aliases remain useful for ranking but no longer determine snippet eligibility.
 - **XBRL Slice A complete:** structured `FinancialFact` normalization preserves filing vintage, context, dimensions, statement metadata, and accession-index provenance; exact concept filtering and newest-vintage ordering are covered offline.
 - **XBRL Slice B complete:** all four persisted accounting packet builders now add topic-bounded XBRL facts and accession-level source refs, while retaining existing note snippets and deterministic accounting facts. Cache-only mode reports `cache_only_unavailable` without constructing an SEC client.
-- **Checkpoint:** focused verification is green (`83 passed, 1 warning`; the warning is the existing Windows `.pytest_cache` permission issue). Focused dispatch, repair integration, queue translation, guided-run wiring, and exact Inline XBRL DOM anchors remain pending review.
+- **Real trial:** cached MSFT bridge packet 213 produced evidence-linked PM Queue advisory 133:
+  the packet's $52.626bn lease balance differs from same-period XBRL operating plus finance
+  lease liabilities of $85.170bn. The system requested source/convention reconciliation and did
+  not mutate the DCF.
+- **Fresh cache-only packet trial complete:** packet 214 returned with eight filing snippets from
+  annual and quarterly notes/MD&A, including raw numbered-note sections. The packet builder no
+  longer filters snippets through a fixed accounting-topic allowlist.
+- **Live judgment trial complete:** the Accounting Recast agent received business, industry,
+  current-model, and filing context. It proposed no unsupported EBIT normalization and kept lease
+  liabilities inside CIQ debt after reconciling the deterministic source lineage. The prompt now
+  requires absolute-USD scaling and can return open-ended `model_change_proposals`.
+- **Two-pass discovery trial complete:** a standalone live MSFT run exposed all 181 inventory
+  entries (141 raw numbered notes plus 40 semantic aliases) to an open-ended discovery call. Six
+  company-specific questions drove exact-section, term-ranked retrieval and six narrow recast
+  calls. The resulting artifact covers AI/datacenter capital intensity, segment mix, RPO
+  conversion, contingencies, debt structure, and SBC/share-count treatment.
+- **Double-count guard verified:** the live AI-capacity call rediscovered $85.126bn of lease
+  liabilities. A deterministic source-lineage guard now clears that override and its proposed
+  driver field because CIQ total debt already includes leases; the reasoning and citations remain
+  visible for PM review.
+- **Discovery → ledger adapter complete (2026-07-25):** `accounting_discovery_ledger.py` maps each
+  focused recast payload onto independent `AccountingFinding` records, validates every one through
+  the shared `validate_accounting_finding`, and merges them into the existing ledger/PM Queue path.
+  See [Discovery-To-Ledger Adapter](#discovery-to-ledger-adapter-added-2026-07-25).
+- **Next:** persist PM-approved treatments from queue actions into `treatment_decisions` and expose
+  treatment/revalidation state in the review UI. Exact Inline XBRL DOM anchors remain later work.
+  Repeat the two-pass trial on a second company with materially different accounting issues before
+  declaring the retrieval strategy general.
+
+## Critical Evidence-Corpus Gate — Added 2026-07-25
+
+Classification and forecasting must not proceed from evidence that only appears complete. The
+2026-07-25 repair separated filing inventory, current-parser coverage, raw numbered notes, and
+semantic topic aliases.
+
+Verified cache-only MSFT state after rebuilding `v1_sections_v6`:
+
+- filing inventory: 12 documents — four 10-Ks, four 10-Qs, and four 8-Ks;
+- accounting corpus: 8/8 required 10-K/10-Q filings parsed, with no failed periods;
+- current sections: 217 across the eight accounting filings; stale parser rows are excluded;
+- raw numbered-note coverage: 18 notes in the 2025 10-K, 19 in each 2022–2024 10-K, and
+  16–17 in each quarterly filing;
+- retrieval corpus: 3,831 chunks built from complete filing text;
+- 8-Ks remain supplemental business/earnings sources and are not misreported as accounting-note
+  coverage.
+
+Implementation order:
+
+1. [x] Add offline regression tests for complete-document parsing, split/malformed headings,
+   TOC-versus-body discrimination, annual and quarterly numbered-note inventory, and current
+   parser-version filtering.
+2. [x] Parse complete cached filing text before applying chunk or rendered-context budgets.
+3. [x] Preserve every raw numbered note and heading with stable source identity. Topic aliases and
+   ranking may improve retrieval but must never determine eligibility.
+4. [x] Process every available historical filing relevant to the populated record rather than one
+   hardcoded annual filing; expose missing or failed periods explicitly.
+5. [x] Make Stage 0 report filing inventory separately from current-parser coverage, unique semantic
+   sections, mapped and unmapped headings, and truncation/parse failures.
+6. [x] Rebuild with a new parser version and validate cached MSFT before reconnecting judgment.
+
+Acceptance criteria:
+
+- [x] the 2025 MSFT 10-K exposes all 18 numbered notes as distinct source-backed sections;
+- [x] all cached MSFT annual filings are either represented or explicitly reported as failed/missing;
+- [x] quarterly notes are inventoried rather than stored only as one opaque block;
+- [x] stale parser versions do not inflate current section or source counts;
+- [x] no `note_*` label can imply a complete note when its source span is truncated or only a
+  subsection of another note;
+- [x] classification trials fail closed when required corpus completeness checks fail.
+
+## Discovery-To-Ledger Adapter — Added 2026-07-25
+
+The two-pass trial (discovery → per-question focused retrieval → per-question recast) now reaches
+the canonical accounting ledger and PM Decision Queue through
+`src/stage_04_pipeline/accounting_discovery_ledger.py`. The ledger and translator themselves are
+unchanged; this is an adapter, not a second pipeline.
+
+**Proposable-surface repair (2026-07-25).** The first cached MSFT validation produced 18 queue
+items and **zero** assumption change packs. The cause was not the adapter: `AccountingRecastAgent`
+could only name five EV-bridge claims (`non_operating_assets`, `lease_liabilities`,
+`minority_interest`, `preferred_equity`, `pension_deficit`). Every driver that moves the DCF
+forecast — growth, margins, capex/D&A intensity, tax rates, terminal assumptions, WACC, share
+count — was unreachable, which is the mechanical cause of the `llm_reasoned: 0` provenance audit
+recorded in [docs/valuation/index.md](../../valuation/index.md).
+
+Per [Standing Rule 6](../../strategy/vision.md#standing-rules-for-agents) the deliverable is wiring
+the seam, not choosing constants. The recast response contract gained `driver_proposals`:
+
+```json
+{"driver_field": "ebit_margin_target", "proposed_value": 0.44,
+ "direction": "up", "rationale": "...", "citation_text": "..."}
+```
+
+`driver_field` is validated against `AGENT_PROPOSABLE_ASSUMPTION_FIELDS` (all 21 fields); a name
+outside that set is dropped rather than remapped onto a neighbouring driver, and a proposal with no
+value is not a proposal. The adapter maps each entry to a candidate finding whose claim and
+proposed driver match, so it becomes an assumption change pack for PM approval. The lease
+source-lineage guard clears a blocked driver proposal exactly as it clears a blocked override.
+
+**Mapping rules.** Every item in a recast payload becomes its own finding carrying its own
+`question_id`, so several analyses never collapse into one override map:
+
+| Recast item | Finding status | Valuation treatment | Queue outcome |
+|---|---|---|---|
+| income-statement adjustment with an EBIT direction | `candidate` + `model_change_required` | `normalized_ebit` | advisory, `queue_reason=model_change_required` |
+| income-statement adjustment with direction `none` | `no_adjustment_identified` | `none` | ledger only |
+| balance-sheet reclassification naming a driver | `candidate` | `ev_equity_bridge` | assumption change pack |
+| balance-sheet reclassification naming no driver | `no_adjustment_identified` | `disclosure_only` | ledger only |
+| driver proposal (operating driver) | `candidate` | `historical_recast` | assumption change pack |
+| driver proposal (bridge driver) | `candidate` | `ev_equity_bridge` | assumption change pack |
+| non-null override candidate | `candidate` | `ev_equity_bridge` | assumption change pack |
+| `normalized_ebit` override candidate | `candidate` + `model_change_required` | `normalized_ebit` | advisory |
+| any proposed driver in `blocked_override_fields` | `candidate` | `disclosure_only` | advisory, reasoning retained |
+| model-change proposal | `candidate` + `model_change_required` | `none` | advisory |
+| question producing no items at all | `no_adjustment_identified` | `none` | ledger only |
+
+**Design decisions logged (Vision Decision 11, engineering side).**
+
+1. *Every mapped finding is validated.* The queue translator does not check claim-versus-proposed
+   driver alignment; only `validate_accounting_finding` does. The adapter synthesizes a minimal
+   packet per question — matched filing sections become `source_refs`, allowed drivers are
+   `AGENT_PROPOSABLE_ASSUMPTION_FIELDS` — and runs every finding through it. A failing finding is
+   persisted as `rejected_after_repair`, never dropped.
+2. *Anchors are matched sections only.* `{accession_no}::{section_key}` from
+   `retrieval_summary.matched_section_ids`, so a requested-but-unmatched section can never anchor
+   a finding.
+3. *`normalized_ebit` is never remapped onto a margin driver.* It is in the recast agent's override
+   vocabulary but not in `AGENT_PROPOSABLE_ASSUMPTION_FIELDS`, so it becomes an explicit
+   model-change request. Remapping it to `ebit_margin_start`/`ebit_margin_target` is exactly the
+   item-123 mismapping this plan froze as a regression.
+4. *The guard is re-applied at the adapter, not trusted from upstream.* `AccountingRecastAgent`
+   already clears blocked overrides; the adapter independently downgrades any blocked driver to a
+   disclosure-only finding. The reasoning, citation, and anchors stay visible for PM review.
+5. *Model-change proposals carry a routing-default topic.* Open-ended questions have no parent
+   accounting topic; `qoe` is a routing default recorded as `topic_is_routing_default` in metadata,
+   and the queue title drops the focus prefix for model-change items.
+6. *Period is not inferred.* Recast items carry no period field and the adapter does not parse one
+   out of citation prose, so fingerprints and conflict groups use an empty period.
+
+**Fail-closed gate.** `filing_retrieval.get_accounting_corpus_coverage` /
+`require_accounting_corpus_coverage` report cached filing inventory against current-parser
+accounting coverage as a library call, so the runner no longer depends on the manual inspector.
+`stage0_evidence` calls the same helper, so the operator view and the runtime gate cannot drift.
+
+The gate checks **two** conditions, because they fail separately:
+
+1. every cached 10-K/10-Q parsed under the current parser version, and
+2. every one of those filings produced at least one raw numbered note.
+
+Condition 2 was added after IBM exposed the hole: four required filings were present and parsed,
+but yielded 1–5 sections and **zero** numbered notes between them, so
+`get_accounting_section_inventory("IBM")` returned an empty list. A presence-only gate would have
+called that corpus complete and handed the discovery agent nothing. *Parsed is not complete.*
+
+Verified: MSFT passes (12 cached filings, 8/8 required parsed at `v1_sections_v6`, all with
+16–19 raw notes); IBM fails closed on both conditions.
+
+**Cached MSFT validation (2026-07-25, no LLM call, nothing applied).** Replaying the two live
+artifacts through the adapter:
+
+| Artifact | Ledger entries | No-adjustment | Candidates | Queue items | Assumption packs |
+|---|---|---|---|---|---|
+| `MSFT-20260725T155924Z.json` (unguarded) | 28 | 10 | 18 | 18 advisory | 0 |
+| `MSFT-20260725T155924Z-guarded.json` | 27 | 12 | 15 | 15 advisory | 0 |
+
+The three-entry difference is exactly the lease double-count: two reclassifications and one
+$85.126bn override candidate. In the unguarded artifact the adapter's own guard downgrades all
+three to advisory findings; none becomes an assumption change pack. Nothing was persisted
+(`--persist-queue` is opt-in and was not used).
+
+**Open items surfaced by the validation, not fixed here.**
+
+- The recast agent uses `model_change_proposals` as a general notes channel: 14 of the 18 MSFT
+  candidates are proposals, and several are explicit *no-change confirmations* ("keep EBIT
+  normalization unchanged"). Deterministic code cannot separate "propose a change" from "confirm no
+  change" without keyword heuristics. This is a prompt/contract question for the recast agent.
+- `_parse_balance_sheet_reclassifications` silently nulls any `proposed_driver_field` outside a
+  five-field allowlist (`net_debt` and every income-statement driver are dropped). Widening it is a
+  live-revalidation change, not an adapter change.
+- Queue volume: one six-question MSFT run yields 15–18 advisory items. The plan says volume is
+  handled by ranking and deduplication, not by collapsing accounting reasoning upstream, so no cap
+  was added. Whether this fits the daily budget is a PM call.
+
+**Live MSFT run with `driver_proposals` (2026-07-25, `gpt-5.4-mini` @ low, dry run).**
+Artifact `output/accounting_discovery/MSFT-20260725T175203Z.json`. Six new questions covering AI
+capex/lease intensity, segment CODM recast, unearned revenue/RPO runoff, contingencies, debt
+structure/fair value, and goodwill/intangibles.
+
+Result: 37 ledger entries (19 candidates, 16 no-adjustment, 2 conflict), 21 queue items —
+20 advisory and **1 assumption change pack**, `non_operating_assets` = $111.955bn anchored to six
+filing sections. This is the first time an accounting judgment reached a valuation driver through
+the queue. Nothing was persisted or applied.
+
+One genuine conflict group surfaced without being constructed: two questions proposed different
+`ebit_margin_target` values. Both stay visible; neither is applicable.
+
+**Two adapter defects the live run exposed, both fixed:**
+
+1. *Phantom self-contradiction.* The recast contract can express one claim through three channels
+   — a reclassification naming a driver, a `driver_proposals` entry, and an `override_candidates`
+   key. `non_operating_assets` = $111.955bn arrived through all three from one question and was
+   flagged as contradicting itself, then produced duplicate packs. One `(driver, value)` pair
+   inside one question is now one claim; the reclassification is kept because it carries the
+   reported accounting line item, and the dropped channels are recorded in
+   `metadata.also_proposed_via`. Cross-question disagreement still conflicts normally.
+2. *Nothing else changed* — conflict counts and no-adjustment visibility are unaffected.
+
+**BLOCKING FINANCE QUESTION — `0.0` driver proposals.** The AI-capex question returned
+`capex_pct_target: 0.0` and `ebit_margin_target: 0.0` while its own narrative said capital
+intensity is structurally elevated. Those are not forecasts; they read as "no opinion" emitted as a
+number. `0.0` is legitimate for `terminal_growth` or `preferred_equity` and nonsensical for a
+margin or capex ratio, and the repository has no PM-approved sanity band for proposal values —
+`_bounded` applies during deterministic assembly only, and per
+[trap 2](../../handbook/pipeline-glass-box.md) approved overrides bypass every clamp. Deciding
+which drivers may legitimately be zero, and what band each should carry, is finance semantics and
+blocks on the PM (Vision Decision 11). Until then the queue is the only protection: the item is
+`pending` and cannot self-apply.
+
+**Second-company generality attempt (2026-07-25).** A cache-only IBM corpus build succeeded but
+the gate correctly refused the ticker:
+
+- IBM has 17 cached filings, of which 5 are 10-K/10-Q and 4 parse at `v1_sections_v6`;
+- the fifth is a synthetic test fixture (`0000123456-26-000001`, `annual.htm`) that tests wrote
+  into the live `edgar_filing_cache`, so it can never parse;
+- the four real IBM filings yield only 1–5 sections each and **zero** raw numbered notes, versus
+  16–19 per MSFT filing — the cached clean text is too thin to support discovery.
+
+So generality remains untested, and the blocker is corpus depth plus fixture pollution in the
+research database, not the adapter. `require_accounting_corpus_coverage("IBM")` failing closed on a
+real second ticker is itself the first live confirmation of the requirement-9 gate. The live IBM
+discovery/recast run needs PM approval for model and cost before it is attempted.
+
+The corpus build wrote 8 new `v1_sections_v6` section rows (319 chunks) for IBM's four real
+filings into `data/alpha_pod.db`. It made no LLM call, created no queue item, and changed no
+valuation input.
 
 ## XBRL Provenance Direction (Exploration Outcome)
 
@@ -89,7 +349,7 @@ live adapter probe returned six recent MSFT facts and exact concept filtering.
 
 ## Focused Subpacket Dispatch Revision
 
-This revision serves Vision Decisions 1, 2, 10, 11, and 12. The previous
+This revision serves Vision Decisions 1, 2, 10–16. The previous
 discussion of “one finding per call” was too restrictive and is replaced here:
 
 - The full accounting packet remains the persisted audit artifact.
@@ -123,7 +383,8 @@ performed at the following focus level:
 This is a reasoning split, not just a statement-section split. Two facts belong in
 the same subpacket when they support the same accounting question and valuation
 treatment. Segment facts retain their dimensions; bridge facts do not become
-segment facts simply because they share a filing.
+segment facts simply because they share a filing. These focus keys organize retrieval and
+validation; they are not a closed list of permitted accounting treatments or model changes.
 
 ### Agent-Facing Context Contract
 
@@ -207,23 +468,28 @@ anchors. Do not merge merely because two findings mention “margin.”
 
 ## Vision Decisions Served
 
-- **Decision 1:** accounting judgment remains advisory; no agent writes valuation inputs directly.
+- **Decision 1:** no agent writes valuation inputs directly; every accounting finding reaches the model through the PM Decision Queue. (Wording narrowed 2026-07-24: this is a routing constraint. Per Decision 13 the judgment layer *does* author proposed assumption values — it simply cannot bypass the queue. "Advisory" here never meant "optional colour".)
 - **Decision 2:** focused packets reduce PM review noise and support the daily review cadence.
 - **Decision 10:** the contract makes ambiguous accounting claims explicit instead of silently translating them.
 - **Decision 11:** finance treatment questions remain PM-owned; engineering validation and retry behavior are conservative and logged here.
 - **Decision 12:** real ticker workups should produce decision-ready accounting evidence without manual note-surgery.
+- **Decision 13:** the judgment layer authors treatment and forecast proposals from evidence; deterministic code does not replace that judgment with lookup rules.
+- **Decision 14:** focused calls must eventually receive durable business and industry context, not only the local accounting facts.
+- **Decision 15:** accounting outputs feed the mandatory DCF and comps workup; other valuation methods remain deferred.
+- **Decision 16:** discovery is broad and treatments are open-ended, including historical recasts and explicit model changes.
 
-## PM Finance-Semantics Checkpoint
+## PM Finance-Semantics Checkpoint — Resolved 2026-07-25
 
-Before implementation reaches proposal sizing or queue materiality, confirm these choices with the PM:
+The PM confirmed:
 
-1. The first version proposes accounting treatments but never auto-applies them.
-2. `SBC`, leases, pension, tax contingencies, investments, and minority interest remain separate candidate categories; the system does not assume an adjustment direction merely because a line exists.
-3. A finding can be `no_adjustment_identified` or `missing_evidence`, and neither state creates a valuation override.
-4. Contingencies may be flagged for scenario treatment without being forced into normalized EBIT.
-5. Peer/EV convention questions, especially lease treatment, are surfaced for PM review rather than resolved by a hidden universal rule.
-
-If any of these finance meanings change, update this plan before implementation.
+1. DCF and comps are always produced in the current scope; other valuation methods are deferred.
+2. The judgment layer may propose any reasonable, logical, financially sound change. Existing
+   driver fields must not constrain reasoning.
+3. Broad discovery followed by targeted evidence retrieval is the initial evidence strategy;
+   tests and real usage should refine it.
+4. Both historical recasts and their downstream forecast implications are in scope.
+5. No treatment auto-applies. Unsupported treatments become explicit model-change requests, and
+   every mutation remains behind PM approval.
 
 ## Current-State Diagnosis
 
@@ -240,7 +506,8 @@ The 2026-07-11 MSFT guided run exposed the boundary problem:
 
 ```text
     CIQ/yfinance/EDGAR
-    -> deterministic accounting evidence assembly
+    -> broad populated-line discovery
+    -> deterministic targeted evidence assembly
     -> focused topic packets
     -> one narrow judgment call per focus subpacket
     -> schema + evidence + driver validator
@@ -248,8 +515,10 @@ The 2026-07-11 MSFT guided run exposed the boundary problem:
        -> rejected-with-reason artifact after failed repair
     -> accounting adjustment ledger
     -> dedupe/conflict review
-    -> PM Decision Queue candidates only
-    -> PM preview/decision; no automatic apply
+    -> PM Decision Queue candidate or explicit model-change request
+    -> PM preview/decision
+    -> durable treatment register
+    -> deterministic DCF and comps execution; no automatic apply
 ```
 
 The first implementation should use four review families, decomposed into focus subpackets rather than one call over the whole balance sheet or queue:
