@@ -26,8 +26,12 @@ htmlcov/
 .env.*
 !.env.example
 
-# Runtime data is tracked for this private reproducibility branch. Keep only
-# the obsolete backup and removed archive out of Git.
+# Runtime data stays out of Git. The live SQLite database is ~340 MB and every
+# commit that touched it added a full copy to Git LFS. The reproducible research
+# snapshot published on 2026-07-11 (commit be6b0c7) still carries its own copy in
+# LFS, so that state remains fetchable from history; day-to-day database state is
+# local-only and rebuilt by the ingest/refresh scripts.
+data/alpha_pod.db
 data/alpha_pod.db.polluted-20260703.bak
 data/data.zip
 
