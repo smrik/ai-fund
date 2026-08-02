@@ -422,10 +422,41 @@ def _run_ciq_template_ingest(args: argparse.Namespace) -> dict[str, Any] | None:
     return _jsonable(ingest_ciq_folder(args.ciq_template_folder))
 
 
-def refresh_current_ticker_dossier(ticker: str) -> dict[str, Any]:
+def _assemble_reconciled_ticker_inputs(ticker: str):
+    from db.schema import get_connection
+    from src.stage_02_valuation.input_assembler import build_valuation_inputs
+    from src.stage_04_pipeline.operating_reconciliation_service import (
+        assemble_reconciled_valuation_inputs,
+    )
+
+    conn = get_connection()
+    try:
+        with conn:
+            return assemble_reconciled_valuation_inputs(
+                conn,
+                ticker,
+                evidence_cutoff=datetime.now(timezone.utc).date().isoformat(),
+                input_builder=build_valuation_inputs,
+                input_builder_kwargs={"apply_overrides": True},
+            )
+    finally:
+        conn.close()
+
+
+def refresh_current_ticker_dossier(
+    ticker: str,
+    *,
+    reconciled_inputs=None,
+) -> dict[str, Any]:
     from src.stage_04_pipeline import export_service
 
-    payload = export_service._build_current_ticker_payload(ticker)
+    reconciled_inputs = reconciled_inputs or _assemble_reconciled_ticker_inputs(ticker)
+    if reconciled_inputs is None:
+        raise RuntimeError("reconciled valuation inputs are unavailable")
+    payload = export_service._build_current_ticker_payload(
+        ticker,
+        reconciled_inputs=reconciled_inputs,
+    )
     export_service._persist_attached_ticker_dossier(payload)
     dossier = _as_dict(payload.get("ticker_dossier"))
     latest = _as_dict(dossier.get("latest_snapshot"))
@@ -903,15 +934,26 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         },
     }
 
+    reconciled_inputs = None
     try:
         print(f"[ticker-flow] Building deterministic valuation for {ticker}...", file=sys.stderr)
-        result["deterministic"]["batch_row"] = value_single_ticker(ticker)
+        reconciled_inputs = _assemble_reconciled_ticker_inputs(ticker)
+        result["deterministic"]["batch_row"] = value_single_ticker(
+            ticker,
+            reconcile_operating=True,
+            reconciled_inputs=reconciled_inputs,
+        )
     except Exception as exc:
         result["errors"].append({"step": "value_single_ticker", "message": str(exc)})
 
     try:
         print(f"[ticker-flow] Refreshing current ticker dossier for {ticker}...", file=sys.stderr)
-        result["deterministic"]["current_dossier_refresh"] = refresh_current_ticker_dossier(ticker)
+        if reconciled_inputs is None:
+            raise RuntimeError("shared reconciled valuation inputs are unavailable")
+        result["deterministic"]["current_dossier_refresh"] = refresh_current_ticker_dossier(
+            ticker,
+            reconciled_inputs=reconciled_inputs,
+        )
     except Exception as exc:
         result["deterministic"]["current_dossier_refresh"] = {"error": str(exc)}
         result["errors"].append({"step": "refresh_current_ticker_dossier", "message": str(exc)})

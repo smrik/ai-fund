@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from types import SimpleNamespace
 
 from src.stage_02_valuation.input_assembler import ValuationInputsWithLineage
 from src.stage_02_valuation.professional_dcf import ForecastDrivers
@@ -69,8 +70,14 @@ def test_build_dcf_audit_view_shapes_key_tables(monkeypatch):
     from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 
     monkeypatch.setattr(
-        "src.stage_04_pipeline.dcf_audit.build_valuation_inputs",
-        lambda ticker, as_of_date=None, apply_overrides=True: _inputs(),
+        "src.stage_04_pipeline.dcf_audit._assemble_dcf_inputs",
+        lambda ticker, as_of_date=None, apply_overrides=True: SimpleNamespace(
+            valuation_inputs=_inputs(),
+            operating_reconciliation=SimpleNamespace(
+                status="reconciled",
+                reason_codes=(),
+            ),
+        ),
     )
 
     audit = build_dcf_audit_view("IBM")
@@ -108,11 +115,44 @@ def test_build_dcf_audit_view_shapes_key_tables(monkeypatch):
     assert audit["bridge_cutover"]["mode"] == "shadow"
 
 
+def test_build_dcf_audit_view_uses_reconciled_inputs_and_lineage() -> None:
+    from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
+
+    inputs = _inputs()
+    for field in (
+        "capex_pct_start",
+        "da_pct_start",
+        "dso_start",
+        "dio_start",
+        "dpo_start",
+    ):
+        inputs.source_lineage[field] = f"reconciled_statement:{field}"
+    bundle = SimpleNamespace(
+        valuation_inputs=inputs,
+        operating_reconciliation=SimpleNamespace(
+            status="reconciled",
+            reason_codes=(),
+        ),
+    )
+
+    audit = build_dcf_audit_view("IBM", reconciled_inputs=bundle)
+
+    assert audit["available"] is True
+    for field in (
+        "capex_pct_start",
+        "da_pct_start",
+        "dso_start",
+        "dio_start",
+        "dpo_start",
+    ):
+        assert audit["source_lineage"][field] == f"reconciled_statement:{field}"
+
+
 def test_build_dcf_audit_view_returns_unavailable_when_inputs_missing(monkeypatch):
     from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 
     monkeypatch.setattr(
-        "src.stage_04_pipeline.dcf_audit.build_valuation_inputs",
+        "src.stage_04_pipeline.dcf_audit._assemble_dcf_inputs",
         lambda ticker, as_of_date=None, apply_overrides=True: None,
     )
 
@@ -125,7 +165,7 @@ def test_build_dcf_audit_view_returns_structured_input_blocker(monkeypatch):
     from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 
     monkeypatch.setattr(
-        "src.stage_04_pipeline.dcf_audit.build_valuation_inputs",
+        "src.stage_04_pipeline.dcf_audit._assemble_dcf_inputs",
         lambda ticker, as_of_date=None, apply_overrides=True: (
             _ for _ in ()
         ).throw(ValueError("reported line ciq:investments does not tie")),

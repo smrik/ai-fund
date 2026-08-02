@@ -12,8 +12,9 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -48,6 +49,11 @@ from src.stage_02_valuation.json_exporter import (
 )
 from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
+from src.stage_04_pipeline.operating_reconciliation_service import (
+    ReconciledValuationInputs,
+    TickerOperatingReconciliation,
+    assemble_reconciled_valuation_inputs,
+)
 from src.stage_02_valuation.professional_dcf import (
     default_scenario_specs,
     reverse_dcf_professional,
@@ -102,6 +108,35 @@ def _blocked_ticker_result(ticker: str, exc: Exception) -> dict:
         "ticker": ticker.upper().strip(),
         "valuation_status": "blocked",
         "valuation_output_mode": "none",
+        "valuation_blocker_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
+
+
+def _blocked_operating_reconciliation_result(
+    ticker: str,
+    operating: TickerOperatingReconciliation,
+) -> dict:
+    detail = operating.to_dict()
+    detail["reason_code"] = "operating.reconciliation_incomplete"
+    return {
+        "ticker": ticker.upper().strip(),
+        "valuation_status": "blocked",
+        "valuation_output_mode": "none",
+        "operating_reconciliation_status": operating.status,
+        "operating_reconciliation_reason_codes_json": json.dumps(
+            list(operating.reason_codes),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "operating_reconciliation_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "valuation_blocker_json": json.dumps(
             detail,
             sort_keys=True,
@@ -340,10 +375,61 @@ def _compute_qoe_for_ticker(ticker: str) -> dict | None:
         return None
 
 
-def value_single_ticker(ticker: str) -> dict | None:
+def value_single_ticker(
+    ticker: str,
+    *,
+    reconcile_operating: bool = True,
+    reconciled_inputs: ReconciledValuationInputs | None = None,
+    connection: Any | None = None,
+    statement_reconciliation_run: Any | None = None,
+    statement_reconciler: Callable[..., Any] | None = None,
+    operating_reconciler: Callable[..., Any] | None = None,
+) -> dict | None:
     try:
         ticker = ticker.upper().strip()
-        inputs = build_valuation_inputs(ticker)
+        operating: TickerOperatingReconciliation | None = None
+        if reconcile_operating:
+            if reconciled_inputs is not None:
+                reconciled_bundle = reconciled_inputs
+            else:
+                reconciliation_kwargs: dict[str, Any] = {
+                    "evidence_cutoff": datetime.now(timezone.utc).date().isoformat(),
+                    "input_builder": build_valuation_inputs,
+                    "statement_reconciliation_run": statement_reconciliation_run,
+                }
+                if statement_reconciler is not None:
+                    reconciliation_kwargs["statement_reconciler"] = statement_reconciler
+                if operating_reconciler is not None:
+                    reconciliation_kwargs["operating_reconciler"] = operating_reconciler
+
+                if connection is None:
+                    from db.schema import get_connection
+
+                    owned_connection = get_connection()
+                    try:
+                        with owned_connection:
+                            reconciled_bundle = assemble_reconciled_valuation_inputs(
+                                owned_connection,
+                                ticker,
+                                **reconciliation_kwargs,
+                            )
+                    finally:
+                        owned_connection.close()
+                else:
+                    reconciled_bundle = assemble_reconciled_valuation_inputs(
+                        connection,
+                        ticker,
+                        **reconciliation_kwargs,
+                    )
+
+            if reconciled_bundle is None:
+                return None
+            inputs = reconciled_bundle.valuation_inputs
+            operating = reconciled_bundle.operating_reconciliation
+            if operating.status != "reconciled":
+                return _blocked_operating_reconciliation_result(ticker, operating)
+        else:
+            inputs = build_valuation_inputs(ticker)
         if inputs is None:
             return None
 
@@ -520,6 +606,24 @@ def value_single_ticker(ticker: str) -> dict | None:
                 if getattr(inputs, "valuation_status", "provisional")
                 == "decision_grade"
                 else "shadow_preview"
+            ),
+            "operating_reconciliation_status": (
+                operating.status if operating is not None else "not_requested"
+            ),
+            "operating_reconciliation_reason_codes_json": json.dumps(
+                list(operating.reason_codes) if operating is not None else [],
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "operating_reconciliation_json": json.dumps(
+                operating.to_dict() if operating is not None else {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "source_lineage_json": json.dumps(
+                lineage,
+                sort_keys=True,
+                separators=(",", ":"),
             ),
         }
 
@@ -1116,7 +1220,7 @@ def run_batch(
     failed_tickers: list[str] = []
     for i, ticker in enumerate(tickers, 1):
         result = value_single_ticker(ticker)
-        if result:
+        if result and result.get("valuation_output_mode") != "none":
             results.append(result)
             iv = result.get("expected_iv") if result.get("expected_iv") is not None else result.get("iv_base")
             upside = result.get("expected_upside_pct")
@@ -1140,10 +1244,15 @@ def run_batch(
         else:
             failed_tickers.append(ticker)
             logger.warning(
-                "  [%3d/%d] %-8s skipped (insufficient data)",
+                "  [%3d/%d] %-8s skipped (%s)",
                 i,
                 len(tickers),
                 ticker,
+                (
+                    result.get("operating_reconciliation_reason_codes_json")
+                    if result
+                    else "insufficient data"
+                ),
                 extra={"ticker": ticker, "step": "run_batch"},
             )
 
@@ -1153,7 +1262,11 @@ def run_batch(
                     "completed": i,
                     "total": len(tickers),
                     "ticker": ticker,
-                    "status": "valued" if result else "skipped",
+                    "status": (
+                        "valued"
+                        if result and result.get("valuation_output_mode") != "none"
+                        else "skipped"
+                    ),
                 }
             )
 

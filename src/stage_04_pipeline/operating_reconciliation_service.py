@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from src.contracts.judgment_runs import canonical_semantic_hash
 from src.stage_00_data.source_reconciliation import (
@@ -14,6 +14,7 @@ from src.stage_00_data.source_reconciliation import (
 from src.stage_02_valuation.input_assembler import (
     ValuationInputsWithLineage,
     apply_reconciled_operating_starts,
+    build_valuation_inputs,
 )
 from src.stage_02_valuation.operating_reconciliation import (
     OperatingReconciliationResult,
@@ -21,6 +22,7 @@ from src.stage_02_valuation.operating_reconciliation import (
 )
 from src.stage_04_pipeline.statement_reconciliation_service import (
     TickerStatementReconciliationRun,
+    reconcile_ticker_statements,
 )
 
 
@@ -548,8 +550,87 @@ def reconcile_ticker_operating_model(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class ReconciledValuationInputs:
+    """The exact assembled inputs and ledger tie-out used by valuation."""
+
+    valuation_inputs: ValuationInputsWithLineage
+    statement_reconciliation_run: TickerStatementReconciliationRun
+    operating_reconciliation: TickerOperatingReconciliation
+
+
+def adopt_reconciled_valuation_inputs(
+    conn: Any,
+    *,
+    valuation_inputs: ValuationInputsWithLineage,
+    statement_reconciliation_run: TickerStatementReconciliationRun,
+    operating_reconciler: Callable[..., TickerOperatingReconciliation] = reconcile_ticker_operating_model,
+) -> ReconciledValuationInputs:
+    """Adopt one operating ledger result into the assembled input object."""
+
+    operating = operating_reconciler(
+        conn,
+        valuation_inputs=valuation_inputs,
+        statement_reconciliation_run=statement_reconciliation_run,
+    )
+    return ReconciledValuationInputs(
+        valuation_inputs=valuation_inputs,
+        statement_reconciliation_run=statement_reconciliation_run,
+        operating_reconciliation=operating,
+    )
+
+
+def assemble_reconciled_valuation_inputs(
+    conn: Any,
+    ticker: str,
+    *,
+    evidence_cutoff: str | None = None,
+    input_builder: Callable[..., ValuationInputsWithLineage | None] = build_valuation_inputs,
+    input_builder_kwargs: Mapping[str, Any] | None = None,
+    statement_reconciliation_run: TickerStatementReconciliationRun | None = None,
+    statement_reconciler: Callable[..., TickerStatementReconciliationRun] = reconcile_ticker_statements,
+    operating_reconciler: Callable[..., TickerOperatingReconciliation] = reconcile_ticker_operating_model,
+) -> ReconciledValuationInputs | None:
+    """Assemble once, reconcile once, and retain the adopted inputs object.
+
+    Statement reconciliation may be supplied by an upstream preparation step.
+    When it is supplied this helper does not run it again; the operating
+    reconciliation then adopts its ledger-derived starts into the same object
+    returned by the input builder.
+    """
+
+    normalized_ticker = str(ticker).strip().upper()
+    if not normalized_ticker:
+        raise ValueError("ticker is required")
+
+    valuation_inputs = input_builder(
+        normalized_ticker,
+        **dict(input_builder_kwargs or {}),
+    )
+    if valuation_inputs is None:
+        return None
+
+    statement_run = statement_reconciliation_run
+    if statement_run is None:
+        statement_run = statement_reconciler(
+            conn,
+            normalized_ticker,
+            evidence_cutoff=evidence_cutoff,
+        )
+
+    return adopt_reconciled_valuation_inputs(
+        conn,
+        valuation_inputs=valuation_inputs,
+        statement_reconciliation_run=statement_run,
+        operating_reconciler=operating_reconciler,
+    )
+
+
 __all__ = [
+    "ReconciledValuationInputs",
     "TickerOperatingReconciliation",
+    "adopt_reconciled_valuation_inputs",
+    "assemble_reconciled_valuation_inputs",
     "reconcile_operating_statement_facts",
     "reconcile_ticker_operating_model",
 ]

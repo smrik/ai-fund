@@ -138,7 +138,7 @@ def test_value_single_ticker_returns_prob_weighted_fields(monkeypatch):
     )
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Test Co", "analyst_target_mean": 110.0, "analyst_recommendation": "buy", "number_of_analysts": 9, "market_cap": 1000.0, "enterprise_value": 1200.0, "pe_trailing": 15.0, "pe_forward": 12.0, "ev_ebitda": 9.0, "profit_margin": 0.1, "free_cashflow": 10.0, "beta": 1.0})
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["expected_iv"] == 100.0
@@ -203,7 +203,7 @@ def test_value_single_ticker_alt_model_required(monkeypatch):
     ))
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Bank Co", "analyst_target_mean": None, "analyst_recommendation": None, "number_of_analysts": None, "market_cap": None, "enterprise_value": None, "pe_trailing": None, "pe_forward": None, "ev_ebitda": None, "profit_margin": None, "free_cashflow": None, "beta": None})
 
-    out = batch_runner.value_single_ticker("BANK")
+    out = batch_runner.value_single_ticker("BANK", reconcile_operating=False)
 
     assert out is not None
     assert out["model_applicability_status"] == "alt_model_required"
@@ -273,7 +273,7 @@ def test_value_single_ticker_implied_growth_uses_professional_reverse_dcf(monkey
     monkeypatch.setattr(batch_runner, "reverse_dcf_professional", _fake_reverse)
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Test Co", "analyst_target_mean": 110.0, "analyst_recommendation": "buy", "number_of_analysts": 9, "market_cap": 1000.0, "enterprise_value": 1200.0, "pe_trailing": 15.0, "pe_forward": 12.0, "ev_ebitda": 9.0, "profit_margin": 0.1, "free_cashflow": 10.0, "beta": 1.0})
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert calls["count"] == 1
@@ -360,7 +360,7 @@ def test_value_single_ticker_emits_revenue_alignment_metadata(monkeypatch):
         "beta": 1.0,
     })
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["growth_source_detail"] == "ciq_cagr_3yr"
@@ -476,7 +476,7 @@ def test_value_single_ticker_emits_professional_bridge_and_health_fields(monkeyp
         "beta": 1.0,
     })
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["ev_operations_mm"] == 0.0
@@ -555,7 +555,7 @@ def test_alt_model_required_emits_empty_professional_fields(monkeypatch):
         "beta": None,
     })
 
-    out = batch_runner.value_single_ticker("BANK")
+    out = batch_runner.value_single_ticker("BANK", reconcile_operating=False)
 
     assert out is not None
     assert out["model_applicability_status"] == "alt_model_required"
@@ -677,7 +677,7 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
         _fake_run_comps_model,
     )
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert scored["called"] is True

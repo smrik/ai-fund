@@ -6,6 +6,7 @@ import pytest
 
 from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.stage_04_pipeline.operating_reconciliation_service import (
+    assemble_reconciled_valuation_inputs,
     reconcile_operating_statement_facts,
 )
 
@@ -286,6 +287,101 @@ def test_reconciled_statement_facts_replace_unreconciled_observed_starts() -> No
         artifact.selected_fact_ids_by_role["capex"],
     }
     assert all(tie.status == "pass" for tie in artifact.result.tie_outs)
+
+
+def test_assembled_valuation_inputs_are_the_tie_out_inputs_and_lineage() -> None:
+    facts = _facts()
+    reported_values = {
+        "revenue": 1_000.0,
+        "cost_of_revenue": 600.0,
+        "accounts_receivable": 200.0,
+        "inventory": 120.0,
+        "accounts_payable": 300.0,
+        "capex": 360.0,
+        "da": 108.0,
+    }
+    for fact in facts:
+        fact["numeric_value"] = reported_values[fact["canonical_key"]]
+
+    inputs = _inputs()
+    inputs.source_lineage = {
+        field: "ciq"
+        for field in (
+            "revenue_base",
+            "capex_pct_start",
+            "da_pct_start",
+            "dso_start",
+            "dio_start",
+            "dpo_start",
+        )
+    }
+    statement_run = _run(facts)
+
+    def _operating_reconciler(conn, *, valuation_inputs, statement_reconciliation_run):
+        assert statement_reconciliation_run is statement_run
+        return reconcile_operating_statement_facts(
+            valuation_inputs=valuation_inputs,
+            statement_reconciliation_run=statement_reconciliation_run,
+            statement_facts=facts,
+        )
+
+    bundle = assemble_reconciled_valuation_inputs(
+        object(),
+        "test",
+        statement_reconciliation_run=statement_run,
+        input_builder=lambda ticker: inputs,
+        operating_reconciler=_operating_reconciler,
+    )
+
+    assert bundle is not None
+    assert bundle.valuation_inputs is inputs
+    assert bundle.operating_reconciliation.status == "reconciled"
+    assert all(
+        tie.status == "pass"
+        for tie in bundle.operating_reconciliation.result.tie_outs
+    )
+    assert inputs.drivers.capex_pct_start == pytest.approx(0.36)
+    assert inputs.drivers.da_pct_start == pytest.approx(0.108)
+    assert inputs.drivers.dso_start == pytest.approx(73.0)
+    assert inputs.drivers.dio_start == pytest.approx(73.0)
+    assert inputs.drivers.dpo_start == pytest.approx(182.5)
+    for field in (
+        "capex_pct_start",
+        "da_pct_start",
+        "dso_start",
+        "dio_start",
+        "dpo_start",
+    ):
+        assert inputs.source_lineage[field].startswith("reconciled_statement:")
+
+
+def test_assembled_valuation_inputs_do_not_fallback_when_ledger_role_is_missing() -> None:
+    facts = [fact for fact in _facts() if fact["canonical_key"] != "capex"]
+    inputs = _inputs()
+    inputs.source_lineage = {"capex_pct_start": "ciq"}
+    previous_capex = inputs.drivers.capex_pct_start
+    statement_run = _run(facts)
+
+    def _operating_reconciler(conn, *, valuation_inputs, statement_reconciliation_run):
+        return reconcile_operating_statement_facts(
+            valuation_inputs=valuation_inputs,
+            statement_reconciliation_run=statement_reconciliation_run,
+            statement_facts=facts,
+        )
+
+    bundle = assemble_reconciled_valuation_inputs(
+        object(),
+        "TEST",
+        statement_reconciliation_run=statement_run,
+        input_builder=lambda ticker: inputs,
+        operating_reconciler=_operating_reconciler,
+    )
+
+    assert bundle is not None
+    assert bundle.operating_reconciliation.status != "reconciled"
+    assert "operating.capex_missing" in bundle.operating_reconciliation.reason_codes
+    assert inputs.drivers.capex_pct_start == previous_capex
+    assert inputs.source_lineage["capex_pct_start"] == "ciq"
 
 
 def test_missing_reconciled_role_fails_closed_without_ratio_fallback() -> None:

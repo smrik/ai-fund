@@ -191,7 +191,7 @@ def test_value_single_ticker_prefers_ciq_lineage(monkeypatch):
         },
     )
 
-    result = batch_runner.value_single_ticker("TEST")
+    result = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert result is not None
     assert result["revenue_source"] == "ciq"
@@ -245,7 +245,7 @@ def test_value_single_ticker_uses_ciq_comps_fields(monkeypatch):
         },
     )
 
-    result = batch_runner.value_single_ticker("TEST")
+    result = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert result is not None
     assert result["exit_multiple_source"] == "ciq_comps"

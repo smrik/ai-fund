@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime, timezone
+from typing import Any
 
+from db.schema import get_connection
 from src.contracts.valuation_readiness import assess_judgment_driver_provenance
 from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
 from src.stage_02_valuation.input_assembler import build_valuation_inputs
@@ -13,6 +16,10 @@ from src.stage_02_valuation.professional_dcf import (
 from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
 from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.stage_04_pipeline.operating_reconciliation_service import (
+    ReconciledValuationInputs,
+    assemble_reconciled_valuation_inputs,
+)
 from src.stage_04_pipeline.risk_impact import quantify_risk_impact
 
 
@@ -321,16 +328,55 @@ def _chart_series(audit: dict, risk_impact_view: dict | None) -> dict:
     }
 
 
+def _assemble_dcf_inputs(
+    ticker: str,
+    *,
+    as_of_date: str | None,
+    apply_overrides: bool,
+) -> ReconciledValuationInputs | None:
+    conn = get_connection()
+    try:
+        with conn:
+            return assemble_reconciled_valuation_inputs(
+                conn,
+                ticker,
+                evidence_cutoff=as_of_date
+                or datetime.now(timezone.utc).date().isoformat(),
+                input_builder=build_valuation_inputs,
+                input_builder_kwargs={
+                    "as_of_date": as_of_date,
+                    "apply_overrides": apply_overrides,
+                },
+            )
+    finally:
+        conn.close()
+
+
+def _operating_reconciliation_blocker(bundle: Any) -> dict[str, Any]:
+    operating = bundle.operating_reconciliation
+    detail = (
+        operating.to_dict()
+        if hasattr(operating, "to_dict")
+        else {
+            "status": getattr(operating, "status", "unknown"),
+            "reason_codes": list(getattr(operating, "reason_codes", ()) or ()),
+        }
+    )
+    detail["reason_code"] = "operating.reconciliation_incomplete"
+    return detail
+
+
 def build_dcf_audit_view(
     ticker: str,
     *,
     as_of_date: str | None = None,
     apply_overrides: bool = True,
     risk_output: RiskImpactOutput | None = None,
+    reconciled_inputs: ReconciledValuationInputs | None = None,
 ) -> dict:
     ticker = ticker.upper().strip()
     try:
-        inputs = build_valuation_inputs(
+        bundle = reconciled_inputs or _assemble_dcf_inputs(
             ticker,
             as_of_date=as_of_date,
             apply_overrides=apply_overrides,
@@ -353,8 +399,20 @@ def build_dcf_audit_view(
             "valuation_output_mode": "none",
             "blocker": blocker,
         }
-    if inputs is None:
+    if bundle is None:
         return {"ticker": ticker, "available": False}
+    inputs = bundle.valuation_inputs
+    if bundle.operating_reconciliation.status != "reconciled":
+        blocker = _operating_reconciliation_blocker(bundle)
+        return {
+            "ticker": ticker,
+            "available": False,
+            "valuation_status": "blocked",
+            "valuation_output_mode": "none",
+            "source_lineage": dict(inputs.source_lineage),
+            "operating_reconciliation": blocker,
+            "blocker": blocker,
+        }
 
     prob_result = run_probabilistic_valuation(
         inputs.drivers,
@@ -436,6 +494,7 @@ def build_dcf_audit_view(
         or {},
         "bridge_cutover": getattr(inputs, "bridge_cutover", {}) or {},
         "valuation_readiness": valuation_readiness,
+        "base_drivers": asdict(inputs.drivers),
         "source_lineage": dict(inputs.source_lineage),
         "judgment_driver_verdicts": [
             verdict.model_dump(mode="json")

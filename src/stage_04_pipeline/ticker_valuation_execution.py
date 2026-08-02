@@ -42,6 +42,7 @@ from src.stage_04_pipeline.analysis_snapshot_builder import (
 )
 from src.stage_04_pipeline.operating_reconciliation_service import (
     TickerOperatingReconciliation,
+    adopt_reconciled_valuation_inputs,
     reconcile_ticker_operating_model,
 )
 from src.stage_04_pipeline.statement_reconciliation_service import (
@@ -505,11 +506,13 @@ def prepare_ticker_run(
         )
 
     try:
-        operating = operating_reconciler(
+        reconciled_inputs = adopt_reconciled_valuation_inputs(
             conn,
             valuation_inputs=valuation_inputs,
             statement_reconciliation_run=statement_run,
+            operating_reconciler=operating_reconciler,
         )
+        operating = reconciled_inputs.operating_reconciliation
     except Exception as exc:
         return _blocked_prepared_run(
             ticker=normalized_ticker,

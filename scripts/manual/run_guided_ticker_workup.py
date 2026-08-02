@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.manual.run_ticker_valuation_flow import (  # noqa: E402
     DEFAULT_PROFILES,
+    _assemble_reconciled_ticker_inputs,
     attach_finance_quality_review,
     collect_data_freshness,
     configure_isolated_db,
@@ -430,6 +431,7 @@ class GuidedDependencies:
     export_xlsx: Callable[..., dict[str, Any]] | None = None
     refresh_dossier: Callable[[str], dict[str, Any]] = refresh_current_ticker_dossier
     collect_freshness: Callable[[str], dict[str, Any]] = collect_data_freshness
+    reconciled_inputs: Any = field(default=None, init=False, repr=False)
 
     def resolve(self) -> "GuidedDependencies":
         if (
@@ -457,7 +459,25 @@ class GuidedDependencies:
         if self.value_single_ticker is None:
             from src.stage_02_valuation.batch_runner import value_single_ticker
 
-            self.value_single_ticker = value_single_ticker
+            def _shared_inputs(ticker: str):
+                normalized_ticker = ticker.upper().strip()
+                current = self.reconciled_inputs
+                if current is None or current.valuation_inputs.ticker != normalized_ticker:
+                    current = _assemble_reconciled_ticker_inputs(normalized_ticker)
+                    self.reconciled_inputs = current
+                return current
+
+            self.value_single_ticker = lambda ticker: value_single_ticker(
+                ticker,
+                reconcile_operating=True,
+                reconciled_inputs=_shared_inputs(ticker),
+            )
+        if self.refresh_dossier is refresh_current_ticker_dossier:
+            self.refresh_dossier = lambda ticker: refresh_current_ticker_dossier(
+                ticker,
+                reconciled_inputs=self.reconciled_inputs
+                or _assemble_reconciled_ticker_inputs(ticker),
+            )
         if any(
             value is None
             for value in (self.build_summary, self.build_dcf, self.build_comps, self.build_assumptions)
