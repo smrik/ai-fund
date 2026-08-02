@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import functools
-from dataclasses import asdict, dataclass, field
+import math
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Mapping
 
 import yaml
@@ -93,6 +94,18 @@ _HISTORICAL_SANITY_BOUNDS: dict[AssumptionUnit, tuple[float, float]] = {
     # invested capital), so the universal money envelope permits both signs
     # and is intentionally far outside normal single-issuer scale.
     AssumptionUnit.money: (-1.0e18, 1.0e18),
+}
+
+# These are the only observed operating starts that the operating statement
+# ledger can author. Forward and judgment-owned targets intentionally do not
+# appear here.
+_RECONCILED_OPERATING_START_BY_ROLE = {
+    "revenue": "revenue_base",
+    "accounts_receivable": "dso_start",
+    "inventory": "dio_start",
+    "accounts_payable": "dpo_start",
+    "capex": "capex_pct_start",
+    "da": "da_pct_start",
 }
 
 
@@ -196,6 +209,131 @@ def _bounded(
         )
     )
     return resolved
+
+
+def apply_reconciled_operating_starts(
+    valuation_inputs: ValuationInputsWithLineage,
+    *,
+    selected_amounts: Mapping[str, Any],
+    inventory_applicable: bool,
+) -> None:
+    """Apply the existing selected statement roles to observed model starts.
+
+    The operating reconciliation service owns statement selection. This seam
+    only consumes that frozen selection; it never looks up CIQ or yfinance and
+    never supplies a fallback when a role is absent.
+    """
+
+    required_roles = [
+        "revenue",
+        "cost_of_revenue",
+        "accounts_receivable",
+        "accounts_payable",
+        "capex",
+        "da",
+    ]
+    if inventory_applicable:
+        required_roles.append("inventory")
+    missing_roles = [
+        role for role in required_roles if role not in selected_amounts
+    ]
+    if missing_roles:
+        raise ValueError(
+            "operating.reconciled_start_missing:"
+            + ",".join(missing_roles)
+        )
+    for driver_name in _RECONCILED_OPERATING_START_BY_ROLE.values():
+        if get_assumption_definition(driver_name).owner is not AssumptionOwner.historical:
+            raise ValueError(
+                "operating.reconciled_driver_not_historical:"
+                + driver_name
+            )
+
+    unit_scale = float(
+        (getattr(valuation_inputs, "claim_ledger", {}) or {}).get(
+            "unit_scale"
+        )
+        or 0.0
+    )
+    if not math.isfinite(unit_scale) or unit_scale <= 0:
+        raise ValueError("operating.valuation_unit_scale_invalid")
+
+    def _base_value(role: str) -> float:
+        amount = selected_amounts[role]
+        try:
+            value = abs(float(amount.base_value))
+        except (AttributeError, TypeError, ValueError) as exc:
+            raise ValueError(f"operating.{role}_invalid") from exc
+        if not math.isfinite(value):
+            raise ValueError(f"operating.{role}_invalid")
+        if not str(getattr(amount, "fact_id", "")).strip():
+            raise ValueError(f"operating.{role}_fact_id_missing")
+        return value
+
+    revenue = _base_value("revenue")
+    cost_of_revenue = _base_value("cost_of_revenue")
+    if revenue <= 0:
+        raise ValueError("operating.reconciled_revenue_non_positive")
+    if cost_of_revenue <= 0:
+        raise ValueError(
+            "operating.reconciled_cost_of_revenue_non_positive"
+        )
+
+    reconciled_values = {
+        _RECONCILED_OPERATING_START_BY_ROLE["revenue"]: revenue / unit_scale,
+        _RECONCILED_OPERATING_START_BY_ROLE["accounts_receivable"]: (
+            _base_value("accounts_receivable") / revenue * 365.0
+        ),
+        _RECONCILED_OPERATING_START_BY_ROLE["accounts_payable"]: (
+            _base_value("accounts_payable") / cost_of_revenue * 365.0
+        ),
+        _RECONCILED_OPERATING_START_BY_ROLE["capex"]: (
+            _base_value("capex") / revenue
+        ),
+        _RECONCILED_OPERATING_START_BY_ROLE["da"]: (
+            _base_value("da") / revenue
+        ),
+    }
+    if inventory_applicable:
+        reconciled_values[_RECONCILED_OPERATING_START_BY_ROLE["inventory"]] = (
+            _base_value("inventory") / cost_of_revenue * 365.0
+        )
+
+    valuation_inputs.drivers = replace(
+        valuation_inputs.drivers,
+        **reconciled_values,
+    )
+
+    source_lineage = getattr(valuation_inputs, "source_lineage", None)
+    if not isinstance(source_lineage, dict):
+        source_lineage = {}
+        valuation_inputs.source_lineage = source_lineage
+
+    def _source_ref(*roles: str) -> str:
+        return "reconciled_statement:" + ",".join(
+            f"{role}={selected_amounts[role].fact_id}"
+            for role in roles
+        )
+
+    source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["revenue"]] = _source_ref(
+        "revenue"
+    )
+    source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["accounts_receivable"]] = _source_ref(
+        "revenue", "accounts_receivable"
+    )
+    source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["accounts_payable"]] = _source_ref(
+        "cost_of_revenue", "accounts_payable"
+    )
+    source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["capex"]] = _source_ref(
+        "revenue", "capex"
+    )
+    source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["da"]] = _source_ref(
+        "revenue", "da"
+    )
+    if inventory_applicable:
+        source_lineage[_RECONCILED_OPERATING_START_BY_ROLE["inventory"]] = _source_ref(
+            "cost_of_revenue", "inventory"
+        )
 
 
 def _pick(values: list[tuple[Any, str]], default_value: Any, default_source: str) -> tuple[Any, str]:

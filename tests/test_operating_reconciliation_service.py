@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import pytest
+
 from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.stage_04_pipeline.operating_reconciliation_service import (
     reconcile_operating_statement_facts,
@@ -242,3 +244,96 @@ def test_da_uses_cash_flow_statement_not_same_label_income_row() -> None:
     assert artifact.selected_fact_ids_by_role["da"].endswith(
         "ciq_workbook_v1:da:2025-12-31:"
     )
+
+
+def test_reconciled_statement_facts_replace_unreconciled_observed_starts() -> None:
+    facts = _facts()
+    reported_values = {
+        "revenue": 1_000.0,
+        "cost_of_revenue": 600.0,
+        "accounts_receivable": 200.0,
+        "inventory": 120.0,
+        "accounts_payable": 300.0,
+        "capex": 360.0,
+        "da": 108.0,
+    }
+    for fact in facts:
+        fact["numeric_value"] = reported_values[fact["canonical_key"]]
+
+    inputs = _inputs()
+    inputs.source_lineage = {}
+    artifact = reconcile_operating_statement_facts(
+        valuation_inputs=inputs,
+        statement_reconciliation_run=_run(facts),
+        statement_facts=facts,
+    )
+
+    assert artifact.status == "reconciled"
+    assert inputs.drivers.revenue_base == pytest.approx(1_000.0)
+    assert inputs.drivers.dso_start == pytest.approx(73.0)
+    assert inputs.drivers.dio_start == pytest.approx(73.0)
+    assert inputs.drivers.dpo_start == pytest.approx(182.5)
+    assert inputs.drivers.capex_pct_start == pytest.approx(0.36)
+    assert inputs.drivers.da_pct_start == pytest.approx(0.108)
+    assert inputs.source_lineage["capex_pct_start"].startswith(
+        "reconciled_statement:"
+    )
+    capex_tie = next(
+        tie for tie in artifact.result.tie_outs if tie.name == "capex_pct_to_cash_flow"
+    )
+    assert set(capex_tie.source_fact_ids) == {
+        artifact.selected_fact_ids_by_role["revenue"],
+        artifact.selected_fact_ids_by_role["capex"],
+    }
+    assert all(tie.status == "pass" for tie in artifact.result.tie_outs)
+
+
+def test_missing_reconciled_role_fails_closed_without_ratio_fallback() -> None:
+    facts = [fact for fact in _facts() if fact["canonical_key"] != "capex"]
+    inputs = _inputs()
+    inputs.source_lineage = {}
+    previous_capex = inputs.drivers.capex_pct_start
+
+    artifact = reconcile_operating_statement_facts(
+        valuation_inputs=inputs,
+        statement_reconciliation_run=_run(facts),
+        statement_facts=facts,
+    )
+
+    assert artifact.status != "reconciled"
+    assert "operating.capex_missing" in artifact.reason_codes
+    assert inputs.drivers.capex_pct_start == previous_capex
+    assert "capex_pct_start" not in inputs.source_lineage
+
+
+def test_reconciled_starts_leave_forecast_and_judgment_drivers_untouched() -> None:
+    facts = _facts()
+    inputs = _inputs()
+    inputs.source_lineage = {}
+    protected = {
+        field: getattr(inputs.drivers, field)
+        for field in (
+            "revenue_growth_near",
+            "revenue_growth_mid",
+            "revenue_growth_terminal",
+            "ebit_margin_target",
+            "tax_rate_target",
+            "capex_pct_target",
+            "da_pct_target",
+            "dso_target",
+            "dio_target",
+            "dpo_target",
+        )
+    }
+
+    artifact = reconcile_operating_statement_facts(
+        valuation_inputs=inputs,
+        statement_reconciliation_run=_run(facts),
+        statement_facts=facts,
+    )
+
+    assert artifact.status == "reconciled"
+    assert {
+        field: getattr(inputs.drivers, field)
+        for field in protected
+    } == protected

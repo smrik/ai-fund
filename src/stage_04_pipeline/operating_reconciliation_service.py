@@ -11,7 +11,10 @@ from src.stage_00_data.source_reconciliation import (
     reconciliation_tolerance,
     source_amount_from_statement_fact,
 )
-from src.stage_02_valuation.input_assembler import ValuationInputsWithLineage
+from src.stage_02_valuation.input_assembler import (
+    ValuationInputsWithLineage,
+    apply_reconciled_operating_starts,
+)
 from src.stage_02_valuation.operating_reconciliation import (
     OperatingReconciliationResult,
     reconcile_operating_model,
@@ -316,9 +319,30 @@ def reconcile_operating_statement_facts(
         if all(role in roles for role in _DURATION_ROLES)
     )
     if not complete_windows:
+        available_duration_roles = {
+            amount.canonical_key
+            for amount in amounts
+            if (
+                amount.canonical_key in _DURATION_ROLES
+                and amount.period_start
+                and str(amount.statement).strip().lower()
+                == _ROLE_STATEMENTS[amount.canonical_key]
+            )
+        }
+        missing_duration_roles = [
+            role
+            for role in _DURATION_ROLES
+            if role not in available_duration_roles
+        ]
+        reasons = [
+            f"operating.{role}_missing"
+            for role in missing_duration_roles
+        ]
+        if not reasons:
+            reasons = ["operating.duration_window_incomplete"]
         return _empty_artifact(
             valuation_inputs=valuation_inputs,
-            reasons=("operating.duration_window_incomplete",),
+            reasons=reasons,
             failed=False,
         )
     ranked_windows = sorted(
@@ -443,6 +467,33 @@ def reconcile_operating_statement_facts(
         for role, amount in selected.items()
         if role != "inventory" or inventory_applicable
     }
+    try:
+        apply_reconciled_operating_starts(
+            valuation_inputs,
+            selected_amounts=selected,
+            inventory_applicable=bool(inventory_applicable),
+        )
+    except ValueError as exc:
+        return _empty_artifact(
+            valuation_inputs=valuation_inputs,
+            reasons=(str(exc),),
+            failed=True,
+            period_start=window[0],
+            period_end=window[1],
+            period_kind=window[2],
+            reporting_currency=next(
+                iter(
+                    {
+                        amount.unit_currency
+                        for amount in selected.values()
+                        if amount.unit_currency
+                    }
+                ),
+                None,
+            ),
+            inventory_applicable=inventory_applicable,
+            selected=selected_fact_ids,
+        )
     scaled_drivers = replace(
         valuation_inputs.drivers,
         revenue_base=(
