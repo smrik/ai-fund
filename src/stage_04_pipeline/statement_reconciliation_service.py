@@ -663,18 +663,19 @@ def _approved_ltm_source_facts(
     *,
     period_start: str,
     period_end: str,
+    period_kind: str = "ltm",
 ) -> tuple[Mapping[str, Any], ...]:
-    """Return source facts sanctioned to complete a constructed LTM group.
+    """Return source facts sanctioned to complete a logical trailing group.
 
     The source fact is added alongside, never instead of, the derived XBRL facts. That
     keeps the combined XBRL disclosure and the CIQ pure-D&A value visible as separate
-    provenance records inside the logical LTM window.
+    provenance records inside the logical window.
     """
 
     if not _combined_da_resolved_by_ciq(
         facts,
         period_end=period_end,
-        period_kind="ltm",
+        period_kind=period_kind,
     ):
         return ()
     return tuple(
@@ -682,7 +683,7 @@ def _approved_ltm_source_facts(
         for fact in facts
         if str(fact.get("source") or "").lower().startswith("ciq")
         and str(fact.get("statement") or "") == "CashFlowStatement"
-        and str(fact.get("period_kind") or "").lower() == "ltm"
+        and str(fact.get("period_kind") or "").lower() == period_kind.lower()
         and str(fact.get("period_start") or "") == period_start
         and str(fact.get("period_end") or "") == period_end
         and fact.get("numeric_value") is not None
@@ -780,11 +781,12 @@ def _ltm_group_key(
 def _ltm_groups(
     facts: Sequence[Mapping[str, Any]],
 ) -> dict[tuple[str, str, str, str], tuple[Mapping[str, Any], ...]]:
+    selected_xbrl = _selected_consolidated_xbrl_facts(facts)
     grouped: dict[
         tuple[str, str, str, str],
         list[Mapping[str, Any]],
     ] = {}
-    for fact in _selected_consolidated_xbrl_facts(facts):
+    for fact in selected_xbrl:
         if not (
             str(fact.get("source") or "").lower().startswith("sec_xbrl")
             and str(fact.get("period_kind") or "").lower() == "ltm"
@@ -798,8 +800,48 @@ def _ltm_groups(
                 facts,
                 period_start=key[2],
                 period_end=key[3],
+                period_kind="ltm",
             )
         )
+
+    # A complete annual filing period is itself the trailing twelve months when it is
+    # at least as recent as the best trailing window. Build one logical annual group so
+    # the selector can compare period recency without substituting facts across windows.
+    _, annual_periods = _annual_period_count(
+        selected_xbrl,
+        corroborating_facts=facts,
+    )
+    for period_end in annual_periods:
+        annual_facts = [
+            fact
+            for fact in selected_xbrl
+            if str(fact.get("source") or "")
+            .lower()
+            .startswith(_PRESENTATION_SOURCE_PREFIX)
+            and str(fact.get("period_kind") or "").lower() == "annual"
+            and str(fact.get("period_end") or "") == period_end
+        ]
+        if not annual_facts:
+            continue
+        period_start = next(
+            (
+                str(fact.get("period_start") or "")
+                for fact in annual_facts
+                if fact.get("period_start")
+            ),
+            "",
+        )
+        key = ("annual", "", period_start, period_end)
+        annual_group = list(annual_facts)
+        annual_group.extend(
+            _approved_ltm_source_facts(
+                facts,
+                period_start=period_start,
+                period_end=period_end,
+                period_kind="annual",
+            )
+        )
+        grouped[key] = annual_group
     return {key: tuple(value) for key, value in grouped.items()}
 
 
@@ -812,39 +854,59 @@ def _preferred_ltm_group(
     groups = _ltm_groups(facts)
     if not groups:
         return None, ()
-    ordered = sorted(
-        groups.items(),
+
+    annual_groups = [
+        item
+        for item in groups.items()
+        if item[0][0] == "annual"
+        and _LTM_REQUIRED_KEYS.issubset(_canonical_keys(item[1]))
+    ]
+    trailing_groups = [
+        item for item in groups.items() if item[0][0] != "annual"
+    ]
+
+    # Recency is the primary rule. Completeness decides whether an annual period may
+    # supersede a trailing window, and breaks ties within one period end. This keeps a
+    # newer but incomplete trailing window from silently falling back to an older annual
+    # period, while allowing a newer complete annual period to replace a stale window.
+    best_trailing = max(
+        trailing_groups,
         key=lambda item: (
-            len(_LTM_REQUIRED_KEYS & _canonical_keys(item[1])),
             item[0][3],
-            item[0][2],
+            _LTM_REQUIRED_KEYS.issubset(_canonical_keys(item[1])),
             item[0][0] == "presentation",
+            item[0][2],
             item[0][1],
         ),
-        reverse=True,
+        default=None,
     )
-    return ordered[0]
+    best_annual = max(
+        annual_groups,
+        key=lambda item: (item[0][3], item[0][2]),
+        default=None,
+    )
+
+    if best_annual is not None and (
+        best_trailing is None
+        or best_annual[0][3] >= best_trailing[0][3]
+    ):
+        return best_annual
+    if best_trailing is not None:
+        return best_trailing
+    if best_annual is not None:
+        return best_annual
+    return max(
+        groups.items(),
+        key=lambda item: (item[0][3], item[0][2], item[0][1]),
+    )
 
 
 def _ltm_status(
     facts: Sequence[Mapping[str, Any]],
 ) -> str:
-    groups = [
-        (key, group)
-        for key, group in _ltm_groups(facts).items()
-        if _LTM_REQUIRED_KEYS.issubset(_canonical_keys(group))
-    ]
-    if not groups:
+    key, ltm = _preferred_ltm_group(facts)
+    if key is None or not _LTM_REQUIRED_KEYS.issubset(_canonical_keys(ltm)):
         return "unavailable"
-    key, ltm = max(
-        groups,
-        key=lambda item: (
-            item[0][3],
-            item[0][2],
-            item[0][0] == "presentation",
-            item[0][1],
-        ),
-    )
     if all(bool(fact.get("is_derived")) for fact in ltm):
         return "constructed"
     if all(

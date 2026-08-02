@@ -322,6 +322,85 @@ def _additional_annual_facts(
     return facts
 
 
+def _complete_annual_with_stale_derived_ltm_facts() -> list[dict[str, object]]:
+    facts = _ready_facts()
+    facts = [
+        fact
+        for fact in facts
+        if not (
+            str(fact["period_kind"]) == "ltm"
+            and str(fact["period_end"]) == "2026-03-31"
+            and canonical_statement_key(
+                str(fact["concept"]),
+                str(fact.get("label") or ""),
+            )
+            == "da"
+        )
+    ]
+    annual_facts = _additional_annual_facts(2026, ending_cash=40_000_000.0)
+    for fact in annual_facts:
+        if str(fact["period_end"]) != "2026-12-31":
+            continue
+        fact["period_end"] = "2026-06-30"
+        if str(fact.get("period_start") or "") == "2026-01-01":
+            fact["period_start"] = "2025-07-01"
+        if (
+            str(fact["source"]).startswith("sec_xbrl")
+            and canonical_statement_key(
+                str(fact["concept"]),
+                str(fact.get("label") or ""),
+            )
+            == "da"
+        ):
+            fact["concept"] = "msft_DepreciationAmortizationAndOther"
+            fact["label"] = "Depreciation, amortization, and other"
+    facts.extend(annual_facts)
+    return facts
+
+
+def test_ltm_prefers_complete_annual_over_staler_derived_window() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_status,
+        _preferred_ltm_group,
+    )
+
+    key, _ = _preferred_ltm_group(_complete_annual_with_stale_derived_ltm_facts())
+
+    assert key is not None
+    assert key[2:] == ("2025-07-01", "2026-06-30")
+    assert _ltm_status(_complete_annual_with_stale_derived_ltm_facts()) == "source_provided"
+
+
+def test_ltm_prefers_more_recent_derived_window_over_older_annual_period() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_status,
+        _preferred_ltm_group,
+    )
+
+    key, _ = _preferred_ltm_group(_ready_facts())
+
+    assert key is not None
+    assert key[0] == "derived"
+    assert key[2:] == ("2025-04-01", "2026-03-31")
+    assert _ltm_status(_ready_facts()) == "constructed"
+
+
+def test_ltm_remains_unavailable_when_no_window_has_required_keys() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import _ltm_status
+
+    facts = [
+        fact
+        for fact in _ready_facts()
+        if canonical_statement_key(
+            str(fact["concept"]),
+            str(fact.get("label") or ""),
+        )
+        != "da"
+    ]
+
+    assert _ltm_status(facts) == "unavailable"
+
+
 def _ciq_mirrors_for_run(
     facts: list[dict[str, object]],
     *,
