@@ -33,6 +33,12 @@ llm:
       provider: codex
       model: gpt-5.6-luna
       effort: low
+  # Offline capability records used to size evidence projections. Refresh
+  # deliberately; runtime routing must never call a provider models endpoint.
+  model_capabilities:
+    openrouter:
+      deepseek/deepseek-v4-flash-0731:
+        context_window_tokens: 1048576
   base_url: https://generativelanguage.googleapis.com/v1beta/openai/
 
 portfolio:

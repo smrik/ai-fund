@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from config.llm_routing import format_llm_resolution, resolve_llm_route
+from config.llm_routing import (
+    format_llm_resolution,
+    resolve_family_projection_limit_chars,
+    resolve_llm_route,
+)
 
 
 def _config(*roles: tuple[str, dict[str, str]]) -> dict:
@@ -197,3 +201,33 @@ def test_seeded_role_block_routes_judgment_valuation_and_accounting() -> None:
         "gpt-5.6-luna",
         "low",
     )
+
+
+def test_family_projection_limit_uses_model_capability_and_unknown_fallback() -> None:
+    configured = {
+        "llm": {
+            "model_capabilities": {
+                "openrouter": {
+                    "provider/primary": {"context_window_tokens": 200_000},
+                    "provider/critic": {"context_window_tokens": 100_000},
+                }
+            }
+        }
+    }
+
+    configured_limit = resolve_family_projection_limit_chars(
+        "openrouter",
+        "provider/primary",
+        "provider/critic",
+        config=configured,
+    )
+    unknown_limit = resolve_family_projection_limit_chars(
+        "openrouter",
+        "provider/unknown",
+        "provider/unknown",
+        config=configured,
+    )
+
+    assert configured_limit == int(100_000 * 0.65 * 3.0)
+    assert configured_limit > 120_000
+    assert unknown_limit == 120_000

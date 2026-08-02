@@ -24,6 +24,12 @@ _PROVIDER_FALLBACKS: dict[str, dict[str, str]] = {
     "codex": {"model": "gpt-5.6-luna", "effort": "low"},
 }
 
+# A capability record is optional. Unknown models intentionally keep the old
+# conservative guard so a missing capability never expands a request budget.
+FAMILY_PROJECTION_FALLBACK_CHARS = 120_000
+FAMILY_PROJECTION_INPUT_CONTEXT_SHARE = 0.65
+FAMILY_PROJECTION_CHARS_PER_TOKEN = 3.0
+
 
 def _text(value: Any) -> str:
     return str(value or "").strip()
@@ -66,6 +72,79 @@ def _provider_base_url(
     if _text(configured):
         return _text(configured), "config"
     return "", "fallback"
+
+
+def resolve_model_context_window_tokens(
+    provider: str,
+    model: str,
+    *,
+    config: Mapping[str, Any] | None = None,
+) -> int | None:
+    """Return a configured model context window without performing network I/O."""
+
+    active_config = config if config is not None else app_config.get_config()
+    llm_config = active_config.get("llm")
+    if not isinstance(llm_config, Mapping):
+        return None
+    capabilities = llm_config.get("model_capabilities")
+    if not isinstance(capabilities, Mapping):
+        return None
+    provider_capabilities = capabilities.get(str(provider).strip().lower())
+    if not isinstance(provider_capabilities, Mapping):
+        return None
+    model_capability = provider_capabilities.get(str(model).strip())
+    if not isinstance(model_capability, Mapping):
+        return None
+    raw_context_window = model_capability.get("context_window_tokens")
+    if isinstance(raw_context_window, bool) or not isinstance(
+        raw_context_window,
+        (int, str),
+    ):
+        return None
+    try:
+        context_window = int(raw_context_window)
+    except (TypeError, ValueError):
+        return None
+    return context_window if context_window > 0 else None
+
+
+def resolve_family_projection_limit_chars(
+    provider: str,
+    primary_model: str,
+    critic_model: str | None = None,
+    *,
+    config: Mapping[str, Any] | None = None,
+) -> int:
+    """Derive one safe family projection limit for both provider routes.
+
+    The smaller primary/critic budget wins. Sixty-five percent of a known
+    context window is available to the serialized family projection; the
+    remaining thirty-five percent covers the system prompt, schema, and the
+    model's reasoning/output allocation. Three characters per token is a
+    deliberately conservative JSON estimate based on the recorded live
+    driver-family requests. Unknown capabilities use the fixed fail-closed
+    fallback rather than pretending the model has a larger context window.
+    """
+
+    models = (primary_model, critic_model or primary_model)
+    limits: list[int] = []
+    for model in models:
+        context_window = resolve_model_context_window_tokens(
+            provider,
+            model,
+            config=config,
+        )
+        if context_window is None:
+            limits.append(FAMILY_PROJECTION_FALLBACK_CHARS)
+            continue
+        limits.append(
+            int(
+                context_window
+                * FAMILY_PROJECTION_INPUT_CONTEXT_SHARE
+                * FAMILY_PROJECTION_CHARS_PER_TOKEN
+            )
+        )
+    return max(1, min(limits))
 
 
 def resolve_llm_route(

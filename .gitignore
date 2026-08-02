@@ -82,3 +82,6 @@ nppBackup/
 # Permission-locked pytest scratch dirs created by earlier Codex/Windows sessions
 .codex-pytest-temp/
 .pre-commit-cache-run*/
+
+# Local replay/scratch databases
+.tmp/

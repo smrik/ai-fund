@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from config.llm_routing import resolve_family_projection_limit_chars
 from src.contracts.assumption_registry import DriverFamily
 from src.stage_04_pipeline.valuation_provider_bindings import (
     ProviderBindingSettings,
@@ -65,6 +66,33 @@ def test_openrouter_settings_build_explicit_schema_bound_routes() -> None:
         )
     assert len(route_ids) == len(DriverFamily) * 2
     assert len(backends) == 1
+
+
+def test_bindings_carry_capability_derived_projection_limit() -> None:
+    primary_model = "deepseek/deepseek-v4-flash-0731"
+    settings = ProviderBindingSettings.from_environment(
+        {
+            "ALPHA_POD_JUDGMENT_BACKEND": "openrouter",
+            "ALPHA_POD_JUDGMENT_PRIMARY_MODEL": primary_model,
+            "ALPHA_POD_JUDGMENT_CRITIC_MODEL": primary_model,
+            "OPENROUTER_API_KEY": "secret-key",
+        }
+    )
+
+    bindings = build_driver_family_bindings(
+        settings,
+        openai_client_factory=lambda **_: SimpleNamespace(chat=SimpleNamespace()),
+    )
+
+    expected = resolve_family_projection_limit_chars(
+        "openrouter",
+        primary_model,
+        primary_model,
+    )
+    assert expected > 120_000
+    assert {binding.max_projection_chars for binding in bindings.values()} == {
+        expected
+    }
 
 
 def test_codex_settings_do_not_construct_an_api_client() -> None:

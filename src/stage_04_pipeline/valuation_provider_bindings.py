@@ -7,7 +7,10 @@ import os
 from typing import Any, Callable, Mapping
 from urllib.parse import urlsplit
 
-from config.llm_routing import resolve_llm_route
+from config.llm_routing import (
+    resolve_family_projection_limit_chars,
+    resolve_llm_route,
+)
 from src.contracts.assumption_registry import DriverFamily
 from src.contracts.judgment_runs import ProviderRoute, SamplingControls
 from src.stage_03_judgment.judgment_backends import (
@@ -253,6 +256,11 @@ def build_driver_family_bindings(
                 endpoint_identity=endpoint_identity,
             ),
             critic_backend=backend,
+            max_projection_chars=resolve_family_projection_limit_chars(
+                settings.backend,
+                settings.primary_model,
+                settings.critic_model,
+            ),
         )
         for family in DriverFamily
     }

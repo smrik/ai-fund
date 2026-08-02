@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+
 from src.contracts.analysis_snapshot import AnalysisSnapshot
+from src.contracts.assumption_registry import DriverFamily
 from src.contracts.judgment_runs import ProviderRoute
 from src.stage_03_judgment.judgment_gateway import JudgmentBackendResponse
 from src.stage_03_judgment.judgment_gateway import JudgmentGateway
 from src.stage_04_pipeline.driver_family_workflow import (
+    _family_analysis_projection,
     run_driver_family_workflow,
 )
 
@@ -130,6 +134,57 @@ def test_primary_and_critic_produce_one_atomic_queue_item_from_one_snapshot() ->
     assert len(result.queue_item.proposal_pack.proposals) == 3
     assert primary.requests[0].task.frozen_snapshot_hash == _snapshot().snapshot_hash
     assert critic.requests[0].task.reviewed_output_hash
+    allowed = sorted(_snapshot().evidence)
+    primary_user = json.loads(primary.requests[0].task.messages[1].content)
+    critic_user = json.loads(critic.requests[0].task.messages[1].content)
+    assert primary_user["allowed_evidence_anchor_ids"] == allowed
+    assert critic_user["allowed_evidence_anchor_ids"] == allowed
+    assert "exact string from allowed_evidence_anchor_ids" in critic.requests[0].task.messages[0].content
+
+
+def test_family_projection_compacts_and_retains_relevant_statement_records() -> None:
+    snapshot = _snapshot().model_copy(
+        update={
+            "statements": {
+                "annual_period_count": 5,
+                "ltm_status": "compatible",
+                "consolidated_view": [
+                    {
+                        "fact_id": "income:revenue",
+                        "statement": "IncomeStatement",
+                        "numeric_value": 100.0,
+                        "hierarchy": {"presentation_path": ["large", "unused"]},
+                    },
+                    {
+                        "fact_id": "cashflow:capex",
+                        "statement": "CashFlowStatement",
+                        "numeric_value": -10.0,
+                    },
+                    {
+                        "fact_id": "balance:receivables",
+                        "statement": "BalanceSheet",
+                        "numeric_value": 20.0,
+                    },
+                ],
+            }
+        }
+    )
+
+    projection = _family_analysis_projection(
+        snapshot,
+        DriverFamily.revenue,
+        max_chars=100_000,
+    )
+    statements = projection["statements"]
+    assert isinstance(statements, dict)
+    compact = statements["consolidated_view"]
+    assert isinstance(compact, dict)
+    assert compact["format"] == "columnar-records-v1"
+    assert len(compact["rows"]) == 1
+    assert compact["rows"][0][compact["columns"].index("fact_id")] == "income:revenue"
+    assert statements["projection_scope"]["retained_fact_count"] == 1
+    assert statements["projection_scope"]["omitted_record_fields"] == ["hierarchy"]
+    assert projection["evidence"] == snapshot.evidence
 
 
 def test_revise_verdict_allows_exactly_one_primary_revision_and_queues_it() -> None:

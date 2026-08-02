@@ -45,6 +45,7 @@ class DriverFamilyExecutionBinding:
     primary_backend: StructuredJudgmentBackend
     critic_route: ProviderRoute
     critic_backend: StructuredJudgmentBackend
+    max_projection_chars: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +255,11 @@ def run_valuation_judgment_pipeline(
             gateway=gateway,
             force_refresh=force_refresh,
             transport_timeout_seconds=transport_timeout_seconds,
+            **(
+                {"max_projection_chars": binding.max_projection_chars}
+                if binding.max_projection_chars is not None
+                else {}
+            ),
         )
         family_results[family] = result
         challenges = (
