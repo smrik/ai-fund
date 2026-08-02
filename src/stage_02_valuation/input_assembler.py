@@ -8,6 +8,11 @@ from typing import Any, Mapping
 import yaml
 
 from config import ROOT_DIR
+from src.contracts.assumption_registry import (
+    AssumptionOwner,
+    AssumptionUnit,
+    get_assumption_definition,
+)
 from src.contracts.valuation_readiness import (
     ValuationReadinessEvidence,
     ValuationTrustStatus,
@@ -72,6 +77,25 @@ EXIT_METRIC_BY_SECTOR = {
 EXCLUDED_SECTORS = {"Financial Services", "Real Estate"}
 
 
+# Historical values are observed facts, so their bounds are only plausibility
+# envelopes.  The envelopes are keyed by the registry unit instead of by
+# individual driver names; judgment-owned targets continue using their
+# caller-supplied forecast bounds.
+_HISTORICAL_SANITY_BOUNDS: dict[AssumptionUnit, tuple[float, float]] = {
+    # Operating ratios are non-negative in this model.  A 10x ceiling leaves
+    # room for extreme small-revenue issuers while still catching an absurd
+    # ratio or sign/unit error.
+    AssumptionUnit.decimal: (0.0, 10.0),
+    # Zero days is valid for an asset-light issuer; two years is a deliberately
+    # broad working-capital cycle, while still catching a 900-day data error.
+    AssumptionUnit.days: (0.0, 730.0),
+    # Raw-dollar capital can legitimately be negative (for example, negative
+    # invested capital), so the universal money envelope permits both signs
+    # and is intentionally far outside normal single-issuer scale.
+    AssumptionUnit.money: (-1.0e18, 1.0e18),
+}
+
+
 @dataclass(slots=True)
 class ValuationInputsWithLineage:
     ticker: str
@@ -125,6 +149,25 @@ def _mm(v: float | None) -> float | None:
     return v / 1e6 if v is not None else None
 
 
+def _bounds_for_field(
+    field_name: str,
+    low: float,
+    high: float,
+) -> tuple[float, float]:
+    """Use broad sanity bounds for historical registry-owned observations."""
+    try:
+        definition = get_assumption_definition(field_name)
+    except KeyError:
+        return float(low), float(high)
+
+    if definition.owner is not AssumptionOwner.historical:
+        return float(low), float(high)
+    return _HISTORICAL_SANITY_BOUNDS.get(
+        definition.unit,
+        (float(low), float(high)),
+    )
+
+
 def _bounded(
     value: float | None,
     low: float,
@@ -135,18 +178,19 @@ def _bounded(
     source: str,
     events: list[ClampEvent],
 ) -> float:
+    effective_low, effective_high = _bounds_for_field(field_name, low, high)
     resolved = (
         float(default)
         if value is None
-        else max(float(low), min(float(high), float(value)))
+        else max(effective_low, min(effective_high, float(value)))
     )
     events.append(
         ClampEvent(
             field_name=field_name,
             raw_value=None if value is None else float(value),
             resolved_value=resolved,
-            lower_bound=float(low),
-            upper_bound=float(high),
+            lower_bound=effective_low,
+            upper_bound=effective_high,
             default_value=float(default),
             source=source,
         )

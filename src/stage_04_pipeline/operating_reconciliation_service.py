@@ -274,6 +274,12 @@ def reconcile_operating_statement_facts(
         dimensions = fact.get("dimensions") or {}
         if dimensions:
             continue
+        # The decision-grade selected view also carries non-numeric presentation
+        # rows (for example, disclosure-only balance-sheet concepts). They are
+        # valid statement evidence but cannot participate in an operating amount
+        # or role selection.
+        if fact.get("numeric_value") is None:
+            continue
         try:
             amounts.append(source_amount_from_statement_fact(fact))
         except (KeyError, TypeError, ValueError):

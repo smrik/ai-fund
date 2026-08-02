@@ -130,6 +130,31 @@ def test_selected_operating_facts_reconcile_in_valuation_units() -> None:
     assert artifact.to_dict()["fingerprint"] == artifact.fingerprint
 
 
+def test_non_numeric_selected_rows_do_not_block_role_selection() -> None:
+    facts = _facts()
+    non_numeric = _fact("commitments_and_contingencies", 0.0)
+    non_numeric["numeric_value"] = None
+    facts.append(non_numeric)
+
+    artifact = reconcile_operating_statement_facts(
+        valuation_inputs=_inputs(),
+        statement_reconciliation_run=_run(facts),
+        statement_facts=facts,
+    )
+
+    assert artifact.status == "reconciled"
+    assert artifact.period_start == "2025-01-01"
+    assert artifact.period_end == "2025-12-31"
+    assert set(artifact.selected_fact_ids_by_role) >= {
+        "revenue",
+        "cost_of_revenue",
+        "capex",
+        "da",
+        "accounts_receivable",
+        "accounts_payable",
+    }
+
+
 def test_complete_statement_absence_marks_inventory_not_applicable() -> None:
     facts = _facts(include_inventory=False)
     artifact = reconcile_operating_statement_facts(

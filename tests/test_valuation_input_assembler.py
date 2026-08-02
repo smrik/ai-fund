@@ -134,10 +134,10 @@ def test_build_valuation_inputs_applies_ciq_precedence(monkeypatch):
         for event in out.clamp_events
         if event.field_name == "da_pct_start"
     )
-    assert out.drivers.da_pct_start == 0.005
+    assert out.drivers.da_pct_start == 0.0
     assert da_event.raw_value == 0.0
-    assert da_event.resolved_value == 0.005
-    assert da_event.bound_hit == "lower"
+    assert da_event.resolved_value == 0.0
+    assert da_event.bound_hit is None
     assert da_event.source == "ciq"
 
 
@@ -412,19 +412,105 @@ def test_nwc_drivers_fallback_to_yfinance_and_respect_bounds(monkeypatch):
     out = build_valuation_inputs("BNDX")
 
     assert out is not None
-    assert out.drivers.dso_start == 180.0
-    assert out.drivers.dio_start == 5.0
-    assert out.drivers.dpo_start == 180.0
+    assert out.drivers.dso_start == 500.0
+    assert out.drivers.dio_start == 0.0
+    assert out.drivers.dpo_start == 300.0
     assert out.source_lineage["dso_start"] == "yfinance"
     assert out.source_lineage["dio_start"] == "yfinance"
     assert out.source_lineage["dpo_start"] == "yfinance"
     events = {event.field_name: event for event in out.clamp_events}
     assert events["dso_start"].raw_value == 500.0
-    assert events["dso_start"].resolved_value == 180.0
-    assert events["dso_start"].bound_hit == "upper"
+    assert events["dso_start"].resolved_value == 500.0
+    assert events["dso_start"].bound_hit is None
     assert events["dso_start"].source == "yfinance"
     assert events["dio_start"].bound_hit == "lower"
-    assert events["dpo_start"].bound_hit == "upper"
+    assert events["dpo_start"].bound_hit is None
+
+
+def test_historical_extremes_pass_through_and_forecast_bounds_remain_tight() -> None:
+    from src.stage_02_valuation import input_assembler as ia
+
+    events = []
+    capex = ia._bounded(
+        0.2533291124,
+        0.01,
+        0.25,
+        0.06,
+        field_name="capex_pct_start",
+        source="filing",
+        events=events,
+    )
+    dio = ia._bounded(
+        1.5,
+        5.0,
+        220.0,
+        35.0,
+        field_name="dio_start",
+        source="filing",
+        events=events,
+    )
+    target = ia._bounded(
+        0.30,
+        0.005,
+        0.25,
+        0.06,
+        field_name="capex_pct_target",
+        source="judgment",
+        events=events,
+    )
+
+    assert capex == pytest.approx(0.2533291124)
+    assert dio == pytest.approx(1.5)
+    assert events[0].was_clamped is False
+    assert events[1].was_clamped is False
+    assert target == pytest.approx(0.25)
+    assert events[2].lower_bound == pytest.approx(0.005)
+    assert events[2].upper_bound == pytest.approx(0.25)
+    assert events[2].bound_hit == "upper"
+    assert events[2].to_dict()["was_clamped"] is True
+
+
+def test_erroneous_historical_sign_and_magnitude_are_still_clamped() -> None:
+    from src.stage_02_valuation import input_assembler as ia
+
+    events = []
+    negative_margin = ia._bounded(
+        -0.10,
+        0.02,
+        0.60,
+        0.14,
+        field_name="ebit_margin_start",
+        source="filing",
+        events=events,
+    )
+    negative_ratio = ia._bounded(
+        -0.10,
+        0.01,
+        0.25,
+        0.06,
+        field_name="capex_pct_start",
+        source="filing",
+        events=events,
+    )
+    excessive_days = ia._bounded(
+        900.0,
+        5.0,
+        180.0,
+        50.0,
+        field_name="dso_start",
+        source="filing",
+        events=events,
+    )
+
+    assert negative_margin == pytest.approx(0.0)
+    assert negative_ratio == pytest.approx(0.0)
+    assert excessive_days == pytest.approx(730.0)
+    assert events[0].bound_hit == "lower"
+    assert events[1].bound_hit == "lower"
+    assert events[2].bound_hit == "upper"
+    assert events[0].to_dict()["was_clamped"] is True
+    assert events[1].to_dict()["was_clamped"] is True
+    assert events[2].to_dict()["was_clamped"] is True
 
 
 def test_every_bounded_call_emits_canonical_clamp_audit_metadata() -> None:
