@@ -1752,3 +1752,99 @@ def test_earliest_window_period_is_not_required_to_bridge_cash() -> None:
     assert not _bridge_required_for_period("2022-06-30", periods)
     # A single-period window has nothing to bridge against at all.
     assert not _bridge_required_for_period("2025-06-30", ("2025-06-30",))
+
+
+def _combined_da_ltm_facts(*, include_ciq_da: bool = True) -> list[dict[str, object]]:
+    facts = _ready_facts()
+    for fact in facts:
+        if (
+            str(fact["source"]).startswith("sec_xbrl_derived_ltm")
+            and fact["period_kind"] == "ltm"
+            and canonical_statement_key(
+                str(fact["concept"]),
+                str(fact["label"]),
+            )
+            == "da"
+        ):
+            fact["concept"] = "msft_DepreciationAmortizationAndOther"
+            fact["label"] = "Depreciation, amortization, and other"
+    if not include_ciq_da:
+        facts = [
+            fact
+            for fact in facts
+            if not (
+                str(fact["source"]).startswith("ciq")
+                and fact["period_kind"] == "ltm"
+                and canonical_statement_key(
+                    str(fact["concept"]),
+                    str(fact["label"]),
+                )
+                == "da"
+            )
+        ]
+    return facts
+
+
+def test_ltm_combined_da_uses_approved_ciq_source() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_status,
+    )
+
+    assert _ltm_status(_combined_da_ltm_facts()) == "constructed"
+
+
+def test_ltm_combined_da_without_approved_ciq_source_remains_unavailable() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_status,
+    )
+
+    assert (
+        _ltm_status(_combined_da_ltm_facts(include_ciq_da=False))
+        == "unavailable"
+    )
+
+
+def test_ltm_combined_da_keeps_both_source_values_visible() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_groups,
+    )
+
+    groups = _ltm_groups(_combined_da_ltm_facts())
+    group = next(iter(groups.values()))
+    combined_xbrl = next(
+        fact
+        for fact in group
+        if str(fact["source"]).startswith("sec_xbrl_derived_ltm")
+        and canonical_statement_key(
+            str(fact["concept"]),
+            str(fact["label"]),
+        )
+        == "depreciation_amortization_and_other"
+    )
+    ciq_da = next(
+        fact
+        for fact in group
+        if str(fact["source"]).startswith("ciq")
+        and canonical_statement_key(
+            str(fact["concept"]),
+            str(fact["label"]),
+        )
+        == "da"
+    )
+
+    assert combined_xbrl["numeric_value"] != ciq_da["numeric_value"]
+    assert combined_xbrl["source"] != ciq_da["source"]
+
+
+def test_ltm_combined_da_presentation_group_is_source_provided() -> None:
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        _ltm_status,
+    )
+
+    facts = _combined_da_ltm_facts()
+    for fact in facts:
+        if str(fact["source"]).startswith("sec_xbrl_derived_ltm"):
+            fact["source"] = "sec_xbrl_filing_presentation_v1"
+            fact["is_derived"] = False
+
+    assert _ltm_status(facts) == "source_provided"

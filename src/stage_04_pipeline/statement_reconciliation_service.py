@@ -620,6 +620,7 @@ def _annual_period_count(
         if "da" not in cash_flow_keys and _combined_da_resolved_by_ciq(
             corroborating_facts if corroborating_facts is not None else facts,
             period_end=period_end,
+            period_kind="annual",
         ):
             cash_flow_keys = cash_flow_keys | {"da"}
         if (
@@ -638,6 +639,7 @@ def _keys_by_source_family(
     statement: str,
     prefix: str,
     period_end: str | None = None,
+    period_kind: str | None = None,
 ) -> set[str]:
     return {
         canonical_statement_key(
@@ -648,6 +650,10 @@ def _keys_by_source_family(
         if str(fact.get("source") or "").lower().startswith(prefix)
         and str(fact.get("statement") or "") == statement
         and (period_end is None or str(fact.get("period_end") or "") == period_end)
+        and (
+            period_kind is None
+            or str(fact.get("period_kind") or "").lower() == period_kind.lower()
+        )
     }
 
 
@@ -655,6 +661,7 @@ def _combined_da_resolved_by_ciq(
     facts: Sequence[Mapping[str, Any]],
     *,
     period_end: str | None = None,
+    period_kind: str | None = None,
 ) -> bool:
     """PM decision 2026-07-31: a combined D&A line sources `da` from CIQ.
 
@@ -666,14 +673,59 @@ def _combined_da_resolved_by_ciq(
     """
 
     xbrl_keys = _keys_by_source_family(
-        facts, statement="CashFlowStatement", prefix="sec_xbrl", period_end=period_end
+        facts,
+        statement="CashFlowStatement",
+        prefix="sec_xbrl",
+        period_end=period_end,
+        period_kind=period_kind,
     )
     if "da" in xbrl_keys or "depreciation_amortization_and_other" not in xbrl_keys:
         return False
     ciq_keys = _keys_by_source_family(
-        facts, statement="CashFlowStatement", prefix="ciq", period_end=period_end
+        facts,
+        statement="CashFlowStatement",
+        prefix="ciq",
+        period_end=period_end,
+        period_kind=period_kind,
     )
     return "da" in ciq_keys
+
+
+def _approved_ltm_source_facts(
+    facts: Sequence[Mapping[str, Any]],
+    *,
+    period_start: str,
+    period_end: str,
+) -> tuple[Mapping[str, Any], ...]:
+    """Return source facts sanctioned to complete a constructed LTM group.
+
+    The source fact is added alongside, never instead of, the derived XBRL facts. That
+    keeps the combined XBRL disclosure and the CIQ pure-D&A value visible as separate
+    provenance records inside the logical LTM window.
+    """
+
+    if not _combined_da_resolved_by_ciq(
+        facts,
+        period_end=period_end,
+        period_kind="ltm",
+    ):
+        return ()
+    return tuple(
+        fact
+        for fact in facts
+        if str(fact.get("source") or "").lower().startswith("ciq")
+        and str(fact.get("statement") or "") == "CashFlowStatement"
+        and str(fact.get("period_kind") or "").lower() == "ltm"
+        and str(fact.get("period_start") or "") == period_start
+        and str(fact.get("period_end") or "") == period_end
+        and fact.get("numeric_value") is not None
+        and not fact.get("dimensions")
+        and canonical_statement_key(
+            str(fact.get("concept") or ""),
+            str(fact.get("label") or ""),
+        )
+        == "da"
+    )
 
 
 def _treatment_supplies(
@@ -782,6 +834,14 @@ def _ltm_groups(
         ):
             continue
         grouped.setdefault(_ltm_group_key(fact), []).append(fact)
+    for key, group in grouped.items():
+        group.extend(
+            _approved_ltm_source_facts(
+                facts,
+                period_start=key[2],
+                period_end=key[3],
+            )
+        )
     return {
         key: tuple(value)
         for key, value in grouped.items()
@@ -821,7 +881,7 @@ def _ltm_status(
     ]
     if not groups:
         return "unavailable"
-    _, ltm = max(
+    key, ltm = max(
         groups,
         key=lambda item: (
             item[0][3],
@@ -839,6 +899,18 @@ def _ltm_status(
         for fact in ltm
     ):
         return "source_provided"
+    # A constructed group may contain an approved source fact for a key the filing does
+    # not report purely. `_ltm_groups` only adds such facts through the resolver above,
+    # so the mixed provenance is valid and remains visible in the group.
+    if any(
+        str(fact.get("source") or "").lower().startswith("ciq")
+        for fact in ltm
+    ):
+        return (
+            "constructed"
+            if key[0] == "derived"
+            else "source_provided"
+        )
     return "unavailable"
 
 
@@ -859,7 +931,7 @@ def _bounded_selected_view(
         corroborating_facts=facts,
     )
     annual_ends = set(annual_periods)
-    ltm_key, ltm_group = _preferred_ltm_group(xbrl)
+    ltm_key, ltm_group = _preferred_ltm_group(facts)
     ltm_window = (
         (ltm_key[2], ltm_key[3])
         if ltm_key is not None
@@ -1031,7 +1103,11 @@ def _expected_source_quantities(
         # XBRL for a pure D&A it never reports would raise a blocking
         # `missing_source_overlap` on every period for a gap the decision already
         # resolved. The CIQ sourcing stays visible on the fact's own `source`.
-        if _combined_da_resolved_by_ciq(facts, period_end=period_end):
+        if _combined_da_resolved_by_ciq(
+            facts,
+            period_end=period_end,
+            period_kind="annual",
+        ):
             required.discard("da")
         for canonical_key in required:
             statement = _EXPECTED_ROLE_STATEMENTS[canonical_key]
@@ -1066,7 +1142,7 @@ def _expected_source_quantities(
                 period_kind="annual",
             )
 
-    ltm_key, ltm_group = _preferred_ltm_group(xbrl)
+    ltm_key, ltm_group = _preferred_ltm_group(facts)
     if (
         ltm_key is not None
         and ltm_group
@@ -1081,7 +1157,11 @@ def _expected_source_quantities(
         # Same PM decision as the annual periods: a filer presenting only a combined
         # "depreciation, amortization, and other" line sources `da` from CIQ, so XBRL is
         # not asked for a pure D&A it never reports.
-        if _combined_da_resolved_by_ciq(facts):
+        if _combined_da_resolved_by_ciq(
+            facts,
+            period_end=period_end,
+            period_kind="ltm",
+        ):
             ltm_required.discard("da")
         for canonical_key in sorted(ltm_required):
             statement = _EXPECTED_ROLE_STATEMENTS[canonical_key]
