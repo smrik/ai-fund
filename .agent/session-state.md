@@ -1,41 +1,54 @@
 # Session State
 
-**Updated:** 2026-08-02 00:32 +02:00
+**Updated:** 2026-08-02 13:52 +02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Fix provenance loss when advisory accounting queue items are approved.
+Fix calculation-rollup parent matching for abbreviated comparative balance-sheet presentations,
+and separately send OpenRouter reasoning effort in the documented nested request shape.
 
 ## Recent Actions
 
-- Traced `_accounting_treatment_row` and `insert_treatment_decision` with Serena; confirmed the
-  loader supersession key is correct for genuine treatments.
-- Added a contract-backed non-treatment predicate in `pm_decision_queue.py`; advisory approvals
-  now skip the treatment register while retaining existing queue history and approve events.
-- Added the exact three-advisory regression plus one-row genuine-treatment and supersession/hash
-  assertions in `tests/test_pm_decision_queue_adapter.py`.
-- Verification: scoped accounting/queue suite 58 passed; Ruff clean; full `tests/` run 1,327
-  passed and 8 unrelated Windows temp-ACL failures.
+- Used Serena to trace presentation grouping, accession selection, calculation-edge matching, and
+  the judgment backend request construction.
+- Fixed the rollup defect generically: filing-specific statement-role namespaces are compared by
+  semantic role basename, so an orphan comparative child group is suppressed only when a complete
+  same-period parent presentation exists. No facts are copied and instant periods retain empty
+  `period_start`.
+- Preserved the existing fail-closed multiple-values ambiguity and genuinely-missing-parent paths.
+- Added the abbreviated-comparative, ambiguity, and missing-parent regressions.
+- Changed OpenAI-compatible reasoning to `extra_body.reasoning.effort`; Codex remains
+  `-c model_reasoning_effort=<effort>`. Added nested, absent, and Codex request assertions.
+- Focused verification: statement-reconciliation tests 32 passed; judgment-backend tests 29
+  passed; combined touched suite 61 passed; Ruff clean.
+- Rooted offline suite: 1,337 passed, 8 failed. All failures are unrelated Windows permission
+  errors creating `C:\Users\patri\AppData\Local\Temp\advanced-dcf-model\...`.
+- Read-only MSFT replay after the fix: 157 rollups pass and 2 remain not-ready in this checkout's
+  local snapshot, both genuine `LiabilitiesCurrent`/`CommercialPaper` ambiguity findings.
 
 ## Next Steps
 
-- Review the scoped commit if another agent resumes.
-- Repair the external Windows temp-directory ACL separately if a zero-failure full suite is needed.
+- Create two separate commits when the `.git` ACL permits index writes: rollup repair, then
+  OpenRouter request-shape repair.
+- If strict unsupported-effort validation is required, add cached model-capability metadata outside
+  the hot path; the current backend forwards the exact configured effort without local remapping.
 
 ## Known Issues
 
-- The worktree contains unrelated dirty/generated MSFT/cache/export/debug artifacts; preserve them.
-- Eight `tests/test_advanced_dcf_model.py` failures are caused by permission denied while creating
-  `C:\Users\patri\AppData\Local\Temp\advanced-dcf-model\...`.
+- The user-reported live MSFT run has 16 findings (12 orphan-parent defects plus 4 genuine
+  ambiguities); the local read-only DB snapshot contains an analogous 8 findings (6 plus 2).
+- Both staged-commit attempts are blocked because the sandbox denies creation of `.git/index.lock`;
+  no commit was made. Preserve unrelated tracked and generated MSFT/cache/export/debug artifacts.
+- The unrestricted pytest command also hit permission-locked generated directories during
+  collection; use `-p no:cacheprovider tests` for the rooted offline run.
 
 ## Notes
 
 - Runtime: `C:/Users/patri/miniconda3/envs/ai-fund/python.exe`.
 - Current branch: `codex/focused-accounting-evidence-repair`.
-- No `db/loader.py` change or production database write was made by this task; no valuation math,
-  API, or frontend files were modified.
+- No write to `data/alpha_pod.db`; no valuation math, API, or frontend files were modified.
 
 ## First end-to-end valuation attempt — 2026-07-31
 

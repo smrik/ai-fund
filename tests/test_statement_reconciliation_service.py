@@ -1240,6 +1240,34 @@ def _rollup_fact(
     }
 
 
+def _msft_balance_sheet_instant(
+    *,
+    concept: str,
+    value: float,
+    fact_id: str,
+    period_end: str,
+    accession: str,
+    statement_role: str,
+    parent: str | None = None,
+    weight: float | None = None,
+) -> dict:
+    fact = _rollup_fact(
+        concept=concept,
+        value=value,
+        fact_id=fact_id,
+        parent=parent,
+        weight=weight,
+    )
+    fact["ticker"] = "MSFT"
+    fact["period_end"] = period_end
+    fact["accession"] = accession
+    fact["hierarchy"] = {
+        **dict(fact["hierarchy"]),
+        "statement_role": statement_role,
+    }
+    return fact
+
+
 _ROLLUP_PARENT = "us-gaap_LiabilitiesAndStockholdersEquity"
 
 
@@ -1279,6 +1307,80 @@ def test_repeated_parent_presentation_does_not_block_rollup() -> None:
 
     assert len(checks) == 1
     # 323,144,000 + 1,104,345,000 == 1,427,489,000 exactly.
+    assert checks[0].status == "pass"
+
+
+def test_abbreviated_comparative_balance_sheet_reuses_complete_parent_presentation() -> None:
+    """A filing-specific role must not orphan an instant root fact.
+
+    MSFT's later balance-sheet filings carry calculation children for the prior
+    year under a new role namespace, but omit the comparative root (for example,
+    ``us-gaap_Assets``). The complete filing for that instant still presents the
+    parent and its children under the prior role namespace.
+    """
+
+    period = "2022-06-30"
+    complete_role = (
+        "http://www.microsoft.com/20230630/taxonomy/role/"
+        "Role_StatementBALANCESHEETS"
+    )
+    abbreviated_role = (
+        "http://www.microsoft.com/20240630/taxonomy/role/"
+        "Role_StatementBALANCESHEETS"
+    )
+    complete_accession = "0000950170-23-035122"
+    abbreviated_accession = "0000950170-24-087843"
+    parent = "us-gaap_Assets"
+
+    facts = [
+        _msft_balance_sheet_instant(
+            concept=parent,
+            value=100.0,
+            fact_id="complete-parent",
+            period_end=period,
+            accession=complete_accession,
+            statement_role=complete_role,
+        ),
+        _msft_balance_sheet_instant(
+            concept="us-gaap_AssetsCurrent",
+            value=60.0,
+            fact_id="complete-current-assets",
+            period_end=period,
+            accession=complete_accession,
+            statement_role=complete_role,
+            parent=parent,
+            weight=1.0,
+        ),
+        _msft_balance_sheet_instant(
+            concept="us-gaap_OtherAssetsNoncurrent",
+            value=40.0,
+            fact_id="complete-other-assets",
+            period_end=period,
+            accession=complete_accession,
+            statement_role=complete_role,
+            parent=parent,
+            weight=1.0,
+        ),
+        # Mirrors the abbreviated MSFT comparative: a child is attached to the
+        # calculation parent, but the root fact is not presented in this vintage.
+        _msft_balance_sheet_instant(
+            concept="us-gaap_Goodwill",
+            value=25.0,
+            fact_id="abbreviated-goodwill",
+            period_end=period,
+            accession=abbreviated_accession,
+            statement_role=abbreviated_role,
+            parent=parent,
+            weight=1.0,
+        ),
+    ]
+
+    checks = _calculation_rollup_checks(
+        facts=facts,
+        eligible_periods={period},
+    )
+
+    assert len(checks) == 1
     assert checks[0].status == "pass"
 
 

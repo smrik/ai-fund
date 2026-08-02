@@ -1266,6 +1266,28 @@ def _concept_token(value: Any) -> str:
     )
 
 
+def _calculation_role_token(value: Any) -> str:
+    """Normalize filing-specific role namespaces without merging role families."""
+
+    role = str(value or "")
+    for separator in ("/", ":"):
+        role = role.rsplit(separator, 1)[-1]
+    token = _concept_token(role)
+    return token[4:] if token.startswith("role") else token
+
+
+def _calculation_presentation_key(
+    identity: tuple[str, str, str, str, str, str],
+) -> tuple[str, str, str, str, str]:
+    return (
+        identity[0],
+        identity[1],
+        identity[2],
+        _calculation_role_token(identity[5]),
+        identity[3],
+    )
+
+
 def _calculation_rollup_checks(
     *,
     facts: Sequence[Mapping[str, Any]],
@@ -1396,6 +1418,29 @@ def _calculation_rollup_checks(
             ambiguous_children[identity] = conflicting
         grouped[identity] = deduped
 
+    # A comparative presentation may carry calculation children under a
+    # filing-specific role namespace while omitting the instant root fact. Do not
+    # report that abbreviated occurrence when the same semantic statement role and
+    # instant already have a complete parent presentation elsewhere. The complete
+    # presentation remains the source of the check; no fact is copied across
+    # filings or roles. A parent that is absent from every presentation still has
+    # no entry here and remains not_ready below.
+    available_parent_presentations: set[tuple[str, str, str, str, str]] = set()
+    for identity in grouped:
+        if identity in ambiguous_children:
+            continue
+        parent_facts = parents.get(identity, [])
+        parent_values = {
+            source_amount_from_statement_fact(fact).base_value
+            for fact in parent_facts
+        }
+        if len(parent_facts) == 1 or (
+            len(parent_facts) > 1 and len(parent_values) == 1
+        ):
+            available_parent_presentations.add(
+                _calculation_presentation_key(identity)
+            )
+
     checks: list[StatementCheckResult] = []
     for identity, children in sorted(grouped.items()):
         parent_facts = parents.get(identity, [])
@@ -1456,6 +1501,12 @@ def _calculation_rollup_checks(
                     ),
                 )
             )
+            continue
+        if (
+            not parent_facts
+            and _calculation_presentation_key(identity)
+            in available_parent_presentations
+        ):
             continue
         if len(parent_facts) > 1:
             # A concept presented more than once on one statement is preserved as
