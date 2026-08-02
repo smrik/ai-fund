@@ -212,11 +212,56 @@ def test_openai_compatible_backend_uses_explicit_route_and_native_schema() -> No
     assert call["max_tokens"] == 2048
     assert call["seed"] == 7
     assert call["stop"] == ["END"]
+    assert "extra_body" not in call
+    assert "reasoning_effort" not in call
     assert call["timeout"] == 23.5
     assert result.output == {"family": "revenue"}
     assert result.actual_model == "actual/model-v2"
     assert result.provider_request_id == "request-1"
     assert result.total_tokens == 120
+
+
+def test_openai_compatible_backend_nests_reasoning_effort_in_extra_body() -> None:
+    response = SimpleNamespace(
+        id="request-reasoning",
+        model="provider/model",
+        choices=[
+            SimpleNamespace(
+                finish_reason="stop",
+                message=SimpleNamespace(
+                    parsed={"family": "revenue"},
+                    content=None,
+                ),
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=10,
+            completion_tokens=5,
+            total_tokens=15,
+        ),
+    )
+    client = _client(response)
+    route = _route("chat-completions:json-schema")
+    route = route.model_copy(
+        update={
+            "sampling": route.sampling.model_copy(
+                update={"reasoning_effort": "max"},
+            )
+        }
+    )
+    request = JudgmentBackendRequest(
+        task=_task(),
+        route=route,
+        output_schema={"title": "DriverFamilyProposal", "type": "object"},
+        attempt_number=1,
+        transport_timeout_seconds=23.5,
+    )
+
+    OpenAICompatibleJudgmentBackend(client).generate(request)
+
+    call = client.completions_fixture.calls[0]
+    assert call["extra_body"] == {"reasoning": {"effort": "max"}}
+    assert "reasoning_effort" not in call
 
 
 def test_codex_backend_uses_native_schema_and_explicit_route_provenance() -> None:

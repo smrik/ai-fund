@@ -481,11 +481,14 @@ class OpenAICompatibleJudgmentBackend:
             ("top_p", "top_p"),
             ("max_output_tokens", "max_tokens"),
             ("seed", "seed"),
-            ("reasoning_effort", "reasoning_effort"),
         ):
             value = getattr(sampling, field_name)
             if value is not None:
                 kwargs[api_name] = value
+        if sampling.reasoning_effort is not None:
+            kwargs["extra_body"] = {
+                "reasoning": {"effort": sampling.reasoning_effort}
+            }
         if sampling.stop:
             kwargs["stop"] = list(sampling.stop)
 
