@@ -24,6 +24,7 @@ from src.stage_00_data.source_reconciliation import (
     assess_statement_readiness,
     canonical_statement_key,
     reconcile_persisted_statement_facts,
+    reconciliation_tolerance,
     source_amount_from_statement_fact,
     validate_balance_sheet_identity,
     validate_calculation_rollup,
@@ -51,9 +52,7 @@ class TickerStatementReconciliationRun:
 
 _PRESENTATION_SOURCE_PREFIX = "sec_xbrl_filing_presentation"
 _ANNUAL_REQUIRED_KEYS = {
-    "IncomeStatement": frozenset(
-        {"revenue", "operating_income", "net_income"}
-    ),
+    "IncomeStatement": frozenset({"revenue", "operating_income", "net_income"}),
     "CashFlowStatement": frozenset(
         {
             "operating_cash_flow",
@@ -94,16 +93,12 @@ def _manifest_entries(
         values = raw_entries
     else:
         return ()
-    return tuple(
-        entry for entry in values if isinstance(entry, Mapping)
-    )
+    return tuple(entry for entry in values if isinstance(entry, Mapping))
 
 
 def _stored_manifest_id(manifest: Mapping[str, Any]) -> str:
     store = manifest.get("_store") or {}
-    return str(
-        store.get("manifest_id") or manifest.get("manifest_id") or ""
-    )
+    return str(store.get("manifest_id") or manifest.get("manifest_id") or "")
 
 
 def _select_source_manifests(
@@ -118,11 +113,8 @@ def _select_source_manifests(
         (
             manifest
             for manifest in completed
-            if str(manifest.get("source") or "")
-            .lower()
-            .startswith("ciq")
-            and (manifest.get("_store") or {}).get("source_run_id")
-            is not None
+            if str(manifest.get("source") or "").lower().startswith("ciq")
+            and (manifest.get("_store") or {}).get("source_run_id") is not None
         ),
         None,
     )
@@ -182,9 +174,7 @@ def _manifest_contract_complete(
             and entry.get("period_kind")
         ):
             return False
-        units = entry.get("units") or (
-            [entry.get("unit")] if entry.get("unit") else []
-        )
+        units = entry.get("units") or ([entry.get("unit")] if entry.get("unit") else [])
         currencies = entry.get("currencies") or (
             [entry.get("currency")] if entry.get("currency") else []
         )
@@ -247,9 +237,7 @@ def _manifest_fact_ids(
                     values,
                     (str, bytes),
                 ):
-                    fact_ids.update(
-                        str(value) for value in values if str(value)
-                    )
+                    fact_ids.update(str(value) for value in values if str(value))
     return fact_ids
 
 
@@ -293,9 +281,7 @@ def _apply_manifest_calculation_edges(
     ] = {}
     for manifest in xbrl_manifests:
         store = manifest.get("_store") or {}
-        accession = str(
-            store.get("accession") or manifest.get("accession") or ""
-        )
+        accession = str(store.get("accession") or manifest.get("accession") or "")
         edges = manifest.get("calculation_edges") or ()
         if not isinstance(edges, Sequence) or isinstance(
             edges,
@@ -358,16 +344,13 @@ def _manifest_bound_facts(
         if str(manifest.get("source") or "")
         .lower()
         .startswith(_PRESENTATION_SOURCE_PREFIX)
-        or str(manifest.get("source") or "").lower()
-        == "sec_filing_xbrl"
+        or str(manifest.get("source") or "").lower() == "sec_filing_xbrl"
     )
     ciq_manifest = next(
         (
             manifest
             for manifest in manifests
-            if str(manifest.get("source") or "")
-            .lower()
-            .startswith("ciq")
+            if str(manifest.get("source") or "").lower().startswith("ciq")
         ),
         None,
     )
@@ -381,14 +364,10 @@ def _manifest_bound_facts(
         for manifest in xbrl_manifests
     } - {""}
     ciq_fact_ids = (
-        _manifest_fact_ids((ciq_manifest,))
-        if ciq_manifest is not None
-        else set()
+        _manifest_fact_ids((ciq_manifest,)) if ciq_manifest is not None else set()
     )
     ciq_entry_keys = (
-        _manifest_entry_keys((ciq_manifest,))
-        if ciq_manifest is not None
-        else set()
+        _manifest_entry_keys((ciq_manifest,)) if ciq_manifest is not None else set()
     )
     ciq_run_id = (
         (ciq_manifest.get("_store") or {}).get("source_run_id")
@@ -407,8 +386,7 @@ def _manifest_bound_facts(
                 continue
             if (
                 not xbrl_fact_ids
-                and str(fact.get("accession") or "")
-                not in xbrl_accessions
+                and str(fact.get("accession") or "") not in xbrl_accessions
             ):
                 continue
             selected.append(fact)
@@ -421,10 +399,7 @@ def _manifest_bound_facts(
             if ciq_manifest is None or fact.get("source_run_id") != ciq_run_id:
                 continue
             coverage_key = str(
-                (fact.get("hierarchy") or {}).get(
-                    "coverage_entry_key"
-                )
-                or ""
+                (fact.get("hierarchy") or {}).get("coverage_entry_key") or ""
             )
             if ciq_fact_ids:
                 if fact_id not in ciq_fact_ids:
@@ -521,9 +496,7 @@ def _canonical_keys(
 def _balance_sheet_coverage(keys: set[str]) -> bool:
     return (
         "assets" in keys
-        and bool(
-            {"cash_and_equivalents", "cash_including_restricted"} & keys
-        )
+        and bool({"cash_and_equivalents", "cash_including_restricted"} & keys)
         and (
             "liabilities_and_equity" in keys
             or {"liabilities", "equity_including_nci"}.issubset(keys)
@@ -533,15 +506,12 @@ def _balance_sheet_coverage(keys: set[str]) -> bool:
 
 
 def _cash_flow_coverage(keys: set[str]) -> bool:
-    return (
-        _ANNUAL_REQUIRED_KEYS["CashFlowStatement"].issubset(keys)
-        and bool(
-            {
-                "net_change_in_cash_and_equivalents",
-                "net_change_in_cash_including_restricted",
-            }
-            & keys
-        )
+    return _ANNUAL_REQUIRED_KEYS["CashFlowStatement"].issubset(keys) and bool(
+        {
+            "net_change_in_cash_and_equivalents",
+            "net_change_in_cash_including_restricted",
+        }
+        & keys
     )
 
 
@@ -549,8 +519,7 @@ def _presentation_attested(
     facts: Sequence[Mapping[str, Any]],
 ) -> bool:
     return bool(facts) and all(
-        bool((fact.get("hierarchy") or {}).get("statement_role"))
-        for fact in facts
+        bool((fact.get("hierarchy") or {}).get("statement_role")) for fact in facts
     )
 
 
@@ -589,9 +558,7 @@ def _annual_period_count(
         ):
             continue
         income_keys = _canonical_keys(statements["IncomeStatement"])
-        cash_flow_keys = _canonical_keys(
-            statements["CashFlowStatement"]
-        )
+        cash_flow_keys = _canonical_keys(statements["CashFlowStatement"])
         balance_keys = _canonical_keys(statements["BalanceSheet"])
         # A PM-approved treatment is the sanctioned way to supply a canonical key the
         # filing does not present purely (e.g. MSFT reporting only a combined
@@ -751,9 +718,7 @@ def _treatment_supplies(
         # `driver_field`; an explicit `canonical_key` is accepted for callers that
         # carry one directly.
         supplied = str(
-            treatment.get("canonical_key")
-            or treatment.get("driver_field")
-            or ""
+            treatment.get("canonical_key") or treatment.get("driver_field") or ""
         )
         if supplied != canonical_key:
             continue
@@ -777,15 +742,12 @@ def _semantic_source_reason_codes(
             str(fact.get("label") or ""),
         )
         for fact in facts
-        if str(fact.get("source") or "")
-        .lower()
-        .startswith("sec_xbrl")
+        if str(fact.get("source") or "").lower().startswith("sec_xbrl")
         and str(fact.get("statement") or "") == "CashFlowStatement"
     }
     if (
         "da" not in cash_flow_keys
-        and "depreciation_amortization_and_other"
-        in cash_flow_keys
+        and "depreciation_amortization_and_other" in cash_flow_keys
     ):
         ticker = next(
             (str(fact.get("ticker") or "") for fact in facts if fact.get("ticker")),
@@ -805,9 +767,7 @@ def _ltm_group_key(
 ) -> tuple[str, str, str, str]:
     source = str(fact.get("source") or "").lower()
     source_family = (
-        "derived"
-        if source.startswith("sec_xbrl_derived_ltm")
-        else "presentation"
+        "derived" if source.startswith("sec_xbrl_derived_ltm") else "presentation"
     )
     return (
         source_family,
@@ -826,9 +786,7 @@ def _ltm_groups(
     ] = {}
     for fact in _selected_consolidated_xbrl_facts(facts):
         if not (
-            str(fact.get("source") or "")
-            .lower()
-            .startswith("sec_xbrl")
+            str(fact.get("source") or "").lower().startswith("sec_xbrl")
             and str(fact.get("period_kind") or "").lower() == "ltm"
             and not fact.get("dimensions")
         ):
@@ -842,10 +800,7 @@ def _ltm_groups(
                 period_end=key[3],
             )
         )
-    return {
-        key: tuple(value)
-        for key, value in grouped.items()
-    }
+    return {key: tuple(value) for key, value in grouped.items()}
 
 
 def _preferred_ltm_group(
@@ -893,24 +848,15 @@ def _ltm_status(
     if all(bool(fact.get("is_derived")) for fact in ltm):
         return "constructed"
     if all(
-        str(fact.get("source") or "")
-        .lower()
-        .startswith(_PRESENTATION_SOURCE_PREFIX)
+        str(fact.get("source") or "").lower().startswith(_PRESENTATION_SOURCE_PREFIX)
         for fact in ltm
     ):
         return "source_provided"
     # A constructed group may contain an approved source fact for a key the filing does
     # not report purely. `_ltm_groups` only adds such facts through the resolver above,
     # so the mixed provenance is valid and remains visible in the group.
-    if any(
-        str(fact.get("source") or "").lower().startswith("ciq")
-        for fact in ltm
-    ):
-        return (
-            "constructed"
-            if key[0] == "derived"
-            else "source_provided"
-        )
+    if any(str(fact.get("source") or "").lower().startswith("ciq") for fact in ltm):
+        return "constructed" if key[0] == "derived" else "source_provided"
     return "unavailable"
 
 
@@ -932,11 +878,7 @@ def _bounded_selected_view(
     )
     annual_ends = set(annual_periods)
     ltm_key, ltm_group = _preferred_ltm_group(facts)
-    ltm_window = (
-        (ltm_key[2], ltm_key[3])
-        if ltm_key is not None
-        else None
-    )
+    ltm_window = (ltm_key[2], ltm_key[3]) if ltm_key is not None else None
 
     opening_dates: set[str] = set()
     for fact in xbrl:
@@ -956,10 +898,7 @@ def _bounded_selected_view(
             continue
         try:
             opening_dates.add(
-                (
-                    date.fromisoformat(period_start)
-                    - timedelta(days=1)
-                ).isoformat()
+                (date.fromisoformat(period_start) - timedelta(days=1)).isoformat()
             )
         except ValueError:
             continue
@@ -982,14 +921,10 @@ def _bounded_selected_view(
         fact_id = str(fact.get("fact_id") or "")
         include = (
             (period_kind == "annual" and period_end in annual_ends)
-            or (
-                period_kind == "ltm"
-                and ltm_window == (period_start, period_end)
-            )
+            or (period_kind == "ltm" and ltm_window == (period_start, period_end))
             or fact_id in component_ids
             or (
-                str(fact.get("period_type") or "").lower()
-                == "instant"
+                str(fact.get("period_type") or "").lower() == "instant"
                 and period_end in opening_dates
             )
         )
@@ -1283,8 +1218,7 @@ def _statement_checks(
         if net_change is not None and net_change.period_start:
             try:
                 prior_period_end = (
-                    date.fromisoformat(net_change.period_start)
-                    - timedelta(days=1)
+                    date.fromisoformat(net_change.period_start) - timedelta(days=1)
                 ).isoformat()
             except ValueError:
                 prior_period_end = None
@@ -1316,8 +1250,7 @@ def _statement_checks(
                 if beginning_cash is not None:
                     break
         if _bridge_required_for_period(period_end, periods) and any(
-            amount is not None
-            for amount in (beginning_cash, net_change, ending_cash)
+            amount is not None for amount in (beginning_cash, net_change, ending_cash)
         ):
             checks.append(
                 validate_cash_bridge(
@@ -1340,9 +1273,7 @@ def _statement_checks(
 
 def _concept_token(value: Any) -> str:
     return "".join(
-        character
-        for character in str(value or "").lower()
-        if character.isalnum()
+        character for character in str(value or "").lower() if character.isalnum()
     )
 
 
@@ -1467,6 +1398,10 @@ def _calculation_rollup_checks(
         tuple[str, str, str, str, str, str],
         tuple[str, ...],
     ] = {}
+    tolerated_disagreements: dict[
+        tuple[str, str, str, str, str, str],
+        Mapping[str, Any],
+    ] = {}
     for identity, children in list(grouped.items()):
         seen: set[tuple[str, Any, float]] = set()
         by_concept: dict[str, set[Any]] = {}
@@ -1480,23 +1415,89 @@ def _calculation_rollup_checks(
                 continue
             seen.add(occurrence)
             deduped.append((fact, weight))
-        # One concept contributes to a rollup once. If its occurrences disagree, which
-        # figure is correct is not something deterministic code can decide, so the
-        # rollup is reported ambiguous rather than summing both or guessing one.
+        # One concept contributes to a rollup once. Exact duplicates are already
+        # removed above. Differing occurrences are resolved only when their spread is
+        # immaterial to the unique parent total; otherwise the rollup remains ambiguous
+        # rather than summing both or guessing one.
+        conflicting_tokens = tuple(
+            sorted(token for token, values in by_concept.items() if len(values) > 1)
+        )
         conflicting = tuple(
-            sorted(
-                str(next(
+            str(
+                next(
                     fact.get("concept")
                     for fact, _ in children
                     if _concept_token(fact.get("concept")) == token
-                ))
-                for token, values in by_concept.items()
-                if len(values) > 1
+                )
             )
+            for token in conflicting_tokens
         )
-        if conflicting:
-            ambiguous_children[identity] = conflicting
-        grouped[identity] = deduped
+        if conflicting_tokens:
+            parent_facts = parents.get(identity, [])
+            parent_values = {
+                source_amount_from_statement_fact(fact).base_value
+                for fact in parent_facts
+            }
+            parent_amount = (
+                source_amount_from_statement_fact(parent_facts[0])
+                if parent_facts and len(parent_values) == 1
+                else None
+            )
+            spread_by_concept: dict[str, float] = {}
+            if parent_amount is not None:
+                for token, concept in zip(conflicting_tokens, conflicting):
+                    contributions = [
+                        source_amount_from_statement_fact(fact).base_value * weight
+                        for fact, weight in children
+                        if _concept_token(fact.get("concept")) == token
+                    ]
+                    spread_by_concept[concept] = max(contributions) - min(contributions)
+                tolerance = reconciliation_tolerance(
+                    parent_amount.base_value,
+                    parent_amount.base_value,
+                    monetary=parent_amount.monetary,
+                )
+                if all(
+                    spread <= tolerance
+                    or math.isclose(
+                        spread,
+                        tolerance,
+                        rel_tol=1e-12,
+                        abs_tol=1e-6,
+                    )
+                    for spread in spread_by_concept.values()
+                ):
+                    # The accession was already selected as the most complete
+                    # (statement, role, period) presentation above. Preserve the
+                    # existing dedupe winner—the first occurrence in that selected
+                    # presentation—and record the omitted occurrence separately.
+                    retained_tokens: set[str] = set()
+                    resolved_children: list[tuple[Mapping[str, Any], float]] = []
+                    for fact, weight in deduped:
+                        token = _concept_token(fact.get("concept"))
+                        if token in conflicting_tokens:
+                            if token in retained_tokens:
+                                continue
+                            retained_tokens.add(token)
+                        resolved_children.append((fact, weight))
+                    grouped[identity] = resolved_children
+                    tolerated_disagreements[identity] = {
+                        "parent_amount": parent_amount,
+                        "tolerance": tolerance,
+                        "spread_by_concept": spread_by_concept,
+                        "conflicting_concepts": conflicting,
+                        "conflicting_occurrences": tuple(
+                            (fact, weight)
+                            for fact, weight in children
+                            if _concept_token(fact.get("concept")) in conflicting_tokens
+                        ),
+                    }
+                else:
+                    ambiguous_children[identity] = conflicting
+            else:
+                ambiguous_children[identity] = conflicting
+        if identity not in tolerated_disagreements:
+            grouped[identity] = deduped
 
     # A comparative presentation may carry calculation children under a
     # filing-specific role namespace while omitting the instant root fact. Do not
@@ -1511,19 +1512,143 @@ def _calculation_rollup_checks(
             continue
         parent_facts = parents.get(identity, [])
         parent_values = {
-            source_amount_from_statement_fact(fact).base_value
-            for fact in parent_facts
+            source_amount_from_statement_fact(fact).base_value for fact in parent_facts
         }
         if len(parent_facts) == 1 or (
             len(parent_facts) > 1 and len(parent_values) == 1
         ):
-            available_parent_presentations.add(
-                _calculation_presentation_key(identity)
-            )
+            available_parent_presentations.add(_calculation_presentation_key(identity))
 
     checks: list[StatementCheckResult] = []
     for identity, children in sorted(grouped.items()):
         parent_facts = parents.get(identity, [])
+        if identity in tolerated_disagreements:
+            resolution = tolerated_disagreements[identity]
+            parent_amount = resolution["parent_amount"]
+            tolerance = float(resolution["tolerance"])
+            conflicting_occurrences = tuple(resolution["conflicting_occurrences"])
+            duplicate_amounts = tuple(
+                source_amount_from_statement_fact(fact)
+                for fact, _ in conflicting_occurrences
+            )
+            anchor = duplicate_amounts[0]
+            selected_fact_ids = {str(fact.get("fact_id") or "") for fact, _ in children}
+            retained_fact_ids = tuple(
+                amount.fact_id
+                for amount in duplicate_amounts
+                if amount.fact_id in selected_fact_ids
+            )
+            discarded_fact_ids = tuple(
+                amount.fact_id
+                for amount in duplicate_amounts
+                if amount.fact_id not in selected_fact_ids
+            )
+            resolution_metadata = {
+                "period_start": identity[1],
+                "parent_concept": identity[3],
+                "accession": identity[4],
+                "statement_role": identity[5],
+                "parent_total": parent_amount.base_value,
+                "materiality_denominator": "parent_total",
+                "tolerance": tolerance,
+                "spread_by_concept": dict(resolution["spread_by_concept"]),
+                "retained_fact_ids": list(retained_fact_ids),
+                "discarded_fact_ids": list(discarded_fact_ids),
+                "duplicate_occurrences": [
+                    {
+                        "fact_id": amount.fact_id,
+                        "value": amount.base_value,
+                        "weight": float(weight),
+                    }
+                    for (fact, weight), amount in zip(
+                        conflicting_occurrences,
+                        duplicate_amounts,
+                    )
+                ],
+                "resolution": (
+                    "retained the first occurrence from the selected complete "
+                    "presentation and omitted the other occurrence from the rollup"
+                ),
+            }
+            finding_identity = {
+                "type": "source_calculation_rollup_immaterial_duplicate",
+                "ticker": anchor.ticker,
+                "statement": identity[0],
+                "period_end": identity[2],
+                "parent_concept": identity[3],
+                "source_fact_ids": sorted(
+                    amount.fact_id for amount in duplicate_amounts
+                ),
+                "spread_by_concept": dict(resolution["spread_by_concept"]),
+            }
+            conflicting = tuple(resolution["conflicting_concepts"])
+            spread = max(
+                float(value) for value in resolution["spread_by_concept"].values()
+            )
+            description = (
+                f"These concepts appear multiple times under parent "
+                f"{identity[3]!r} with different values, but the largest "
+                f"spread ({spread:g}) is within the parent-relative tolerance "
+                f"of {tolerance:g} against parent total "
+                f"{parent_amount.base_value:g}. The first occurrence from the "
+                "selected complete presentation is retained for the rollup "
+                f"({', '.join(retained_fact_ids)}); the other occurrence is "
+                f"omitted and recorded ({', '.join(discarded_fact_ids)}): "
+                + ", ".join(conflicting)
+            )
+            finding = ReconciliationFinding(
+                finding_id=(
+                    "reconciliation:" + canonical_semantic_hash(finding_identity)
+                ),
+                ticker=anchor.ticker,
+                finding_type="source_calculation_rollup_immaterial_duplicate",
+                severity="warning",
+                title="Source calculation child has an immaterial duplicate presentation",
+                description=description,
+                canonical_key=identity[3],
+                statement=identity[0],
+                period_end=identity[2],
+                source_fact_ids=tuple(amount.fact_id for amount in duplicate_amounts),
+                source_locators=tuple(
+                    amount.source_locator
+                    for amount in duplicate_amounts
+                    if amount.source_locator
+                ),
+                observed_values={
+                    f"child:{amount.fact_id}": amount.base_value
+                    for amount in duplicate_amounts
+                },
+                tolerance=tolerance,
+                metadata=resolution_metadata,
+            )
+            resolved_check = validate_calculation_rollup(
+                parent=parent_amount,
+                components=tuple(
+                    source_amount_from_statement_fact(child) for child, _ in children
+                ),
+                weights=tuple(weight for _, weight in children),
+            )
+            if resolved_check.finding is not None:
+                checks.append(
+                    replace(
+                        resolved_check,
+                        finding=replace(
+                            resolved_check.finding,
+                            description=(
+                                f"{resolved_check.finding.description} "
+                                "The immaterial duplicate disagreement was "
+                                "resolved for the rollup and remains recorded."
+                            ),
+                            metadata={
+                                **dict(resolved_check.finding.metadata),
+                                "tolerated_duplicate": resolution_metadata,
+                            },
+                        ),
+                    )
+                )
+            else:
+                checks.append(replace(resolved_check, finding=finding))
+            continue
         if identity in ambiguous_children:
             child_amounts = tuple(
                 source_amount_from_statement_fact(child) for child, _ in children
@@ -1549,7 +1674,8 @@ def _calculation_rollup_checks(
                     source_fact_ids=tuple(a.fact_id for a in child_amounts),
                     finding=ReconciliationFinding(
                         finding_id=(
-                            "reconciliation:" + canonical_semantic_hash(finding_identity)
+                            "reconciliation:"
+                            + canonical_semantic_hash(finding_identity)
                         ),
                         ticker=anchor.ticker,
                         finding_type="source_calculation_rollup_not_ready",
@@ -1601,8 +1727,7 @@ def _calculation_rollup_checks(
                 parent_facts = parent_facts[:1]
         if len(parent_facts) != 1:
             child_amounts = tuple(
-                source_amount_from_statement_fact(child)
-                for child, _ in children
+                source_amount_from_statement_fact(child) for child, _ in children
             )
             anchor = child_amounts[0]
             finding_identity = {
@@ -1612,9 +1737,7 @@ def _calculation_rollup_checks(
                 "period_start": identity[1],
                 "period_end": identity[2],
                 "parent_concept": identity[3],
-                "child_fact_ids": sorted(
-                    amount.fact_id for amount in child_amounts
-                ),
+                "child_fact_ids": sorted(amount.fact_id for amount in child_amounts),
                 "parent_fact_count": len(parent_facts),
             }
             checks.append(
@@ -1625,23 +1748,16 @@ def _calculation_rollup_checks(
                     actual_value=None,
                     difference=None,
                     tolerance=None,
-                    source_fact_ids=tuple(
-                        amount.fact_id for amount in child_amounts
-                    ),
+                    source_fact_ids=tuple(amount.fact_id for amount in child_amounts),
                     finding=ReconciliationFinding(
                         finding_id=(
                             "reconciliation:"
                             + canonical_semantic_hash(finding_identity)
                         ),
                         ticker=anchor.ticker,
-                        finding_type=(
-                            "source_calculation_rollup_not_ready"
-                        ),
+                        finding_type=("source_calculation_rollup_not_ready"),
                         severity="warning",
-                        title=(
-                            "Source calculation parent is not uniquely "
-                            "available"
-                        ),
+                        title=("Source calculation parent is not uniquely available"),
                         description=(
                             "The attested calculation inventory names "
                             f"parent {identity[3]!r}, but the selected "
@@ -1662,9 +1778,7 @@ def _calculation_rollup_checks(
                         observed_values={
                             "parent_fact_count": len(parent_facts),
                             **{
-                                f"child:{amount.fact_id}": (
-                                    amount.base_value
-                                )
+                                f"child:{amount.fact_id}": (amount.base_value)
                                 for amount in child_amounts
                             },
                         },
@@ -1684,8 +1798,7 @@ def _calculation_rollup_checks(
             validate_calculation_rollup(
                 parent=source_amount_from_statement_fact(parent_fact),
                 components=tuple(
-                    source_amount_from_statement_fact(child)
-                    for child, _ in children
+                    source_amount_from_statement_fact(child) for child, _ in children
                 ),
                 weights=tuple(weight for _, weight in children),
             )
@@ -1706,10 +1819,7 @@ def assess_persisted_statement_facts(
         expected_quantities=expected_quantities,
     )
     selected_facts = _selected_consolidated_xbrl_facts(facts)
-    amounts = tuple(
-        source_amount_from_statement_fact(fact)
-        for fact in selected_facts
-    )
+    amounts = tuple(source_amount_from_statement_fact(fact) for fact in selected_facts)
     annual_count, complete_periods = _annual_period_count(
         selected_facts,
         approved_treatments=approved_treatments,
@@ -1740,9 +1850,7 @@ def assess_persisted_statement_facts(
         readiness,
         status="blocked",
         decision_grade=False,
-        reason_codes=tuple(
-            dict.fromkeys([*readiness.reason_codes, *semantic_reasons])
-        ),
+        reason_codes=tuple(dict.fromkeys([*readiness.reason_codes, *semantic_reasons])),
     )
 
 
@@ -1761,9 +1869,7 @@ def _persist_findings(
         for finding in findings:
             dedupe_key = canonical_semantic_hash(
                 {
-                    "contract_version": (
-                        _RECONCILIATION_CONTRACT_VERSION
-                    ),
+                    "contract_version": (_RECONCILIATION_CONTRACT_VERSION),
                     "ticker": ticker,
                     "selected_view_hash": selected_view_hash,
                     "finding_id": finding.finding_id,
@@ -1773,23 +1879,16 @@ def _persist_findings(
             payload = finding.as_queue_payload()
             payload["metadata"] = {
                 **dict(payload.get("metadata") or {}),
-                "reconciliation_contract_version": (
-                    _RECONCILIATION_CONTRACT_VERSION
-                ),
+                "reconciliation_contract_version": (_RECONCILIATION_CONTRACT_VERSION),
                 "selected_view_hash": selected_view_hash,
             }
             if not payload.get("evidence_anchor_ids"):
                 payload["evidence_anchor_ids"] = [
-                    "statement-manifest:"
-                    f"{selected_view_hash}:{finding.finding_id}"
+                    f"statement-manifest:{selected_view_hash}:{finding.finding_id}"
                 ]
-            queue_item = PMDecisionQueueItem.model_validate(
-                payload
-            )
+            queue_item = PMDecisionQueueItem.model_validate(payload)
             row = queue_item.model_dump(mode="json")
-            row["valuation_impact_bucket"] = (
-                "high" if finding.blocking else "medium"
-            )
+            row["valuation_impact_bucket"] = "high" if finding.blocking else "medium"
             row["dedupe_key"] = dedupe_key
             ids.append(
                 insert_pm_decision_queue_item(
@@ -1846,10 +1945,7 @@ def _resolve_evidence_cutoff(
                 or manifest.get("evidence_cutoff")
                 for manifest in manifests
             ],
-            *[
-                fact.get("filing_date") or fact.get("period_end")
-                for fact in facts
-            ],
+            *[fact.get("filing_date") or fact.get("period_end") for fact in facts],
         )
         if value
     ]
@@ -1863,9 +1959,7 @@ def _fact_identity_payload(
 ) -> dict[str, Any]:
     return {
         "fact_id": str(fact.get("fact_id") or ""),
-        "ingestion_fingerprint": str(
-            fact.get("ingestion_fingerprint") or ""
-        ),
+        "ingestion_fingerprint": str(fact.get("ingestion_fingerprint") or ""),
         "source": str(fact.get("source") or ""),
         "source_run_id": fact.get("source_run_id"),
         "accession": fact.get("accession"),
@@ -1877,12 +1971,8 @@ def _fact_identity_payload(
         "unit": fact.get("unit"),
         "currency": fact.get("currency"),
         "scale_factor": fact.get("scale_factor"),
-        "statement_role": (
-            (fact.get("hierarchy") or {}).get("statement_role")
-        ),
-        "presentation_path": (
-            (fact.get("hierarchy") or {}).get("presentation_path")
-        ),
+        "statement_role": ((fact.get("hierarchy") or {}).get("statement_role")),
+        "presentation_path": ((fact.get("hierarchy") or {}).get("presentation_path")),
         "context_ref": fact.get("context_ref")
         or (fact.get("context") or {}).get("context_ref"),
     }
@@ -1915,9 +2005,7 @@ def reconcile_ticker_statements(
             manifest
             for manifest in all_manifests
             if str(
-                (manifest.get("_store") or {}).get(
-                    "evidence_cutoff"
-                )
+                (manifest.get("_store") or {}).get("evidence_cutoff")
                 or manifest.get("evidence_cutoff")
                 or ""
             )
@@ -1934,10 +2022,7 @@ def reconcile_ticker_statements(
     raw_facts = _facts_as_of(all_facts, as_of_date)
     raw_ledger_hash = canonical_semantic_hash(
         sorted(
-            (
-                _fact_identity_payload(fact)
-                for fact in raw_facts
-            ),
+            (_fact_identity_payload(fact) for fact in raw_facts),
             key=lambda item: (
                 item["source"],
                 item["fact_id"],
@@ -1970,18 +2055,13 @@ def reconcile_ticker_statements(
             "ticker": normalized_ticker,
             "as_of_date": as_of_date,
             "manifest_ids": manifest_ids,
-            "facts": [
-                _fact_identity_payload(fact)
-                for fact in selected_facts
-            ],
+            "facts": [_fact_identity_payload(fact) for fact in selected_facts],
         }
     )
     source_families = {
         (
             "ciq"
-            if str(manifest.get("source") or "")
-            .lower()
-            .startswith("ciq")
+            if str(manifest.get("source") or "").lower().startswith("ciq")
             else "xbrl"
         )
         for manifest in manifests

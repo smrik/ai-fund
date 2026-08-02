@@ -34,9 +34,7 @@ def _fact(
     accession: str | None = "000-test-filing",
     filing_date: str = "2026-02-01",
 ) -> dict[str, object]:
-    identity = (
-        f"{source}:{concept}:{period_start or 'instant'}:{period_end}:{suffix}"
-    )
+    identity = f"{source}:{concept}:{period_start or 'instant'}:{period_end}:{suffix}"
     return {
         "fact_id": identity,
         "ingestion_fingerprint": f"fingerprint:{identity}",
@@ -227,9 +225,7 @@ def _ready_facts() -> list[dict[str, object]]:
             )
         )
     xbrl_facts = tuple(
-        fact
-        for fact in facts
-        if str(fact["source"]).startswith("sec_xbrl")
+        fact for fact in facts if str(fact["source"]).startswith("sec_xbrl")
     )
     for fact in xbrl_facts:
         source_value = float(fact["numeric_value"])
@@ -244,9 +240,7 @@ def _ready_facts() -> list[dict[str, object]]:
                 statement=str(fact["statement"]),
                 period_kind=str(fact["period_kind"]),
                 period_start=(
-                    str(fact["period_start"])
-                    if fact.get("period_start")
-                    else None
+                    str(fact["period_start"]) if fact.get("period_start") else None
                 ),
                 period_end=str(fact["period_end"]),
                 suffix=f"mirror-{fact['fact_id']}",
@@ -314,11 +308,7 @@ def _additional_annual_facts(
             _fact(
                 source="ciq_workbook_v1",
                 concept=concept,
-                value=(
-                    -value
-                    if canonical_statement_key(concept) == "capex"
-                    else value
-                )
+                value=(-value if canonical_statement_key(concept) == "capex" else value)
                 / 1_000_000.0,
                 scale_factor=1_000_000.0,
                 statement=statement,
@@ -360,9 +350,7 @@ def _ciq_mirrors_for_run(
                 statement=str(fact["statement"]),
                 period_kind=str(fact["period_kind"]),
                 period_start=(
-                    str(fact["period_start"])
-                    if fact.get("period_start")
-                    else None
+                    str(fact["period_start"]) if fact.get("period_start") else None
                 ),
                 period_end=str(fact["period_end"]),
                 suffix=f"run-{source_run_id}-{fact['fact_id']}",
@@ -438,16 +426,8 @@ def _persist_complete_manifests(
             ),
             "ticker": "TEST",
             "source": source,
-            "source_run_id": (
-                ciq_source_run_id
-                if source.startswith("ciq")
-                else None
-            ),
-            "accession": (
-                "000-test-filing"
-                if source.startswith("sec_xbrl")
-                else None
-            ),
+            "source_run_id": (ciq_source_run_id if source.startswith("ciq") else None),
+            "accession": ("000-test-filing" if source.startswith("sec_xbrl") else None),
             "status": "completed",
             "evidence_cutoff": evidence_cutoff,
             "as_of_date": evidence_cutoff,
@@ -459,65 +439,38 @@ def _persist_complete_manifests(
                     "role:IncomeStatement",
                 ],
                 "covered_statement_roles": sorted(
-                    {
-                        str(entry["statement_role"])
-                        for entry in entries.values()
-                    }
+                    {str(entry["statement_role"]) for entry in entries.values()}
                 ),
             },
             "calculation_edges": (
                 [
                     {
-                        "statement_role": (
-                            dict(fact["hierarchy"])[
-                                "statement_role"
-                            ]
-                        ),
+                        "statement_role": (dict(fact["hierarchy"])["statement_role"]),
                         "parent_concept": (
-                            dict(fact["hierarchy"])[
-                                "calculation_parent"
-                            ]
+                            dict(fact["hierarchy"])["calculation_parent"]
                         ),
                         "child_concept": fact["concept"],
-                        "weight": (
-                            dict(fact["hierarchy"])[
-                                "calculation_weight"
-                            ]
-                        ),
+                        "weight": (dict(fact["hierarchy"])["calculation_weight"]),
                     }
                     for fact in source_facts
-                    if dict(fact["hierarchy"]).get(
-                        "calculation_parent"
-                    )
-                    and dict(fact["hierarchy"]).get(
-                        "calculation_weight"
-                    )
-                    is not None
+                    if dict(fact["hierarchy"]).get("calculation_parent")
+                    and dict(fact["hierarchy"]).get("calculation_weight") is not None
                 ]
                 if source.startswith("sec_xbrl")
                 else []
             ),
             "errors": [],
         }
-        if (
-            source.startswith("sec_xbrl")
-            and not include_calculation_inventory
-        ):
+        if source.startswith("sec_xbrl") and not include_calculation_inventory:
             payload.pop("calculation_edges")
         payload["manifest_id"] = _manifest_id(payload)
         manifest_ids.append(
             persist_statement_source_manifest(
                 conn,
                 payload,
-                source_run_id=(
-                    ciq_source_run_id
-                    if source.startswith("ciq")
-                    else None
-                ),
+                source_run_id=(ciq_source_run_id if source.startswith("ciq") else None),
                 accession=(
-                    "000-test-filing"
-                    if source.startswith("sec_xbrl")
-                    else None
+                    "000-test-filing" if source.startswith("sec_xbrl") else None
                 ),
             )
         )
@@ -549,14 +502,17 @@ def test_service_builds_decision_grade_statement_readiness() -> None:
     assert set(result.manifest_ids) == set(manifest_ids)
     assert result.selected_fact_ids
     assert result.run_hash
-    assert conn.execute(
-        """
+    assert (
+        conn.execute(
+            """
         SELECT COUNT(*)
         FROM valuation_statement_reconciliation_runs
         WHERE run_hash = ?
         """,
-        (result.run_hash,),
-    ).fetchone()[0] == 1
+            (result.run_hash,),
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_service_persists_material_source_disagreement_once() -> None:
@@ -589,16 +545,19 @@ def test_service_persists_material_source_disagreement_once() -> None:
     assert first.readiness.status == "blocked"
     assert len(first.persisted_queue_item_ids) == 1
     assert second.persisted_queue_item_ids == first.persisted_queue_item_ids
-    assert conn.execute(
-        "SELECT COUNT(*) FROM pm_decision_queue_items"
-    ).fetchone()[0] == 1
-    assert conn.execute(
-        """
+    assert (
+        conn.execute("SELECT COUNT(*) FROM pm_decision_queue_items").fetchone()[0] == 1
+    )
+    assert (
+        conn.execute(
+            """
         SELECT COUNT(*)
         FROM pm_decision_queue_items
         WHERE dedupe_key IS NOT NULL
         """
-    ).fetchone()[0] == 1
+        ).fetchone()[0]
+        == 1
+    )
 
 
 def test_corrected_view_supersedes_old_finding_and_recurrence_is_new() -> None:
@@ -620,9 +579,7 @@ def test_corrected_view_supersedes_old_finding_and_recurrence_is_new() -> None:
     first_id = first.persisted_queue_item_ids[0]
 
     xbrl = [
-        fact
-        for fact in _ready_facts()
-        if str(fact["source"]).startswith("sec_xbrl")
+        fact for fact in _ready_facts() if str(fact["source"]).startswith("sec_xbrl")
     ]
     corrected = _ciq_mirrors_for_run(xbrl, source_run_id=18)
     insert_statement_facts(conn, corrected)
@@ -640,10 +597,13 @@ def test_corrected_view_supersedes_old_finding_and_recurrence_is_new() -> None:
 
     assert clean.readiness.status == "decision_grade"
     assert clean.persisted_queue_item_ids == ()
-    assert conn.execute(
-        "SELECT status FROM pm_decision_queue_items WHERE id = ?",
-        (first_id,),
-    ).fetchone()[0] == "superseded"
+    assert (
+        conn.execute(
+            "SELECT status FROM pm_decision_queue_items WHERE id = ?",
+            (first_id,),
+        ).fetchone()[0]
+        == "superseded"
+    )
 
     recurring = _ciq_mirrors_for_run(
         xbrl,
@@ -666,13 +626,16 @@ def test_corrected_view_supersedes_old_finding_and_recurrence_is_new() -> None:
     assert third.readiness.status == "blocked"
     assert len(third.persisted_queue_item_ids) == 1
     assert third.persisted_queue_item_ids[0] != first_id
-    assert conn.execute(
-        """
+    assert (
+        conn.execute(
+            """
         SELECT COUNT(*)
         FROM pm_decision_queue_items
         WHERE profile_name = 'statement_reconciliation'
         """,
-    ).fetchone()[0] == 2
+        ).fetchone()[0]
+        == 2
+    )
 
 
 def test_sparse_rows_and_company_facts_cannot_attest_complete_statements() -> None:
@@ -705,9 +668,7 @@ def test_sparse_rows_and_company_facts_cannot_attest_complete_statements() -> No
     assert result.readiness.status == "provisional"
     assert result.readiness.annual_period_count == 0
     assert "insufficient_annual_history" in result.readiness.reason_codes
-    assert "complete_presentation_history_missing" in (
-        result.readiness.reason_codes
-    )
+    assert "complete_presentation_history_missing" in (result.readiness.reason_codes)
 
 
 def test_service_executes_available_xbrl_calculation_rollups() -> None:
@@ -719,9 +680,7 @@ def test_service_executes_available_xbrl_calculation_rollups() -> None:
         ):
             fact["hierarchy"] = {
                 **dict(fact["hierarchy"]),
-                "calculation_parent": (
-                    "NetCashProvidedByUsedInOperatingActivities"
-                ),
+                "calculation_parent": ("NetCashProvidedByUsedInOperatingActivities"),
                 "calculation_weight": 1.0,
             }
 
@@ -738,9 +697,7 @@ def test_service_executes_available_xbrl_calculation_rollups() -> None:
     ]
     assert len(rollups) == 3
     assert all(check.status == "fail" for check in rollups)
-    assert "source_calculation_rollup_failed" in (
-        result.readiness.reason_codes
-    )
+    assert "source_calculation_rollup_failed" in (result.readiness.reason_codes)
     assert result.readiness.status == "blocked"
 
 
@@ -836,12 +793,14 @@ def test_calculation_edges_are_bound_to_the_fact_filing_vintage() -> None:
 
     selected = _apply_manifest_calculation_edges(facts, manifests)
 
-    assert [
-        fact["hierarchy"]["calculation_parent"] for fact in selected
-    ] == ["Parent2024", "Parent2025"]
-    assert [
-        fact["hierarchy"]["calculation_manifest_id"] for fact in selected
-    ] == ["manifest-2024", "manifest-2025"]
+    assert [fact["hierarchy"]["calculation_parent"] for fact in selected] == [
+        "Parent2024",
+        "Parent2025",
+    ]
+    assert [fact["hierarchy"]["calculation_manifest_id"] for fact in selected] == [
+        "manifest-2024",
+        "manifest-2025",
+    ]
 
 
 def test_calculation_rollups_do_not_mix_comparative_filing_vintages() -> None:
@@ -897,10 +856,7 @@ def test_calculation_rollups_do_not_mix_comparative_filing_vintages() -> None:
 def test_attested_calculation_edge_with_missing_parent_is_not_silent() -> None:
     facts = _ready_facts()
     for fact in facts:
-        if (
-            fact["period_end"] == "2025-12-31"
-            and fact["concept"] == "NetIncome"
-        ):
+        if fact["period_end"] == "2025-12-31" and fact["concept"] == "NetIncome":
             fact["hierarchy"] = {
                 **dict(fact["hierarchy"]),
                 "calculation_parent": "MissingGrossProfitParent",
@@ -920,9 +876,7 @@ def test_attested_calculation_edge_with_missing_parent_is_not_silent() -> None:
     ]
     assert len(rollups) == 3
     assert all(check.status == "not_ready" for check in rollups)
-    assert "source_calculation_rollup_not_ready" in (
-        result.readiness.reason_codes
-    )
+    assert "source_calculation_rollup_not_ready" in (result.readiness.reason_codes)
     assert len(result.persisted_queue_item_ids) == 3
     assert result.readiness.status == "provisional"
 
@@ -944,8 +898,7 @@ def test_manifest_inventory_prevents_single_revenue_false_pass() -> None:
     facts = [
         fact
         for fact in _ready_facts()
-        if fact["source"] != "ciq_workbook_v1"
-        or fact["concept"] == "Revenue"
+        if fact["source"] != "ciq_workbook_v1" or fact["concept"] == "Revenue"
     ]
 
     result = reconcile_ticker_statements(
@@ -1052,10 +1005,7 @@ def test_evidence_cutoff_excludes_later_filing_and_manifest() -> None:
 def test_ltm_roles_from_different_windows_are_not_unioned() -> None:
     facts = _ready_facts()
     for fact in facts:
-        if (
-            fact["concept"] == "NetIncome"
-            and fact["period_kind"] == "ltm"
-        ):
+        if fact["concept"] == "NetIncome" and fact["period_kind"] == "ltm":
             fact["period_start"] = "2025-01-01"
             fact["period_end"] = "2025-12-31"
 
@@ -1193,7 +1143,9 @@ def test_orphaned_incomplete_manifest_cannot_poison_attestation() -> None:
         "child_concept": "us-gaap_AssetsCurrent",
         "weight": 1.0,
     }
-    fresh = _manifest(accession="0000950170-25-100235", entries=[complete_entry], edges=[edge])
+    fresh = _manifest(
+        accession="0000950170-25-100235", entries=[complete_entry], edges=[edge]
+    )
     orphan = _manifest(
         accession="0001564590-21-039151",
         # Stale format: no `statement` key, so the contract cannot be satisfied.
@@ -1308,9 +1260,13 @@ def test_repeated_parent_presentation_does_not_block_rollup() -> None:
     assert len(checks) == 1
     # 323,144,000 + 1,104,345,000 == 1,427,489,000 exactly.
     assert checks[0].status == "pass"
+    assert checks[0].finding is None
+    assert checks[0].source_fact_ids == ("p1", "c1", "c2")
 
 
-def test_abbreviated_comparative_balance_sheet_reuses_complete_parent_presentation() -> None:
+def test_abbreviated_comparative_balance_sheet_reuses_complete_parent_presentation() -> (
+    None
+):
     """A filing-specific role must not orphan an instant root fact.
 
     MSFT's later balance-sheet filings carry calculation children for the prior
@@ -1321,12 +1277,10 @@ def test_abbreviated_comparative_balance_sheet_reuses_complete_parent_presentati
 
     period = "2022-06-30"
     complete_role = (
-        "http://www.microsoft.com/20230630/taxonomy/role/"
-        "Role_StatementBALANCESHEETS"
+        "http://www.microsoft.com/20230630/taxonomy/role/Role_StatementBALANCESHEETS"
     )
     abbreviated_role = (
-        "http://www.microsoft.com/20240630/taxonomy/role/"
-        "Role_StatementBALANCESHEETS"
+        "http://www.microsoft.com/20240630/taxonomy/role/Role_StatementBALANCESHEETS"
     )
     complete_accession = "0000950170-23-035122"
     abbreviated_accession = "0000950170-24-087843"
@@ -1438,15 +1392,21 @@ def test_rollup_never_mixes_filing_vintages() -> None:
                 concept=_ROLLUP_PARENT, value=1_427_489_000.0, fact_id=f"{accession}-p"
             ),
             _rollup_fact(
-                concept="us-gaap_Liabilities", value=323_144_000.0,
-                fact_id=f"{accession}-c1", parent=_ROLLUP_PARENT, weight=1.0,
+                concept="us-gaap_Liabilities",
+                value=323_144_000.0,
+                fact_id=f"{accession}-c1",
+                parent=_ROLLUP_PARENT,
+                weight=1.0,
             ),
         ]
         if complete:
             facts.append(
                 _rollup_fact(
-                    concept=equity, value=1_104_345_000.0,
-                    fact_id=f"{accession}-c2", parent=_ROLLUP_PARENT, weight=1.0,
+                    concept=equity,
+                    value=1_104_345_000.0,
+                    fact_id=f"{accession}-c2",
+                    parent=_ROLLUP_PARENT,
+                    weight=1.0,
                 )
             )
         for fact in facts:
@@ -1483,7 +1443,9 @@ def test_repeated_child_presentation_is_one_component() -> None:
         _calculation_rollup_checks,
     )
 
-    equity = "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"
+    equity = (
+        "us-gaap_StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest"
+    )
     facts = [
         _rollup_fact(concept=_ROLLUP_PARENT, value=1_427_489_000.0, fact_id="p1"),
         _rollup_fact(
@@ -1494,13 +1456,19 @@ def test_repeated_child_presentation_is_one_component() -> None:
             weight=1.0,
         ),
         _rollup_fact(
-            concept=equity, value=1_104_345_000.0, fact_id="c2",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept=equity,
+            value=1_104_345_000.0,
+            fact_id="c2",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
         # Same concept, same amount, second presentation occurrence.
         _rollup_fact(
-            concept=equity, value=1_104_345_000.0, fact_id="c3",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept=equity,
+            value=1_104_345_000.0,
+            fact_id="c3",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
     ]
 
@@ -1520,12 +1488,18 @@ def test_distinct_children_sharing_a_value_are_both_counted() -> None:
     facts = [
         _rollup_fact(concept=_ROLLUP_PARENT, value=200_000_000.0, fact_id="p1"),
         _rollup_fact(
-            concept="us-gaap_Liabilities", value=100_000_000.0, fact_id="c1",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept="us-gaap_Liabilities",
+            value=100_000_000.0,
+            fact_id="c1",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
         _rollup_fact(
-            concept="us-gaap_StockholdersEquity", value=100_000_000.0, fact_id="c2",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept="us-gaap_StockholdersEquity",
+            value=100_000_000.0,
+            fact_id="c2",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
     ]
 
@@ -1609,9 +1583,9 @@ def test_treatment_for_another_key_or_ticker_does_not_unblock() -> None:
     superseded = ({"ticker": "MSFT", "canonical_key": "da", "active": 0},)
 
     for treatments in (wrong_key, wrong_ticker, superseded):
-        assert _semantic_source_reason_codes(
-            facts, approved_treatments=treatments
-        ) == ("pure_da_evidence_missing",)
+        assert _semantic_source_reason_codes(facts, approved_treatments=treatments) == (
+            "pure_da_evidence_missing",
+        )
 
 
 # ------------------------------------------- PM decision: combined D&A sources from CIQ
@@ -1646,9 +1620,7 @@ def test_combined_da_line_sources_da_from_ciq_when_available() -> None:
     )
 
     combined_only = [_cf_fact("msft_DepreciationAmortizationAndOther")]
-    assert _semantic_source_reason_codes(combined_only) == (
-        "pure_da_evidence_missing",
-    )
+    assert _semantic_source_reason_codes(combined_only) == ("pure_da_evidence_missing",)
 
     with_ciq = [*combined_only, _ciq_fact("da")]
     assert _semantic_source_reason_codes(with_ciq) == ()
@@ -1666,42 +1638,159 @@ def test_combined_da_still_blocks_when_ciq_has_no_da_either() -> None:
     assert _semantic_source_reason_codes(facts) == ("pure_da_evidence_missing",)
 
 
-def test_conflicting_occurrences_of_one_child_are_ambiguous_not_a_sum() -> None:
-    """One concept contributes to a rollup once — a balance-sheet line appears once.
-
-    MSFT presents `us-gaap_CommercialPaper` twice at 2024-06-30 with different values
-    (6,700,000,000 and 6,693,000,000). Summing both double-counted the line and failed
-    the rollup by exactly the extra occurrence. Which figure is correct is not something
-    deterministic code can decide, so the check reports ambiguity rather than guessing
-    or manufacturing a failure.
-    """
+def test_immaterial_conflicting_occurrences_resolve_and_remain_visible() -> None:
+    """A parent-relative immaterial spread resolves without double-counting."""
 
     from src.stage_04_pipeline.statement_reconciliation_service import (
         _calculation_rollup_checks,
     )
 
     facts = [
-        _rollup_fact(concept=_ROLLUP_PARENT, value=100_000_000.0, fact_id="p1"),
         _rollup_fact(
-            concept="us-gaap_Liabilities", value=93_300_000.0, fact_id="c1",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept=_ROLLUP_PARENT,
+            value=125_286_000_000.0,
+            fact_id="p1",
         ),
         _rollup_fact(
-            concept="us-gaap_CommercialPaper", value=6_700_000.0, fact_id="c2",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept="us-gaap_Liabilities",
+            value=118_586_000_000.0,
+            fact_id="c1",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
         _rollup_fact(
-            concept="us-gaap_CommercialPaper", value=6_693_000.0, fact_id="c3",
-            parent=_ROLLUP_PARENT, weight=1.0,
+            concept="us-gaap_CommercialPaper",
+            value=6_700_000_000.0,
+            fact_id="c2",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+        _rollup_fact(
+            concept="us-gaap_CommercialPaper",
+            value=6_693_000_000.0,
+            fact_id="c3",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
         ),
     ]
 
     checks = _calculation_rollup_checks(facts=facts, eligible_periods={"2022-05-28"})
 
     assert len(checks) == 1
-    assert checks[0].status == "not_ready"
-    assert checks[0].finding is not None
-    assert "CommercialPaper" in checks[0].finding.description
+    check = checks[0]
+    assert check.status == "pass"
+    assert check.source_fact_ids == ("p1", "c1", "c2")
+    assert check.finding is not None
+    assert (
+        check.finding.finding_type == "source_calculation_rollup_immaterial_duplicate"
+    )
+    assert "CommercialPaper" in check.finding.description
+    assert check.finding.source_fact_ids == ("c2", "c3")
+    assert check.finding.observed_values["child:c2"] == 6_700_000_000.0
+    assert check.finding.observed_values["child:c3"] == 6_693_000_000.0
+    assert check.finding.metadata["parent_total"] == 125_286_000_000.0
+    assert check.finding.metadata["spread_by_concept"]["us-gaap_CommercialPaper"] == (
+        7_000_000.0
+    )
+
+
+def test_material_conflicting_occurrences_remain_not_ready_and_name_concept() -> None:
+    """A duplicate spread outside the parent tolerance still blocks the rollup."""
+
+    facts = [
+        _rollup_fact(concept=_ROLLUP_PARENT, value=100_000_000.0, fact_id="p1"),
+        _rollup_fact(
+            concept="us-gaap_Liabilities",
+            value=93_300_000.0,
+            fact_id="c1",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+        _rollup_fact(
+            concept="us-gaap_MaterialRepeatedChild",
+            value=6_700_000.0,
+            fact_id="c2",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+        _rollup_fact(
+            concept="us-gaap_MaterialRepeatedChild",
+            value=4_700_000.0,
+            fact_id="c3",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+    ]
+
+    checks = _calculation_rollup_checks(
+        facts=facts,
+        eligible_periods={"2022-05-28"},
+    )
+
+    assert len(checks) == 1
+    check = checks[0]
+    assert check.status == "not_ready"
+    assert check.finding is not None
+    assert check.finding.finding_type == "source_calculation_rollup_not_ready"
+    assert "us-gaap_MaterialRepeatedChild" in check.finding.description
+    assert set(check.finding.source_fact_ids) == {"c1", "c2", "c3"}
+
+
+def test_tolerated_duplicate_is_visible_in_readiness_output() -> None:
+    """The reconciliation result carries the resolved disagreement as a finding."""
+
+    from src.stage_04_pipeline.statement_reconciliation_service import (
+        assess_persisted_statement_facts,
+    )
+
+    facts = _ready_facts()
+    rollup_facts = [
+        _rollup_fact(
+            concept=_ROLLUP_PARENT,
+            value=100_000_000.0,
+            fact_id="run-p1",
+        ),
+        _rollup_fact(
+            concept="us-gaap_Liabilities",
+            value=93_300_000.0,
+            fact_id="run-c1",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+        _rollup_fact(
+            concept="us-gaap_ReadableRepeatedChild",
+            value=6_700_000.0,
+            fact_id="run-c2",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+        _rollup_fact(
+            concept="us-gaap_ReadableRepeatedChild",
+            value=6_693_000.0,
+            fact_id="run-c3",
+            parent=_ROLLUP_PARENT,
+            weight=1.0,
+        ),
+    ]
+    for fact in rollup_facts:
+        fact["period_end"] = "2025-12-31"
+    facts.extend(rollup_facts)
+
+    result = assess_persisted_statement_facts(facts)
+
+    findings = [
+        finding
+        for finding in result.findings
+        if finding.finding_type == "source_calculation_rollup_immaterial_duplicate"
+    ]
+    assert "source_calculation_rollup_not_ready" not in result.reason_codes
+    assert len(findings) == 1
+    payload = findings[0].as_queue_payload()
+    metadata = payload["metadata"]["finding_metadata"]
+    assert metadata["parent_total"] == 100_000_000.0
+    assert metadata["spread_by_concept"]["us-gaap_ReadableRepeatedChild"] == (7_000.0)
+    assert metadata["retained_fact_ids"] == ["run-c2"]
+    assert metadata["discarded_fact_ids"] == ["run-c3"]
 
 
 def test_ltm_expectation_skipped_when_a_later_annual_period_exists() -> None:
@@ -1798,10 +1887,7 @@ def test_ltm_combined_da_without_approved_ciq_source_remains_unavailable() -> No
         _ltm_status,
     )
 
-    assert (
-        _ltm_status(_combined_da_ltm_facts(include_ciq_da=False))
-        == "unavailable"
-    )
+    assert _ltm_status(_combined_da_ltm_facts(include_ciq_da=False)) == "unavailable"
 
 
 def test_ltm_combined_da_keeps_both_source_values_visible() -> None:
