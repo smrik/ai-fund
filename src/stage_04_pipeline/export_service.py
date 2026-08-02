@@ -1785,11 +1785,14 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         row["field"]: row.get("effective_value")
         for row in workbench.get("fields") or []
     }
-    source_lineage = {
-        row["field"]: row.get("effective_source")
-        for row in workbench.get("fields") or []
-        if row.get("effective_source")
-    }
+    source_lineage = dict(workbench.get("source_lineage") or {})
+    source_lineage.update(
+        {
+            row["field"]: row.get("effective_source")
+            for row in workbench.get("fields") or []
+            if row.get("effective_source")
+        }
+    )
     scenario_map = {
         str(row.get("scenario") or "").lower(): {
             "probability": row.get("probability"),
@@ -1862,8 +1865,16 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "sensitivity": dcf.get("sensitivity") or {},
         "terminal": dcf.get("terminal_bridge") or {},
         "health_flags": dcf.get("health_flags") or {},
+        "valuation_status": dcf.get("valuation_status") or "provisional",
+        "valuation_output_mode": dcf.get("valuation_output_mode") or "shadow_preview",
+        "valuation_readiness": dcf.get("valuation_readiness") or {},
         "forecast_bridge": dcf.get("forecast_bridge") or [],
         "source_lineage": source_lineage,
+        "judgment_driver_verdicts": (
+            workbench.get("judgment_driver_verdicts")
+            or dcf.get("judgment_driver_verdicts")
+            or []
+        ),
         "default_resolution": workbench.get("default_resolution") or {},
         "ciq_lineage": ciq_lineage,
         "comps_detail": {

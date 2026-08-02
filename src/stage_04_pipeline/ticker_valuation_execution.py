@@ -28,6 +28,7 @@ from src.contracts.valuation_readiness import (
     LTMStatus,
     ReconciliationGateStatus,
     ValuationReadinessEvidence,
+    assess_judgment_driver_provenance,
 )
 from src.stage_02_valuation.approved_case_replay import (
     ApprovedValuationReplayResult,
@@ -179,6 +180,18 @@ def build_valuation_readiness(
     treatment_hashes = _treatment_hashes(
         tuple(snapshot.approved_treatments)
     )
+    market_inputs = snapshot.market_inputs if isinstance(snapshot.market_inputs, Mapping) else {}
+    source_lineage = market_inputs.get("source_lineage")
+    base_drivers = market_inputs.get("base_drivers")
+    judgment_driver_verdicts = assess_judgment_driver_provenance(
+        source_lineage if isinstance(source_lineage, Mapping) else {},
+        approved_family_hashes=approved_family_hashes,
+        used_fields=(
+            base_drivers.keys()
+            if isinstance(base_drivers, Mapping)
+            else None
+        ),
+    )
     return ValuationReadinessEvidence(
         statement_reconciliation=_gate(
             statement_run.readiness.status,
@@ -239,6 +252,7 @@ def build_valuation_readiness(
             )
             or 0
         ),
+        judgment_driver_verdicts=judgment_driver_verdicts,
     )
 
 

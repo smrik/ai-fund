@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Collection, Mapping
 from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from src.contracts.assumption_registry import DriverFamily
+from src.contracts.assumption_registry import (
+    ASSUMPTION_REGISTRY,
+    DriverFamily,
+    judgment_owned_fields,
+)
 from src.contracts.judgment_runs import canonical_semantic_hash
 
 
@@ -26,6 +31,173 @@ class ValuationTrustStatus(str, Enum):
     decision_grade = "decision_grade"
     provisional = "provisional"
     blocked = "blocked"
+
+
+class JudgmentDriverSourceStrength(str, Enum):
+    """Strength assigned to the raw source labels emitted by the assembler."""
+
+    judgment_approved = "judgment_approved"
+    consensus = "consensus"
+    fallback = "fallback"
+    unrecorded = "unrecorded"
+
+
+class JudgmentDriverSeverity(str, Enum):
+    none = "none"
+    medium = "medium"
+    high = "high"
+    critical = "critical"
+
+
+class JudgmentDriverVerdictStatus(str, Enum):
+    approved = "approved"
+    provisional = "provisional"
+    unused = "unused"
+
+
+class JudgmentDriverVerdict(BaseModel):
+    """Per-driver evidence used by the valuation trust gate and PM reports."""
+
+    model_config = ConfigDict(
+        allow_inf_nan=False,
+        extra="forbid",
+        frozen=True,
+    )
+
+    field: str
+    family: DriverFamily
+    source: str | None = None
+    source_strength: JudgmentDriverSourceStrength
+    status: JudgmentDriverVerdictStatus
+    severity: JudgmentDriverSeverity
+    used: bool
+    lineage_recorded: bool
+    approval_basis: str | None = None
+    reason_code: str | None = None
+
+
+def _normalise_lineage_source(source: object) -> str | None:
+    cleaned = str(source or "").strip()
+    if not cleaned or cleaned.lower() in {"missing", "unknown", "unrecorded"}:
+        return None
+    return cleaned
+
+
+def _is_approved_judgment_source(source: str | None) -> bool:
+    if source is None:
+        return False
+    lowered = source.lower()
+    return any(
+        token in lowered
+        for token in (
+            "approved_assumption_register",
+            "qoe_llm_approved",
+            "pm_approved",
+        )
+    )
+
+
+def _classify_judgment_source(
+    source: str | None,
+) -> JudgmentDriverSourceStrength:
+    if source is None:
+        return JudgmentDriverSourceStrength.unrecorded
+    lowered = source.lower()
+    if _is_approved_judgment_source(source):
+        return JudgmentDriverSourceStrength.judgment_approved
+    if lowered.startswith("ciq") and "blend" not in lowered:
+        return JudgmentDriverSourceStrength.consensus
+    return JudgmentDriverSourceStrength.fallback
+
+
+def assess_judgment_driver_provenance(
+    source_lineage: Mapping[str, object] | None,
+    *,
+    approved_family_hashes: Mapping[DriverFamily, str] | None = None,
+    used_fields: Collection[str] | None = None,
+) -> tuple[JudgmentDriverVerdict, ...]:
+    """Classify every judgment-owned driver without changing its value.
+
+    The raw labels intentionally remain those emitted by the valuation
+    assembler. A complete approved family hash is the approval proof even if
+    the frozen base lineage still shows a deterministic source.
+    """
+
+    lineage = source_lineage or {}
+    used = None if used_fields is None else {str(field) for field in used_fields}
+    approved_families = {
+        family if isinstance(family, DriverFamily) else DriverFamily(str(family))
+        for family, fingerprint in (approved_family_hashes or {}).items()
+        if str(fingerprint).strip()
+    }
+    verdicts: list[JudgmentDriverVerdict] = []
+    for field in judgment_owned_fields():
+        definition = ASSUMPTION_REGISTRY[field]
+        family = definition.family
+        if family is None:
+            raise ValueError(f"judgment-owned driver has no family: {field}")
+        source = _normalise_lineage_source(lineage.get(field))
+        lineage_recorded = source is not None
+        is_used = used is None or field in used
+        strength = _classify_judgment_source(source)
+
+        if not is_used:
+            verdicts.append(
+                JudgmentDriverVerdict(
+                    field=field,
+                    family=family,
+                    source=source,
+                    source_strength=strength,
+                    status=JudgmentDriverVerdictStatus.unused,
+                    severity=JudgmentDriverSeverity.none,
+                    used=False,
+                    lineage_recorded=lineage_recorded,
+                )
+            )
+            continue
+
+        approval_basis: str | None = None
+        if family in approved_families:
+            strength = JudgmentDriverSourceStrength.judgment_approved
+            approval_basis = "approved_driver_family_pack"
+        elif strength is JudgmentDriverSourceStrength.judgment_approved:
+            approval_basis = source
+
+        if strength is JudgmentDriverSourceStrength.judgment_approved:
+            status = JudgmentDriverVerdictStatus.approved
+            severity = JudgmentDriverSeverity.none
+            reason_code = None
+        elif strength is JudgmentDriverSourceStrength.consensus:
+            status = JudgmentDriverVerdictStatus.provisional
+            severity = JudgmentDriverSeverity.medium
+            reason_code = f"readiness.judgment_driver_consensus.{field}"
+        elif strength is JudgmentDriverSourceStrength.fallback:
+            status = JudgmentDriverVerdictStatus.provisional
+            severity = JudgmentDriverSeverity.high
+            if source is not None and "default" in source.lower():
+                reason_code = f"readiness.judgment_driver_default.{field}"
+            else:
+                reason_code = f"readiness.judgment_driver_non_judgment.{field}"
+        else:
+            status = JudgmentDriverVerdictStatus.provisional
+            severity = JudgmentDriverSeverity.critical
+            reason_code = f"readiness.judgment_driver_unrecorded.{field}"
+
+        verdicts.append(
+            JudgmentDriverVerdict(
+                field=field,
+                family=family,
+                source=source,
+                source_strength=strength,
+                status=status,
+                severity=severity,
+                used=True,
+                lineage_recorded=lineage_recorded,
+                approval_basis=approval_basis,
+                reason_code=reason_code,
+            )
+        )
+    return tuple(verdicts)
 
 
 class ValuationReadinessEvidence(BaseModel):
@@ -57,6 +229,7 @@ class ValuationReadinessEvidence(BaseModel):
     unresolved_clamp_count: int = Field(default=0, ge=0)
     pending_material_disagreement_count: int = Field(default=0, ge=0)
     pending_model_change_count: int = Field(default=0, ge=0)
+    judgment_driver_verdicts: tuple[JudgmentDriverVerdict, ...] = ()
 
     @field_validator("approved_family_hashes")
     @classmethod
@@ -123,6 +296,16 @@ class ValuationReadinessEvidence(BaseModel):
             reasons.append(f"readiness.ltm_{self.ltm_status.value}")
         if set(self.approved_family_hashes) != set(DriverFamily):
             reasons.append("readiness.driver_families_incomplete")
+        if not self.judgment_driver_verdicts:
+            reasons.append("readiness.judgment_driver_provenance_missing")
+        else:
+            for verdict in self.judgment_driver_verdicts:
+                if (
+                    verdict.status is JudgmentDriverVerdictStatus.provisional
+                    and verdict.used
+                    and verdict.reason_code
+                ):
+                    reasons.append(verdict.reason_code)
 
         required_fingerprints = (
             ("statement_fingerprint_missing", self.statement_reconciliation_hash),

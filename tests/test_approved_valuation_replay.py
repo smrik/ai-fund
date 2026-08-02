@@ -8,8 +8,12 @@ from pathlib import Path
 import pytest
 
 from src.contracts.driver_families import DriverFamilyProposal
+from src.contracts.assumption_registry import judgment_owned_fields
 from src.contracts.judgment_runs import canonical_semantic_hash
-from src.contracts.valuation_readiness import ValuationReadinessEvidence
+from src.contracts.valuation_readiness import (
+    ValuationReadinessEvidence,
+    assess_judgment_driver_provenance,
+)
 from src.stage_02_valuation.approved_case_replay import (
     compile_approved_valuation_case,
     replay_approved_valuation_case,
@@ -192,6 +196,13 @@ def _readiness(
             "operating_reconciliation": "reconciled",
             "annual_period_count": 5,
             "ltm_status": "compatible",
+            "judgment_driver_verdicts": assess_judgment_driver_provenance(
+                {
+                    field: "approved_assumption_register"
+                    for field in judgment_owned_fields()
+                },
+                used_fields=judgment_owned_fields(),
+            ),
             "approved_family_hashes": {
                 pack.family.value: canonical_semantic_hash(pack)
                 for pack in packs

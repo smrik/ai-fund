@@ -29,6 +29,9 @@ from src.stage_04_pipeline.analyst_prep_pack import (  # noqa: E402
     build_analyst_prep_payload,
     render_analyst_prep_markdown,
 )
+from src.contracts.valuation_readiness import (  # noqa: E402
+    assess_judgment_driver_provenance,
+)
 from config.llm_routing import (  # noqa: E402
     format_llm_resolution,
     resolve_llm_route,
@@ -1228,6 +1231,46 @@ def review_queue_items(
     return result
 
 
+def _render_judgment_driver_provenance(
+    verdict_rows: list[dict[str, Any]],
+) -> list[str]:
+    if not verdict_rows:
+        return []
+
+    decision_grade = all(
+        row.get("status") in {"approved", "unused"}
+        for row in verdict_rows
+        if row.get("used", True)
+    )
+    lines = [
+        "## Judgment-Owned Driver Provenance",
+        "",
+        f"- Driver gate: {'decision_grade' if decision_grade else 'provisional'}",
+        "- Decision-grade requires every used judgment-owned driver to be PM-approved.",
+        "",
+        "| Driver | Source lineage | Strength | Verdict | Severity | Usage |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in verdict_rows:
+        source = row.get("source") or "not recorded"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{row.get('field', 'unknown')}`",
+                    f"`{source}`",
+                    str(row.get("source_strength") or "unrecorded"),
+                    str(row.get("status") or "provisional"),
+                    str(row.get("severity") or "critical"),
+                    "used" if row.get("used", True) else "unused",
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    return lines
+
+
 def render_guided_markdown(result: dict[str, Any]) -> str:
     ticker = result["ticker"]
     latest_model = _as_dict(result.get("latest_model"))
@@ -1235,6 +1278,22 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
     batch_row = _as_dict(deterministic.get("batch_row"))
     dcf = _as_dict(deterministic.get("dcf"))
     bridge = _intrinsic_value_bridge(batch_row, dcf)
+    judgment_driver_verdicts = _as_list(dcf.get("judgment_driver_verdicts"))
+    if not judgment_driver_verdicts:
+        source_lineage = _as_dict(dcf.get("source_lineage"))
+        summary = _as_dict(deterministic.get("summary"))
+        dossier = _as_dict(summary.get("ticker_dossier"))
+        latest_snapshot = _as_dict(dossier.get("latest_snapshot"))
+        snapshot_lineage = _as_dict(
+            _as_dict(latest_snapshot.get("source_lineage")).get(
+                "valuation_snapshot"
+            )
+        )
+        source_lineage = source_lineage or snapshot_lineage
+        judgment_driver_verdicts = [
+            verdict.model_dump(mode="json")
+            for verdict in assess_judgment_driver_provenance(source_lineage)
+        ]
     lines = [
         f"# {ticker} Guided Full-Ticker Workup",
         "",
@@ -1278,6 +1337,7 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
             "",
         ]
     )
+    lines.extend(_render_judgment_driver_provenance(judgment_driver_verdicts))
     for run in _as_list(result.get("profile_runs")):
         packet_summary = _summarize_packet(_as_dict(run.get("evidence_packet")))
         lines.extend(

@@ -6,7 +6,9 @@ from src.contracts.valuation_readiness import (
     ReconciliationGateStatus,
     ValuationReadinessEvidence,
     ValuationTrustStatus,
+    assess_judgment_driver_provenance,
 )
+from src.contracts.assumption_registry import judgment_owned_fields
 
 
 def _ready(**changes: object) -> ValuationReadinessEvidence:
@@ -17,6 +19,13 @@ def _ready(**changes: object) -> ValuationReadinessEvidence:
         "operating_reconciliation": "reconciled",
         "annual_period_count": 5,
         "ltm_status": "compatible",
+        "judgment_driver_verdicts": assess_judgment_driver_provenance(
+            {
+                field: "approved_assumption_register"
+                for field in judgment_owned_fields()
+            },
+            used_fields=judgment_owned_fields(),
+        ),
         "approved_family_hashes": {
             "revenue": "family-revenue",
             "profitability_tax": "family-profitability",

@@ -1783,6 +1783,7 @@ def build_valuation_inputs(
         "options_value": options_value_source,
         "convertibles_value": convertibles_value_source,
         "cogs_pct_of_revenue": cogs_pct_source,
+        "annual_dilution_pct": "default",
         "risk_free_rate": f"fred_live:{rf_override:.4f}" if _fred_rf is not None else f"valuation_policy:{rf_override:.4f}",
         "equity_risk_premium": f"valuation_policy:{policy_erp:.4f}",
     }

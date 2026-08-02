@@ -20,6 +20,7 @@ from src.stage_02_valuation.professional_dcf import (
     run_probabilistic_valuation,
 )
 from src.stage_02_valuation.valuation_types import ForecastDrivers
+from src.contracts.valuation_readiness import assess_judgment_driver_provenance
 from src.stage_04_pipeline.recommendations import load_recommendations
 from src.utils import utc_now_iso
 
@@ -150,6 +151,11 @@ def build_override_workbench(ticker: str) -> dict[str, Any]:
         current_price=effective_inputs.current_price,
     )
     assumption_register = build_assumption_register(ticker, effective_inputs)
+    source_lineage = dict(getattr(effective_inputs, "source_lineage", {}) or {})
+    judgment_driver_verdicts = assess_judgment_driver_provenance(
+        source_lineage,
+        used_fields=asdict(effective_inputs.drivers).keys(),
+    )
     return {
         "ticker": ticker,
         "available": True,
@@ -160,6 +166,11 @@ def build_override_workbench(ticker: str) -> dict[str, Any]:
         "current_iv_base": round(current_result.scenario_results["base"].intrinsic_value_per_share, 2),
         "current_expected_iv": round(current_result.expected_iv, 2),
         "fields": _field_rows(ticker, baseline_inputs, effective_inputs),
+        "source_lineage": source_lineage,
+        "judgment_driver_verdicts": [
+            verdict.model_dump(mode="json")
+            for verdict in judgment_driver_verdicts
+        ],
         "ciq_lineage": getattr(effective_inputs, "ciq_lineage", {}) or {},
         "default_resolution": getattr(effective_inputs, "default_resolution", {}) or {},
         "assumption_register": assumption_register.model_dump(mode="json"),

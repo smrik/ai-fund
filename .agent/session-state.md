@@ -1,46 +1,41 @@
 # Session State
 
-**Updated:** 2026-08-02 00:02 +02:00
+**Updated:** 2026-08-02 00:32 +02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Implement role-based runtime model routing and opt-in CIQ auto-refresh for guided ticker workups.
+Fix provenance loss when advisory accounting queue items are approved.
 
 ## Recent Actions
 
-- Added the role/provider/model/effort resolver and seeded `config/config.yaml` with the PM-approved
-  pinned model IDs and review date.
-- Migrated BaseAgent-backed agents, guided/accounting/ticker/analyst-prep runners, the valuation
-  provider bindings/CLI, and the dashboard model caption; preserved the Gemini Search adapter as
-  provider-specific.
-- Added guided `--auto-refresh-ciq` with staged/ingested diagnostics and four mocked outcome tests;
-  CIQ status metadata now distinguishes failed validation from timeout without changing process
-  kill behavior.
-- Verification: targeted routing/CIQ/runner tests pass; broad offline suite passed 1,326 tests
-  with `tests/test_advanced_dcf_model.py` excluded for the known Windows temp ACL failures.
+- Traced `_accounting_treatment_row` and `insert_treatment_decision` with Serena; confirmed the
+  loader supersession key is correct for genuine treatments.
+- Added a contract-backed non-treatment predicate in `pm_decision_queue.py`; advisory approvals
+  now skip the treatment register while retaining existing queue history and approve events.
+- Added the exact three-advisory regression plus one-row genuine-treatment and supersession/hash
+  assertions in `tests/test_pm_decision_queue_adapter.py`.
+- Verification: scoped accounting/queue suite 58 passed; Ruff clean; full `tests/` run 1,327
+  passed and 8 unrelated Windows temp-ACL failures.
 
 ## Next Steps
 
-- Review the uncommitted diff and decide whether to stage/commit this feature branch.
-- If desired, rerun the full suite including `tests/test_advanced_dcf_model.py` after fixing the
-  external Windows temp-directory ACL issue.
+- Review the scoped commit if another agent resumes.
+- Repair the external Windows temp-directory ACL separately if a zero-failure full suite is needed.
 
 ## Known Issues
 
-- The user explicitly requested no commit; all changes remain uncommitted.
-- Existing unrelated dirty files and generated MSFT/cache/export/debug artifacts are preserved.
-- The repository-root pytest collection can encounter an unreadable generated `output/pytest-tmp`
-  tree; the meaningful `tests/` run was executed with `-p no:cacheprovider`.
+- The worktree contains unrelated dirty/generated MSFT/cache/export/debug artifacts; preserve them.
+- Eight `tests/test_advanced_dcf_model.py` failures are caused by permission denied while creating
+  `C:\Users\patri\AppData\Local\Temp\advanced-dcf-model\...`.
 
 ## Notes
 
 - Runtime: `C:/Users/patri/miniconda3/envs/ai-fund/python.exe`.
 - Current branch: `codex/focused-accounting-evidence-repair`.
-- Canonical plan: `docs/plans/active/2026-08-01-runtime-model-routing-and-ciq-auto-refresh.md`.
-- No valuation math, DCF/WACC/comps engines, `professional_dcf.py`, `input_assembler.py`, or
-  `batch_runner.py` were modified, and no production database write was performed by this task.
+- No `db/loader.py` change or production database write was made by this task; no valuation math,
+  API, or frontend files were modified.
 
 ## First end-to-end valuation attempt — 2026-07-31
 

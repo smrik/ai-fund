@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from src.contracts.valuation_readiness import assess_judgment_driver_provenance
 from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
 from src.stage_02_valuation.input_assembler import build_valuation_inputs
 from src.stage_02_valuation.professional_dcf import (
@@ -375,6 +376,34 @@ def build_dcf_audit_view(
         current_price=inputs.current_price,
     )
     base_result = prob_result.scenario_results["base"]
+    judgment_driver_verdicts = assess_judgment_driver_provenance(
+        inputs.source_lineage,
+        used_fields=asdict(inputs.drivers).keys(),
+    )
+    judgment_driver_is_provisional = any(
+        verdict.status.value == "provisional" and verdict.used
+        for verdict in judgment_driver_verdicts
+    )
+    base_valuation_status = getattr(
+        inputs,
+        "valuation_status",
+        "provisional",
+    )
+    valuation_status = (
+        "provisional"
+        if judgment_driver_is_provisional and base_valuation_status != "blocked"
+        else base_valuation_status
+    )
+    valuation_readiness = dict(
+        getattr(inputs, "valuation_readiness", {}) or {}
+    )
+    valuation_readiness["judgment_driver_verdicts"] = [
+        verdict.model_dump(mode="json")
+        for verdict in judgment_driver_verdicts
+    ]
+    valuation_readiness["judgment_driver_trust_status"] = (
+        "provisional" if judgment_driver_is_provisional else "decision_grade"
+    )
 
     risk_impact_view = None
     if risk_output is not None:
@@ -392,15 +421,10 @@ def build_dcf_audit_view(
     audit = {
         "ticker": ticker,
         "available": True,
-        "valuation_status": getattr(
-            inputs,
-            "valuation_status",
-            "provisional",
-        ),
+        "valuation_status": valuation_status,
         "valuation_output_mode": (
             "official"
-            if getattr(inputs, "valuation_status", "provisional")
-            == "decision_grade"
+            if valuation_status == "decision_grade"
             else "shadow_preview"
         ),
         "claim_ledger": getattr(inputs, "claim_ledger", {}) or {},
@@ -411,12 +435,12 @@ def build_dcf_audit_view(
         )
         or {},
         "bridge_cutover": getattr(inputs, "bridge_cutover", {}) or {},
-        "valuation_readiness": getattr(
-            inputs,
-            "valuation_readiness",
-            {},
-        )
-        or {},
+        "valuation_readiness": valuation_readiness,
+        "source_lineage": dict(inputs.source_lineage),
+        "judgment_driver_verdicts": [
+            verdict.model_dump(mode="json")
+            for verdict in judgment_driver_verdicts
+        ],
         "company_name": inputs.company_name,
         "sector": inputs.sector,
         "industry": inputs.industry,

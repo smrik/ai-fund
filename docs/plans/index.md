@@ -26,6 +26,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Judgment-Driver Provenance Gate](./active/2026-08-02-judgment-driver-provenance-gate.md) — make every judgment-owned driver explicit and prevent non-judgment provenance from claiming decision-grade status
 - [Runtime Model Routing And CIQ Auto-Refresh](./active/2026-08-01-runtime-model-routing-and-ciq-auto-refresh.md) — role-based LLM selection with traced precedence and opt-in guided CIQ Excel refresh outcomes
 - [Intrinsic-Value Bridge](./active/2026-08-01-intrinsic-value-bridge.md) — expose Gordon, exit, and blended DCF values together on PM review surfaces without changing valuation math
 - [Reconciled, Judgment-Authored Valuation](./active/2026-07-25-reconciled-statement-ledger.md) — complete reconciled statements, exact-once DCF/comps bridge, direct evidence-grounded driver packs, provider-independent replay, and universe-scale execution

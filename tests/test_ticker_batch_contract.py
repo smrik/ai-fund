@@ -22,7 +22,11 @@ from src.contracts.model_change_requests import (
     ValuationModelChangeRequest,
     build_model_change_request,
 )
-from src.contracts.valuation_readiness import ValuationReadinessEvidence
+from src.contracts.assumption_registry import judgment_owned_fields
+from src.contracts.valuation_readiness import (
+    ValuationReadinessEvidence,
+    assess_judgment_driver_provenance,
+)
 from src.stage_04_pipeline.ticker_batch import (
     TickerBatchManifest,
     run_ticker_batch,
@@ -37,6 +41,13 @@ def _readiness(**changes: object) -> ValuationReadinessEvidence:
         "operating_reconciliation": "reconciled",
         "annual_period_count": 5,
         "ltm_status": "compatible",
+        "judgment_driver_verdicts": assess_judgment_driver_provenance(
+            {
+                field: "approved_assumption_register"
+                for field in judgment_owned_fields()
+            },
+            used_fields=judgment_owned_fields(),
+        ),
         "approved_family_hashes": {
             "revenue": "family-revenue",
             "profitability_tax": "family-profitability",

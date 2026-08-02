@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 from pydantic import BaseModel
 
-from src.contracts.assumption_registry import DriverFamily
+from src.contracts.assumption_registry import DriverFamily, judgment_owned_fields
 from src.contracts.judgment_runs import canonical_semantic_hash
 from src.contracts.model_change_requests import build_model_change_request
 from src.contracts.ticker_runs import (
@@ -23,6 +23,7 @@ from src.contracts.valuation_readiness import (
     LTMStatus,
     ReconciliationGateStatus,
     ValuationReadinessEvidence,
+    assess_judgment_driver_provenance,
 )
 from src.stage_04_pipeline.ticker_valuation_execution import (
     PreparedTickerRun,
@@ -57,6 +58,13 @@ def _readiness(kind: str) -> ValuationReadinessEvidence:
             LTMStatus.unavailable
             if kind == "blocked"
             else LTMStatus.compatible
+        ),
+        judgment_driver_verdicts=assess_judgment_driver_provenance(
+            {
+                field: "approved_assumption_register"
+                for field in judgment_owned_fields()
+            },
+            used_fields=judgment_owned_fields(),
         ),
         approved_family_hashes=approved,
         statement_reconciliation_hash="statement",

@@ -561,6 +561,10 @@ def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypa
                 {"field": "exit_multiple", "effective_value": 14.0, "effective_source": "public_market_yfinance_fallback_tev_ebitda_ltm"},
                 {"field": "revenue_growth_near", "effective_value": 0.08, "effective_source": "ciq_consensus"},
             ],
+            "source_lineage": {
+                "revenue_growth_terminal": "default",
+                "annual_dilution_pct": "default",
+            },
             "ciq_lineage": {
                 "public_comps_fallback_used": True,
                 "public_comps_fallback_source_file": "public_market_yfinance_fallback",
@@ -617,6 +621,8 @@ def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypa
     payload = export_service._build_current_ticker_payload("IBM")
 
     assert payload["source_lineage"]["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
+    assert payload["source_lineage"]["revenue_growth_terminal"] == "default"
+    assert payload["source_lineage"]["annual_dilution_pct"] == "default"
     assert payload["ciq_lineage"]["public_comps_fallback_used"] is True
     assert payload["ciq_lineage"]["public_comps_fallback_peer_count"] == 3
     assert payload["ciq_lineage"]["comps_source_file"] == "public_market_yfinance_fallback"
