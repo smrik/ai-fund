@@ -40,7 +40,7 @@ DRIVER_FAMILY_PROMPT_VERSION = "1.2.0"
 DRIVER_FAMILY_COMPILER_VERSION = "1.1.0"
 
 _FAMILY_STATEMENT_TYPES: dict[DriverFamily, tuple[str, ...]] = {
-    DriverFamily.revenue: ("IncomeStatement",),
+    DriverFamily.revenue: ("IncomeStatement", "BalanceSheet"),
     DriverFamily.profitability_tax: ("IncomeStatement",),
     DriverFamily.reinvestment_working_capital: (
         "BalanceSheet",
@@ -64,6 +64,11 @@ _FAMILY_FACT_TERMS: dict[DriverFamily, tuple[str, ...]] = {
         "sales",
         "contract_with_customer",
         "subscription",
+        "unearned",
+        "deferred",
+        "contract_liability",
+        "remaining_performance_obligation",
+        "rpo",
     ),
     DriverFamily.profitability_tax: (
         "ebit_margin_target",
@@ -339,10 +344,12 @@ def _statement_role(
         if family is DriverFamily.reinvestment_working_capital:
             return income_role if income_role in {"revenue", "cogs"} else None
 
-    if family is not DriverFamily.reinvestment_working_capital:
+    if family not in (DriverFamily.reinvestment_working_capital, DriverFamily.revenue):
         return None
 
     if statement == "CashFlowStatement":
+        if family is not DriverFamily.reinvestment_working_capital:
+            return None
         if any(
             term in descriptor
             for term in (
@@ -358,27 +365,45 @@ def _statement_role(
         return None
 
     if statement == "BalanceSheet":
-        if any(term in descriptor for term in ("receivable", "accountsreceivable")):
-            return None if any(
-                term in descriptor for term in ("increase", "decrease", "change")
-            ) else "receivables"
-        if "inventory" in descriptor:
-            return None if any(
-                term in descriptor for term in ("increase", "decrease", "change")
-            ) else "inventory"
-        if any(
-            term in descriptor
-            for term in (
-                "accountspayable",
-                "tradepayable",
-                "tradeaccountsandotherpayables",
-                "payables",
-            )
-        ) and not any(
-            term in descriptor
-            for term in ("taxpayable", "incometax", "incometaxes")
-        ):
-            return "payables"
+        if family is DriverFamily.revenue:
+            if any(
+                term in descriptor
+                for term in (
+                    "unearnedrevenue",
+                    "deferredrevenue",
+                    "contractliability",
+                    "contractwithcustomerliability",
+                    "remainingperformanceobligation",
+                    "rpo",
+                    "unearned",
+                    "deferred",
+                )
+            ):
+                return "deferred_revenue"
+            return None
+
+        if family is DriverFamily.reinvestment_working_capital:
+            if any(term in descriptor for term in ("receivable", "accountsreceivable")):
+                return None if any(
+                    term in descriptor for term in ("increase", "decrease", "change")
+                ) else "receivables"
+            if "inventory" in descriptor:
+                return None if any(
+                    term in descriptor for term in ("increase", "decrease", "change")
+                ) else "inventory"
+            if any(
+                term in descriptor
+                for term in (
+                    "accountspayable",
+                    "tradepayable",
+                    "tradeaccountsandotherpayables",
+                    "payables",
+                )
+            ) and not any(
+                term in descriptor
+                for term in ("taxpayable", "incometax", "incometaxes")
+            ):
+                return "payables"
 
     return None
 

@@ -61,7 +61,12 @@ _RECORDS = [
     # ---- CashFlowStatement ----
     _make_record("f:capex", "CashFlowStatement", "capital_expenditure", "Capital expenditures", -25_000),
     _make_record("f:da", "CashFlowStatement", "depreciation_amortization", "Depreciation and amortization", 18_000),
-    # ---- BalanceSheet ----
+    # ---- BalanceSheet Forward Revenue Facts ----
+    _make_record("f:unearned_revenue", "BalanceSheet", "unearned_revenue", "Unearned revenue", 15_000),
+    _make_record("f:deferred_revenue", "BalanceSheet", "deferred_revenue", "Deferred revenue", 25_000),
+    _make_record("f:contract_liability", "BalanceSheet", "contract_liability", "Contract liability", 10_000),
+    _make_record("f:rpo", "BalanceSheet", "remaining_performance_obligation", "Remaining performance obligation", 35_000),
+    # ---- BalanceSheet Other ----
     _make_record("f:receivables", "BalanceSheet", "accounts_receivable", "Accounts receivable", 30_000),
     _make_record("f:inventory", "BalanceSheet", "inventory", "Inventory", 5_000),
     _make_record("f:payables", "BalanceSheet", "accounts_payable", "Accounts payable", 20_000),
@@ -70,6 +75,7 @@ _RECORDS = [
     _make_record("f:long_term_debt", "BalanceSheet", "long_term_debt", "Long-term debt", 40_000),
     _make_record("f:lease_liability", "BalanceSheet", "lease_liability", "Lease liability", 12_000),
 ]
+
 
 
 def _evidence_for(fact_ids: list[str]) -> dict[str, object]:
@@ -248,8 +254,8 @@ def test_revenue_projection_contains_revenue_facts() -> None:
     )
 
 
-def test_revenue_projection_excludes_balance_sheet_and_cash_flow_facts() -> None:
-    """Revenue family only needs IncomeStatement — no BS or CF facts."""
+def test_revenue_projection_retains_forward_revenue_bs_facts_and_excludes_unrelated_bs_facts() -> None:
+    """Revenue family must include unearned/deferred revenue, contract liabilities, and RPO while excluding unrelated BS facts."""
 
     snapshot = _snapshot_with_all_facts()
     projection = _family_analysis_projection(
@@ -259,16 +265,30 @@ def test_revenue_projection_excludes_balance_sheet_and_cash_flow_facts() -> None
     )
 
     statement_facts = _extract_statement_fact_ids(projection)
-    # These are CashFlowStatement or BalanceSheet facts
-    non_income_facts = {
+
+    required_bs_facts = {
+        "f:unearned_revenue",
+        "f:deferred_revenue",
+        "f:contract_liability",
+        "f:rpo",
+    }
+    missing = required_bs_facts - statement_facts
+    assert not missing, (
+        f"revenue projection missing required forward BS facts: {sorted(missing)}. "
+        f"Present: {sorted(statement_facts)}"
+    )
+
+    # These CashFlowStatement or BalanceSheet facts must still be excluded
+    excluded_facts = {
         "f:capex", "f:da",
         "f:receivables", "f:inventory", "f:payables",
         "f:goodwill", "f:long_term_debt", "f:lease_liability",
     }
-    leaked = non_income_facts & statement_facts
+    leaked = excluded_facts & statement_facts
     assert not leaked, (
-        f"revenue projection contains non-IncomeStatement facts: {sorted(leaked)}"
+        f"revenue projection contains unrelated BS/CF facts: {sorted(leaked)}"
     )
+
 
 
 def test_profitability_projection_contains_margin_and_tax_facts() -> None:
