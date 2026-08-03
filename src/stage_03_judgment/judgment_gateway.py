@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
 import hashlib
 import json
 import math
@@ -24,6 +25,32 @@ from src.contracts.judgment_runs import (
     canonical_semantic_hash,
     invocation_hash,
 )
+
+logger = logging.getLogger(__name__)
+
+_CHARS_PER_TOKEN_ESTIMATE = 4
+
+
+def _log_payload_size(task: JudgmentTask, route: ProviderRoute) -> None:
+    """Emit a structured log line with the payload size before each call.
+
+    This makes post-hoc payload forensics unnecessary — every judgment dispatch
+    records how large the request actually was.
+    """
+
+    total_chars = sum(len(msg.content) for msg in task.messages)
+    estimated_tokens = total_chars // _CHARS_PER_TOKEN_ESTIMATE
+    logger.info(
+        "judgment_gateway.execute"
+        " family=%s role=%s provider=%s model=%s"
+        " payload_chars=%s estimated_tokens=%s",
+        task.family,
+        task.role,
+        route.provider,
+        route.requested_model,
+        f"{total_chars:,}",
+        f"{estimated_tokens:,}",
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +187,7 @@ class JudgmentGateway:
         force_refresh: bool = False,
         transport_timeout_seconds: float = 120.0,
     ) -> AgentRunEnvelope:
+        _log_payload_size(task, route)
         output_schema = output_model.model_json_schema()
         expected_schema_id = output_model.__name__
         expected_schema_hash = canonical_semantic_hash(output_schema)

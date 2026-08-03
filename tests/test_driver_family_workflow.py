@@ -134,11 +134,14 @@ def test_primary_and_critic_produce_one_atomic_queue_item_from_one_snapshot() ->
     assert len(result.queue_item.proposal_pack.proposals) == 3
     assert primary.requests[0].task.frozen_snapshot_hash == _snapshot().snapshot_hash
     assert critic.requests[0].task.reviewed_output_hash
-    allowed = sorted(_snapshot().evidence)
     primary_user = json.loads(primary.requests[0].task.messages[1].content)
     critic_user = json.loads(critic.requests[0].task.messages[1].content)
-    assert primary_user["allowed_evidence_anchor_ids"] == allowed
-    assert critic_user["allowed_evidence_anchor_ids"] == allowed
+    anchor_handle_map = primary_user["analysis_snapshot"]["evidence"][
+        "anchor_handle_map"
+    ]
+    assert primary_user["allowed_evidence_anchor_ids"] == sorted(anchor_handle_map)
+    assert critic_user["allowed_evidence_anchor_ids"] == sorted(anchor_handle_map)
+    assert set(anchor_handle_map.values()) == set(_snapshot().evidence)
     assert "exact string from allowed_evidence_anchor_ids" in critic.requests[0].task.messages[0].content
 
 
@@ -179,12 +182,374 @@ def test_family_projection_compacts_and_retains_relevant_statement_records() -> 
     assert isinstance(statements, dict)
     compact = statements["consolidated_view"]
     assert isinstance(compact, dict)
-    assert compact["format"] == "columnar-records-v1"
+    assert compact["format"] == "columnar-records-v2"
     assert len(compact["rows"]) == 1
-    assert compact["rows"][0][compact["columns"].index("fact_id")] == "income:revenue"
+    revenue_handle = compact["rows"][0][compact["columns"].index("fact_id")]
+    assert statements["fact_handle_map"][revenue_handle] == "income:revenue"
     assert statements["projection_scope"]["retained_fact_count"] == 1
     assert statements["projection_scope"]["omitted_record_fields"] == ["hierarchy"]
-    assert projection["evidence"] == snapshot.evidence
+    assert projection["evidence"]["selected_anchor_count"] == len(snapshot.evidence)
+
+
+def test_family_projection_selects_driver_facts_and_round_trips_short_handles() -> None:
+    source_url = (
+        "https://www.sec.gov/Archives/edgar/data/1/0000000000-index.html"
+    )
+    records = [
+        {
+            "fact_id": "fact:revenue",
+            "statement": "IncomeStatement",
+            "concept": "revenue",
+            "label": "Revenue",
+            "numeric_value": 100.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:cost_of_revenue",
+            "statement": "IncomeStatement",
+            "concept": "cost_of_revenue",
+            "label": "Cost of revenue",
+            "numeric_value": 40.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:capex",
+            "statement": "CashFlowStatement",
+            "concept": "capex",
+            "label": "Capital expenditures",
+            "numeric_value": -10.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:da",
+            "statement": "CashFlowStatement",
+            "concept": "depreciation_amortization",
+            "label": "Depreciation and amortization",
+            "numeric_value": 8.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:receivables",
+            "statement": "BalanceSheet",
+            "concept": "accounts_receivable",
+            "label": "Accounts receivable",
+            "numeric_value": 20.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:inventory",
+            "statement": "BalanceSheet",
+            "concept": "inventory",
+            "label": "Inventory",
+            "numeric_value": 12.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:payables",
+            "statement": "BalanceSheet",
+            "concept": "accounts_payable",
+            "label": "Accounts payable",
+            "numeric_value": 15.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+        {
+            "fact_id": "fact:lease",
+            "statement": "BalanceSheet",
+            "concept": "lease_liability",
+            "label": "Lease liability",
+            "numeric_value": 9.0,
+            "accession": "0000000000",
+            "source_locator": source_url,
+        },
+    ]
+    evidence = {
+        fact_id: {
+            "fact_id": fact_id,
+            "fact_name": fact_id.removeprefix("fact:"),
+            "concept": fact_id.removeprefix("fact:"),
+            "source_locator": source_url,
+            "value": 1.0,
+        }
+        for fact_id in (
+            "fact:revenue",
+            "fact:cost_of_revenue",
+            "fact:capex",
+            "fact:da",
+            "fact:receivables",
+            "fact:inventory",
+            "fact:payables",
+            "fact:lease",
+        )
+    }
+    snapshot = _snapshot().model_copy(
+        update={
+            "statements": {
+                "annual_period_count": 5,
+                "ltm_status": "compatible",
+                "fact_ids": [record["fact_id"] for record in records],
+                "consolidated_view": records,
+            },
+            "statement_reconciliation": {
+                "status": "reconciled",
+                "selected_fact_ids": [record["fact_id"] for record in records],
+            },
+            "evidence": evidence,
+        }
+    )
+
+    projection = _family_analysis_projection(
+        snapshot,
+        DriverFamily.reinvestment_working_capital,
+        max_chars=100_000,
+    )
+
+    statements = projection["statements"]
+    assert isinstance(statements, dict)
+    compact = statements["consolidated_view"]
+    assert isinstance(compact, dict)
+    selected_fact_handles = {
+        row[compact["columns"].index("fact_id")]
+        for row in compact["rows"]
+    }
+    selected_fact_ids = {
+        statements["fact_handle_map"][handle]
+        for handle in selected_fact_handles
+    }
+    assert selected_fact_ids == {
+        "fact:revenue",
+        "fact:cost_of_revenue",
+        "fact:capex",
+        "fact:da",
+        "fact:receivables",
+        "fact:inventory",
+        "fact:payables",
+    }
+    assert "fact:lease" not in selected_fact_ids
+
+    evidence_projection = projection["evidence"]
+    assert isinstance(evidence_projection, dict)
+    projected_anchor_ids = {
+        evidence_projection["anchor_handle_map"][row["handle"]]
+        for row in evidence_projection["rows"]
+    }
+    assert projected_anchor_ids == set(evidence) - {"fact:lease"}
+    assert projection["source_table"] == [
+        {
+            "source_handle": "s0001",
+            "accession": "0000000000",
+            "source_locator": source_url,
+        }
+    ]
+    assert json.dumps(projection).count(source_url) == 1
+    assert all(handle.startswith("a") for handle in evidence_projection["anchor_handle_map"])
+
+
+def test_family_projection_deduplicates_presentations_and_drops_ineligible_rows() -> None:
+    records = [
+        {
+            "fact_id": "fact:revenue:context-a",
+            "statement": "IncomeStatement",
+            "concept": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+            "period_start": "2024-07-01",
+            "period_end": "2025-06-30",
+            "period_kind": "annual",
+            "numeric_value": 100.0,
+            "hierarchy": {"consolidated_view_eligible": True},
+        },
+        {
+            "fact_id": "fact:revenue:context-b",
+            "statement": "IncomeStatement",
+            "concept": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+            "period_start": "2024-07-01",
+            "period_end": "2025-06-30",
+            "period_kind": "annual",
+            "numeric_value": 100.0,
+            "hierarchy": {"consolidated_view_eligible": True},
+        },
+        {
+            "fact_id": "fact:revenue:ineligible-presentation",
+            "statement": "IncomeStatement",
+            "concept": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+            "period_start": "2024-07-01",
+            "period_end": "2025-06-30",
+            "period_kind": "annual",
+            "numeric_value": 100.0,
+            "hierarchy": {"consolidated_view_eligible": False},
+        },
+        {
+            "fact_id": "fact:selling-expense",
+            "statement": "IncomeStatement",
+            "concept": "us-gaap_SellingGeneralAndAdministrativeExpense",
+            "period_start": "2024-07-01",
+            "period_end": "2025-06-30",
+            "period_kind": "annual",
+            "numeric_value": 20.0,
+        },
+    ]
+    snapshot = _snapshot().model_copy(
+        update={
+            "statements": {"consolidated_view": records},
+            "statement_reconciliation": {
+                "status": "reconciled",
+                "selected_fact_ids": [record["fact_id"] for record in records],
+            },
+        }
+    )
+
+    projection = _family_analysis_projection(
+        snapshot,
+        DriverFamily.revenue,
+        max_chars=100_000,
+    )
+    statements = projection["statements"]
+    assert isinstance(statements, dict)
+    compact = statements["consolidated_view"]
+    assert isinstance(compact, dict)
+    handles = [
+        row[compact["columns"].index("fact_id")]
+        for row in compact["rows"]
+    ]
+    assert [statements["fact_handle_map"][handle] for handle in handles] == [
+        "fact:revenue:context-a"
+    ]
+
+
+def test_short_anchor_handles_are_resolved_before_envelope_persistence() -> None:
+    snapshot = _snapshot()
+    projection = _family_analysis_projection(
+        snapshot,
+        DriverFamily.revenue,
+        max_chars=100_000,
+    )
+    evidence_projection = projection["evidence"]
+    anchor_handle_map = evidence_projection["anchor_handle_map"]
+    handle_map = {
+        anchor_id: handle
+        for handle, anchor_id in anchor_handle_map.items()
+    }
+    payload = json.loads(json.dumps(_revenue_payload()))
+    for assumption in payload["assumptions"]:
+        assumption["evidence_anchor_ids"] = [
+            handle_map[anchor_id]
+            for anchor_id in assumption["evidence_anchor_ids"]
+        ]
+
+    primary = _Backend(payload)
+    critic = _Backend(
+        {
+            "family": "revenue",
+            "verdict": "accept",
+            "issues": [],
+            "summary": "The handles resolve to the frozen evidence.",
+        }
+    )
+    result = run_driver_family_workflow(
+        snapshot=snapshot,
+        family=DriverFamily.revenue,
+        primary_route=_route("primary"),
+        primary_backend=primary,
+        critic_route=_route("critic"),
+        critic_backend=critic,
+    )
+
+    assert result.status == "queued"
+    assert {
+        anchor_id
+        for assumption in result.primary_envelope.validated_payload["assumptions"]
+        for anchor_id in assumption["evidence_anchor_ids"]
+    } == set(anchor_handle_map.values())
+    primary_user = json.loads(primary.requests[0].task.messages[1].content)
+    assert set(primary_user["allowed_evidence_anchor_ids"]) == set(
+        anchor_handle_map
+    )
+
+
+def test_empty_family_evidence_does_not_fall_back_to_full_snapshot_anchors() -> None:
+    primary = _Backend(_revenue_payload())
+    critic = _Backend(
+        {
+            "family": "revenue",
+            "verdict": "accept",
+            "issues": [],
+            "summary": "The assumptions are evidence-grounded and coherent.",
+        }
+    )
+
+    result = run_driver_family_workflow(
+        snapshot=_snapshot().model_copy(update={"evidence": {}}),
+        family=DriverFamily.revenue,
+        primary_route=_route("primary"),
+        primary_backend=primary,
+        critic_route=_route("critic"),
+        critic_backend=critic,
+    )
+
+    assert result.status == "blocked"
+    assert result.blocker_reason == "primary_unknown_evidence_anchors"
+    primary_user = json.loads(primary.requests[0].task.messages[1].content)
+    assert primary_user["allowed_evidence_anchor_ids"] == []
+    assert critic.requests == []
+
+
+def test_family_projection_excludes_facts_owned_only_by_other_driver_families() -> None:
+    records = [
+        {
+            "fact_id": "fact:revenue",
+            "statement": "IncomeStatement",
+            "concept": "revenue",
+            "numeric_value": 100.0,
+        },
+        {
+            "fact_id": "fact:tax",
+            "statement": "IncomeStatement",
+            "concept": "income_tax_expense",
+            "numeric_value": 20.0,
+        },
+        {
+            "fact_id": "fact:receivables",
+            "statement": "BalanceSheet",
+            "concept": "accounts_receivable",
+            "numeric_value": 20.0,
+        },
+    ]
+    evidence = {
+        "fact:revenue_growth_near": {"concept": "revenue"},
+        "fact:tax_rate_target": {"concept": "tax"},
+        "fact:dso_target": {"concept": "dso"},
+        "fact:exit_multiple": {"concept": "exit multiple"},
+    }
+    snapshot = _snapshot().model_copy(
+        update={
+            "statements": {"consolidated_view": records},
+            "evidence": evidence,
+        }
+    )
+
+    projection = _family_analysis_projection(
+        snapshot,
+        DriverFamily.revenue,
+        max_chars=100_000,
+    )
+    statements = projection["statements"]
+    assert isinstance(statements, dict)
+    compact = statements["consolidated_view"]
+    assert isinstance(compact, dict)
+    fact_ids = {
+        statements["fact_handle_map"][
+            row[compact["columns"].index("fact_id")]
+        ]
+        for row in compact["rows"]
+    }
+    assert fact_ids == {"fact:revenue"}
+    anchor_map = projection["evidence"]["anchor_handle_map"]
+    assert set(anchor_map.values()) == {"fact:revenue_growth_near"}
 
 
 def test_revise_verdict_allows_exactly_one_primary_revision_and_queues_it() -> None:

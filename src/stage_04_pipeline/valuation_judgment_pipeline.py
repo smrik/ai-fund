@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from dataclasses import dataclass
 import math
+from queue import Empty, Queue
 import sqlite3
-from typing import Literal, Mapping
+import threading
+from typing import Any, Literal, Mapping
 
 from db.loader import (
     insert_pm_decision_queue_item,
@@ -58,6 +62,57 @@ class ValuationJudgmentPipelineResult:
     queue_item_ids: dict[DriverFamily, int]
     blocker_reasons: dict[DriverFamily, str]
     model_change_request_ids: dict[DriverFamily, tuple[str, ...]]
+
+
+class _SqliteCallbackDispatcher:
+    """Run SQLite callbacks on the connection-owning pipeline thread."""
+
+    def __init__(self) -> None:
+        self._owner_thread_id = threading.get_ident()
+        self._requests: Queue[tuple[Callable[..., Any], tuple[Any, ...], dict[str, Any], threading.Event, dict[str, Any]]] = Queue()
+
+    def call(self, callback: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        if threading.get_ident() == self._owner_thread_id:
+            return callback(*args, **kwargs)
+        event = threading.Event()
+        result: dict[str, Any] = {}
+        self._requests.put((callback, args, kwargs, event, result))
+        event.wait()
+        error = result.get("error")
+        if error is not None:
+            raise error
+        return result.get("value")
+
+    def drain(self) -> None:
+        while True:
+            try:
+                callback, args, kwargs, event, result = self._requests.get_nowait()
+            except Empty:
+                return
+            try:
+                result["value"] = callback(*args, **kwargs)
+            except BaseException as exc:
+                result["error"] = exc
+            finally:
+                event.set()
+                self._requests.task_done()
+
+
+class _EnvelopeCollector:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._by_family: dict[DriverFamily, list[AgentRunEnvelope]] = {
+            family: [] for family in DriverFamily
+        }
+
+    def append(self, envelope: AgentRunEnvelope) -> None:
+        family = DriverFamily(envelope.task.family)
+        with self._lock:
+            self._by_family[family].append(envelope)
+
+    def for_family(self, family: DriverFamily) -> tuple[AgentRunEnvelope, ...]:
+        with self._lock:
+            return tuple(self._by_family[family])
 
 
 def _validate_bindings(
@@ -207,30 +262,31 @@ def run_valuation_judgment_pipeline(
             model_change_request_ids={},
         )
 
-    def _persist_envelope(envelope: AgentRunEnvelope) -> None:
-        persist_agent_run_envelope(conn, envelope)
-
     def _release_invocation(
         invocation_hash: str,
         owner_run_id: str,
     ) -> None:
-        release_judgment_invocation(
+        dispatcher.call(
+            release_judgment_invocation,
             conn,
             invocation_hash=invocation_hash,
             owner_run_id=owner_run_id,
         )
 
+    dispatcher = _SqliteCallbackDispatcher()
+    envelope_collector = _EnvelopeCollector()
     gateway = JudgmentGateway(
-        envelope_sink=_persist_envelope,
-        successful_envelope_lookup=lambda idempotency_key: (
-            load_cached_successful_envelope(conn, idempotency_key)
+        envelope_sink=envelope_collector.append,
+        successful_envelope_lookup=lambda idempotency_key: dispatcher.call(
+            load_cached_successful_envelope,
+            conn,
+            idempotency_key,
         ),
-        invocation_reservation=lambda invocation_hash, owner_run_id: (
-            reserve_judgment_invocation(
-                conn,
-                invocation_hash=invocation_hash,
-                owner_run_id=owner_run_id,
-            )
+        invocation_reservation=lambda invocation_hash, owner_run_id: dispatcher.call(
+            reserve_judgment_invocation,
+            conn,
+            invocation_hash=invocation_hash,
+            owner_run_id=owner_run_id,
         ),
         invocation_release=_release_invocation,
     )
@@ -239,13 +295,11 @@ def run_valuation_judgment_pipeline(
         ticker=snapshot.ticker,
     )
 
-    family_results: dict[DriverFamily, DriverFamilyWorkflowResult] = {}
-    queue_item_ids: dict[DriverFamily, int] = {}
-    blocker_reasons: dict[DriverFamily, str] = {}
-    model_change_request_ids: dict[DriverFamily, tuple[str, ...]] = {}
-    for family in DriverFamily:
+    families = tuple(DriverFamily)
+
+    def _run_family(family: DriverFamily) -> DriverFamilyWorkflowResult:
         binding = bindings[family]
-        result = run_driver_family_workflow(
+        return run_driver_family_workflow(
             snapshot=snapshot,
             family=family,
             primary_route=binding.primary_route,
@@ -261,6 +315,44 @@ def run_valuation_judgment_pipeline(
                 else {}
             ),
         )
+
+    future_results: dict[DriverFamily, DriverFamilyWorkflowResult] = {}
+    execution_errors: list[BaseException] = []
+    with ThreadPoolExecutor(max_workers=len(families)) as executor:
+        futures = {
+            family: executor.submit(_run_family, family)
+            for family in families
+        }
+        pending = set(futures.values())
+        while pending:
+            dispatcher.drain()
+            _, pending = wait(
+                pending,
+                timeout=0.01,
+                return_when=FIRST_COMPLETED,
+            )
+        dispatcher.drain()
+        for family in families:
+            try:
+                future_results[family] = futures[family].result()
+            except BaseException as exc:
+                execution_errors.append(exc)
+
+    # Provider calls can overlap, but all envelope and queue writes happen in
+    # enum order on the connection-owning thread. This keeps hashes, IDs, and
+    # audit rows deterministic even when completion order changes.
+    for family in families:
+        for envelope in envelope_collector.for_family(family):
+            persist_agent_run_envelope(conn, envelope)
+
+    family_results: dict[DriverFamily, DriverFamilyWorkflowResult] = {}
+    queue_item_ids: dict[DriverFamily, int] = {}
+    blocker_reasons: dict[DriverFamily, str] = {}
+    model_change_request_ids: dict[DriverFamily, tuple[str, ...]] = {}
+    for family in families:
+        result = future_results.get(family)
+        if result is None:
+            continue
         family_results[family] = result
         challenges = (
             result.critique.methodology_challenges
@@ -306,9 +398,12 @@ def run_valuation_judgment_pipeline(
                 result.blocker_reason or "driver_family_blocked"
             )
 
+    if execution_errors:
+        raise execution_errors[0]
+
     queued_count = len(queue_item_ids)
     status: Literal["queued", "partial", "blocked"]
-    if queued_count == len(DriverFamily):
+    if queued_count == len(families):
         status = "queued"
     elif queued_count:
         status = "partial"

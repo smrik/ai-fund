@@ -17,11 +17,11 @@ _OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 _ROLE_FALLBACKS: dict[str, dict[str, str]] = {
     "judgment": {"provider": "openrouter", "model": "gemini-3-flash-preview"},
     "valuation": {"provider": "openrouter", "model": "gemini-3-flash-preview"},
-    "accounting": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "low"},
+    "accounting": {"provider": "codex", "model": "gpt-5.6-luna", "effort": "high"},
 }
 _PROVIDER_FALLBACKS: dict[str, dict[str, str]] = {
     "openrouter": {"model": "gemini-3-flash-preview"},
-    "codex": {"model": "gpt-5.6-luna", "effort": "low"},
+    "codex": {"model": "gpt-5.6-luna", "effort": "high"},
 }
 
 # A capability record is optional. Unknown models intentionally keep the old

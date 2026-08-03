@@ -67,7 +67,7 @@ def test_accounting_precedence_includes_codex_effort() -> None:
     fallback = resolve_llm_route("accounting", config=empty_config, env={})
     assert fallback["provider"] == "codex"
     assert fallback["model"] == "gpt-5.6-luna"
-    assert fallback["effort"] == "low"
+    assert fallback["effort"] == "high"
 
     configured = resolve_llm_route(
         "accounting",
@@ -199,7 +199,7 @@ def test_seeded_role_block_routes_judgment_valuation_and_accounting() -> None:
     assert (accounting["provider"], accounting["model"], accounting["effort"]) == (
         "codex",
         "gpt-5.6-luna",
-        "low",
+        "high",
     )
 
 

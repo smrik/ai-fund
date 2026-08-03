@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+import threading
 
 import pytest
 
@@ -157,6 +159,37 @@ class _Backend:
         )
 
 
+class _ConcurrentBackend(_Backend):
+    def __init__(self, barrier: threading.Barrier) -> None:
+        super().__init__()
+        self.barrier = barrier
+        self._lock = threading.Lock()
+        self.active_primary = 0
+        self.max_active_primary = 0
+
+    def generate(self, request):
+        if request.task.role == "primary":
+            with self._lock:
+                self.active_primary += 1
+                self.max_active_primary = max(
+                    self.max_active_primary,
+                    self.active_primary,
+                )
+            try:
+                self.barrier.wait(timeout=1.0)
+            finally:
+                with self._lock:
+                    self.active_primary -= 1
+        return super().generate(request)
+
+
+class _ConcurrentFailureBackend(_ConcurrentBackend):
+    def generate(self, request):
+        if request.task.family == DriverFamily.revenue.value:
+            raise RuntimeError("fixture concurrent revenue failure")
+        return super().generate(request)
+
+
 class _PermanentFailingRevenueBackend(_Backend):
     def generate(self, request):
         if request.task.family == DriverFamily.revenue.value:
@@ -262,6 +295,80 @@ def test_pipeline_persists_one_snapshot_all_runs_and_four_atomic_queue_items() -
     ]
     assert len(requests) == 8
     assert {request.transport_timeout_seconds for request in requests} == {31.75}
+
+
+def test_pipeline_runs_families_concurrently_but_persists_deterministically() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    _create_support_tables(conn)
+    tracker = _ConcurrentBackend(threading.Barrier(4))
+    bindings = {
+        family: DriverFamilyExecutionBinding(
+            primary_route=binding.primary_route,
+            primary_backend=tracker,
+            critic_route=binding.critic_route,
+            critic_backend=tracker,
+        )
+        for family, binding in _bindings().items()
+    }
+
+    first = run_valuation_judgment_pipeline(
+        snapshot=_snapshot(),
+        bindings=bindings,
+        conn=conn,
+    )
+    second = run_valuation_judgment_pipeline(
+        snapshot=_snapshot().model_copy(
+            update={"captured_at": "2026-07-26T11:00:00Z"}
+        ),
+        bindings=bindings,
+        conn=conn,
+    )
+
+    assert first.status == "queued"
+    assert tracker.max_active_primary == 4
+    assert list(first.family_results) == list(DriverFamily)
+    assert second.queue_item_ids == first.queue_item_ids
+    assert tracker.call_count == 8
+    queue_rows = conn.execute(
+        "SELECT proposal_pack_json FROM pm_decision_queue_items ORDER BY id"
+    ).fetchall()
+    assert [json.loads(row[0])["family"] for row in queue_rows] == [
+        family.value for family in DriverFamily
+    ]
+
+
+def test_concurrent_family_failure_does_not_cancel_other_families() -> None:
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    create_tables(conn)
+    _create_support_tables(conn)
+    tracker = _ConcurrentFailureBackend(threading.Barrier(3))
+    bindings = {
+        family: DriverFamilyExecutionBinding(
+            primary_route=binding.primary_route,
+            primary_backend=tracker,
+            critic_route=binding.critic_route,
+            critic_backend=tracker,
+        )
+        for family, binding in _bindings().items()
+    }
+
+    result = run_valuation_judgment_pipeline(
+        snapshot=_snapshot(),
+        bindings=bindings,
+        conn=conn,
+    )
+
+    assert result.status == "partial"
+    assert result.blocker_reasons == {
+        DriverFamily.revenue: "primary_judgment_failed"
+    }
+    assert set(result.queue_item_ids) == set(DriverFamily) - {
+        DriverFamily.revenue
+    }
+    assert tracker.max_active_primary == 3
 
 
 def test_pipeline_is_queue_idempotent_for_the_same_semantic_snapshot() -> None:
@@ -372,7 +479,7 @@ def test_pipeline_persists_timeout_envelope_before_error_bubbles() -> None:
 
     assert conn.execute(
         "SELECT COUNT(*) FROM judgment_run_envelopes"
-    ).fetchone()[0] == 1
+    ).fetchone()[0] == 7
 
 
 def test_pipeline_rejects_missing_family_bindings_before_any_write() -> None:
