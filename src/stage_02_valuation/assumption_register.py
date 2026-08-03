@@ -133,6 +133,11 @@ CRITICAL_DIAGNOSTICS = {
     "health_terminal_growth_guardrail_flag",
     "terminal_growth_guardrail_flag",
     "health_terminal_ronic_guardrail_flag",  # RONIC ≤ terminal_growth — mathematically invalid
+    "health_degenerate_dcf_guardrail_flag",
+    "degenerate_dcf_guardrail_flag",
+    "degenerate_scenarios_identical_flag",
+    "degenerate_zero_tv_flag",
+    "degenerate_ev_implausible_flag",
     "forensic_flag_severe",                  # Beneish M-Score in manipulator zone (red)
 }
 REVIEW_DIAGNOSTICS = {
