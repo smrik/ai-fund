@@ -83,6 +83,28 @@ class TickerBatchManifest(BaseModel):
         return self
 
 
+def _exception_detail(exc: BaseException, *, max_chars: int = 400) -> str:
+    """Describe a runner failure well enough to act on without reproducing it.
+
+    Recording only ``type(exc).__name__`` discarded the message and the raising
+    frame, so a permanent judgment-pipeline failure surfaced as the bare word
+    "ValueError" and had to be re-run under a debugger to diagnose at all.
+    """
+
+    message = str(exc).strip().replace("\n", " ")
+    detail = f"{type(exc).__name__}: {message}" if message else type(exc).__name__
+    tb = exc.__traceback__
+    frame = None
+    while tb is not None:
+        frame = tb.tb_frame
+        line = tb.tb_lineno
+        tb = tb.tb_next
+    if frame is not None:
+        origin = f"{frame.f_code.co_filename.rsplit('/', 1)[-1]}:{line}"
+        detail = f"{detail} @ {origin}"
+    return detail[:max_chars]
+
+
 def run_ticker_batch(
     requests: Iterable[TickerRunContext],
     run_ticker: DeadlineAwareTickerCallable,
@@ -339,7 +361,7 @@ def run_ticker_batch(
                     context=context,
                     status=TerminalStatus.blocked,
                     reason_code="runner.permanent_exception",
-                    reason_detail=type(exc).__name__,
+                    reason_detail=_exception_detail(exc),
                     retryable=False,
                 )
             executed_records.append(
@@ -460,7 +482,7 @@ def _run_with_retry(
                     if retryable
                     else "runner.permanent_exception"
                 ),
-                reason_detail=type(exc).__name__,
+                reason_detail=_exception_detail(exc),
                 retryable=retryable,
                 attempt_count=attempt_number,
             )

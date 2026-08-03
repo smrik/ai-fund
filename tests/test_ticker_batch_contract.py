@@ -366,7 +366,10 @@ def test_100_tickers_finish_out_of_order_without_silent_drops() -> None:
     assert failure.status == TerminalStatus.blocked
     assert failure.reason_code == "runner.transient_exception"
     assert failure.retryable is True
-    assert failure.reason_detail == "ConnectionError"
+    # The detail carries the exception type, its message, and the raising frame so a
+    # permanent runner failure can be diagnosed from the manifest alone. Recording only
+    # the type meant a blocked judgment run reported the bare word "ValueError".
+    assert failure.reason_detail.startswith("ConnectionError: provider unavailable @ ")
     assert all(
         row.status == TerminalStatus.decision_grade
         for index, row in enumerate(manifest.records)

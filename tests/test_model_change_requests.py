@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from db.schema import create_tables
 from src.contracts.model_change_requests import (
+    ModelChangeCategory,
     ModelChangeStatus,
     ValuationModelChangeRequest,
     build_model_change_request,
@@ -20,7 +21,10 @@ from src.stage_04_pipeline.valuation_run_store import (
 )
 
 
-def _request() -> ValuationModelChangeRequest:
+def _request(
+    *,
+    created_at: str = "2026-07-26T10:00:00Z",
+) -> ValuationModelChangeRequest:
     return build_model_change_request(
         ticker="bank",
         analysis_snapshot_hash="snapshot-bank",
@@ -30,7 +34,7 @@ def _request() -> ValuationModelChangeRequest:
         rationale="Deposits and regulatory capital make industrial net debt invalid.",
         evidence_anchor_ids=("fact:deposits", "fact:cet1"),
         evidence_fingerprints=("statement-hash", "filing-hash"),
-        created_at="2026-07-26T10:00:00Z",
+        created_at=created_at,
     )
 
 
@@ -115,6 +119,64 @@ def test_model_change_request_and_decision_are_persisted_with_events() -> None:
         """,
         (request.request_id,),
     ).fetchone()[0] == 2
+
+
+def test_model_change_repersist_with_new_created_at_is_first_write_wins() -> None:
+    conn = sqlite3.connect(":memory:")
+    create_tables(conn)
+    first = _request()
+    later = _request(created_at="2026-07-27T10:00:00Z")
+
+    assert first.request_id == later.request_id
+    persist_model_change_request(conn, first, actor="pipeline")
+    assert persist_model_change_request(conn, later, actor="pipeline") == first.request_id
+
+    stored = load_model_change_request(conn, first.request_id)
+    assert stored == first
+    assert conn.execute(
+        """
+        SELECT created_at, updated_at
+        FROM valuation_model_change_requests
+        WHERE request_id = ?
+        """,
+        (first.request_id,),
+    ).fetchone() == (first.created_at, first.created_at)
+    assert conn.execute(
+        """
+        SELECT COUNT(*)
+        FROM valuation_model_change_events
+        WHERE request_id = ?
+        """,
+        (first.request_id,),
+    ).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("category", ModelChangeCategory.applicability),
+        ("rationale", "A materially different model rationale."),
+        ("required_capability", "different_capability"),
+        ("evidence_anchor_ids", ("fact:deposits", "fact:capital")),
+        ("evidence_fingerprints", ("statement-hash", "different-filing-hash")),
+    ],
+)
+def test_model_change_repersist_rejects_identity_payload_divergence(
+    field: str,
+    value: object,
+) -> None:
+    conn = sqlite3.connect(":memory:")
+    create_tables(conn)
+    request = _request()
+    divergent = request.model_copy(update={field: value})
+
+    assert divergent.request_id == request.request_id
+    persist_model_change_request(conn, request, actor="pipeline")
+    with pytest.raises(
+        ValueError,
+        match="model-change request identity has divergent payloads",
+    ):
+        persist_model_change_request(conn, divergent, actor="pipeline")
 
 
 def test_model_change_cas_loser_writes_no_decision_event(

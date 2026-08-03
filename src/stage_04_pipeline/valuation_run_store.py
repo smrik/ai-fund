@@ -1669,7 +1669,10 @@ def persist_model_change_request(
             (request.request_id,),
         ).fetchone()
         if existing is not None:
-            if existing[0] != payload_json:
+            existing_request = ValuationModelChangeRequest.model_validate_json(
+                str(existing[0])
+            )
+            if existing_request.identity_payload() != request.identity_payload():
                 raise ValueError(
                     "model-change request identity has divergent payloads"
                 )
