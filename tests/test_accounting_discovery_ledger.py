@@ -110,7 +110,7 @@ def _bridge_reclass(
 
 def _claim_ledger_with_unclaimed_line(
     line_id: str,
-    value_mm: float,
+    value_usd: float,
     *,
     semantic_type: str = "asset",
 ) -> ClaimLedger:
@@ -118,7 +118,7 @@ def _claim_ledger_with_unclaimed_line(
         reported_lines=[
             ReportedLine(
                 line_id,
-                value_mm,
+                value_usd,
                 line_id,
                 semantic_type=semantic_type,
             )
@@ -129,11 +129,11 @@ def _claim_ledger_with_unclaimed_line(
                 allocation_id=line_id,
                 component="unclaimed",
                 sign=1,
-                value=value_mm,
+                value=value_usd,
             )
         ],
         component_values={
-            "unclaimed": value_mm,
+            "unclaimed": value_usd,
             "non_operating_assets": 0.0,
             "pension_deficit": 0.0,
             "lease_liabilities": 0.0,
@@ -144,7 +144,7 @@ def _claim_ledger_with_unclaimed_line(
 def _claim_ledger_with_unclaimed_investment() -> ClaimLedger:
     return _claim_ledger_with_unclaimed_line(
         "xbrl:MarketableSecuritiesNoncurrent",
-        12_000.0,
+        12_000_000_000.0,
         semantic_type="asset",
     )
 
@@ -318,7 +318,7 @@ def test_duplicate_proposals_across_questions_dedupe_with_provenance():
         evidence_packet_id=214,
         claim_ledger=_claim_ledger_with_unclaimed_line(
             "xbrl:PensionLiability",
-            1_500.0,
+            1_500_000_000.0,
             semantic_type="liability",
         ),
     )
@@ -906,13 +906,13 @@ def test_multiple_reclassifications_use_one_cumulative_atomic_queue_pack():
         reported_lines=[
             ReportedLine(
                 "investment:a",
-                12_000.0,
+                12_000_000_000.0,
                 "xbrl:InvestmentA",
                 semantic_type="asset",
             ),
             ReportedLine(
                 "investment:b",
-                8_000.0,
+                8_000_000_000.0,
                 "xbrl:InvestmentB",
                 semantic_type="asset",
             ),
@@ -923,18 +923,18 @@ def test_multiple_reclassifications_use_one_cumulative_atomic_queue_pack():
                 "investment:a",
                 "unclaimed",
                 1,
-                12_000.0,
+                12_000_000_000.0,
             ),
             ClaimAllocation(
                 "investment:b",
                 "investment:b",
                 "unclaimed",
                 1,
-                8_000.0,
+                8_000_000_000.0,
             ),
         ],
         component_values={
-            "unclaimed": 20_000.0,
+            "unclaimed": 20_000_000_000.0,
             "non_operating_assets": 0.0,
         },
     )
