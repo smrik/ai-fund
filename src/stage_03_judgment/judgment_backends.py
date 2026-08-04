@@ -120,13 +120,23 @@ def _native_codex_executable(launcher: str) -> str:
         / "@openai"
         / "codex"
     )
-    executable_name = "codex.exe" if os.name == "nt" else "codex"
     candidates = sorted(
         {
-            *package_root.glob(
-                f"node_modules/@openai/codex-*/vendor/*/bin/{executable_name}"
+            *(
+                candidate
+                for executable_name in ("codex.exe", "codex")
+                for candidate in package_root.glob(
+                    "node_modules/@openai/codex-*/vendor/"
+                    f"*/bin/{executable_name}"
+                )
             ),
-            *package_root.glob(f"vendor/*/bin/{executable_name}"),
+            *(
+                candidate
+                for executable_name in ("codex.exe", "codex")
+                for candidate in package_root.glob(
+                    f"vendor/*/bin/{executable_name}"
+                )
+            ),
         }
     )
     if len(candidates) != 1:

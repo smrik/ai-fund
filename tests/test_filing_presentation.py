@@ -3,7 +3,6 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-import pytest
 
 from src.stage_00_data.filing_presentation import (
     extract_filing_presentation,

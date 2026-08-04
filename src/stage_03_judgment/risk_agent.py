@@ -6,7 +6,6 @@ Returns a RiskOutput with dollar position size, portfolio %, and stop loss.
 from __future__ import annotations
 
 import json
-import os
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
 from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent

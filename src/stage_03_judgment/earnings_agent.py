@@ -7,7 +7,6 @@ Returns an EarningsSummary.
 from __future__ import annotations
 
 import json
-import os
 
 from src.stage_00_data import edgar_client, filing_retrieval, market_data
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation

@@ -6,7 +6,6 @@ Returns a SentimentOutput with direction, score, and key themes.
 from __future__ import annotations
 
 import json
-import os
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
 from src.stage_02_valuation.templates.ic_memo import SentimentOutput

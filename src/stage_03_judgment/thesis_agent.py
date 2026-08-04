@@ -10,7 +10,6 @@ config/story_drivers_pending.yaml for PM review and approval.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 

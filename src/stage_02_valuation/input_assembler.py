@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import yaml
 
 from config import ROOT_DIR
+from db.schema import get_read_only_connection
 from src.contracts.assumption_registry import (
     AssumptionOwner,
     AssumptionUnit,
@@ -2574,8 +2575,7 @@ def build_valuation_inputs_from_db(
     if not resolved_path.is_file():
         raise FileNotFoundError(resolved_path)
 
-    conn = sqlite3.connect(f"{resolved_path.as_uri()}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
+    conn = get_read_only_connection(resolved_path)
     try:
         bundle = _load_canonical_db_source_bundle(conn, normalized_ticker)
     finally:

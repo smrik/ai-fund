@@ -14,7 +14,6 @@ via valuation_overrides.yaml when the haircut exceeds 10%.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from typing import Any
 

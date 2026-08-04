@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import sqlite3
 
+from db.schema import get_connection
 from src.stage_00_data.unit_contract import (
     CanonicalUnit,
     UnitContractError,
@@ -87,7 +88,7 @@ def backfill_canonical_database(
     normalized_ticker = str(ticker or "").strip().upper()
     close_connection = not isinstance(database, sqlite3.Connection)
     conn = (
-        sqlite3.connect(str(database))
+        get_connection(database)
         if close_connection
         else database
     )
@@ -208,7 +209,7 @@ def validate_canonical_database(
     normalized_ticker = str(ticker or "").strip().upper()
     close_connection = not isinstance(database, sqlite3.Connection)
     conn = (
-        sqlite3.connect(str(database))
+        get_connection(database)
         if close_connection
         else database
     )

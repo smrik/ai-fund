@@ -38,7 +38,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.stage_00_data.filing_retrieval import (
+from src.stage_00_data.filing_retrieval import (  # noqa: E402
     SECTION_PARSER_VERSION,
     _raise_for_incomplete_coverage,
     get_accounting_corpus_coverage,

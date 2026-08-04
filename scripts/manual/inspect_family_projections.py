@@ -24,9 +24,14 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.contracts.analysis_snapshot import AnalysisSnapshot
-from src.contracts.assumption_registry import DriverFamily, judgment_owned_fields
-from src.stage_04_pipeline.driver_family_workflow import _family_analysis_projection
+from src.contracts.analysis_snapshot import AnalysisSnapshot  # noqa: E402
+from src.contracts.assumption_registry import (  # noqa: E402
+    DriverFamily,
+    judgment_owned_fields,
+)
+from src.stage_04_pipeline.driver_family_workflow import (  # noqa: E402
+    _family_analysis_projection,
+)
 
 LINE = "=" * 78
 CHARS_PER_TOKEN_ESTIMATE = 4

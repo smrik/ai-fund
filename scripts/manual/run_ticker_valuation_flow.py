@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from config.llm_routing import format_llm_resolution, resolve_llm_route
+from config.llm_routing import (  # noqa: E402
+    format_llm_resolution,
+    resolve_llm_route,
+)
 
 
 DEFAULT_PROFILES = (

@@ -5,7 +5,6 @@ Advisory only. Does not mutate the deterministic valuation inputs.
 
 from __future__ import annotations
 
-import os
 from src.stage_02_valuation.templates.ic_memo import RiskImpactOutput
 from src.stage_03_judgment.base_agent import BaseAgent
 

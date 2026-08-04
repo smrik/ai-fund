@@ -19,23 +19,28 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from db.loader import list_evidence_packets
-from db.schema import get_connection
-from scripts.manual.inspect_classification import stage0_evidence
-from src.stage_00_data.ciq_adapter import get_ciq_snapshot
-from src.stage_00_data.filing_retrieval import (
+from db.loader import list_evidence_packets  # noqa: E402
+from db.schema import get_connection  # noqa: E402
+from scripts.manual.inspect_classification import stage0_evidence  # noqa: E402
+from src.stage_00_data.ciq_adapter import get_ciq_snapshot  # noqa: E402
+from src.stage_00_data.filing_retrieval import (  # noqa: E402
     get_accounting_section_inventory,
     get_discovery_filing_context,
 )
-from src.stage_02_valuation.input_assembler import build_valuation_inputs
-from src.stage_03_judgment.accounting_recast_agent import (
+from src.stage_02_valuation.input_assembler import (  # noqa: E402
+    build_valuation_inputs,
+)
+from src.stage_03_judgment.accounting_recast_agent import (  # noqa: E402
     AccountingDiscoveryAgent,
 )
-from src.stage_04_pipeline.accounting_discovery_ledger import (
+from src.stage_04_pipeline.accounting_discovery_ledger import (  # noqa: E402
     DiscoveryJudgmentContext,
     run_discovery_accounting_pass,
 )
-from config.llm_routing import format_llm_resolution, resolve_llm_route
+from config.llm_routing import (  # noqa: E402
+    format_llm_resolution,
+    resolve_llm_route,
+)
 
 
 def _latest_packet(ticker: str, profile_name: str) -> dict[str, Any] | None:

@@ -6,14 +6,6 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-
-def _evidence_chars() -> int:
-    """Per-snippet char budget, set by ALPHA_POD_EVIDENCE_CHARS env var."""
-    try:
-        return max(100, int(os.getenv("ALPHA_POD_EVIDENCE_CHARS", "420")))
-    except (ValueError, TypeError):
-        return 420
-
 from db.schema import create_tables, get_connection
 from src.contracts.accounting_evidence import AccountingTopic
 from src.contracts.evidence_packet import (
@@ -36,6 +28,14 @@ from src.stage_03_judgment.qoe_signals import compute_qoe_signals
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 from src.stage_04_pipeline.agentic_handoff_profiles import get_agentic_handoff_profile
+
+
+def _evidence_chars() -> int:
+    """Per-snippet char budget, set by ALPHA_POD_EVIDENCE_CHARS env var."""
+    try:
+        return max(100, int(os.getenv("ALPHA_POD_EVIDENCE_CHARS", "420")))
+    except (ValueError, TypeError):
+        return 420
 
 
 def _now() -> str:

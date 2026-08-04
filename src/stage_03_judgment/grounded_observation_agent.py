@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
 from src.stage_03_judgment.agentic_observations import (

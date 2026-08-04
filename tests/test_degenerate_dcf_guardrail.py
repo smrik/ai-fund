@@ -8,7 +8,6 @@ This test suite verifies that:
 5. The live defect case (all IVs = -19.47, EV = 1.0 MM for a large issuer) is caught, setting CRITICAL_DIAGNOSTICS and ModelTrustState.critical_review_required.
 """
 
-import pytest
 
 from src.stage_02_valuation.assumption_register import (
     AssumptionRegister,
@@ -17,12 +16,8 @@ from src.stage_02_valuation.assumption_register import (
     _apply_diagnostic_rollup,
     CRITICAL_DIAGNOSTICS,
 )
-from src.stage_02_valuation.professional_dcf import (
-    run_dcf_professional,
-)
 from src.stage_02_valuation.valuation_types import (
     ForecastDrivers,
-    ScenarioSpec,
 )
 
 

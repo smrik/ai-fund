@@ -7,7 +7,6 @@ Returns a FilingsSummary.
 from __future__ import annotations
 
 import json
-import os
 
 from src.stage_00_data import edgar_client, filing_retrieval
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation

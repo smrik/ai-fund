@@ -26,6 +26,15 @@ def get_connection(db_path: str | Path | None = None) -> sqlite3.Connection:
     return conn
 
 
+def get_read_only_connection(db_path: str | Path) -> sqlite3.Connection:
+    """Open an existing SQLite database without permitting writes."""
+    resolved_path = Path(db_path).expanduser().resolve()
+    conn = sqlite3.connect(f"{resolved_path.as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    return conn
+
+
 def create_tables(conn: sqlite3.Connection | None = None):
     """Create all tables. Idempotent — safe to call repeatedly."""
     close_after = False
