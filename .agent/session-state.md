@@ -1,47 +1,58 @@
 # Session State
 
-**Updated:** 2026-08-04 22:04 +02:00
+**Updated:** 2026-08-04 23:15 +02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Ride along the MSFT valuation from the completed Step 1 database through deterministic Step 2.
+Resume the attended MSFT valuation ride-along at Step 3: business context analysis, followed by
+industry context and small forecast-driver decisions.
 
 ## Recent Actions
 
-- Added and committed the DB-only `build_valuation_inputs_from_db(db_path, ticker)` seam.
-- Removed compute-layer `unit_scale` handling from the claim ledger, operating reconciliation,
-  accounting discovery, and CIQ EV-bridge repricing paths.
-- Verified 48 focused regressions across canonical input loading, claim/operating reconciliation,
-  CIQ adapters, and bridge behavior.
-- Preserved the validated DB and created the writable Step 2 copy
-  `output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z-step2.db`.
-- Ran MSFT through statement readiness (`decision_grade`) and operating reconciliation
-  (`reconciled`, no reasons), retaining revenue of 331,839,000,000 USD.
-- Ran the reconciled DCF: bear 111.45, base 172.88, bull 268.28, expected 179.67 per share.
-- Committed the regression (`4f26543`) and implementation (`626cf3b`) locally; nothing was pushed.
+- Confirmed the high-level pipeline: data ingestion -> deterministic status-quo model ->
+  forward-looking judgment -> enterprise/equity value.
+- Completed the MSFT Step 1 and Step 2 ride-along from the DB-only input boundary and preserved
+  the deterministic DCF output (bear 111.45, base 172.88, bull 268.28, expected 179.67 per share).
+- Specified the judgment split in
+  `docs/design-docs/context-and-adjustment-analyst-call-architecture-spec.md`: broad context calls,
+  narrow adjustment-reasoning calls, and separate formatting/validation calls.
+- Reduced the branch diff by keeping generated databases, caches, dossiers, and exports local while
+  retaining canonical workbooks such as `data/exports/MSFT_Standard.xlsx`.
+- Fixed recurring CI failures across pre-commit, host-independent Codex resolution, SQLite read-only
+  connections, and absolute-USD test fixtures.
+- Verified the final clean tree locally: 1,445 tests passed, 3 skipped; all pre-commit hooks passed;
+  `mkdocs build --strict` passed.
+- Merged PR #83 into `main` as commit `93dd760`; all seven GitHub checks passed. Local `main` now
+  matches `origin/main`. The pre-squash pointer is preserved locally as
+  `codex/pre-pr83-local-main-backup`.
 
 ## Next Steps
 
-- Review the reconciled deterministic input pack with the PM before any LLM agent receives it.
-- Bind canonical CIQ comps medians into the DB-only entrypoint; the current DCF uses the Technology
-  default exit multiple of 16.0 and should remain labeled provisional.
-- Then begin the judgment-layer ride-along, showing the exact evidence and numeric fields passed
-  to each MSFT agent before invoking it.
-- Do not push unless the PM requests it.
+1. Build the exact Business Context Analyst input packet for MSFT from the current database and
+   deterministic status-quo output.
+2. Show the PM every field, evidence excerpt, date, source, and numeric value before sending it to
+   an LLM. Do not invoke the model during this inspection step.
+3. Remove irrelevant or unsafe context, document the accepted input contract, and run one attended
+   Business Context Analyst call only after PM approval.
+4. Repeat the same inspect-first process for Industry Context before moving to individual driver
+   decisions.
 
 ## Known Issues
 
-- `.pytest_cache` cannot be written in this sandbox; focused tests pass with a warning.
-- The broad legacy valuation test batch can hang on network-capable paths; the affected offline
-  groups passed (48 tests total), and the DB-only run itself made no provider calls.
-- Existing user edits in `ciq/templates/financials_input.json` and
-  `data/exports/MSFT_Standard.xlsx` remain untouched.
-- Existing generated/cache/untracked artifacts remain untouched.
+- The current DCF still uses a provisional Technology default exit multiple of 16.0 until canonical
+  CIQ comps medians are bound into the DB-only entrypoint.
+- D&A remains a source-definition judgment: CIQ provides 34.3bn (10.336% of revenue), while EDGAR
+  exposes a broader depreciation, amortization, and other fact.
+- The reconciled capex start is 115.948bn (34.941% of revenue) and should be inspected during driver
+  review rather than silently normalized.
+- Generated/cache/untracked artifacts remain on disk and ignored; they were not deleted.
+- A detached verification worktree remains at `C:/tmp/ai-fund-pr83-clean-verify` and can be removed
+  later after confirming it is no longer useful.
 
-## Notes
+## Resume Prompt
 
-- The selected D&A start is the CIQ fact (34.3bn, 10.336% of revenue) rather than EDGAR's broader
-  `depreciation, amortization, and other` fact; the cross-source difference remains visible.
-- The current reconciled capex start is 115.948bn, or 34.941% of revenue.
+`Resume the MSFT ride-along at Step 3. Build and show me the exact Business Context Analyst input
+packet before making any LLM call. Explain why each field is included and flag anything that could
+mislead the agent.`
