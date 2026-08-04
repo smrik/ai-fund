@@ -670,6 +670,97 @@ remain explicitly blocked for source depth or source-contract reasons. A real cr
 decision-grade run therefore requires source refreshes, not ticker-specific assumptions or relaxed
 gates.
 
+## Unit Contract Checkpoint — 2026-08-04
+
+**Vision decisions served:** 1, 2, 9, 11, 12, 14.
+
+**Goal:** End Step 1 with a database artifact whose valuation-reachable values have one canonical
+unit contract, so Step 2 receives only `db_path` and `ticker` and never applies a source scale.
+
+**Starting state:** the MSFT ride-along database is
+`output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z.db`. Its latest completed CIQ
+snapshot is run 20 with financial as-of date 2026-06-30. Raw source values and their original unit
+metadata remain immutable provenance.
+
+**Canonical Step 1 output:**
+
+- monetary amounts: absolute USD;
+- share counts: absolute shares;
+- rates and margins: decimal fractions;
+- prices: USD per share;
+- multiples, days, and months: their unscaled semantic measure;
+- raw value, raw unit, and raw scale: provenance only, never computation inputs.
+
+**Simplest pipeline:** ingest raw source values -> map each valuation-reachable metric to a
+semantic unit -> normalize once -> persist the canonical value and provenance in SQLite -> validate
+the database contract -> allow Step 2 to load the latest completed snapshot by `db_path + ticker`.
+
+**Audit result:** CIQ long-form, statement facts, SEC facts, and the CIQ valuation snapshot are
+internally scale-consistent. Cross-source MSFT revenue, operating income, capex, debt, and shares
+show no million-versus-dollar mismatch. The remaining unsafe inputs are mixed-unit
+`ciq_comps_snapshot` rows, untyped `market_data_cache` JSON, native-unit `macro_series` values,
+untyped `sec_filing_metrics_snapshot` JSON, and compute-layer `ClaimLedger.unit_scale` handling.
+Cash, D&A, and share-count differences between sources are semantic-definition or as-of differences,
+not scale failures.
+
+**Assumptions that could make this wrong:** a metric alias can select a row with an incompatible
+unit; an upstream provider can change a field's native convention; a percentage-point series can be
+mistaken for a decimal; or a stored raw scale can leak past the Step 1 boundary. Missing or ambiguous
+unit mappings therefore fail closed instead of being guessed.
+
+**Sanity check:** for the MSFT tracer, canonical revenue must equal 331,839,000,000 USD and diluted
+shares must equal 7,453,000,000 shares; source facts representing the same quantity at different raw
+scales must normalize to the same canonical value. The database validator must reject incompatible
+unit aliases and any valuation-reachable record without a declared semantic unit.
+
+### Task U1: Define the public normalization contract
+
+**Files:** create `src/stage_00_data/unit_contract.py`; create `tests/test_unit_contract.py`.
+
+1. Define the finite canonical unit vocabulary and a typed normalized-value/provenance result.
+2. Normalize raw money, shares, percentage points, decimals, prices, multiples, days, and months.
+3. Reject non-finite values, invalid scales, and source-unit/semantic-unit mismatches.
+4. Keep this module deterministic and independent of SQLite, network, and valuation code.
+
+### Task U2: Persist canonical valuation inputs at the end of Step 1
+
+**Files:** `db/schema.py`, `db/loader.py`, `ciq/ingest.py`, and focused tests.
+
+1. Add one typed SQLite projection for canonical valuation inputs, keyed by ticker, source run or
+   snapshot, metric, period/as-of date, and source identity.
+2. Persist canonical values together with raw provenance; the canonical column always has scale 1.
+3. Add explicit semantic-unit mappings for valuation-reachable CIQ valuation and comps metrics.
+4. Fail the ingest when a valuation-reachable metric is ambiguous or lacks a mapping.
+
+### Task U3: Normalize the remaining Step 1 sources
+
+**Files:** `src/stage_00_data/market_data.py`, `src/stage_00_data/fred_client.py`, filing-metric
+snapshot loader, and focused tests.
+
+1. Route market-cache fields, macro series, and SEC filing metrics through the same contract.
+2. Preserve raw provider payloads separately from canonical projections.
+3. Persist provider/version/as-of lineage for every canonical record.
+
+### Task U4: Validate the database boundary
+
+**Files:** create `src/stage_00_data/unit_contract_validator.py`; focused integration test.
+
+1. Validate that every valuation-required metric has exactly one compatible canonical unit.
+2. Reject ambiguous aliases, missing units, and non-canonical stored values.
+3. Run the validator against an isolated MSFT Step 1 database and record the exact pass/fail set.
+
+### Task U5: Cut Step 2 over to canonical values
+
+**Files:** `src/stage_02_valuation/input_assembler.py`, `src/stage_02_valuation/claim_ledger.py`,
+`src/stage_04_pipeline/operating_reconciliation_service.py`, and regressions.
+
+1. Add the DB-only entrypoint whose public input is `db_path + ticker`.
+2. Resolve the latest completed source snapshots and latest financial date inside the boundary.
+3. Remove compute-layer multiplication/division by `unit_scale`; presentation scaling stays in
+   exporters and UI only.
+4. Re-run the MSFT deterministic valuation and require distinct bear/base/bull results with the
+   reconciled revenue start still equal to 331,839,000,000 USD.
+
 ## Exit Criteria
 
 1. No reported balance can be credited to equity twice; the attempt fails closed with both
