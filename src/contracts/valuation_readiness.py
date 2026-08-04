@@ -91,6 +91,7 @@ def _is_approved_judgment_source(source: str | None) -> bool:
         token in lowered
         for token in (
             "approved_assumption_register",
+            "approved_driver_family_pack",
             "qoe_llm_approved",
             "pm_approved",
         )

@@ -262,3 +262,32 @@ def test_pm_markdown_shows_per_driver_verdict() -> None:
     assert "provisional" in markdown
     assert "revenue_growth_mid" in markdown
     assert "approved_assumption_register" in markdown
+
+
+def test_approved_driver_family_lineage_is_not_downgraded_to_fallback() -> None:
+    """An approved family pack must not read as an unapproved fallback.
+
+    The bridge records the queue item, pack and approval fingerprint in the
+    lineage string.  Callers that assess provenance without passing
+    ``approved_family_hashes`` — the PM-facing guided workup among them — rely
+    entirely on that string to tell approved drivers from defaults.
+    """
+
+    sources = _sources("default")
+    sources["ebit_margin_target"] = (
+        "approved_driver_family_pack:item_id=219;pack_id=pack-1;"
+        "approval_fingerprint=abc123"
+    )
+
+    verdict = next(
+        row
+        for row in assess_judgment_driver_provenance(
+            sources,
+            used_fields=judgment_owned_fields(),
+        )
+        if row.field == "ebit_margin_target"
+    )
+
+    assert verdict.source_strength is JudgmentDriverSourceStrength.judgment_approved
+    assert verdict.status == "approved"
+    assert verdict.severity == "none"

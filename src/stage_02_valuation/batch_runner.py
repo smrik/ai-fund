@@ -7,6 +7,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import sqlite3
 import sys
 import time
@@ -54,13 +55,21 @@ from src.stage_04_pipeline.operating_reconciliation_service import (
     TickerOperatingReconciliation,
     assemble_reconciled_valuation_inputs,
 )
+from src.stage_04_pipeline.approved_driver_family_bridge import (
+    ApprovedDriverFamilyResolution,
+    resolve_approved_driver_family_packs,
+)
 from src.stage_02_valuation.professional_dcf import (
     default_scenario_specs,
     reverse_dcf_professional,
     run_dcf_professional,
     run_probabilistic_valuation,
 )
-from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.stage_02_valuation.valuation_types import (
+    ForecastDrivers,
+    ProbabilisticValuationResult,
+    ScenarioSpec,
+)
 from src.utils import safe_float
 
 
@@ -68,6 +77,73 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
+
+
+def _approved_driver_family_resolution_for_inputs(
+    ticker: str,
+    inputs: Any,
+    connection: Any | None,
+) -> ApprovedDriverFamilyResolution:
+    if connection is not None:
+        return resolve_approved_driver_family_packs(
+            connection,
+            ticker,
+            inputs.drivers,
+            inputs.source_lineage,
+        )
+
+    db_path = Path(os.getenv("ALPHA_POD_DB_PATH") or DB_PATH).resolve()
+    owned_connection = sqlite3.connect(
+        f"{db_path.as_uri()}?mode=ro",
+        uri=True,
+    )
+    owned_connection.row_factory = sqlite3.Row
+    try:
+        return resolve_approved_driver_family_packs(
+            owned_connection,
+            ticker,
+            inputs.drivers,
+            inputs.source_lineage,
+        )
+    finally:
+        owned_connection.close()
+
+
+def _run_probabilistic_valuation_with_scenario_drivers(
+    scenario_drivers: dict[str, ForecastDrivers],
+    scenario_specs: list[ScenarioSpec],
+    current_price: float | None = None,
+) -> ProbabilisticValuationResult:
+    if not scenario_specs:
+        raise ValueError("scenario_specs must not be empty")
+
+    prob_sum = sum(max(0.0, spec.probability) for spec in scenario_specs)
+    if prob_sum <= 0:
+        raise ValueError("scenario probabilities must sum to > 0")
+
+    scenario_results = {}
+    expected_iv = 0.0
+    for spec in scenario_specs:
+        normalized_probability = max(0.0, spec.probability) / prob_sum
+        normalized_spec = replace(spec, probability=normalized_probability)
+        drivers = scenario_drivers.get(normalized_spec.name)
+        if drivers is None:
+            raise ValueError(
+                f"approved driver-family scenarios missing {normalized_spec.name!r} drivers"
+            )
+        result = run_dcf_professional(drivers, normalized_spec)
+        scenario_results[normalized_spec.name] = result
+        expected_iv += result.intrinsic_value_per_share * normalized_probability
+
+    expected_upside_pct = None
+    if current_price and current_price > 0:
+        expected_upside_pct = expected_iv / current_price - 1.0
+
+    return ProbabilisticValuationResult(
+        scenario_results=scenario_results,
+        expected_iv=expected_iv,
+        expected_upside_pct=expected_upside_pct,
+    )
 
 
 def _reconciled_bridge_for_inputs(
@@ -433,6 +509,15 @@ def value_single_ticker(
         if inputs is None:
             return None
 
+        approved_driver_resolution = _approved_driver_family_resolution_for_inputs(
+            ticker,
+            inputs,
+            connection,
+        )
+        inputs.drivers = approved_driver_resolution.base_drivers
+        inputs.source_lineage = approved_driver_resolution.source_lineage
+        approved_scenario_drivers = approved_driver_resolution.dcf_scenario_drivers
+
         reconciled_bridge, bridge_source = _reconciled_bridge_for_inputs(
             inputs
         )
@@ -782,12 +867,28 @@ def value_single_ticker(
             regime_weights=regime_weights,
             driver_consensus=driver_consensus,
         )
-        probabilistic = run_probabilistic_valuation(inputs.drivers, scenario_specs, current_price=price)
-        context_probabilistic = run_probabilistic_valuation(
-            inputs.drivers,
-            scenario_policy.context_specs,
-            current_price=price,
-        )
+        if approved_scenario_drivers is None:
+            probabilistic = run_probabilistic_valuation(
+                inputs.drivers,
+                scenario_specs,
+                current_price=price,
+            )
+            context_probabilistic = run_probabilistic_valuation(
+                inputs.drivers,
+                scenario_policy.context_specs,
+                current_price=price,
+            )
+        else:
+            probabilistic = _run_probabilistic_valuation_with_scenario_drivers(
+                approved_scenario_drivers,
+                scenario_specs,
+                current_price=price,
+            )
+            context_probabilistic = _run_probabilistic_valuation_with_scenario_drivers(
+                approved_scenario_drivers,
+                scenario_policy.context_specs,
+                current_price=price,
+            )
 
         bear = _scenario_by_name(probabilistic.scenario_results, "bear")
         base = _scenario_by_name(probabilistic.scenario_results, "base")

@@ -15,12 +15,27 @@ Make every valuation run explicit about whether each judgment-owned driver is ba
 - A lineage key absent from `source_lineage` is reported as `unrecorded`. Usage is determined from the valuation driver payload where available; a driver not used by a model is reported as unused and does not create a provenance failure.
 - The input assembler may gain provenance-only entries, but no default value or valuation math changes.
 
+## Driver-family bridge
+
+The approved family path persists its authoritative value in the queue item's
+`approved_proposal_pack_json`; the bridge does not consult scalar assumption
+register rows because family approval intentionally creates none. Active queue
+rows are selected by `status='approved'`, with superseded rows excluded and the
+newest row winning if historical data contains duplicate active family rows.
+The pack's `low`, `base`, and `high` driver sets map to the DCF's `bear`, `base`,
+and `bull` scenarios. The existing DCF scenario shocks remain in force. The
+approved base values are applied after ordinary consensus/default precedence and
+each applied field's lineage records the queue item, pack, and approval
+fingerprint. Unapproved and superseded packs leave the assembled drivers and
+lineage unchanged.
+
 ## Implementation slices
 
 1. Add red tests for source-strength classification, default/consensus/approved distinctions, missing lineage, all-approved readiness, and PM markdown output.
 2. Add the provenance contract and feed its verdicts into `ValuationReadinessEvidence`.
 3. Preserve the complete source-lineage mapping through the override/export surfaces and add all-driver verdicts to the PM-facing guided markdown.
 4. Run focused tests, the offline suite with the required interpreter, inspect the current MSFT artifact, and update the handoff state.
+5. Connect the approved family pack to the legacy DCF path and preserve the same low/base/high-to-bear/base/bull mapping in frozen replay.
 
 ## Verification commands
 

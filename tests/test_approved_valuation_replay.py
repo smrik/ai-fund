@@ -251,6 +251,9 @@ def test_approved_case_replay_is_provider_free_and_byte_identical() -> None:
     assert first.output_hash == second.output_hash
     assert first.canonical_output == second.canonical_output
     assert set(first.dcf_results) == {"low", "base", "high"}
+    assert first.dcf_results["low"]["scenario"] == "bear"
+    assert first.dcf_results["base"]["scenario"] == "base"
+    assert first.dcf_results["high"]["scenario"] == "bull"
     assert first.comps_result is not None
 
 

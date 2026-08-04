@@ -7,7 +7,7 @@ only executes deterministic DCF and comps math.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 from typing import Any, Literal, Mapping
@@ -26,13 +26,19 @@ from src.stage_02_valuation.claim_ledger import (
 from src.stage_02_valuation.comps_model import run_comps_model
 from src.stage_02_valuation.professional_dcf import (
     FORECAST_YEARS,
+    default_scenario_specs,
     run_dcf_professional,
 )
-from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.stage_02_valuation.valuation_types import ForecastDrivers
 
 
 ScenarioName = Literal["low", "base", "high"]
 SCENARIO_NAMES: tuple[ScenarioName, ...] = ("low", "base", "high")
+DCF_SCENARIO_FOR_APPROVED_CASE: dict[ScenarioName, str] = {
+    "low": "bear",
+    "base": "base",
+    "high": "bull",
+}
 
 
 def _canonical_json(value: Any) -> str:
@@ -354,13 +360,20 @@ def replay_approved_valuation_case(
 
     policy = case.valuation_policy()
     probabilities = _scenario_probabilities(policy)
+    dcf_specs = {spec.name: spec for spec in default_scenario_specs()}
     dcf_results: dict[str, dict[str, Any]] = {}
     expected_iv = 0.0
     for scenario in SCENARIO_NAMES:
         drivers = case.drivers_for(scenario)
+        dcf_scenario = DCF_SCENARIO_FOR_APPROVED_CASE[scenario]
+        if dcf_scenario not in dcf_specs:
+            raise ValueError(f"missing official DCF scenario {dcf_scenario}")
         result = run_dcf_professional(
             drivers,
-            ScenarioSpec(name=scenario, probability=probabilities[scenario]),
+            replace(
+                dcf_specs[dcf_scenario],
+                probability=probabilities[scenario],
+            ),
         )
         result_payload = asdict(result)
         dcf_results[scenario] = result_payload

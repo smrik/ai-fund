@@ -93,6 +93,74 @@ def _driver_family_pack(
     return pack if pack.family is not None else None
 
 
+def _supersede_prior_driver_family_approvals(
+    conn: Any,
+    *,
+    ticker: str,
+    current_item: dict[str, Any],
+    family: Any,
+    superseding_item_id: int,
+    actor: str,
+    event_ts: str,
+) -> None:
+    """Close older active approvals for the same ticker and driver family."""
+
+    from db.loader import (
+        insert_pm_decision_queue_event,
+        list_pm_decision_queue_items,
+        update_pm_decision_queue_item,
+    )
+
+    rows = list_pm_decision_queue_items(
+        conn,
+        ticker=ticker,
+        status="approved",
+        item_type="assumption_change_pack",
+    )
+    for prior in rows:
+        prior_item_id = int(prior["item_id"])
+        if prior_item_id == int(current_item["item_id"]):
+            continue
+        prior_pack = _driver_family_pack(prior.get("approved_proposal_pack"))
+        if prior_pack is None or prior_pack.family != family:
+            continue
+        prior_links = dict(prior.get("adapter_links") or {})
+        prior_links["superseded_by_item_id"] = superseding_item_id
+        prior_links["superseded_at"] = event_ts
+        prior_history = _append_decision_history(
+            prior,
+            {
+                "event": "supersede",
+                "actor": actor,
+                "event_ts": event_ts,
+                "superseded_by_item_id": superseding_item_id,
+            },
+        )
+        update_pm_decision_queue_item(
+            conn,
+            item_id=prior_item_id,
+            updates={
+                "status": "superseded",
+                "adapter_links": prior_links,
+                "decision_history": prior_history,
+                "updated_at": event_ts,
+            },
+            commit=False,
+        )
+        insert_pm_decision_queue_event(
+            conn,
+            {
+                "created_at": event_ts,
+                "item_id": prior_item_id,
+                "ticker": ticker,
+                "event_type": "supersede",
+                "actor": actor,
+                "payload": {"superseded_by_item_id": superseding_item_id},
+            },
+            commit=False,
+        )
+
+
 def _accounting_treatment_metadata(item: dict[str, Any]) -> dict[str, Any] | None:
     """Return ledger metadata only for queue items produced by accounting review."""
     metadata = item.get("metadata")
@@ -738,6 +806,15 @@ def approve_pm_decision_queue_item(
                     ),
                     "scalar_pending_rows_created": 0,
                 }
+            )
+            _supersede_prior_driver_family_approvals(
+                conn,
+                ticker=ticker,
+                current_item=item,
+                family=family_pack.family,
+                superseding_item_id=int(item_id),
+                actor=actor,
+                event_ts=ts,
             )
             updated = update_pm_decision_queue_item(
                 conn,
