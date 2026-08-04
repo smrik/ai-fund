@@ -12,7 +12,11 @@ from src.stage_00_data.ciq_unit_mapping import (
     ciq_comps_unit_spec,
 )
 from src.stage_00_data.unit_contract import CanonicalUnit, UnitContractError
-from src.stage_00_data.source_unit_mapping import canonicalize_market_cache
+from src.stage_00_data.source_unit_mapping import (
+    canonicalize_macro_observation,
+    canonicalize_market_cache,
+    macro_series_unit_spec,
+)
 
 
 def _msft_snapshot() -> dict[str, object]:
@@ -227,3 +231,35 @@ def test_historical_cache_valuation_inputs_keep_absolute_units() -> None:
         by_metric["invested_capital_derived"]["canonical_value"]
         == 568_616_000_000.0
     )
+
+
+@pytest.mark.parametrize(
+    ("series_id", "raw_value", "canonical_value", "canonical_unit"),
+    [
+        ("DGS10", 4.75, 0.0475, CanonicalUnit.DECIMAL),
+        ("VIXCLS", 15.86, 15.86, CanonicalUnit.INDEX),
+        ("ICSA", 197_000.0, 197_000.0, CanonicalUnit.COUNT),
+        ("RSAFS", 768_553.0, 768_553_000_000.0, CanonicalUnit.USD),
+    ],
+)
+def test_macro_series_are_normalized_from_declared_native_units(
+    series_id: str,
+    raw_value: float,
+    canonical_value: float,
+    canonical_unit: CanonicalUnit,
+) -> None:
+    fact = canonicalize_macro_observation(
+        series_id=series_id,
+        series_date="2026-07-31",
+        value=raw_value,
+        fetched_at="2026-08-04T17:38:19+00:00",
+    )
+
+    assert fact["canonical_value"] == pytest.approx(canonical_value)
+    assert fact["canonical_unit"] == canonical_unit.value
+    assert fact["ticker"] == "__GLOBAL__"
+
+
+def test_unknown_macro_series_fails_closed() -> None:
+    with pytest.raises(UnitContractError, match="macro_series_unmapped"):
+        macro_series_unit_spec("UNKNOWN_SERIES")

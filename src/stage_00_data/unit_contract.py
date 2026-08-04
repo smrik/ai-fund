@@ -25,6 +25,8 @@ class CanonicalUnit(str, Enum):
     MULTIPLE = "multiple"
     DAYS = "days"
     MONTHS = "months"
+    INDEX = "index"
+    COUNT = "count"
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +62,8 @@ _FIXED_SCALE_UNITS: dict[CanonicalUnit, dict[str, float]] = {
     CanonicalUnit.MULTIPLE: {"multiple": 1.0, "x": 1.0},
     CanonicalUnit.DAYS: {"day": 1.0, "days": 1.0},
     CanonicalUnit.MONTHS: {"month": 1.0, "months": 1.0},
+    CanonicalUnit.INDEX: {"index": 1.0},
+    CanonicalUnit.COUNT: {"count": 1.0, "number": 1.0},
 }
 
 

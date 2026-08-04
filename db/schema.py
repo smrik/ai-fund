@@ -1083,7 +1083,10 @@ def create_tables(conn: sqlite3.Connection | None = None):
         metric_key          TEXT NOT NULL,
         canonical_value     REAL NOT NULL,
         canonical_unit      TEXT NOT NULL CHECK (
-            canonical_unit IN ('USD', 'shares', 'decimal', 'USD/share', 'multiple', 'days', 'months')
+            canonical_unit IN (
+                'USD', 'shares', 'decimal', 'USD/share', 'multiple',
+                'days', 'months', 'index', 'count'
+            )
         ),
         raw_value           REAL NOT NULL,
         raw_unit            TEXT NOT NULL,
@@ -1172,6 +1175,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
         series_id       TEXT NOT NULL,
         series_date     TEXT NOT NULL,
         value           REAL,
+        unit            TEXT,
+        scale_factor    REAL NOT NULL DEFAULT 1.0,
         fetched_at      TEXT NOT NULL,
         PRIMARY KEY (series_id, series_date)
     );
@@ -1275,6 +1280,18 @@ def create_tables(conn: sqlite3.Connection | None = None):
     if "scale_factor" not in ciq_comps_columns:
         conn.execute(
             "ALTER TABLE ciq_comps_snapshot "
+            "ADD COLUMN scale_factor REAL NOT NULL DEFAULT 1.0"
+        )
+
+    macro_series_columns = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute("PRAGMA table_info(macro_series)").fetchall()
+    }
+    if "unit" not in macro_series_columns:
+        conn.execute("ALTER TABLE macro_series ADD COLUMN unit TEXT")
+    if "scale_factor" not in macro_series_columns:
+        conn.execute(
+            "ALTER TABLE macro_series "
             "ADD COLUMN scale_factor REAL NOT NULL DEFAULT 1.0"
         )
 

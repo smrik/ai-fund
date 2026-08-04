@@ -68,6 +68,78 @@ _MARKET_CACHE_SPECS = {
     "historical_financials": _HISTORICAL_FINANCIAL_SPECS,
 }
 
+_MACRO_PERCENT_SERIES = {
+    "DGS1MO",
+    "DGS3MO",
+    "DGS6MO",
+    "DGS1",
+    "DGS2",
+    "DGS5",
+    "DGS10",
+    "DGS20",
+    "DGS30",
+    "T10Y2Y",
+    "FEDFUNDS",
+    "BAMLC0A4CBBB",
+    "BAMLH0A0HYM2",
+    "UNRATE",
+}
+_MACRO_INDEX_SERIES = {"VIXCLS", "CPIAUCSL", "INDPRO"}
+_MACRO_COUNT_SERIES = {"ICSA"}
+_MACRO_USD_MILLIONS_SERIES = {"RSAFS"}
+
+
+def macro_series_unit_spec(series_id: str) -> _Spec:
+    """Return the declared FRED native unit and canonical unit for a series."""
+    normalized_id = str(series_id or "").strip().upper()
+    if normalized_id in _MACRO_PERCENT_SERIES:
+        return CanonicalUnit.DECIMAL, "%", 0.01
+    if normalized_id in _MACRO_INDEX_SERIES:
+        return CanonicalUnit.INDEX, "index", 1.0
+    if normalized_id in _MACRO_COUNT_SERIES:
+        return CanonicalUnit.COUNT, "number", 1.0
+    if normalized_id in _MACRO_USD_MILLIONS_SERIES:
+        return CanonicalUnit.USD, "USD", 1_000_000.0
+    raise UnitContractError(
+        f"unit_contract.macro_series_unmapped:{normalized_id}"
+    )
+
+
+def canonicalize_macro_observation(
+    *,
+    series_id: str,
+    series_date: str,
+    value: float,
+    fetched_at: str,
+) -> dict[str, Any]:
+    """Project one FRED native observation into a canonical global fact."""
+    normalized_id = str(series_id or "").strip().upper()
+    canonical_unit, raw_unit, raw_scale = macro_series_unit_spec(normalized_id)
+    source_ref = f"macro_series:{normalized_id}:{series_date}"
+    normalized = normalize_source_value(
+        value=value,
+        raw_unit=raw_unit,
+        raw_scale=raw_scale,
+        canonical_unit=canonical_unit,
+        source_ref=source_ref,
+    )
+    return {
+        "ticker": "__GLOBAL__",
+        "subject_key": normalized_id,
+        "as_of_date": series_date,
+        "period_date": series_date,
+        "source": "macro_series",
+        "source_snapshot_id": f"fred:{normalized_id}:{fetched_at}",
+        "metric_key": normalized_id.lower(),
+        "canonical_value": normalized.value,
+        "canonical_unit": normalized.unit.value,
+        "raw_value": normalized.raw_value,
+        "raw_unit": normalized.raw_unit,
+        "raw_scale": normalized.raw_scale,
+        "source_ref": source_ref,
+        "recorded_at": fetched_at,
+    }
+
 
 def canonicalize_market_cache(
     *,
