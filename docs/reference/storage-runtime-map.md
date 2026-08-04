@@ -7,7 +7,10 @@ This page is the canonical map of where Alpha Pod stores things, what is safe to
 | Folder / File | Category | Safe to delete? |
 |---|---|---|
 | `data/cache/` | Regenerated cache | Yes — refetched on next run |
-| `data/exports/` | Generated exports | Yes — recreated by batch runner |
+| `ciq/templates/ciq_cleandata.xlsx` | CIQ Standard source template | No — source workbook for ticker refreshes |
+| `ciq/templates/financials_input.json` | CIQ Power Query control | No — verify ticker and requested date before refresh |
+| `data/exports/{TICKER}_Standard.xlsx` | Staged CIQ data-loading workbook | Not casually — archive refreshed vendor data first |
+| `data/exports/generated/` | Generated review exports | Yes — recreated by export flows |
 | `data/valuations/` | Generated exports | Yes — recreated by batch runner |
 | `data/dossiers/` | Generated dossiers | Yes — recreated by pipeline |
 | `data/alpha_pod.db` | Durable local state | No — contains pipeline log, estimate history, risk snapshots |
@@ -80,10 +83,25 @@ data/cache/yfinance_info.json   — yfinance metadata cache
 
 All safe to delete. Refetched automatically on next run. Deleting forces a full re-pull from upstream sources — useful when data looks stale.
 
-### Generated Exports (`data/exports/`, `data/valuations/`)
+### CIQ Standard Workbook Chain
+
+These paths belong to one Capital IQ loading flow:
+
+```text
+ciq/templates/ciq_cleandata.xlsx          — Standard source template
+ciq/templates/financials_input.json        — Power Query ticker/date/currency control
+data/exports/{TICKER}_Standard.xlsx        — staged workbook refreshed in Excel
+data/ciq_archive/{TICKER}_{date}_{ts}.xlsx — archived refreshed workbook
+```
+
+`{TICKER}_Standard.xlsx` is an input to SQLite ingestion, not the final valuation workbook. The current workbook Power Query reads the fixed local path `C:\Projects\03-Finance\ai-fund\ciq\templates\financials_input.json`, even if the staged workbook was copied elsewhere. Check that file before every refresh.
+
+The separate PM-facing valuation and review exports live under `data/exports/generated/ticker/{TICKER}/`.
+
+### Generated Exports (`data/exports/generated/`, `data/valuations/`)
 
 ```
-data/exports/{TICKER}_Standard.xlsx   — per-ticker valuation workbooks
+data/exports/generated/ticker/       — per-ticker valuation and review workbooks
 data/valuations/batch_*.xlsx          — batch valuation output
 data/valuations/latest.csv            — Power Query feed (latest batch)
 data/valuations/json/                 — machine-readable valuation snapshots
