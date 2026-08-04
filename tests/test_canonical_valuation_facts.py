@@ -12,6 +12,7 @@ from src.stage_00_data.ciq_unit_mapping import (
     ciq_comps_unit_spec,
 )
 from src.stage_00_data.unit_contract import CanonicalUnit, UnitContractError
+from src.stage_00_data.source_unit_mapping import canonicalize_market_cache
 
 
 def _msft_snapshot() -> dict[str, object]:
@@ -175,3 +176,54 @@ def test_ciq_comps_rows_are_canonicalized_without_mixed_scales() -> None:
     )
     assert by_metric["gross_margin_fy"]["canonical_unit"] == "decimal"
     assert all(fact["subject_key"] == "MSFT" for fact in facts)
+
+
+def test_market_cache_valuation_inputs_are_canonicalized_on_write() -> None:
+    facts = canonicalize_market_cache(
+        ticker="MSFT",
+        data_type="market_data",
+        data={
+            "current_price": 497.3301,
+            "revenue_ttm": 331_839_012_864.0,
+            "operating_margin": 0.46781,
+            "total_debt": 128_812_998_656.0,
+            "cash": 76_651_003_904.0,
+            "shares_outstanding": 7_425_545_491.0,
+        },
+        fetched_at="2026-08-04T17:38:19+00:00",
+    )
+    by_metric = {fact["metric_key"]: fact for fact in facts}
+
+    assert by_metric["current_price"]["canonical_unit"] == "USD/share"
+    assert by_metric["revenue_ttm"]["canonical_value"] == 331_839_012_864.0
+    assert by_metric["revenue_ttm"]["canonical_unit"] == "USD"
+    assert by_metric["operating_margin"]["canonical_value"] == 0.46781
+    assert by_metric["operating_margin"]["canonical_unit"] == "decimal"
+    assert by_metric["shares_outstanding"]["canonical_unit"] == "shares"
+    assert all(fact["raw_scale"] == 1.0 for fact in facts)
+
+
+def test_historical_cache_valuation_inputs_keep_absolute_units() -> None:
+    facts = canonicalize_market_cache(
+        ticker="MSFT",
+        data_type="historical_financials",
+        data={
+            "revenue_cagr_3yr": 0.143,
+            "op_margin_avg_3yr": 0.451,
+            "dso_derived": 68.0,
+            "lease_liabilities_bs": 88_519_000_000.0,
+            "diluted_shares": 7_453_000_000.0,
+            "invested_capital_derived": 568_616_000_000.0,
+        },
+        fetched_at="2026-08-04T17:38:19+00:00",
+    )
+    by_metric = {fact["metric_key"]: fact for fact in facts}
+
+    assert by_metric["lease_liabilities_bs"]["canonical_unit"] == "USD"
+    assert by_metric["diluted_shares"]["canonical_unit"] == "shares"
+    assert by_metric["dso_derived"]["canonical_unit"] == "days"
+    assert by_metric["revenue_cagr_3yr"]["canonical_unit"] == "decimal"
+    assert (
+        by_metric["invested_capital_derived"]["canonical_value"]
+        == 568_616_000_000.0
+    )

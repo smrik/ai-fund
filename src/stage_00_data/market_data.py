@@ -64,8 +64,18 @@ def _db_cache_get(ticker: str, data_type: str, ttl_hours: float | None = _MARKET
 
 def _db_cache_set(ticker: str, data_type: str, data: dict) -> None:
     """Persist a result to the SQLite market_data_cache table."""
+    fetched_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    from src.stage_00_data.source_unit_mapping import canonicalize_market_cache
+
+    canonical_facts = canonicalize_market_cache(
+        ticker=ticker,
+        data_type=data_type,
+        data=data,
+        fetched_at=fetched_at,
+    )
     try:
         from config import DB_PATH
+        from db.loader import upsert_canonical_valuation_facts
         from db.schema import create_tables
         conn = sqlite3.connect(str(DB_PATH))
         create_tables(conn)
@@ -78,10 +88,11 @@ def _db_cache_set(ticker: str, data_type: str, data: dict) -> None:
                 ticker.upper(),
                 data_type,
                 json.dumps(data, default=str),
-                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                fetched_at,
             ],
         )
         conn.commit()
+        upsert_canonical_valuation_facts(conn, canonical_facts)
         conn.close()
     except Exception:
         pass
