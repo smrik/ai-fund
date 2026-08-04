@@ -245,6 +245,89 @@ def canonicalize_sec_filing_metrics_snapshot(
     return facts
 
 
+def canonicalize_statement_facts(
+    records: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Project numeric statement facts into canonical values at ingestion."""
+    facts: list[dict[str, Any]] = []
+    unit_specs: dict[str, _Spec] = {
+        "usd": (CanonicalUnit.USD, "USD", 1.0),
+        "shares": (CanonicalUnit.SHARES, "shares", 1.0),
+        "%": (CanonicalUnit.DECIMAL, "%", 0.01),
+        "usd/share": (CanonicalUnit.USD_PER_SHARE, "USD/share", 1.0),
+        "months": (CanonicalUnit.MONTHS, "months", 1.0),
+    }
+    for record in records:
+        raw_value = record.get("numeric_value")
+        if raw_value is None:
+            continue
+        ticker = str(record.get("ticker") or "").strip().upper()
+        source = str(record.get("source") or "").strip()
+        concept = str(record.get("concept") or "").strip()
+        period_date = str(
+            record.get("period_end") or record.get("period_label") or ""
+        ).strip()[:10]
+        raw_unit_value = record.get("unit")
+        raw_unit_key = str(raw_unit_value or "").strip().casefold()
+        if not ticker:
+            raise UnitContractError("unit_contract.ticker_missing")
+        if not source or not concept:
+            raise UnitContractError("unit_contract.statement_identity_missing")
+        if not period_date:
+            raise UnitContractError("unit_contract.statement_period_missing")
+        if not raw_unit_key:
+            raise UnitContractError("unit_contract.raw_unit_missing")
+        spec = unit_specs.get(raw_unit_key)
+        if spec is None:
+            raise UnitContractError(
+                f"unit_contract.statement_unit_unmapped:{raw_unit_key}"
+            )
+        canonical_unit, expected_raw_unit, fixed_scale = spec
+        raw_scale = float(record.get("scale_factor") or 0.0)
+        if canonical_unit in {CanonicalUnit.USD, CanonicalUnit.SHARES}:
+            fixed_scale = raw_scale
+        fact_id = str(record.get("fact_id") or "").strip()
+        fingerprint = str(record.get("ingestion_fingerprint") or "").strip()
+        if not fact_id or not fingerprint:
+            raise UnitContractError("unit_contract.statement_identity_missing")
+        source_ref = f"statement_fact:{fact_id}:{fingerprint}"
+        normalized = normalize_source_value(
+            value=float(raw_value),
+            raw_unit=expected_raw_unit,
+            raw_scale=fixed_scale,
+            canonical_unit=canonical_unit,
+            source_ref=source_ref,
+        )
+        source_identity = (
+            record.get("source_run_id")
+            or record.get("accession")
+            or fingerprint
+        )
+        recorded_at = str(record.get("ingested_at") or period_date)
+        as_of_date = str(
+            record.get("filing_date") or recorded_at[:10] or period_date
+        )[:10]
+        facts.append(
+            {
+                "ticker": ticker,
+                "subject_key": ticker,
+                "as_of_date": as_of_date,
+                "period_date": period_date,
+                "source": f"statement_facts:{source}",
+                "source_snapshot_id": f"{source}:{source_identity}",
+                "metric_key": concept,
+                "canonical_value": normalized.value,
+                "canonical_unit": normalized.unit.value,
+                "raw_value": normalized.raw_value,
+                "raw_unit": normalized.raw_unit,
+                "raw_scale": normalized.raw_scale,
+                "source_ref": source_ref,
+                "recorded_at": recorded_at,
+            }
+        )
+    return facts
+
+
 def canonicalize_market_cache(
     *,
     ticker: str,

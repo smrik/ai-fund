@@ -16,6 +16,7 @@ from src.stage_00_data.source_unit_mapping import (
     canonicalize_macro_observation,
     canonicalize_market_cache,
     canonicalize_sec_filing_metrics_snapshot,
+    canonicalize_statement_facts,
     macro_series_unit_spec,
 )
 
@@ -294,3 +295,62 @@ def test_sec_filing_metrics_and_series_use_canonical_units() -> None:
     assert by_metric["revenue"]["canonical_unit"] == "USD"
     assert by_metric["operating_income"]["canonical_value"] == 155_237_000_000.0
     assert by_metric["operating_income"]["period_date"] == "2026-06-30"
+
+
+def test_statement_facts_with_different_raw_scales_normalize_equally() -> None:
+    facts = canonicalize_statement_facts(
+        [
+            {
+                "fact_id": "ciq-revenue",
+                "ingestion_fingerprint": "ciq-fingerprint",
+                "ticker": "MSFT",
+                "source": "ciq_workbook_v1",
+                "source_run_id": "20",
+                "concept": "revenue",
+                "numeric_value": 331_839.0,
+                "unit": "USD",
+                "scale_factor": 1_000_000.0,
+                "period_end": "2026-06-30",
+                "filing_date": "2026-07-30",
+                "ingested_at": "2026-08-04T17:38:19+00:00",
+            },
+            {
+                "fact_id": "sec-revenue",
+                "ingestion_fingerprint": "sec-fingerprint",
+                "ticker": "MSFT",
+                "source": "sec_xbrl",
+                "source_run_id": "0001193125-26-323660",
+                "concept": "Revenues",
+                "numeric_value": 331_839_000_000.0,
+                "unit": "USD",
+                "scale_factor": 1.0,
+                "period_end": "2026-06-30",
+                "filing_date": "2026-07-30",
+                "ingested_at": "2026-08-04T17:38:19+00:00",
+            },
+        ]
+    )
+
+    assert facts[0]["canonical_value"] == facts[1]["canonical_value"]
+    assert facts[0]["canonical_unit"] == facts[1]["canonical_unit"] == "USD"
+
+
+def test_numeric_statement_fact_without_unit_fails_closed() -> None:
+    with pytest.raises(UnitContractError, match="raw_unit_missing"):
+        canonicalize_statement_facts(
+            [
+                {
+                    "fact_id": "ambiguous",
+                    "ingestion_fingerprint": "ambiguous-fingerprint",
+                    "ticker": "MSFT",
+                    "source": "ciq_workbook_v1",
+                    "source_run_id": "20",
+                    "concept": "revenue",
+                    "numeric_value": 1.0,
+                    "unit": None,
+                    "scale_factor": 1.0,
+                    "period_end": "2026-06-30",
+                    "ingested_at": "2026-08-04T17:38:19+00:00",
+                }
+            ]
+        )

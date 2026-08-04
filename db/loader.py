@@ -375,6 +375,9 @@ def insert_statement_facts(
     if not records:
         return 0
     payload = [_statement_fact_payload(dict(record)) for record in records]
+    from src.stage_00_data.source_unit_mapping import canonicalize_statement_facts
+
+    canonical_facts = canonicalize_statement_facts(payload)
     before = conn.total_changes
     try:
         conn.executemany(
@@ -402,11 +405,16 @@ def insert_statement_facts(
             """,
             payload,
         )
+        inserted = conn.total_changes - before
+        upsert_canonical_valuation_facts(
+            conn,
+            canonical_facts,
+            commit=False,
+        )
     except Exception:
         if commit:
             conn.rollback()
         raise
-    inserted = conn.total_changes - before
     if commit:
         conn.commit()
     return int(inserted)
@@ -694,6 +702,8 @@ def upsert_ciq_valuation_snapshot(conn: sqlite3.Connection, rows: list[dict[str,
 def upsert_canonical_valuation_facts(
     conn: sqlite3.Connection,
     rows: list[dict[str, Any]],
+    *,
+    commit: bool = True,
 ) -> None:
     """Persist Step 1 facts that are already in canonical computation units."""
     if not rows:
@@ -723,7 +733,8 @@ def upsert_canonical_valuation_facts(
         """,
         rows,
     )
-    conn.commit()
+    if commit:
+        conn.commit()
 
 
 def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
