@@ -34,6 +34,19 @@ htmlcov/
 data/alpha_pod.db
 data/alpha_pod.db.polluted-20260703.bak
 data/data.zip
+data/*.db
+data/*.db-shm
+data/*.db-wal
+
+# Rebuildable ingestion caches and generated research outputs. Canonical Excel
+# templates such as data/exports/MSFT_Standard.xlsx remain tracked.
+data/cache/
+data/ciq_archive/
+data/dossiers/
+data/exports/generated/
+data/valuations/
+data/stage1_survivors.csv
+ssh-debug.txt
 
 # Excel temp files
 ~$*.xlsx

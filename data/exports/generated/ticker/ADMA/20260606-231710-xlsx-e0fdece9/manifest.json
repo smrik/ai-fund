@@ -1,9 +1,0 @@
-{
-  "artifacts": [
-    "excel_workbook",
-    "power_query_json"
-  ],
-  "format": "xlsx",
-  "template": "C:\\Projects\\03-Finance\\ai-fund\\templates\\ticker_review.xlsx",
-  "ticker": "ADMA"
-}
