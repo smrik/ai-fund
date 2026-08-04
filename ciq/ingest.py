@@ -12,11 +12,15 @@ from db.loader import (
     finalize_ciq_ingest_run,
     insert_ciq_long_form,
     register_ciq_ingest_run,
+    upsert_canonical_valuation_facts,
     upsert_ciq_comps_snapshot,
     upsert_ciq_valuation_snapshot,
 )
 from db.schema import create_tables, get_connection
 from ciq.workbook_parser import CIQTemplateContractError, parse_ciq_workbook
+from src.stage_00_data.ciq_unit_mapping import (
+    canonicalize_ciq_valuation_snapshot,
+)
 from src.stage_04_pipeline.statement_reconciliation_store import (
     persist_statement_source_manifest,
 )
@@ -191,7 +195,11 @@ def ingest_ciq_folder(
                 snapshot_row["run_id"] = run_id
                 snapshot_row["source_file"] = payload.source_file
                 snapshot_row["pulled_at"] = _now_iso()
+                canonical_snapshot_facts = canonicalize_ciq_valuation_snapshot(
+                    snapshot_row
+                )
                 upsert_ciq_valuation_snapshot(conn, [snapshot_row])
+                upsert_canonical_valuation_facts(conn, canonical_snapshot_facts)
 
                 comps_rows = []
                 for row in payload.comps_snapshot:

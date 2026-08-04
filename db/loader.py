@@ -691,6 +691,41 @@ def upsert_ciq_valuation_snapshot(conn: sqlite3.Connection, rows: list[dict[str,
     conn.commit()
 
 
+def upsert_canonical_valuation_facts(
+    conn: sqlite3.Connection,
+    rows: list[dict[str, Any]],
+) -> None:
+    """Persist Step 1 facts that are already in canonical computation units."""
+    if not rows:
+        return
+
+    conn.executemany(
+        """
+        INSERT INTO canonical_valuation_facts (
+            ticker, subject_key, as_of_date, period_date, source,
+            source_snapshot_id, metric_key, canonical_value, canonical_unit,
+            raw_value, raw_unit, raw_scale, source_ref, recorded_at
+        ) VALUES (
+            :ticker, :subject_key, :as_of_date, :period_date, :source,
+            :source_snapshot_id, :metric_key, :canonical_value, :canonical_unit,
+            :raw_value, :raw_unit, :raw_scale, :source_ref, :recorded_at
+        )
+        ON CONFLICT(
+            ticker, subject_key, as_of_date, period_date, source,
+            source_snapshot_id, metric_key, source_ref
+        ) DO UPDATE SET
+            canonical_value = excluded.canonical_value,
+            canonical_unit = excluded.canonical_unit,
+            raw_value = excluded.raw_value,
+            raw_unit = excluded.raw_unit,
+            raw_scale = excluded.raw_scale,
+            recorded_at = excluded.recorded_at
+        """,
+        rows,
+    )
+    conn.commit()
+
+
 def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any]]):
     """Upsert CIQ comps snapshot rows keyed by target/peer/date/sheet/metric."""
     if not rows:

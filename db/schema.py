@@ -1070,6 +1070,31 @@ def create_tables(conn: sqlite3.Connection | None = None):
         FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
     );
 
+    -- Step 1 output: valuation-reachable values in canonical computation units.
+    -- raw_* columns are provenance only; downstream computation reads canonical_value.
+    CREATE TABLE IF NOT EXISTS canonical_valuation_facts (
+        ticker              TEXT NOT NULL,
+        subject_key         TEXT NOT NULL,
+        as_of_date          TEXT NOT NULL,
+        period_date         TEXT NOT NULL,
+        source              TEXT NOT NULL,
+        source_snapshot_id  TEXT NOT NULL,
+        metric_key          TEXT NOT NULL,
+        canonical_value     REAL NOT NULL,
+        canonical_unit      TEXT NOT NULL CHECK (
+            canonical_unit IN ('USD', 'shares', 'decimal', 'USD/share', 'multiple', 'days', 'months')
+        ),
+        raw_value           REAL NOT NULL,
+        raw_unit            TEXT NOT NULL,
+        raw_scale           REAL NOT NULL CHECK (raw_scale > 0),
+        source_ref          TEXT NOT NULL,
+        recorded_at         TEXT NOT NULL,
+        PRIMARY KEY (
+            ticker, subject_key, as_of_date, period_date, source,
+            source_snapshot_id, metric_key, source_ref
+        )
+    );
+
     -- Indexes for common queries
     CREATE INDEX IF NOT EXISTS idx_financials_ticker ON financials(ticker);
     CREATE INDEX IF NOT EXISTS idx_prices_ticker ON prices(ticker);
@@ -1138,6 +1163,8 @@ def create_tables(conn: sqlite3.Connection | None = None):
     CREATE INDEX IF NOT EXISTS idx_judgment_reservations_expiry ON judgment_invocation_reservations(lease_expires_at_epoch);
     CREATE INDEX IF NOT EXISTS idx_ciq_snapshot_ticker ON ciq_valuation_snapshot(ticker, as_of_date);
     CREATE INDEX IF NOT EXISTS idx_ciq_comps_target ON ciq_comps_snapshot(target_ticker, as_of_date);
+    CREATE INDEX IF NOT EXISTS idx_canonical_valuation_facts_lookup
+        ON canonical_valuation_facts(ticker, metric_key, as_of_date DESC);
 
     -- FRED macro series cache (daily snapshots)
     CREATE TABLE IF NOT EXISTS macro_series (
