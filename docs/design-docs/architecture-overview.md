@@ -93,6 +93,9 @@ Every assumption is tracked in `source_lineage` in the output.
 
 **Computation rules:**
 - All monetary values in absolute USD (not millions) inside functions; converted for display only
+- Step 1 persists valuation-reachable values in `canonical_valuation_facts`: money is absolute USD,
+  shares are absolute shares, rates/margins are decimals, and raw source scale is provenance only.
+  Step 2 must read `canonical_value` and must not apply `raw_scale`, `scale_factor`, or `unit_scale`.
 - `SECTOR_DEFAULTS` in `input_assembler.py` are fallbacks — actual data always wins
 - Every output record includes full `source_lineage` audit dict
 - WACC Rf/ERP configurable in `config/config.yaml` → `wacc_params` section

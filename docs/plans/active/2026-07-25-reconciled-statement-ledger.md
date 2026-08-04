@@ -761,6 +761,15 @@ snapshot loader, and focused tests.
 4. Re-run the MSFT deterministic valuation and require distinct bear/base/bull results with the
    reconciled revenue start still equal to 331,839,000,000 USD.
 
+**Checkpoint status — 2026-08-04:** Tasks U1-U4 are complete. CIQ valuation, all 702 numeric comps
+cells, CIQ/SEC statement facts, market and historical caches, configured FRED series, and SEC metric
+snapshots now project into `canonical_valuation_facts`. The legacy ride-along database was copied to
+`output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z-canonical.db`; the original was
+not modified. The copy resolves latest CIQ run 20 and financial as-of 2026-06-30, and the validator
+passes after reproducing 23,346 persisted ticker/global facts from raw value/unit/scale provenance.
+The only unitless numeric source rows were two `financial_accounting_standard` metadata flags; they
+are explicitly non-quantitative and do not enter the canonical fact table. Task U5 is next.
+
 ## Exit Criteria
 
 1. No reported balance can be credited to equity twice; the attempt fails closed with both
