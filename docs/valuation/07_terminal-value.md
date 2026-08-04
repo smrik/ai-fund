@@ -37,7 +37,18 @@ The deterministic layer should own:
 
 ### LLM-augmented
 
-LLMs can help explain why terminal assumptions may be fragile or contextually implausible, but they should not set the numeric terminal framework.
+The judgment layer **authors the terminal assumptions** — terminal growth, terminal reinvestment
+(what capex and D&A converge to and why), and the durability of competitive advantage that
+justifies them — each with a named evidence basis from filings and management guidance. See
+[Vision Decision 13](../strategy/vision.md#the-division-of-labor).
+
+It also explains why those assumptions may be fragile or contextually implausible.
+
+What stays deterministic is the terminal *framework*: which formula is used, the Gordon/exit
+blend mechanics, and the guardrail checks. Proposed terminal values reach the model only through
+the PM Decision Queue. Note that terminal assumptions typically drive the majority of enterprise
+value, so leaving them to a sector constant concentrates the largest part of the answer in the
+least company-specific input.
 
 ### Human / PM Judgment
 
@@ -136,19 +147,15 @@ Deterministic outputs:
 - exit-value terminal output
 - exit-multiple audit
 
-## 4. Use a blend only when it improves discipline
+## 4. Production blend policy
 
-Blending Gordon and exit value can be useful, but only if it improves robustness.
+When both terminal methods are valid, the production DCF headline is the persisted
+`60% Gordon / 40% Exit` blend, with the Gordon and exit components shown beside it.
+The weighting is a PM-level decision. `60% Gordon / 40% Exit` is the standing default
+pending PM review; this methodology does not assign a rationale for that weighting.
 
-Questions to answer:
-
-- Does the blend reduce concentration risk?
-- Or does it merely hide weak assumptions in both methods?
-
-Best practice:
-
-- explain why a blend is being used
-- do not assume blending automatically makes the result safer
+When only one terminal method is valid, the model records the method used and leaves
+the unavailable component out of the presentation bridge.
 
 Deterministic outputs:
 

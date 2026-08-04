@@ -8,6 +8,7 @@ This script can either:
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime
 import json
@@ -263,10 +264,25 @@ def refresh_and_ingest_single_ticker(
 
     refreshed = True
     refresh_error = None
+    refresh_status = "not_requested"
     if refresh:
-        refreshed = refresh_workbook(staged_workbook, timeout_sec=timeout_sec, expected_ticker=ticker)
+        def _capture_refresh_status(status: str) -> None:
+            nonlocal refresh_status
+            refresh_status = status
+
+        refreshed = refresh_workbook(
+            staged_workbook,
+            timeout_sec=timeout_sec,
+            expected_ticker=ticker,
+            status_callback=_capture_refresh_status,
+        )
+        if refresh_status == "started":
+            refresh_status = "succeeded" if refreshed else "failed"
         if not refreshed:
-            refresh_error = f"CIQ Excel refresh failed validation for {staged_workbook.name}"
+            if refresh_status == "timed_out":
+                refresh_error = f"CIQ Excel refresh timed out for {staged_workbook.name}"
+            else:
+                refresh_error = f"CIQ Excel refresh failed validation for {staged_workbook.name}"
 
     if refresh and not refreshed:
         report = _failed_refresh_report(folder, staged_workbook, refresh_error or "CIQ Excel refresh failed")
@@ -288,6 +304,8 @@ def refresh_and_ingest_single_ticker(
         "workbook_path": str(staged_workbook),
         "archive_path": str(archived_path) if archived_path is not None else None,
         "refreshed": refreshed,
+        "refresh_status": refresh_status,
+        "refresh_timed_out": refresh_status == "timed_out",
         "refresh_error": refresh_error,
         "ingest_report": report,
     }
@@ -505,8 +523,17 @@ def refresh_workbook(
     timeout_sec: int = CIQ_REFRESH_TIMEOUT,
     *,
     expected_ticker: str | None = None,
+    status_callback: Callable[[str], None] | None = None,
 ) -> bool:
     """Run Excel refresh in a child process so hung COM/add-in calls cannot trap the CLI."""
+    def _status(value: str) -> None:
+        if status_callback is not None:
+            try:
+                status_callback(value)
+            except Exception:
+                pass
+
+    _status("started")
     outer_timeout = max(int(timeout_sec) + 15, 30)
     context = mp.get_context("spawn")
     event_queue = context.Queue()
@@ -524,7 +551,9 @@ def refresh_workbook(
         except Empty:
             if not process.is_alive():
                 process.join(timeout=1)
-                return process.exitcode == 0
+                ok = process.exitcode == 0
+                _status("succeeded" if ok else "failed")
+                return ok
             continue
 
         message_type = message.get("type")
@@ -538,11 +567,14 @@ def refresh_workbook(
             process.join(timeout=5)
             if process.is_alive():
                 _terminate_child_process(process)
-            return bool(message.get("ok"))
+            ok = bool(message.get("ok"))
+            _status("succeeded" if ok else "failed")
+            return ok
 
     _terminate_child_process(process)
     _kill_excel_pid(excel_pid)
     print(f"✗ refresh timed out for {Path(path).name} after {outer_timeout}s")
+    _status("timed_out")
     return False
 
 

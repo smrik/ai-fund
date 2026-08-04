@@ -11,7 +11,11 @@ Improvements over the simple median×metric approach in ciq_adapter:
 
 Entry point:
     from src.stage_02_valuation.comps_model import run_comps_model
-    result = run_comps_model(comps_detail, net_debt_mm=..., shares_mm=...)
+    result = run_comps_model(
+        comps_detail,
+        ev_to_equity_adjustment_mm=...,
+        shares_mm=...,
+    )
 """
 
 from __future__ import annotations
@@ -60,6 +64,7 @@ class CompsResult:
     peer_similarity_scores: dict[str, float] = field(default_factory=dict)
     weighting_formula: str = ""
     notes: str = ""
+    ev_to_equity_adjustment_mm: float | None = None
 
 
 # ── Private helpers ───────────────────────────────────────────────────────────
@@ -210,13 +215,15 @@ def _build_peer_data(
 def _ev_multiple_to_price(
     multiple: float,
     target_metric_mm: float,
-    net_debt_mm: float,
+    ev_to_equity_adjustment_mm: float,
     shares_mm: float,
 ) -> float | None:
-    """TEV/X × target_X_mm → implied EV_mm → implied equity_mm → $/share."""
+    """TEV/X × target_X_mm less the complete EV-to-equity bridge."""
     if shares_mm <= 0:
         return None
-    implied_equity_mm = multiple * target_metric_mm - net_debt_mm
+    implied_equity_mm = (
+        multiple * target_metric_mm - ev_to_equity_adjustment_mm
+    )
     return implied_equity_mm / shares_mm  # mm / mm = $ per share
 
 
@@ -229,7 +236,7 @@ def _process_ev_metric(
     peers: list[dict],
     target_metric_mm: float | None,
     target_mktcap_mm: float | None,
-    net_debt_mm: float,
+    ev_to_equity_adjustment_mm: float,
     shares_mm: float,
     similarity_scores: dict[str, float] | None = None,
 ) -> PeerMultipleResult | None:
@@ -255,7 +262,12 @@ def _process_ev_metric(
     bull_m = _weighted_percentile(clean_v, weights, 0.75)
 
     def _iv(m: float) -> float | None:
-        return _ev_multiple_to_price(m, target_metric_mm, net_debt_mm, shares_mm)
+        return _ev_multiple_to_price(
+            m,
+            target_metric_mm,
+            ev_to_equity_adjustment_mm,
+            shares_mm,
+        )
 
     return PeerMultipleResult(
         metric=metric_name,
@@ -401,6 +413,7 @@ def run_comps_model(
     net_debt_mm: float | None = None,
     shares_mm: float | None = None,
     similarity_scores: dict[str, float] | None = None,
+    ev_to_equity_adjustment_mm: float | None = None,
 ) -> CompsResult | None:
     """
     Run the full comps model.
@@ -408,8 +421,11 @@ def run_comps_model(
     Args:
         comps_detail: output of get_ciq_comps_detail() — dict with
                       "target", "peers", "medians" keys.
-        net_debt_mm:  target net debt in USD millions.
-                      Derived from target tev_mm - market_cap_mm if None.
+        net_debt_mm:  compatibility fallback for callers that do not yet
+                      provide the complete reconciled EV-to-equity bridge.
+        ev_to_equity_adjustment_mm:
+                      complete reconciled EV-to-equity bridge in USD millions.
+                      This is authoritative for every EV-based metric.
         shares_mm:    target shares outstanding in millions.
                       Required for EV-based multiples; PE doesn't need it.
 
@@ -431,12 +447,15 @@ def run_comps_model(
     target_ebit_mm: float | None = target.get("ebit_ltm_mm")
     target_eps: float | None = target.get("eps_ltm")
 
-    # Derive net_debt from TEV - mktcap if not explicitly provided
-    if net_debt_mm is None:
-        if target_tev_mm is not None and target_mktcap_mm is not None:
-            net_debt_mm = target_tev_mm - target_mktcap_mm
-        else:
-            net_debt_mm = 0.0
+    # Existing external callers may still supply only net debt. Production
+    # valuation callers pass the full reconciled bridge explicitly.
+    if ev_to_equity_adjustment_mm is None:
+        if net_debt_mm is None:
+            if target_tev_mm is not None and target_mktcap_mm is not None:
+                net_debt_mm = target_tev_mm - target_mktcap_mm
+            else:
+                net_debt_mm = 0.0
+        ev_to_equity_adjustment_mm = float(net_debt_mm)
 
     _shares = shares_mm if (shares_mm is not None and shares_mm > 0) else 0.0
     have_shares = _shares > 0
@@ -448,22 +467,22 @@ def run_comps_model(
     metrics: dict[str, PeerMultipleResult] = {}
 
     # TEV/EBITDA forward (require ≥ _MIN_PEERS_FOR_FWD clean peers)
-    r = _process_ev_metric("tev_ebitda_fwd", peers, target_ebitda_mm, target_mktcap_mm, net_debt_mm, _shares, similarity_scores)
+    r = _process_ev_metric("tev_ebitda_fwd", peers, target_ebitda_mm, target_mktcap_mm, ev_to_equity_adjustment_mm, _shares, similarity_scores)
     if r and r.n_clean >= _MIN_PEERS_FOR_FWD:
         metrics["tev_ebitda_fwd"] = r
 
     # TEV/EBITDA LTM
-    r = _process_ev_metric("tev_ebitda_ltm", peers, target_ebitda_mm, target_mktcap_mm, net_debt_mm, _shares, similarity_scores)
+    r = _process_ev_metric("tev_ebitda_ltm", peers, target_ebitda_mm, target_mktcap_mm, ev_to_equity_adjustment_mm, _shares, similarity_scores)
     if r:
         metrics["tev_ebitda_ltm"] = r
 
     # TEV/EBIT forward (require ≥ _MIN_PEERS_FOR_FWD)
-    r = _process_ev_metric("tev_ebit_fwd", peers, target_ebit_mm, target_mktcap_mm, net_debt_mm, _shares, similarity_scores)
+    r = _process_ev_metric("tev_ebit_fwd", peers, target_ebit_mm, target_mktcap_mm, ev_to_equity_adjustment_mm, _shares, similarity_scores)
     if r and r.n_clean >= _MIN_PEERS_FOR_FWD:
         metrics["tev_ebit_fwd"] = r
 
     # TEV/EBIT LTM
-    r = _process_ev_metric("tev_ebit_ltm", peers, target_ebit_mm, target_mktcap_mm, net_debt_mm, _shares, similarity_scores)
+    r = _process_ev_metric("tev_ebit_ltm", peers, target_ebit_mm, target_mktcap_mm, ev_to_equity_adjustment_mm, _shares, similarity_scores)
     if r:
         metrics["tev_ebit_ltm"] = r
 
@@ -511,4 +530,5 @@ def run_comps_model(
         if similarity_scores
         else "market_cap_proximity_only",
         notes=notes,
+        ev_to_equity_adjustment_mm=ev_to_equity_adjustment_mm,
     )

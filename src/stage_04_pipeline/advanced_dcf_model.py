@@ -122,7 +122,7 @@ def build_advanced_dcf_model(
     if not json_file.exists():
         raise FileNotFoundError(f"Valuation JSON not found: {json_file}")
 
-    ctx, recon = _load_and_validate(json_file)
+    ctx, recon = _load_and_validate(json_file, expected_ticker=ticker)
     ctx.agent = _discover_agent_prep(ticker, guided_workup_path)
 
     as_of = as_of or datetime.now()
@@ -172,8 +172,9 @@ def refresh_model_data(
     Rebuilds only the data sheets (see ``DATA_SHEETS``) from a ticker's valuation
     JSON. The MODEL sheets (WACC, DCF_Base, Sensitivity, and any sheet the PM
     added) and the PM Override column on Assumptions are preserved, so the PM can
-    keep evolving one model while the numbers are swapped per ticker. Raises if the
-    refreshed Base IV does not reconcile to the backend.
+    keep evolving one model for the same ticker. Cross-ticker refreshes retain formula
+    sheets but clear ticker-specific PM overrides. Raises if the refreshed Base IV does
+    not reconcile to the backend.
     """
     from openpyxl import load_workbook
 
@@ -189,7 +190,7 @@ def refresh_model_data(
         raise ValueError("refresh_model_data requires either ticker or json_path.")
     ticker = (ticker or json_file.stem.split("_")[0]).upper()
 
-    ctx, recon = _load_and_validate(json_file)
+    ctx, recon = _load_and_validate(json_file, expected_ticker=ticker)
     ctx.agent = _discover_agent_prep(ticker, guided_workup_path)
     wb = load_workbook(workbook_path)
     ctx.wb = wb
@@ -202,9 +203,12 @@ def refresh_model_data(
     # tabs that reference it stay correct without rebuilding the model.
     ctx.dcf_base_rows = _read_dcf_base_rows(wb["DCF_Base"])
 
-    # Preserve PM overrides keyed by assumption name.
+    source_ticker = _read_workbook_ticker(wb)
+    preserve_overrides = source_ticker == ticker
+
+    # Preserve workbook-local PM overrides only for a same-ticker refresh.
     overrides: dict[str, Any] = {}
-    if "Assumptions" in wb.sheetnames:
+    if preserve_overrides and "Assumptions" in wb.sheetnames:
         aws = wb["Assumptions"]
         for r in range(5, aws.max_row + 1):
             key, override = aws.cell(r, 2).value, aws.cell(r, 4).value
@@ -285,8 +289,19 @@ def _discover_agent_prep(ticker: str, explicit_path: str | Path | None = None) -
     return None
 
 
-def _load_and_validate(json_file: Path) -> tuple["_Context", dict]:
+def _load_and_validate(
+    json_file: Path,
+    *,
+    expected_ticker: str | None = None,
+) -> tuple["_Context", dict]:
     payload = json.loads(json_file.read_text(encoding="utf-8"))
+    payload_ticker = str(payload.get("ticker") or "").upper().strip()
+    normalized_expected = str(expected_ticker or "").upper().strip()
+    if normalized_expected and payload_ticker != normalized_expected:
+        raise ValueError(
+            "Advanced DCF JSON ticker mismatch: "
+            f"expected {normalized_expected}, found {payload_ticker or '<missing>'}."
+        )
     ctx = _Context(payload)
     # Forecast is load-bearing (the DCF + reconciliation run off it). Historical
     # actuals only enrich the Historical tab, so a name without CIQ/SEC history still
@@ -310,6 +325,15 @@ def _load_and_validate(json_file: Path) -> tuple["_Context", dict]:
             f"gap {recon['gap']:.2f} > {RECONCILE_TOLERANCE})."
         )
     return ctx, recon
+
+
+def _read_workbook_ticker(wb) -> str:
+    if "Cover" not in wb.sheetnames:
+        return ""
+    title = str(wb["Cover"]["A1"].value or "").strip()
+    if not title:
+        return ""
+    return title.split("—", 1)[0].strip().upper()
 
 
 def _read_dcf_base_rows(ws) -> dict[str, int]:

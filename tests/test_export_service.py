@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from types import SimpleNamespace
 from pathlib import Path
 from uuid import uuid4
 
@@ -561,6 +562,10 @@ def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypa
                 {"field": "exit_multiple", "effective_value": 14.0, "effective_source": "public_market_yfinance_fallback_tev_ebitda_ltm"},
                 {"field": "revenue_growth_near", "effective_value": 0.08, "effective_source": "ciq_consensus"},
             ],
+            "source_lineage": {
+                "revenue_growth_terminal": "default",
+                "annual_dilution_pct": "default",
+            },
             "ciq_lineage": {
                 "public_comps_fallback_used": True,
                 "public_comps_fallback_source_file": "public_market_yfinance_fallback",
@@ -573,7 +578,7 @@ def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypa
     monkeypatch.setattr(
         export_service,
         "build_dcf_audit_view",
-        lambda ticker: {
+        lambda ticker, reconciled_inputs=None: {
             "scenario_summary": [{"scenario": "Base", "intrinsic_value": 150.0, "upside_pct": 50.0, "probability": 0.6}],
             "ev_bridge": {"intrinsic_value_per_share": 150.0},
             "sensitivity": {},
@@ -614,9 +619,35 @@ def test_build_current_ticker_payload_preserves_valuation_input_lineage(monkeypa
         },
     )
 
-    payload = export_service._build_current_ticker_payload("IBM")
+    reconciled_inputs = SimpleNamespace(
+        valuation_inputs=SimpleNamespace(
+            drivers=SimpleNamespace(
+                capex_pct_start=0.3494,
+                da_pct_start=0.1034,
+                dso_start=88.96,
+                dio_start=4.79,
+                dpo_start=145.54,
+            ),
+            source_lineage={
+                "capex_pct_start": "reconciled_statement:capex",
+                "da_pct_start": "reconciled_statement:da",
+                "dso_start": "reconciled_statement:dso",
+                "dio_start": "reconciled_statement:dio",
+                "dpo_start": "reconciled_statement:dpo",
+            },
+        ),
+    )
+
+    payload = export_service._build_current_ticker_payload(
+        "IBM",
+        reconciled_inputs=reconciled_inputs,
+    )
 
     assert payload["source_lineage"]["exit_multiple"] == "public_market_yfinance_fallback_tev_ebitda_ltm"
+    assert payload["source_lineage"]["capex_pct_start"] == "reconciled_statement:capex"
+    assert payload["assumptions"]["capex_pct"] == 0.3494
+    assert payload["source_lineage"]["revenue_growth_terminal"] == "default"
+    assert payload["source_lineage"]["annual_dilution_pct"] == "default"
     assert payload["ciq_lineage"]["public_comps_fallback_used"] is True
     assert payload["ciq_lineage"]["public_comps_fallback_peer_count"] == 3
     assert payload["ciq_lineage"]["comps_source_file"] == "public_market_yfinance_fallback"

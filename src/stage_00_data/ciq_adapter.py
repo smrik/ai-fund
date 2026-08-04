@@ -45,6 +45,20 @@ _LONG_FORM_DAY_ALIASES = {
     "revenue": ("revenue", "total_revenue", "revenues"),
 }
 
+_LONG_FORM_BRIDGE_ALIASES = {
+    "lease_liabilities": ("total_leases", "lease_liabilities", "total_operating_leases"),
+    "minority_interest": ("minority_interest", "non_controlling_interest"),
+    "preferred_equity": ("preferred_equity", "preferred_stock"),
+    "pension_deficit": ("pension_deficit", "unfunded_pension"),
+}
+_LONG_FORM_UNCLAIMED_BRIDGE_ALIASES = (
+    "investments",
+    "marketable_securities",
+    "short_term_investments",
+    "long_term_investments",
+    "equity_investments",
+)
+
 
 def _connect() -> sqlite3.Connection | None:
     try:
@@ -113,6 +127,85 @@ def _extract_nwc_day_drivers(conn: sqlite3.Connection, ticker: str, run_id: int)
         if out["dpo"] is None and "accounts_payable" in latest:
             out["dpo"] = round(365.0 * latest["accounts_payable"] / revenue, 1)
 
+    return out
+
+
+def _extract_bridge_items(
+    conn: sqlite3.Connection,
+    ticker: str,
+    run_id: int,
+) -> dict[str, Any]:
+    """Expose structural DCF bridge fields from the complete CIQ metric table."""
+    try:
+        rows = conn.execute(
+            """
+            SELECT metric_key, value_num, period_date
+            FROM ciq_long_form
+            WHERE run_id = ? AND ticker = ? AND value_num IS NOT NULL
+            ORDER BY COALESCE(period_date, '') DESC, column_index DESC
+            """,
+            [run_id, ticker],
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return {}
+
+    latest_metrics: list[tuple[str, float, str | None]] = []
+    seen: set[str] = set()
+    for row in rows:
+        metric_key = str(row["metric_key"] or "")
+        value = _to_float(row["value_num"])
+        if not metric_key or value is None or metric_key in seen:
+            continue
+        seen.add(metric_key)
+        latest_metrics.append(
+            (
+                metric_key,
+                value,
+                (
+                    str(row["period_date"])
+                    if row["period_date"] is not None
+                    else None
+                ),
+            )
+        )
+
+    out: dict[str, Any] = {}
+    for canonical, aliases in _LONG_FORM_BRIDGE_ALIASES.items():
+        for alias in aliases:
+            match = next(
+                (
+                    value
+                    for metric_key, value, _period_end in latest_metrics
+                    if _matches_metric_alias(metric_key, (alias,))
+                ),
+                None,
+            )
+            if match is not None:
+                out[canonical] = match * 1_000_000.0
+                break
+
+    investment_match = next(
+        (
+            (metric_key, value, period_end)
+            for alias in _LONG_FORM_UNCLAIMED_BRIDGE_ALIASES
+            for metric_key, value, period_end in latest_metrics
+            if _matches_metric_alias(metric_key, (alias,))
+        ),
+        None,
+    )
+    if investment_match is not None:
+        metric_key, value, period_end = investment_match
+        out["bridge_unclaimed_lines"] = [
+            {
+                "line_id": f"ciq:{metric_key}",
+                "value": value * 1_000_000.0,
+                "source_ref": f"ciq_long_form:{metric_key}",
+                "currency": "USD",
+                "period_end": period_end,
+                "period_type": "instant",
+                "semantic_type": "asset",
+            }
+        ]
     return out
 
 
@@ -308,6 +401,10 @@ def get_ciq_snapshot(ticker: str, as_of_date: str | None = None) -> dict[str, An
             for key, value in long_form_days.items():
                 if snapshot.get(key) is None and value is not None:
                     snapshot[key] = value
+            bridge_items = _extract_bridge_items(conn, ticker.upper(), int(run_id))
+            for key, value in bridge_items.items():
+                if snapshot.get(key) is None:
+                    snapshot[key] = value
         fwd_rev = _extract_forward_revenue_from_comps(conn, ticker.upper())
         snapshot["revenue_fy1"] = fwd_rev["revenue_fy1"]
         snapshot["revenue_fy2"] = fwd_rev["revenue_fy2"]
@@ -338,10 +435,39 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
                 return []
             as_of_date = latest["as_of_date"]
 
-        rows = conn.execute(
+        # Use the most recent snapshot at or before the analysis date rather than an
+        # exact match. A comps snapshot is dated when the workbook was pulled, so an
+        # analysis run on any other day found nothing: MSFT has 702 rows at 2026-03-31
+        # and an as-of of 2026-07-31 returned empty.
+        resolved = conn.execute(
             """
+            SELECT as_of_date
+            FROM ciq_comps_snapshot
+            WHERE target_ticker = ? AND as_of_date <= ?
+            ORDER BY as_of_date DESC
+            LIMIT 1
+            """,
+            [ticker.upper(), as_of_date],
+        ).fetchone()
+        if resolved is None:
+            return []
+        as_of_date = resolved["as_of_date"]
+
+        columns = {
+            str(row["name"])
+            for row in conn.execute(
+                "PRAGMA table_info(ciq_comps_snapshot)"
+            ).fetchall()
+        }
+        scale_projection = (
+            "scale_factor"
+            if "scale_factor" in columns
+            else "1.0 AS scale_factor"
+        )
+        rows = conn.execute(
+            f"""
             SELECT target_ticker, peer_ticker, as_of_date, run_id, source_file,
-                   metric_key, value_num, is_target
+                   metric_key, value_num, {scale_projection}, is_target
             FROM ciq_comps_snapshot
             WHERE target_ticker = ? AND as_of_date = ?
             ORDER BY run_id DESC
@@ -427,7 +553,8 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
         metric_key = row.get("metric_key")
         value_num = _to_float(row.get("value_num"))
         if metric_key and value_num is not None:
-            bucket["metrics"][str(metric_key)] = value_num
+            scale_factor = _to_float(row.get("scale_factor")) or 1.0
+            bucket["metrics"][str(metric_key)] = value_num * scale_factor
         if int(row.get("is_target") or 0) == 1:
             bucket["is_target"] = 1
 

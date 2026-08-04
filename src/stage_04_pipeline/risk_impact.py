@@ -52,6 +52,18 @@ def quantify_risk_impact(
     inputs = build_valuation_inputs(ticker, as_of_date=as_of_date, apply_overrides=apply_overrides)
     if inputs is None:
         return {"ticker": ticker, "available": False, "overlay_results": []}
+    if getattr(inputs, "valuation_status", "provisional") == "blocked":
+        return {
+            "ticker": ticker,
+            "available": False,
+            "valuation_status": "blocked",
+            "valuation_output_mode": "none",
+            "overlay_results": [],
+            "blocker": getattr(inputs, "valuation_readiness", {}) or {
+                "trust_status": "blocked",
+                "reason_codes": ["valuation_inputs.blocked"],
+            },
+        }
 
     base_spec = ScenarioSpec(name="base", probability=1.0)
     base_result = run_dcf_professional(inputs.drivers, base_spec)

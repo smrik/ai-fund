@@ -83,6 +83,7 @@ nav:
       - Risk Impact Agent Spec: design-docs/risk-impact-agent-spec.md
   - Handbook:
       - Index: handbook/index.md
+      - Project Catch-Up: handbook/project-catch-up.md
       - End-to-End Workflow: handbook/workflow-end-to-end.md
       - Weekly Loop Session: handbook/weekly-loop-session.md
       - PM Queue Review Checklist: handbook/pm-queue-review-checklist.md

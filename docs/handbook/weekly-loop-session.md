@@ -12,9 +12,11 @@ C:\Users\patri\miniconda3\envs\ai-fund\python.exe scripts/manual/run_guided_tick
 
 This command uses live agents and the live Alpha Pod SQLite DB by default. Use the safe rehearsal command first when validating mechanics, or add `--isolated-db` when you want a disposable queue/model review.
 
+Before refreshing Excel, check `ciq/templates/financials_input.json`. The current Standard workbook Power Query reads that canonical file even when the workbook itself was copied to a scratch folder. A scratch `--ciq-input-json` path does not redirect the workbook query. The ticker and requested date in the canonical JSON must therefore match the run you intend to perform. After ingestion, also verify the parsed CIQ financial-period `as_of_date`; it can be earlier than both the requested date and the ingestion timestamp. See [CIQ Single-Ticker Refresh](operations-runbook.md#ciq-single-ticker-refresh) for the complete template, staged-workbook, archive, review-export, and date-lineage map.
+
 The command runs this sequence:
 
-1. Stage `financials_input.json` and the ticker CIQ workbook.
+1. Write the CIQ control values and stage the ticker Standard workbook.
 2. Pause while the PM refreshes and saves the workbook in Excel.
 3. Ingest the refreshed CIQ workbook.
 4. Prefetch/check EDGAR filings.

@@ -93,7 +93,47 @@ Important:
 - this should be run from host PowerShell, not WSL
 - the safest operator path is passing `--ciq-symbol` explicitly when there is any doubt about exchange prefix
 
+## Reconciled Statement Source Refresh
+
+Entry point: `python scripts/manual/refresh_statement_sources.py`
+
+Use this command after the CIQ workbooks have been refreshed and saved. It initializes or
+upgrades the target SQLite schema, ingests each explicitly supplied workbook through the current
+parser contract, persists accession-bound XBRL facts and coverage manifests, and runs the
+fail-closed statement reconciliation gate.
+
+Example with exact workbook mappings:
+
+```powershell
+python scripts/manual/refresh_statement_sources.py `
+  --ticker MSFT `
+  --ticker CALM `
+  --evidence-cutoff 2026-07-26 `
+  --ciq-workbook MSFT=data/exports/MSFT_Standard.xlsx `
+  --ciq-workbook CALM=data/exports/CALM_Standard.xlsx `
+  --db-path C:\tmp\statement-readiness.db
+```
+
+For a deliberately chosen drop folder, use `--ciq-folder PATH` instead of
+`--ciq-workbook`. The two modes are mutually exclusive. The command never guesses a provider,
+workbook, exchange, or ticker mapping. An explicit workbook whose parsed ticker differs from its
+mapping is blocked.
+
+The JSON response contains one terminal result for every requested ticker occurrence, including
+duplicates. Source work is shared by unique ticker, while failures remain isolated per ticker.
+The command exits zero only when every requested result is `decision_grade`; `provisional`,
+`blocked`, source errors, missing dual-source coverage, and reconciliation findings produce a
+non-zero exit. Re-running the same source snapshots is additive and idempotent.
+
 ## Assumption Source Priority (Per Ticker)
+
+> **Scope note.** The chains below describe how the deterministic layer seeds a driver *before*
+> any judgment runs, and they are the correct source for historical `*_start` values, which are
+> facts. They are **not** the intended final source for forward-looking `*_target` values.
+> Under [Vision Decision 13](../strategy/vision.md#the-division-of-labor) those are authored by
+> the judgment layer from filing evidence and management guidance, then PM-approved. A shipped
+> model whose `*_target` drivers still read `sector_default` is showing an unfilled slot, not a
+> finished answer.
 
 The deterministic layer uses explicit priority order:
 
@@ -157,7 +197,25 @@ Current specialized modules:
 
 Guardrail:
 
-- Agent outputs should be treated as contextual overlays unless promoted through a deterministic acceptance rule.
+- Agent outputs reach the model only through the PM Decision Queue — never by direct mutation.
+  That is a routing rule, not a statement about their weight: agent-reasoned assumptions are the
+  *intended* source for forward-looking drivers (Vision Decision 13), not optional colour on top
+  of a sector-default model.
+
+### EDGAR Evidence Split: XBRL Facts + Filing Narrative
+
+The EDGAR path has two complementary evidence surfaces:
+
+- `src/stage_00_data/xbrl_evidence.py` preserves typed Company Facts, periods, units,
+  filing vintage, accession, dimensions, statement metadata, and a stable SEC filing-index
+  locator. Use this for numeric accounting evidence and balance-sheet/bridge facts.
+- `src/stage_00_data/filing_retrieval.py` remains the source for note headings,
+  accounting-policy prose, contingencies, explanations, and surrounding disclosure text.
+
+XBRL should not be flattened into a single undimensioned value: dimensions, context refs,
+restatement vintage, and form/filing date are part of the evidence. The current XBRL adapter
+links to the filing index rather than pretending it has an exact fact-level HTML anchor;
+Inline XBRL DOM locators are a later enhancement.
 
 ## Agentic Handoff MVP Workflow
 
@@ -256,7 +314,7 @@ Treat heuristic queue items as workflow checks only. They are useful for verifyi
 To test live agents with an OpenRouter free model, first confirm that sending the ticker evidence packet to OpenRouter is acceptable for the ticker/data being reviewed, then run:
 
 ```powershell
-rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model openrouter/free
+rtk python scripts/manual/run_ticker_valuation_flow.py --ticker IBM --use-openrouter-free --openrouter-model deepseek/deepseek-v4-flash-0731
 ```
 
 ## Analyst Prep Pack MVP

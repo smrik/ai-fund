@@ -13,6 +13,11 @@ from db.loader import upsert_sec_filing_metrics_snapshot
 from db.schema import create_tables
 from src.stage_00_data.edgar_client import get_cik
 
+# Bump when the extraction logic changes. Cached snapshots stamped with an older
+# metric_source are ignored on read and recomputed on the next request, so rows
+# produced by a buggy extractor cannot keep resurfacing from the DB cache.
+_METRIC_SOURCE = "sec_xbrl_companyfacts_v2"
+
 
 @dataclass
 class SecFilingMetrics:
@@ -47,6 +52,15 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _duration_days(start: Any, end: Any) -> int | None:
+    try:
+        start_date = datetime.fromisoformat(str(start)[:10])
+        end_date = datetime.fromisoformat(str(end)[:10])
+    except (TypeError, ValueError):
+        return None
+    return (end_date - start_date).days
+
+
 def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[dict[str, float | str]]:
     if os.getenv("ALPHA_POD_EDGAR_CACHE_ONLY", "0").strip().lower() in {"1", "true", "yes"}:
         return []
@@ -56,26 +70,70 @@ def _extract_annual_series(ticker: str, metric_names: tuple[str, ...]) -> list[d
     except Exception:
         return []
 
+    candidates: list[list[dict[str, float | str]]] = []
     for metric_name in metric_names:
         try:
             q = facts.query().by_concept(metric_name).latest_periods(5, annual=True).to_dataframe()
             if q.empty:
                 continue
 
-            annual: list[dict[str, float | str]] = []
+            values_by_period: dict[str, list[tuple[float, int | None]]] = {}
             for _, row in q.iterrows():
                 val = _to_float(row.get("numeric_value"))
                 period = row.get("period_end")
                 if not period or val is None:
                     continue
-                annual.append({"period": str(period)[:10], "value": val})
+                # Annual filings also carry quarterly-duration facts under the
+                # same period_end. Keep only ~1-year durations when the fact
+                # has a period_start; keep rows without one (fail open into
+                # the ambiguity check below).
+                duration_days = _duration_days(row.get("period_start"), period)
+                if duration_days is not None and not (300 <= duration_days <= 400):
+                    continue
+                normalized_period = str(period)[:10]
+                try:
+                    fiscal_year = int(row.get("fiscal_year")) if row.get("fiscal_year") is not None else None
+                except (TypeError, ValueError):
+                    fiscal_year = None
+                values_by_period.setdefault(normalized_period, []).append((val, fiscal_year))
 
-            annual.sort(key=lambda x: str(x["period"]))
+            # Resolve restatements by filing vintage when possible. A conflict
+            # without a usable fiscal year, or a tie at the newest vintage, stays
+            # omitted rather than guessing which value is correct.
+            unambiguous: list[dict[str, float | str]] = []
+            for period, observations in values_by_period.items():
+                distinct_values = {value for value, _ in observations}
+                if len(distinct_values) == 1:
+                    value = next(iter(distinct_values))
+                elif any(fiscal_year is None for _, fiscal_year in observations):
+                    continue
+                else:
+                    max_fiscal_year = max(fiscal_year for _, fiscal_year in observations if fiscal_year is not None)
+                    latest_values = {
+                        value for value, fiscal_year in observations if fiscal_year == max_fiscal_year
+                    }
+                    if len(latest_values) != 1:
+                        continue
+                    value = next(iter(latest_values))
+                unambiguous.append({"period": period, "value": value})
+
+            annual: list[dict[str, float | str]] = []
+            for item in sorted(unambiguous, key=lambda x: str(x["period"])):
+                if not annual:
+                    annual.append(item)
+                    continue
+                spacing_days = _duration_days(str(annual[-1]["period"]), str(item["period"]))
+                if spacing_days is None or spacing_days > 300:
+                    annual.append(item)
+                else:
+                    annual[-1] = item
             if annual:
-                return annual
+                candidates.append(annual)
         except Exception:
             continue
-    return []
+    if not candidates:
+        return []
+    return max(candidates, key=lambda series: (str(series[-1]["period"]), len(series)))
 
 
 def _trim_series(series: list[dict[str, float | str]], n: int = 3) -> list[dict[str, float | str]]:
@@ -97,6 +155,12 @@ def _compute_cagr(series: list[dict[str, float | str]]) -> float | None:
     start = _to_float(trimmed[0]["value"])
     end = _to_float(trimmed[-1]["value"])
     if start is None or end is None or start <= 0:
+        return None
+    # Three consecutive fiscal years span ~2 years first-to-last (52/53-week
+    # calendars wobble by a few days). A wider span means the series has year
+    # gaps, and annualizing over the wrong period count would fabricate a CAGR.
+    span_days = _duration_days(trimmed[0]["period"], trimmed[-1]["period"])
+    if span_days is None or not (670 <= span_days <= 790):
         return None
     periods = len(trimmed) - 1
     return (end / start) ** (1.0 / periods) - 1.0
@@ -137,24 +201,27 @@ def _row_to_metrics(row: sqlite3.Row) -> SecFilingMetrics:
 
 
 def _load_cached_metrics(conn: sqlite3.Connection, ticker: str, as_of_date: str | None) -> SecFilingMetrics | None:
+    # Deliberately do not fall back to legacy metric_source rows: the version
+    # stamp quarantines snapshots from poisoned extraction logic, and serving
+    # those rows in cache-only mode would resurrect corrupted metrics.
     if as_of_date:
         row = conn.execute(
             """
             SELECT * FROM sec_filing_metrics_snapshot
-            WHERE ticker = ? AND as_of_date = ?
+            WHERE ticker = ? AND as_of_date = ? AND metric_source = ?
             LIMIT 1
             """,
-            [ticker.upper(), as_of_date],
+            [ticker.upper(), as_of_date, _METRIC_SOURCE],
         ).fetchone()
     else:
         row = conn.execute(
             """
             SELECT * FROM sec_filing_metrics_snapshot
-            WHERE ticker = ?
+            WHERE ticker = ? AND metric_source = ?
             ORDER BY as_of_date DESC
             LIMIT 1
             """,
-            [ticker.upper()],
+            [ticker.upper(), _METRIC_SOURCE],
         ).fetchone()
     return _row_to_metrics(row) if row is not None else None
 
@@ -257,7 +324,7 @@ def get_sec_filing_metrics(ticker: str, as_of_date: str | None = None) -> SecFil
             net_debt_to_ebitda=None,
             revenue_series=revenue_series,
             ebit_series=operating_income_series,
-            metric_source="sec_xbrl_companyfacts",
+            metric_source=_METRIC_SOURCE,
         )
 
         upsert_sec_filing_metrics_snapshot(

@@ -92,6 +92,43 @@ def test_agent_run_cache_persists_artifacts_and_reuses_on_cache_hit(tmp_path):
     assert artifact["tool_schema_json"][0]["function"]["name"] == "dummy"
 
 
+def test_agent_run_cache_records_and_restores_actual_fallback_model(tmp_path):
+    db_path = tmp_path / "fallback_cache.db"
+    cache = AgentRunCache(connection_factory=_temp_conn_factory(db_path))
+    agent = _StubArtifactAgent()
+    agent.model = "gpt-5.6-luna"
+    agent.last_used_model = "gpt-5.6-luna"
+
+    def _runner():
+        agent.last_used_model = "openrouter/free (fallback)"
+        agent.last_run_artifact["api_trace"] = [{"model": agent.last_used_model}]
+        return {"answer": "fallback"}
+
+    cache.run_cached(
+        ticker="IBM",
+        agent_name="ArtifactAgent",
+        agent=agent,
+        input_payload={"ticker": "IBM"},
+        runner=_runner,
+    )
+
+    agent.last_used_model = "gpt-5.6-luna"
+    output, metadata = cache.run_cached(
+        ticker="IBM",
+        agent_name="ArtifactAgent",
+        agent=agent,
+        input_payload={"ticker": "IBM"},
+        runner=lambda: {"should": "not run"},
+    )
+
+    assert output == {"answer": "fallback"}
+    assert metadata["cache_hit"] is True
+    assert agent.last_used_model == "openrouter/free (fallback)"
+    with _temp_conn_factory(db_path)() as conn:
+        models = [row["model"] for row in conn.execute("SELECT model FROM agent_run_log ORDER BY id")]
+    assert models == ["openrouter/free (fallback)", "openrouter/free (fallback)"]
+
+
 def test_artifact_has_meaningful_io_detects_sparse_legacy_rows():
     sparse = {
         "system_prompt": None,

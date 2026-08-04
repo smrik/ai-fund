@@ -77,6 +77,11 @@ def test_build_news_materiality_view_ranks_headlines_and_enriches_analyst_signal
         "get_analyst_ratings",
         lambda ticker: {"recommendation": "buy", "target_mean": 120.0, "num_analysts": 15},
     )
+    monkeypatch.setattr(
+        news_materiality,
+        "_days_old",
+        lambda published: 10 if published == "2026-03-14T10:00:00Z" else 45,
+    )
 
     view = news_materiality.build_news_materiality_view("IBM")
 
@@ -90,6 +95,41 @@ def test_build_news_materiality_view_ranks_headlines_and_enriches_analyst_signal
     assert view["historical_brief"]["event_timeline"]
     assert view["historical_brief"]["period_start"] == "2024-03-15T12:00:00+00:00"
     assert view["quarterly_headlines"][0]["title"] == "Broker upgrades IBM after guidance raise"
+
+
+def test_build_news_materiality_view_includes_same_day_headline(monkeypatch):
+    from src.stage_04_pipeline import news_materiality
+
+    monkeypatch.setattr(
+        news_materiality.market_data,
+        "get_news",
+        lambda ticker, limit=25: [
+            {
+                "title": "IBM raises guidance",
+                "published": "2026-07-25T10:00:00Z",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        news_materiality.market_data,
+        "get_analyst_ratings",
+        lambda ticker: {},
+    )
+    monkeypatch.setattr(news_materiality, "_days_old", lambda published: 0)
+    monkeypatch.setattr(
+        news_materiality,
+        "_build_historical_brief",
+        lambda ticker: ({}, []),
+    )
+    monkeypatch.setattr(
+        news_materiality,
+        "_latest_archived_sentiment",
+        lambda ticker: {},
+    )
+
+    view = news_materiality.build_news_materiality_view("IBM")
+
+    assert view["quarterly_headlines"][0]["title"] == "IBM raises guidance"
 
 
 def test_build_news_materiality_view_handles_empty_news_and_missing_archive(monkeypatch, tmp_path):

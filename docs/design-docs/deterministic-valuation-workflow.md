@@ -682,8 +682,13 @@ The easiest way to picture the system is:
 
 - `Screening` decides what deserves attention.
 - `Valuation` decides what the business may be worth.
-- `Agents` decide what context may improve or challenge that valuation.
-- `You` decide whether the market is wrong and whether the bet is worth making.
+- `Agents` reason over filings, management guidance, and history to **author the forward-looking
+  assumptions** that valuation runs on — and to challenge the result ([Vision Decision 13](../strategy/vision.md#the-division-of-labor)).
+- `You` approve, edit, or reject each proposed assumption, decide whether the market is wrong, and
+  decide whether the bet is worth making.
+
+*(Corrected 2026-07-24. This line previously read "Agents decide what context may improve or
+challenge that valuation", which understates the judgment layer's role and predates Decision 13.)*
 
 If you remember only one thing, remember this:
 

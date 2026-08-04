@@ -6,7 +6,6 @@ Returns a RiskOutput with dollar position size, portfolio %, and stop loss.
 from __future__ import annotations
 
 import json
-import os
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
 from src.stage_03_judgment.agentic_observations import analyze_evidence_packet_with_agent
 from src.stage_03_judgment.base_agent import BaseAgent
@@ -38,12 +37,11 @@ Stop loss logic:
 - Higher volatility stocks warrant tighter stops or smaller size
 
 Be conservative. It is better to start small and add on confirmation."""
-DEFAULT_RISK_MODEL = "gemini-3-flash-preview"
 
 
 class RiskAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("RISK_AGENT_MODEL", DEFAULT_RISK_MODEL))
+        super().__init__()
         self.name = "RiskAgent"
         self.system_prompt = SYSTEM_PROMPT
 
@@ -114,6 +112,17 @@ class RiskAgent(BaseAgent):
         sentiment: SentimentOutput,
     ) -> RiskOutput:
         """Calculate position sizing. Returns RiskOutput."""
+        if valuation.valuation_status == "blocked":
+            return RiskOutput(
+                conviction="low",
+                position_size_usd=0.0,
+                position_pct=0.0,
+                suggested_stop_loss_pct=0.0,
+                rationale=(
+                    "Position sizing is blocked because deterministic "
+                    "valuation is not decision-grade."
+                ),
+            )
         val_ctx = valuation.model_dump_json(indent=2)
         sent_ctx = sentiment.model_dump_json(indent=2)
 

@@ -1,5 +1,18 @@
 # Deterministic Vs LLM Boundary
 
+> **Amended 2026-07-24 — read this before the rest of the page.**
+> This page predates [Vision Decision 13](../strategy/vision.md#the-division-of-labor) and its
+> original wording ("LLM outputs are advisory by default", an ownership map giving the judgment
+> layer only summarisation and interpretation) caused agents to build the wrong thing.
+>
+> The corrected position: **the judgment layer authors the forward-looking assumptions**, reasoning
+> over filings, management guidance, and history. It proposes; the PM approves; the deterministic
+> layer then executes reproducibly. "Advisory" here has always meant *"cannot mutate the model
+> without approval"* — a **routing** rule. It must not be read as *"optional colour on a model
+> whose numbers come from sector constants."*
+>
+> The reproducibility rules on this page (Rules 1, 3, 4, 5) are correct and unchanged.
+
 ## Purpose
 
 This page makes the valuation ownership boundary explicit.
@@ -46,13 +59,29 @@ The deterministic layer should own:
 
 These outputs must be reproducible, inspectable, and testable.
 
-## LLM-Augmented Responsibilities
+## Judgment-Layer Responsibilities
 
-LLMs are valuable for:
+The judgment layer's primary job is **authoring the forward-looking assumptions**:
 
+- target EBIT margin and the margin path
+- mid-term and terminal revenue growth
+- terminal reinvestment — the capex/D&A relationship in steady state
+- working-capital targets where the sector default does not describe this business
+- the qualitative business assessment (moat, pricing power, cyclicality, capital intensity)
+  that drives those numbers
+
+Each of these is a *thesis about this specific company*, derived from filings, management
+guidance, disclosed capital programs, competitive position, and history — with a named evidence
+basis. A sector constant in one of these slots is a placeholder for missing judgment, not an
+answer. See [Core Belief 3](../design-docs/core-beliefs.md).
+
+It also does the supporting interpretive work it always did:
+
+- classification of ambiguous reported items for valuation
+- historical normalization, reclassification, and recast proposals
+- proposals for financially necessary model structures that do not exist yet
 - filing summaries
 - business-model summaries
-- revenue-driver hypotheses
 - industry context synthesis
 - QoE narrative
 - business-description-based peer analysis
@@ -60,7 +89,8 @@ LLMs are valuable for:
 - stress-test interpretation
 - explanation of why a result may be fragile or why a driver changed
 
-These outputs may inform the PM, but they must remain advisory until explicitly approved through a deterministic transform or override path.
+**All of it — authored assumptions included — reaches the model only through the PM Decision
+Queue.** That is the routing constraint, not a statement that the output is optional.
 
 ## Human / PM Responsibilities
 
@@ -76,29 +106,40 @@ The PM should retain authority for:
 
 ## Boundary Rules
 
-### Rule 1: Deterministic outputs are the official numeric truth
+### Rule 1: Deterministic outputs are the official reproducible result
 
-If the product needs an official number for ranking, export, or reproducible review, that number should come from the deterministic layer.
+The deterministic layer preserves the reported baseline and computes the official model result
+from the fixed, PM-approved assumption and treatment set. This does not mean the unadjusted
+reported classification is always the correct analytical treatment.
 
-### Rule 2: LLM outputs are advisory by default
+### Rule 2: Judgment-layer outputs are proposals, never direct writes
 
-LLM outputs can:
+Judgment-layer outputs can:
 
+- author a forward-looking assumption, with an evidence basis
 - summarize
 - explain
 - suggest
 - challenge
 
-They should not silently mutate the model.
+They must never silently mutate the model — every one of them lands as a PM Decision Queue item
+first.
+
+Note the distinction this rule is making. "Proposal, not direct write" is about **how a number
+travels**, not about how much it is worth. An agent-authored margin target with a cited evidence
+basis is the *intended* source for that driver; it simply has to arrive via the queue. Reading
+this rule as "the LLM only comments while sector defaults set the model" inverts the design.
 
 ### Rule 3: Any judgment-layer change to the model must pass through an explicit approval path
 
 If an LLM suggests:
 
 - a normalized EBIT value
+- a historical recast or accounting classification
 - a different peer set
 - a changed growth assumption
 - a different bridge-item treatment
+- a new schedule, bridge component, or model structure
 
 the PM must explicitly approve it before it enters the deterministic flow.
 
@@ -131,13 +172,17 @@ Worked example:
 
 | Task | Default owner |
 | --- | --- |
-| Historical statements and ratios | deterministic |
-| Forecast mechanics and DCF math | deterministic |
-| Business description and filing interpretation | LLM-augmented |
-| Industry theme synthesis | LLM-augmented |
+| Reported historical statements, ratios, and the unadjusted baseline | deterministic |
+| Analytical classification, normalization, and historical recast proposals | judgment layer, PM-approved |
+| Forecast *mechanics* and DCF math — executing a given assumption set | deterministic |
+| Marshalling the relevant evidence for a specific driver question | deterministic |
+| **Forward-looking driver values (`*_target`, terminal growth, terminal reinvestment)** | **judgment layer, PM-approved** |
+| **Qualitative business assessment that drives those values** | **judgment layer, PM-approved** |
+| Business description and filing interpretation | judgment layer |
+| Industry theme synthesis | judgment layer |
 | QoE signal computation | deterministic |
-| QoE adjustment suggestions | LLM-augmented |
-| Override approval | human / PM |
+| QoE adjustment suggestions | judgment layer |
+| Approving, editing, or rejecting any proposed assumption | human / PM |
 | Final investment decision | human / PM |
 
 ## Recommended Artifact Set
@@ -147,6 +192,7 @@ Worked example:
 | Source lineage table | shows where deterministic inputs came from | deterministic |
 | Advisory note set | stores LLM summaries and suggestions | LLM-augmented |
 | Override register | records approved changes to deterministic assumptions | deterministic, PM-approved |
+| Treatment register | records approved classifications, recasts, evidence, rationale, and supersession | deterministic persistence, PM-approved |
 | Boundary label map | shows what each output field represents | deterministic |
 
 ## Current Implementation Notes
@@ -154,11 +200,15 @@ Worked example:
 This boundary already exists architecturally in Alpha Pod.
 The main documentation goal is to make that boundary visible and consistent across the finance methodology set and the downstream product contracts.
 
-Main gaps:
+Current implementation state (2026-07-25):
 
-- the boundary is still clearer in architecture docs than in product-facing valuation artifacts
-- some future dossier and export fields still need explicit ownership labeling
-- the PM override trail should become more visible in downstream review surfaces
+- focused accounting evidence now crosses the selector → validator → ledger → PM Queue seam
+- unsupported but sound treatments can become explicit model-change advisories instead of being
+  forced into an existing driver field
+- approved treatments have a durable, superseding `treatment_decisions` register
+- the first cache-only MSFT trial produced queue item 133; it did not mutate the DCF
+- production LLM dispatch, business/industry context injection, and applying approved structural
+  model changes remain incomplete
 
 ## Practical Review Questions For The PM
 

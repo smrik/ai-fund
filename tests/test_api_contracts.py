@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sqlite3
 import tempfile
 import time
@@ -336,6 +337,100 @@ def test_ticker_overview_and_valuation_endpoints_return_helper_payloads(monkeypa
     assert wacc.json()["methods"][0]["method"] == "peer_bottom_up"
     assert recommendations.status_code == 200
     assert recommendations.json()["recommendations"][0]["field"] == "wacc"
+
+
+def test_valuation_payloads_expose_intrinsic_value_bridge(monkeypatch):
+    import api.extracted as extracted
+
+    row = {
+        "ticker": "MSFT",
+        "price": 300.0,
+        "analyst_target": 350.0,
+        "iv_gordon": 161.40,
+        "iv_exit": 330.11,
+        "iv_blended": 228.89,
+        "iv_base": 228.89,
+        "drivers_json": json.dumps(
+            {
+                "terminal_blend_gordon_weight": 0.6,
+                "terminal_blend_exit_weight": 0.4,
+            }
+        ),
+    }
+    monkeypatch.setattr(extracted, "load_saved_watchlist", lambda shortlist_size=10: {"rows": [row]})
+    monkeypatch.setattr(
+        extracted,
+        "load_latest_snapshot_for_ticker",
+        lambda ticker: {
+            "ticker": ticker,
+            "current_price": 300.0,
+            "base_iv": 228.89,
+            "created_at": "2026-08-01T00:00:00Z",
+            "memo": {},
+        },
+    )
+    monkeypatch.setattr(extracted, "_load_api_ticker_dossier_payload", lambda ticker: None)
+    monkeypatch.setattr(extracted, "_attach_api_ticker_dossier", lambda payload, ticker, dossier_payload=None: payload)
+
+    for method_used in ("blend", "gordon_only", "exit_only"):
+        monkeypatch.setattr(
+            extracted,
+            "build_dcf_audit_view",
+            lambda ticker, method_used=method_used: {
+                "ticker": ticker,
+                "model_integrity": {},
+                "terminal_bridge": {"method_used": method_used},
+            },
+        )
+
+        summary = extracted.build_valuation_summary_payload("MSFT")
+        dcf = extracted.build_valuation_dcf_payload("MSFT")
+
+        for payload in (summary, dcf):
+            assert payload["base_iv"] == 228.89
+            assert payload["iv_base"] == 228.89
+            assert payload["iv_gordon"] == 161.40
+            assert payload["iv_exit"] == 330.11
+            assert payload["method_used"] == method_used
+            expected_weights = (0.6, 0.4) if method_used == "blend" else (None, None)
+            assert (payload["gordon_weight"], payload["exit_weight"]) == expected_weights
+
+
+def test_valuation_payload_bridge_keeps_missing_persisted_values_null(monkeypatch):
+    import api.extracted as extracted
+
+    row = {
+        "ticker": "MSFT",
+        "price": 300.0,
+        "drivers_json": json.dumps(
+            {
+                "terminal_blend_gordon_weight": 0.6,
+                "terminal_blend_exit_weight": 0.4,
+            }
+        ),
+    }
+    monkeypatch.setattr(extracted, "load_saved_watchlist", lambda shortlist_size=10: {"rows": [row]})
+    monkeypatch.setattr(
+        extracted,
+        "load_latest_snapshot_for_ticker",
+        lambda ticker: {"ticker": ticker, "current_price": 300.0, "base_iv": 999.0, "memo": {}},
+    )
+    monkeypatch.setattr(extracted, "_load_api_ticker_dossier_payload", lambda ticker: None)
+    monkeypatch.setattr(extracted, "_attach_api_ticker_dossier", lambda payload, ticker, dossier_payload=None: payload)
+    monkeypatch.setattr(
+        extracted,
+        "build_dcf_audit_view",
+        lambda ticker: {"ticker": ticker, "model_integrity": {}, "terminal_bridge": {"method_used": "blend"}},
+    )
+
+    for payload in (extracted.build_valuation_summary_payload("MSFT"), extracted.build_valuation_dcf_payload("MSFT")):
+        assert payload["base_iv"] is None
+        assert payload["iv_base"] is None
+        assert payload["iv_gordon"] is None
+        assert payload["iv_exit"] is None
+        assert payload["method_used"] == "blend"
+        assert payload["gordon_weight"] == 0.6
+        assert payload["exit_weight"] == 0.4
 
 
 def test_valuation_assumptions_helper_separates_audit_families(monkeypatch):
@@ -1320,6 +1415,13 @@ def test_agentic_handoff_comps_profile_is_runnable_with_real_comps_packet(monkey
             "target_vs_peers": {"peer_medians": {"tev_ebitda_ltm": 11.0}},
             "source_lineage": {"as_of_date": "2026-05-10"},
         },
+    )
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.build_valuation_inputs",
+        lambda ticker: SimpleNamespace(
+            as_of_date="2026-05-10",
+            drivers=SimpleNamespace(exit_multiple=12.0),
+        ),
     )
     monkeypatch.setattr(
         "src.stage_03_judgment.grounded_observation_agent.GroundedObservationAgent.analyze_evidence_packet",

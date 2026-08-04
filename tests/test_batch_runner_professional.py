@@ -138,7 +138,7 @@ def test_value_single_ticker_returns_prob_weighted_fields(monkeypatch):
     )
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Test Co", "analyst_target_mean": 110.0, "analyst_recommendation": "buy", "number_of_analysts": 9, "market_cap": 1000.0, "enterprise_value": 1200.0, "pe_trailing": 15.0, "pe_forward": 12.0, "ev_ebitda": 9.0, "profit_margin": 0.1, "free_cashflow": 10.0, "beta": 1.0})
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["expected_iv"] == 100.0
@@ -203,7 +203,7 @@ def test_value_single_ticker_alt_model_required(monkeypatch):
     ))
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Bank Co", "analyst_target_mean": None, "analyst_recommendation": None, "number_of_analysts": None, "market_cap": None, "enterprise_value": None, "pe_trailing": None, "pe_forward": None, "ev_ebitda": None, "profit_margin": None, "free_cashflow": None, "beta": None})
 
-    out = batch_runner.value_single_ticker("BANK")
+    out = batch_runner.value_single_ticker("BANK", reconcile_operating=False)
 
     assert out is not None
     assert out["model_applicability_status"] == "alt_model_required"
@@ -273,7 +273,7 @@ def test_value_single_ticker_implied_growth_uses_professional_reverse_dcf(monkey
     monkeypatch.setattr(batch_runner, "reverse_dcf_professional", _fake_reverse)
     monkeypatch.setattr(batch_runner.md_client, "get_market_data", lambda ticker: {"name": "Test Co", "analyst_target_mean": 110.0, "analyst_recommendation": "buy", "number_of_analysts": 9, "market_cap": 1000.0, "enterprise_value": 1200.0, "pe_trailing": 15.0, "pe_forward": 12.0, "ev_ebitda": 9.0, "profit_margin": 0.1, "free_cashflow": 10.0, "beta": 1.0})
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert calls["count"] == 1
@@ -360,7 +360,7 @@ def test_value_single_ticker_emits_revenue_alignment_metadata(monkeypatch):
         "beta": 1.0,
     })
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["growth_source_detail"] == "ciq_cagr_3yr"
@@ -476,7 +476,7 @@ def test_value_single_ticker_emits_professional_bridge_and_health_fields(monkeyp
         "beta": 1.0,
     })
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert out["ev_operations_mm"] == 0.0
@@ -555,7 +555,7 @@ def test_alt_model_required_emits_empty_professional_fields(monkeypatch):
         "beta": None,
     })
 
-    out = batch_runner.value_single_ticker("BANK")
+    out = batch_runner.value_single_ticker("BANK", reconcile_operating=False)
 
     assert out is not None
     assert out["model_applicability_status"] == "alt_model_required"
@@ -592,6 +592,8 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
             exit_multiple=14.0,
             exit_metric="ev_ebitda",
             net_debt=100.0,
+            minority_interest=20.0,
+            non_operating_assets=10.0,
             shares_outstanding=50.0,
         ),
         source_lineage={"revenue_base": "ciq", "exit_multiple": "ciq_comps", "revenue_growth_near": "ciq", "ebit_margin_start": "ciq", "capex_pct_start": "ciq", "da_pct_start": "ciq", "tax_rate_start": "ciq", "net_debt": "ciq", "shares_outstanding": "ciq"},
@@ -641,10 +643,19 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
         return {"ACN": 0.91}
 
     monkeypatch.setattr(batch_runner, "score_peer_similarity", _fake_score_peer_similarity)
-    monkeypatch.setattr(
-        batch_runner,
-        "run_comps_model",
-        lambda comps_detail, net_debt_mm=None, shares_mm=None, similarity_scores=None: type(
+    comps_call = {}
+
+    def _fake_run_comps_model(
+        comps_detail,
+        net_debt_mm=None,
+        shares_mm=None,
+        similarity_scores=None,
+        ev_to_equity_adjustment_mm=None,
+    ):
+        comps_call["ev_to_equity_adjustment_mm"] = (
+            ev_to_equity_adjustment_mm
+        )
+        return type(
             "CompsStub",
             (),
             {
@@ -658,13 +669,21 @@ def test_value_single_ticker_emits_comps_similarity_fields(monkeypatch):
                 "similarity_model": "all-MiniLM-L6-v2",
                 "similarity_weighted": True,
             },
-        )(),
+        )()
+
+    monkeypatch.setattr(
+        batch_runner,
+        "run_comps_model",
+        _fake_run_comps_model,
     )
 
-    out = batch_runner.value_single_ticker("TEST")
+    out = batch_runner.value_single_ticker("TEST", reconcile_operating=False)
 
     assert out is not None
     assert scored["called"] is True
     assert out["comps_similarity_method"] == "embedding_cosine"
     assert out["comps_similarity_model"] == "all-MiniLM-L6-v2"
     assert out["comps_similarity_weighted_flag"] is True
+    assert comps_call["ev_to_equity_adjustment_mm"] == (
+        110.0 / 1_000_000.0
+    )

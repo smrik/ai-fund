@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -89,6 +90,11 @@ class AnalysisRunRequest(BaseModel):
     force_refresh_agents: list[str] = Field(default_factory=list)
 
 
+class ValuationRunRequest(BaseModel):
+    analysis_as_of: date
+    force_refresh: bool = False
+
+
 class TickerExportRequest(BaseModel):
     format: str = Field(default="html")
     source_mode: str = Field(default="latest_snapshot")
@@ -136,6 +142,56 @@ def load_latest_snapshot_for_ticker(ticker: str) -> dict[str, Any] | None:
     from src.stage_04_pipeline.batch_funnel import load_latest_snapshot_for_ticker as _impl
 
     return _impl(ticker)
+
+
+def build_ticker_terminal_outcomes_payload(
+    ticker: str,
+    *,
+    limit: int = 25,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.ticker_terminal_store import (
+        build_ticker_terminal_outcomes_payload as _impl,
+    )
+
+    return _impl(ticker, limit=limit)
+
+
+def run_reconciled_valuation_workup_payload(
+    ticker: str,
+    *,
+    execution_run_id: str,
+    analysis_as_of: date,
+    captured_at: str,
+    force_refresh: bool = False,
+) -> dict[str, Any]:
+    from src.stage_04_pipeline.valuation_provider_bindings import (
+        ProviderBindingSettings,
+        build_driver_family_bindings,
+    )
+    from src.stage_04_pipeline.valuation_workup_service import (
+        run_persisted_valuation_workups,
+    )
+
+    settings = ProviderBindingSettings.from_environment()
+    bindings = build_driver_family_bindings(settings)
+    manifest = run_persisted_valuation_workups(
+        [ticker],
+        execution_run_id=execution_run_id,
+        analysis_as_of=analysis_as_of,
+        captured_at=captured_at,
+        bindings=bindings,
+        max_workers=1,
+        max_in_flight=1,
+        batch_run_id=execution_run_id,
+        force_refresh=force_refresh,
+    )
+    return {
+        "execution_run_id": execution_run_id,
+        "provider": settings.backend,
+        "primary_model": settings.primary_model,
+        "critic_model": settings.critic_model,
+        "manifest": manifest.model_dump(mode="json"),
+    }
 
 
 def run_deep_analysis_for_tickers(tickers, **kwargs) -> list[dict[str, Any]]:
@@ -682,13 +738,30 @@ def run_agentic_handoff_profile_payload(
             )
             saved_queue_item_ids.append(item_id)
 
-    status = "completed_with_items" if saved_queue_item_ids else "completed_no_items"
+    _aoa = getattr(agent, "last_agentic_observation_artifact", None) or {}
+    _rr = _aoa.get("rejection_reasons") or []
+    _parse_failed = (
+        not observations
+        and bool(_aoa.get("raw_formatting_output"))
+        and any(r.get("reason") == "observations_not_list" for r in _rr)
+    )
+    if saved_queue_item_ids:
+        status = "completed_with_items"
+    elif _parse_failed:
+        status = "completed_with_parse_error"
+    else:
+        status = "completed_no_items"
+    parse_errors: list[dict] = (
+        [{"code": "json_parse_failed", "message": "model output did not contain a parseable observations list"}]
+        if _parse_failed
+        else []
+    )
     packet = _persist_packet(
         observations=observations,
         status=status,
-        errors=[],
+        errors=parse_errors,
         queue_item_count=len(saved_queue_item_ids),
-        agent_observation_artifact=getattr(agent, "last_agentic_observation_artifact", None),
+        agent_observation_artifact=_aoa or None,
     )
     return {
         "ticker": ticker,
@@ -698,9 +771,9 @@ def run_agentic_handoff_profile_payload(
         "observation_count": len(observations),
         "queue_item_count": len(saved_queue_item_ids),
         "queue_item_ids": saved_queue_item_ids,
-        "errors": [],
+        "errors": parse_errors,
         **(
-            {"agent_observation_artifact": getattr(agent, "last_agentic_observation_artifact", None)}
+            {"agent_observation_artifact": _aoa or None}
             if include_agent_artifact
             else {}
         ),
@@ -1002,6 +1075,52 @@ def create_app() -> FastAPI:
         if source_mode is None:
             return build_valuation_summary_payload(ticker)
         return build_valuation_summary_payload(ticker, source_mode=source_mode)
+
+    @app.get("/api/tickers/{ticker}/valuation/outcomes")
+    def get_ticker_terminal_outcomes(
+        ticker: str,
+        limit: int = 25,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        try:
+            return build_ticker_terminal_outcomes_payload(
+                ticker,
+                limit=limit,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post(
+        "/api/tickers/{ticker}/valuation/run",
+        status_code=202,
+    )
+    def run_ticker_valuation(
+        ticker: str,
+        payload: ValuationRunRequest,
+    ) -> dict[str, Any]:
+        ticker = api_coerce_ticker(ticker)
+        captured_at = datetime.now(timezone.utc).isoformat()
+
+        def _runner(run_id: str) -> dict[str, Any]:
+            return run_reconciled_valuation_workup_payload(
+                ticker,
+                execution_run_id=run_id,
+                analysis_as_of=payload.analysis_as_of,
+                captured_at=captured_at,
+                force_refresh=payload.force_refresh,
+            )
+
+        run_id = submit_background_run(
+            "reconciled_valuation",
+            _runner,
+            ticker=ticker,
+            metadata=payload.model_dump(mode="json"),
+        )
+        return {
+            "run_id": run_id,
+            "status": "queued",
+            "ticker": ticker,
+        }
 
     @app.get("/api/tickers/{ticker}/valuation/dcf")
     def get_ticker_valuation_dcf(ticker: str) -> dict[str, Any]:

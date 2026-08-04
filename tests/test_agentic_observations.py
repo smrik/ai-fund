@@ -129,6 +129,89 @@ def test_grounded_runner_returns_shared_anchored_observations_and_drop_invalid(m
     assert "Raw Extraction" in artifact["formatting_prompt"]
 
 
+def test_capitalized_level_fields_are_normalized_not_rejected():
+    raw = """
+    {"observations": [{
+        "observation_type": "pricing_pressure_worsened",
+        "observation_kind": "qualitative",
+        "claim": "Pricing pressure commentary turned negative enough to question the margin path.",
+        "evidence_anchor_ids": ["fact:earnings_update:1"],
+        "text_snippet_ids": ["snippet:earnings_update:1"],
+        "agent_confidence": "High",
+        "qualitative_importance": "Medium",
+        "materiality": "High",
+        "evidence_rationale": "The cited commentary supports a weaker pricing-power read.",
+        "thesis_implication": "Lower pricing power weakens the margin expansion thesis.",
+        "driver_implication": "Review ebit_margin_start and ebit_margin_target assumptions.",
+        "pm_question": "Is this pressure temporary or visible across the full segment base?",
+        "what_would_change_mind": "Segment disclosures showing price realization has stabilized."
+    }]}
+    """
+    rejections: list[dict] = []
+    observations = parse_agentic_observations(
+        raw=raw,
+        packet=_packet("earnings_update", EvidencePacketKind.earnings_update),
+        profile_name="earnings_update",
+        rejection_reasons=rejections,
+    )
+
+    assert rejections == []
+    assert len(observations) == 1
+    assert observations[0].materiality == "high"
+    assert observations[0].agent_confidence == "high"
+    assert observations[0].qualitative_importance == "medium"
+
+
+def test_formatting_parse_failure_triggers_one_corrective_retry(monkeypatch):
+    valid = """
+    {"observations": [{
+        "observation_type": "pricing_pressure_worsened",
+        "observation_kind": "qualitative",
+        "claim": "Pricing pressure commentary turned negative enough to question the margin path.",
+        "evidence_anchor_ids": ["fact:earnings_update:1"],
+        "text_snippet_ids": ["snippet:earnings_update:1"],
+        "agent_confidence": "high",
+        "qualitative_importance": "high",
+        "materiality": "high",
+        "evidence_rationale": "The cited commentary supports a weaker pricing-power read.",
+        "thesis_implication": "Lower pricing power weakens the margin expansion thesis.",
+        "driver_implication": "Review ebit_margin_start and ebit_margin_target assumptions.",
+        "pm_question": "Is this pressure temporary or visible across the full segment base?",
+        "what_would_change_mind": "Segment disclosures showing price realization has stabilized."
+    }]}
+    """
+    calls = {"initial_formatting": 0, "retry": 0}
+
+    def _stub_run(self, prompt: str) -> str:
+        if "was not valid JSON" in prompt:
+            calls["retry"] += 1
+            return valid
+        if "Raw Extraction" in prompt:
+            calls["initial_formatting"] += 1
+            return '{"observations": [{"claim": broken json with a token glitch'
+        return "extraction notes citing fact:earnings_update:1"
+
+    monkeypatch.setattr(GroundedObservationAgent, "run", _stub_run)
+    monkeypatch.setattr(
+        GroundedObservationAgent,
+        "run_structured_payload",
+        lambda self, user_message, response_format, max_tokens=8192: (None, None),
+    )
+
+    agent = GroundedObservationAgent("earnings_update")
+    observations = agent.analyze_evidence_packet(
+        _packet("earnings_update", EvidencePacketKind.earnings_update),
+        "earnings_update",
+    )
+
+    assert calls == {"initial_formatting": 1, "retry": 1}
+    assert len(observations) == 1
+    artifact = agent.last_agentic_observation_artifact
+    assert artifact["accepted_observation_count"] == 1
+    assert "broken json" in artifact["raw_formatting_output_initial"]
+    assert artifact["raw_formatting_output"] == valid
+
+
 def test_agentic_observation_prompt_includes_profile_constraints():
     prompt = build_agentic_observation_prompt(
         _packet("valuation_review", EvidencePacketKind.valuation_review),
@@ -153,6 +236,27 @@ def test_agentic_observation_prompt_includes_profile_constraints():
     assert "pm_question" in prompt
     assert "If the packet is too thin for a PM-useful observation" in prompt
     assert "metadata.target_value" in formatting_prompt
+
+
+def test_formatting_prompt_kind_rule_matches_packet_snippet_availability():
+    packet_with_snippets = _packet("company_analysis", EvidencePacketKind.company_analysis)
+    packet_without_snippets = packet_with_snippets.model_copy(update={"snippets": []})
+
+    facts_only_prompt = build_formatting_prompt(
+        packet_without_snippets,
+        "raw extraction",
+        "company_analysis",
+        "GroundedObservationAgent",
+    )
+    snippet_prompt = build_formatting_prompt(
+        packet_with_snippets,
+        "raw extraction",
+        "company_analysis",
+        "GroundedObservationAgent",
+    )
+
+    assert "MUST use observation_kind 'numeric'" in facts_only_prompt
+    assert "observation_kind 'qualitative' REQUIRES at least one text_snippet_id" in snippet_prompt
 
 
 def test_target_disclosure_observations_require_numeric_target_value():

@@ -68,24 +68,51 @@ def _get_fred_client():
 def _cache_series_values(series_id: str, series_data) -> None:
     """Write series observations to macro_series table if it exists."""
     try:
+        from db.loader import upsert_canonical_valuation_facts
         from db.schema import get_connection
+        from src.stage_00_data.source_unit_mapping import (
+            canonicalize_macro_observation,
+            macro_series_unit_spec,
+        )
         conn = get_connection()
         fetched_at = datetime.now(timezone.utc).isoformat()
         rows = []
+        canonical_facts = []
+        _, raw_unit, raw_scale = macro_series_unit_spec(series_id)
         for date_idx, value in series_data.items():
             if value is None:
                 continue
             import math
             if isinstance(value, float) and math.isnan(value):
                 continue
-            rows.append((series_id, str(date_idx)[:10], float(value), fetched_at))
+            series_date = str(date_idx)[:10]
+            rows.append(
+                (
+                    series_id,
+                    series_date,
+                    float(value),
+                    raw_unit,
+                    raw_scale,
+                    fetched_at,
+                )
+            )
+            canonical_facts.append(
+                canonicalize_macro_observation(
+                    series_id=series_id,
+                    series_date=series_date,
+                    value=float(value),
+                    fetched_at=fetched_at,
+                )
+            )
         if rows:
             conn.executemany(
                 "INSERT OR REPLACE INTO macro_series "
-                "(series_id, series_date, value, fetched_at) VALUES (?,?,?,?)",
+                "(series_id, series_date, value, unit, scale_factor, fetched_at) "
+                "VALUES (?,?,?,?,?,?)",
                 rows,
             )
             conn.commit()
+            upsert_canonical_valuation_facts(conn, canonical_facts)
         conn.close()
     except Exception:
         pass  # Cache is best-effort; never block callers

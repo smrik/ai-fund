@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from contextlib import nullcontext
 from pathlib import Path
 
+from ciq.ingest import IngestReport
 from scripts.manual import pm_decision_queue
 from scripts.manual import run_guided_ticker_workup as guided
 from scripts.manual.run_ticker_valuation_flow import AGENT_MODEL_ENV_VARS
@@ -211,6 +213,132 @@ def test_guided_workup_stages_ciq_runs_profile_and_skips_queue(tmp_path: Path, m
     assert Path(result["artifacts"]["friction_draft"]).exists()
 
 
+def test_guided_ciq_auto_refresh_off_stages_but_does_not_call_refresh(tmp_path: Path) -> None:
+    calls: dict = {}
+    deps = _deps(tmp_path, calls=calls)
+
+    def _unexpected_refresh(**kwargs):
+        raise AssertionError(f"auto-refresh should be opt-in: {kwargs}")
+
+    deps.refresh_and_ingest_ciq = _unexpected_refresh
+    result = guided.stage_and_ingest_ciq(
+        _args(tmp_path, "--non-interactive"),
+        "MSFT",
+        deps=deps,
+        io=ScriptedIO([]),
+    )
+
+    assert result["reason"] == "skipped-by-flag"
+    assert result["staged"] is True
+    assert result["ingested"] is False
+    assert "prepare_ciq" in calls
+
+
+def test_guided_ciq_auto_refresh_reports_refreshed_and_ingested(tmp_path: Path) -> None:
+    calls: list[dict] = []
+    deps = _deps(tmp_path)
+    workbook_path = tmp_path / "exports" / "MSFT_Standard.xlsx"
+    deps.refresh_and_ingest_ciq = lambda **kwargs: calls.append(kwargs) or {
+        "ciq_symbol": "NASDAQ:MSFT",
+        "workbook_path": str(workbook_path),
+        "input_json_path": str(tmp_path / "financials_input.json"),
+        "refreshed": True,
+        "refresh_status": "succeeded",
+        "refresh_timed_out": False,
+        "ingest_report": IngestReport(
+            as_of_date="2026-08-01",
+            folder=str(tmp_path / "exports"),
+            total_files=1,
+            processed=1,
+            skipped=0,
+            failed=0,
+            results=[],
+        ),
+        "archive_path": str(tmp_path / "archive" / "MSFT.xlsx"),
+    }
+
+    result = guided.stage_and_ingest_ciq(
+        _args(tmp_path, "--non-interactive", "--auto-refresh-ciq"),
+        "MSFT",
+        deps=deps,
+        io=ScriptedIO([]),
+    )
+
+    assert result["reason"] == "refreshed-and-ingested"
+    assert result["staged"] is True
+    assert result["ingested"] is True
+    assert calls[0]["ticker"] == "MSFT"
+    assert calls[0]["output_folder"] == str(tmp_path / "exports")
+
+
+def test_guided_ciq_auto_refresh_reports_refresh_failure(tmp_path: Path) -> None:
+    deps = _deps(tmp_path)
+    deps.refresh_and_ingest_ciq = lambda **kwargs: {
+        "ciq_symbol": "NASDAQ:MSFT",
+        "workbook_path": str(tmp_path / "exports" / "MSFT_Standard.xlsx"),
+        "refreshed": False,
+        "refresh_status": "failed",
+        "refresh_timed_out": False,
+        "refresh_error": "CIQ validation failed",
+        "ingest_report": {"processed": 0, "skipped": 0, "failed": 1},
+    }
+
+    result = guided.stage_and_ingest_ciq(
+        _args(tmp_path, "--non-interactive", "--auto-refresh-ciq"),
+        "MSFT",
+        deps=deps,
+        io=ScriptedIO([]),
+    )
+
+    assert result["reason"] == "refresh-failed"
+    assert result["staged"] is True
+    assert result["ingested"] is False
+
+
+def test_guided_ciq_auto_refresh_reports_refresh_timeout(tmp_path: Path) -> None:
+    deps = _deps(tmp_path)
+    deps.refresh_and_ingest_ciq = lambda **kwargs: {
+        "ciq_symbol": "NASDAQ:MSFT",
+        "workbook_path": str(tmp_path / "exports" / "MSFT_Standard.xlsx"),
+        "refreshed": False,
+        "refresh_status": "timed_out",
+        "refresh_timed_out": True,
+        "refresh_error": "CIQ Excel refresh timed out",
+        "ingest_report": {"processed": 0, "skipped": 0, "failed": 1},
+    }
+
+    result = guided.stage_and_ingest_ciq(
+        _args(tmp_path, "--non-interactive", "--auto-refresh-ciq"),
+        "MSFT",
+        deps=deps,
+        io=ScriptedIO([]),
+    )
+
+    assert result["reason"] == "refresh-timed-out"
+    assert result["staged"] is True
+    assert result["ingested"] is False
+
+
+def test_guided_ciq_auto_refresh_exception_degrades_without_crashing(tmp_path: Path) -> None:
+    deps = _deps(tmp_path)
+
+    def _raise_refresh(**kwargs):
+        raise RuntimeError("Excel automation unavailable")
+
+    deps.refresh_and_ingest_ciq = _raise_refresh
+    result = guided.stage_and_ingest_ciq(
+        _args(tmp_path, "--non-interactive", "--auto-refresh-ciq"),
+        "MSFT",
+        deps=deps,
+        io=ScriptedIO([]),
+    )
+
+    assert result["reason"] == "refresh-failed"
+    assert result["staged"] is True
+    assert result["ingested"] is False
+    assert "Excel automation unavailable" in result["error"]
+
+
 def test_guided_workup_lists_exported_valuation_json_artifact(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
     deps = _deps(tmp_path)
@@ -322,11 +450,206 @@ def test_guided_workup_non_interactive_skips_ciq_ingest_and_queue_mutations(
 
     assert result["database"]["mode"] == "isolated_snapshot"
     assert result["agent_mode"] == "heuristic"
-    assert result["ciq"]["reason"] == "non_interactive_after_stage"
+    assert result["ciq"]["reason"] == "skipped-by-flag"
     assert "ingest_ciq" not in calls
     assert "approve" not in calls
     assert "apply" not in calls
     assert result["queue_decisions"] == [{"item_id": 11, "action": "skipped", "reason": "non_interactive"}]
+
+
+def test_guided_workup_non_interactive_runs_profiles_in_parallel_with_synthesis_last(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    monkeypatch.setattr(guided, "_stamp", lambda: "20260703T000000Z")
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+
+    risk_started = threading.Event()
+    company_done = threading.Event()
+    risk_done = threading.Event()
+
+    def _run_profile(ticker: str, profile_name: str, **kwargs):
+        if profile_name == "company_analysis":
+            assert risk_started.wait(timeout=1.0)
+            company_done.set()
+        elif profile_name == "risk_review":
+            risk_started.set()
+            risk_done.set()
+        elif profile_name == "analyst_prep_synthesis":
+            assert company_done.is_set()
+            assert risk_done.is_set()
+        return {
+            **_profile_payload(profile_name),
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+        }
+
+    deps.run_profile = _run_profile
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "analyst_prep_synthesis",
+            "company_analysis",
+            "risk_review",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--non-interactive",
+            "--no-export-xlsx",
+        ]
+    )
+
+    result = guided.run_guided_workup(args, deps=deps, io=ScriptedIO([]))
+
+    assert [run["profile_name"] for run in result["profile_runs"]] == [
+        "company_analysis",
+        "risk_review",
+        "analyst_prep_synthesis",
+    ]
+
+
+def test_guided_workup_non_interactive_deduplicates_profiles(tmp_path: Path) -> None:
+    calls: dict = {}
+    deps = _deps(tmp_path, calls=calls)
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "company_analysis",
+            "company_analysis",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--non-interactive",
+            "--no-export-xlsx",
+        ]
+    )
+
+    runs = list(
+        guided._run_profiles_for_mode(
+            args,
+            deps=deps,
+            io=ScriptedIO([]),
+            ticker="MSFT",
+        )
+    )
+
+    assert [profile for profile, _, _ in runs] == ["company_analysis"]
+    assert calls["profile"] == ["company_analysis"]
+
+
+def test_guided_workup_interactive_keeps_requested_profile_order(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+    deps.run_profile = lambda ticker, profile_name, **kwargs: {
+        **_profile_payload(profile_name),
+        "queue_item_count": 0,
+        "queue_item_ids": [],
+    }
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "analyst_prep_synthesis",
+            "company_analysis",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--no-export-xlsx",
+        ]
+    )
+
+    result = guided.run_guided_workup(args, deps=deps, io=ScriptedIO(["", ""]))
+
+    assert [run["profile_name"] for run in result["profile_runs"]] == [
+        "analyst_prep_synthesis",
+        "company_analysis",
+    ]
+
+
+def test_guided_workup_interactive_reviews_each_profile_before_running_next(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    events: list[str] = []
+
+    class OrderingIO(ScriptedIO):
+        def _input(self, prompt: str) -> str:
+            events.append("review")
+            return super()._input(prompt)
+
+    deps = _deps(tmp_path)
+    deps.list_queue = lambda ticker, **kwargs: {"ticker": ticker, "items": []}
+
+    def _run_profile(ticker: str, profile_name: str, **kwargs):
+        events.append(f"run:{profile_name}")
+        return {
+            **_profile_payload(profile_name),
+            "queue_item_count": 0,
+            "queue_item_ids": [],
+        }
+
+    deps.run_profile = _run_profile
+    args = guided._parser().parse_args(
+        [
+            "--ticker",
+            "MSFT",
+            "--profiles",
+            "company_analysis",
+            "risk_review",
+            "--output-dir",
+            str(tmp_path / "out"),
+            "--friction-log-dir",
+            str(tmp_path / "reviews"),
+            "--ciq-folder",
+            str(tmp_path / "exports"),
+            "--ciq-template",
+            str(tmp_path / "ciq_cleandata.xlsx"),
+            "--ciq-input-json",
+            str(tmp_path / "financials_input.json"),
+            "--skip-ciq-stage",
+            "--no-export-xlsx",
+        ]
+    )
+
+    guided.run_guided_workup(args, deps=deps, io=OrderingIO(["", ""]))
+
+    assert events == [
+        "run:company_analysis",
+        "review",
+        "run:risk_review",
+        "review",
+    ]
 
 
 def test_guided_workup_renders_data_freshness_in_run_and_profile_packets(
@@ -350,10 +673,13 @@ def test_guided_workup_renders_data_freshness_in_run_and_profile_packets(
         assert "## Data Freshness" in markdown
         assert "[STALE] market_data fetched 2026-06-12 (age 21.0d, warn >1d)" in markdown
         assert "EDGAR filings: 3 cached, latest filing date=2026-06-05" in markdown
-        assert "CIQ ingest: skipped (skip_ciq_stage)" in markdown
-    assert "Agent LLM routing: model=" in run_markdown
-    assert result["llm_routing"]["source"] == ".env/config"
-    assert any(message.startswith("Agent LLM routing: model=") for message in io.messages)
+        assert "CIQ ingest: skipped (skipped-by-flag)" in markdown
+    assert "Agent LLM routing: role=judgment provider=openrouter" in run_markdown
+    assert result["llm_routing"]["source"] == "config"
+    assert any(
+        message.startswith("Agent LLM routing: role=judgment provider=openrouter")
+        for message in io.messages
+    )
 
 
 def test_configure_openrouter_free_overrides_pre_set_env(monkeypatch) -> None:
@@ -375,6 +701,79 @@ def test_configure_openrouter_free_overrides_pre_set_env(monkeypatch) -> None:
     assert os.environ["LLM_MODEL"] == "openai/gpt-oss-120b:free"
     assert routing["base_url"] == "https://openrouter.ai/api/v1"
     assert routing["model"] == "openai/gpt-oss-120b:free"
+
+
+def test_guided_workup_codex_routing_configures_subscription_backend_and_fallback(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(guided, "heuristic_agent_runs", lambda enabled: nullcontext())
+    for env_name in [
+        "ALPHA_POD_AGENT_BACKEND",
+        "ALPHA_POD_CODEX_MODEL",
+        "ALPHA_POD_CODEX_EFFORT",
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "LLM_MODEL_FAST",
+        "LLM_SYNTHESIS_MODEL",
+        "LLM_FALLBACK_MODELS",
+        *AGENT_MODEL_ENV_VARS,
+    ]:
+        monkeypatch.delenv(env_name, raising=False)
+
+    io = ScriptedIO(["", "s"])
+    routing_env_names = [
+        "ALPHA_POD_AGENT_BACKEND",
+        "ALPHA_POD_CODEX_MODEL",
+        "ALPHA_POD_CODEX_EFFORT",
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "LLM_MODEL_FAST",
+        "LLM_SYNTHESIS_MODEL",
+        "LLM_FALLBACK_MODELS",
+        *AGENT_MODEL_ENV_VARS,
+    ]
+    try:
+        result = guided.run_guided_workup(
+            _args(
+            tmp_path,
+            "--skip-ciq-stage",
+            "--use-codex",
+            "--use-openrouter-free",
+            "--openrouter-fallback-models",
+            "openrouter/backup",
+            "--codex-model",
+                "gpt-5.6-luna",
+                "--codex-effort",
+                "low",
+            ),
+            deps=_deps(tmp_path),
+            io=io,
+        )
+        observed_env = {name: os.environ.get(name) for name in routing_env_names}
+    finally:
+        for env_name in routing_env_names:
+            os.environ.pop(env_name, None)
+
+    assert observed_env["ALPHA_POD_AGENT_BACKEND"] == "codex"
+    assert observed_env["ALPHA_POD_CODEX_MODEL"] == "gpt-5.6-luna"
+    assert observed_env["ALPHA_POD_CODEX_EFFORT"] == "low"
+    assert observed_env["LLM_BASE_URL"] == "https://openrouter.ai/api/v1"
+    assert observed_env["LLM_MODEL"] == "deepseek/deepseek-v4-flash-0731"
+    assert result["llm_routing"]["provider"] == "codex"
+    assert result["llm_routing"]["model"] == "gpt-5.6-luna"
+    assert result["llm_routing"]["effort"] == "low"
+    assert result["llm_routing"]["fallbacks"] == [
+        "deepseek/deepseek-v4-flash-0731",
+        "openrouter/backup",
+    ]
+    assert result["llm_routing"]["sources"] == {
+        "provider": "cli",
+        "model": "cli",
+        "effort": "cli",
+        "base_url": "config",
+    }
+    assert "provider=codex model=gpt-5.6-luna effort=low" in io.messages[0]
+    assert "sources=provider:cli,model:cli,effort:cli" in io.messages[0]
 
 
 def test_export_xlsx_builds_advanced_model_from_current_run_json(tmp_path: Path, monkeypatch) -> None:
@@ -493,6 +892,42 @@ def test_friction_draft_write_never_clobbers_existing_same_day_file(tmp_path: Pa
     assert second.read_text(encoding="utf-8").startswith("# Weekly Loop Friction Draft")
 
 
+def test_friction_draft_reuses_pristine_template_from_same_day_rerun(tmp_path: Path) -> None:
+    friction_dir = tmp_path / "reviews"
+    friction_dir.mkdir()
+    result = {"ticker": "MSFT", "queue_decisions": []}
+
+    first = guided.next_friction_draft_path(friction_dir, "MSFT")
+    first.write_text(guided.render_friction_draft(result), encoding="utf-8")
+
+    # An untouched template from an earlier run today is overwritten in place,
+    # so repeated smoke runs do not accumulate numbered duplicates.
+    second = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert second == first
+
+    # Keeping all TODO markers is not enough: an added PM note in the friction
+    # table must preserve the draft and force a new path.
+    first.write_text(
+        guided.render_friction_draft(result).replace(
+            "| TODO | TODO | TODO | TODO | TODO |",
+            "| TODO | TODO | TODO | TODO | TODO |\n| Review | medium | no | Added PM note | ticket-1 |",
+        ),
+        encoding="utf-8",
+    )
+    added_line_path = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert added_line_path != first
+    assert added_line_path.name.endswith("-2.md")
+
+    # Once the PM fills in any TODO, the draft is preserved and a new file is minted.
+    first.write_text(
+        guided.render_friction_draft(result).replace("- Total time: TODO", "- Total time: 90 min"),
+        encoding="utf-8",
+    )
+    third = guided.next_friction_draft_path(friction_dir, "MSFT")
+    assert third != first
+    assert third.name.endswith("-2.md")
+
+
 def test_pm_queue_review_index_includes_commands_and_preview(tmp_path: Path) -> None:
     markdown = pm_decision_queue.render_review_index(
         "MSFT",
@@ -543,3 +978,61 @@ def test_pm_queue_review_index_does_not_emit_dead_commands_for_deferred_items(tm
     assert "pm_decision_queue.py --ticker MSFT preview --item-id 33" not in markdown
     assert "pm_decision_queue.py --ticker MSFT defer --item-id 33" not in markdown
     assert "No direct mutation command: item 33 is deferred" in markdown
+
+
+def test_guided_workup_renders_intrinsic_value_bridge_from_persisted_row() -> None:
+    markdown = guided.render_guided_markdown(
+        {
+            "ticker": "MSFT",
+            "run_started_at": "2026-08-01T09:00:00Z",
+            "agent_mode": "heuristic",
+            "database": {},
+            "profiles": [],
+            "queue_decisions": [],
+            "profile_runs": [],
+            "data_freshness": {},
+            "latest_model": {
+                "deterministic": {
+                    "dcf": {"terminal_bridge": {"method_used": "blend"}},
+                    "batch_row": {
+                        "price": 300.0,
+                        "iv_base": 228.89,
+                        "iv_blended": 228.89,
+                        "iv_gordon": 161.40,
+                        "iv_exit": 330.11,
+                        "drivers_json": '{"terminal_blend_gordon_weight": 0.6, "terminal_blend_exit_weight": 0.4}',
+                    },
+                }
+            },
+        }
+    )
+
+    assert "### Intrinsic Value Bridge" in markdown
+    assert "Headline blended IV (Base): $228.89" in markdown
+    assert "Gordon component: $161.40" in markdown
+    assert "Exit component: $330.11" in markdown
+    assert "Method used: Blend" in markdown
+    assert "60% Gordon / 40% Exit" in markdown
+
+
+def test_guided_workup_reports_degenerate_intrinsic_value_methods() -> None:
+    for method_label, method_used in (("Gordon-only", "gordon_only"), ("Exit-only", "exit_only")):
+        markdown = guided.render_guided_markdown(
+            {
+                "ticker": "MSFT",
+                "latest_model": {
+                    "deterministic": {
+                        "dcf": {"terminal_bridge": {"method_used": method_used}},
+                        "batch_row": {
+                            "iv_base": 228.89,
+                            "iv_gordon": 161.40,
+                            "iv_exit": 330.11,
+                            "drivers_json": '{"terminal_blend_gordon_weight": 0.6, "terminal_blend_exit_weight": 0.4}',
+                        },
+                    }
+                },
+            }
+        )
+
+        assert f"Method used: {method_label}" in markdown
+        assert "Blend weights: Blend weights were not applied." in markdown

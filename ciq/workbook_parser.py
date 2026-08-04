@@ -1,8 +1,9 @@
 """CIQ workbook parser for the committed cleandata workbook contract."""
 from __future__ import annotations
 
+from calendar import monthrange
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import hashlib
 import json
 import re
@@ -12,8 +13,14 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from src.stage_00_data.ciq_unit_mapping import ciq_comps_unit_spec
 
-PARSER_VERSION = "ibm_standard_v2"
+
+# v4: clean CIQ exports now carry statement, unit, currency, scale, and exact
+# period semantics instead of being emitted as unclassified scalar rows.
+# Bumping this is required, not cosmetic: it is part of the ingest run_key.
+PARSER_VERSION = "ibm_standard_v4"
+COVERAGE_MANIFEST_CONTRACT_VERSION = "ciq_statement_coverage_v1"
 REQUIRED_SHEETS = [
     "Financial Statements",
     "Common Size",
@@ -36,6 +43,7 @@ class CIQWorkbookPayload:
     long_form_records: list[dict[str, Any]]
     valuation_snapshot: dict[str, Any]
     comps_snapshot: list[dict[str, Any]]
+    coverage_manifest: dict[str, Any]
     rows_parsed: int
 
 
@@ -58,6 +66,48 @@ _METRIC_MAP = {
     "ROIC": "roic",
     "FCF Yield": "fcf_yield",
     "Total Debt/": "debt_to_ebitda",
+}
+
+_STATEMENT_TYPES = {
+    "Income Statement": "IncomeStatement",
+    "Cash Flow Statement": "CashFlowStatement",
+    "Balance Sheet": "BalanceSheet",
+}
+
+_CANONICAL_STATEMENT_ROLES = {
+    "revenues": "revenue",
+    "totalrevenues": "revenue",
+    "operatingincome": "operating_income",
+    "netincome": "net_income",
+    "netincometoparent": "net_income",
+    "cashfromops": "operating_cash_flow",
+    "capitalexpenditure": "capex",
+    "capitalexpenditures": "capex",
+    "depreciationamort": "da",
+    "depreciationandamortization": "da",
+    "netchangeincash": "net_change_in_cash",
+    "cashandequivalents": "cash",
+    "cashequivalents": "cash",
+    "totalassets": "assets",
+    "totalliabilities": "liabilities",
+    "totalequity": "equity",
+    "totalliabilitiesandequity": "liabilities_and_equity",
+}
+
+_REQUIRED_CANONICAL_ROLES = {
+    "IncomeStatement": {"revenue", "operating_income", "net_income"},
+    "CashFlowStatement": {
+        "operating_cash_flow",
+        "capex",
+        "da",
+        "net_change_in_cash",
+    },
+    "BalanceSheet": {"assets", "cash", "liabilities_and_equity"},
+}
+
+_CIQ_CONVERSION_SCALES = {
+    # Capital IQ conversion code used by the committed standard workbook.
+    "H": 1_000_000.0,
 }
 
 
@@ -116,6 +166,231 @@ def _default_unit_scale(sheet: str, section: str) -> tuple[str | None, float]:
     if "multiple" in combined or "/" in combined:
         return "x", 1.0
     return None, 1.0
+
+
+def _label_token(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "", _safe_str(value).lower())
+
+
+def _canonical_statement_role(label: str) -> str | None:
+    return _CANONICAL_STATEMENT_ROLES.get(_label_token(label))
+
+
+def _statement_type(section: str) -> str | None:
+    if section in _STATEMENT_TYPES:
+        return _STATEMENT_TYPES[section]
+    token = _label_token(section)
+    if "cashflow" in token:
+        return "CashFlowStatement"
+    if "balancesheet" in token or "financialposition" in token:
+        return "BalanceSheet"
+    if "income" in token or "operation" in token or "profitandloss" in token:
+        return "IncomeStatement"
+    return None
+
+
+def _find_clean_statement_spans(
+    ws: Worksheet,
+    data_start_row: int,
+) -> list[tuple[int, int, str]]:
+    """Locate standard CIQ statement blocks by accounting landmarks.
+
+    Clean exports intentionally omit the visual section-header rows found in
+    older workbooks. The row labels themselves remain stable across issuers, so
+    use ordered statement landmarks rather than ticker-specific row numbers.
+    """
+
+    max_row = min(ws.max_row, 5000)
+    labels = {
+        row: _label_token(ws.cell(row, 1).value)
+        for row in range(data_start_row, max_row + 1)
+    }
+
+    cash_flow_start: int | None = None
+    for row in range(data_start_row, max_row + 1):
+        if labels[row] != "netincome":
+            continue
+        forward = {
+            labels[candidate]
+            for candidate in range(row, min(row + 120, max_row) + 1)
+        }
+        if {"cashfromops", "capitalexpenditure", "netchangeincash"}.issubset(
+            forward
+        ):
+            cash_flow_start = row
+            break
+
+    if cash_flow_start is None:
+        return []
+
+    balance_start: int | None = None
+    for row in range(cash_flow_start + 1, max_row + 1):
+        if labels[row] not in {"cashandequivalents", "cashequivalents"}:
+            continue
+        forward = {
+            labels[candidate]
+            for candidate in range(row, min(row + 120, max_row) + 1)
+        }
+        if {"totalassets", "totalliabilitiesandequity"}.issubset(forward):
+            balance_start = row
+            break
+
+    if balance_start is None:
+        return []
+
+    ratios_start = next(
+        (
+            row
+            for row in range(balance_start + 1, max_row + 1)
+            if labels[row] == "ratiosdate"
+        ),
+        max_row + 1,
+    )
+    spans = [
+        (data_start_row, cash_flow_start - 1, "Income Statement"),
+        (cash_flow_start, balance_start - 1, "Cash Flow Statement"),
+        (balance_start, ratios_start - 1, "Balance Sheet"),
+    ]
+    if ratios_start <= max_row:
+        spans.append((ratios_start, max_row, "Supplemental"))
+    return spans
+
+
+def _statement_section_for_row(
+    row: int,
+    spans: list[tuple[int, int, str]],
+) -> str | None:
+    for start, end, section in spans:
+        if start <= row <= end:
+            return section
+    return None
+
+
+def _section_column_metadata(
+    ws: Worksheet,
+    spans: list[tuple[int, int, str]],
+    period_cols: list[tuple[int, str]],
+) -> dict[str, dict[str, dict[int, Any]]]:
+    labels = {
+        "filingcurrency": "currency",
+        "calculationtype": "calculation_type",
+        "periodlengthinmonths": "period_length_months",
+        "filingdate": "filing_date",
+    }
+    out: dict[str, dict[str, dict[int, Any]]] = {}
+    for start, end, section in spans:
+        section_meta = out.setdefault(section, {})
+        for row in range(start, end + 1):
+            field = labels.get(_label_token(ws.cell(row, 1).value))
+            if field is None:
+                continue
+            section_meta[field] = {
+                column: ws.cell(row, column).value
+                for column, _ in period_cols
+            }
+    return out
+
+
+def _workbook_currency_scale(wb) -> tuple[str | None, float, str | None]:
+    currency: str | None = None
+    conversion_code: str | None = None
+    if "Input" in wb.sheetnames:
+        currency = _safe_str(wb["Input"].cell(7, 2).value).upper() or None
+        conversion_code = _safe_str(wb["Input"].cell(8, 2).value).upper() or None
+    if currency is None and "Input_Raw" in wb.sheetnames:
+        currency = _safe_str(wb["Input_Raw"].cell(6, 2).value).upper() or None
+    if (
+        conversion_code is not None
+        and conversion_code not in _CIQ_CONVERSION_SCALES
+    ):
+        raise CIQTemplateContractError(
+            f"Unsupported CIQ conversion code: {conversion_code}"
+        )
+    scale = _CIQ_CONVERSION_SCALES.get(conversion_code or "", 1.0)
+    return currency, scale, conversion_code
+
+
+def _workbook_evidence_cutoff(wb) -> str | None:
+    if "Input" in wb.sheetnames:
+        cutoff = _to_iso_date(wb["Input"].cell(6, 2).value)
+        if cutoff is not None:
+            return cutoff
+    return None
+
+
+def _fiscal_period_semantics(
+    period_label: str | None,
+    calc_type: str | None,
+    period_end: str,
+) -> tuple[str, int | None, str | None]:
+    label = _safe_str(period_label).upper()
+    calculation = _safe_str(calc_type).upper()
+    year = int(period_end[:4]) if period_end else None
+
+    if label == "LTM" or calculation == "LTM":
+        return "ltm", year, "LTM"
+    quarter = re.fullmatch(r"(?:FY)?(\d{2,4})?Q([1-4])(?:E)?", label)
+    if quarter:
+        return "quarterly", year, f"Q{quarter.group(2)}"
+    if label.startswith("FY") or calculation in {"", "REP", "RUP", "ACTUAL"}:
+        return "annual", year, "FY"
+    return "source_other", year, label or calculation or None
+
+
+def _duration_period_start(period_end: str, months: Any) -> str | None:
+    numeric_months = _to_num(months)
+    if numeric_months is None or numeric_months <= 0:
+        return None
+    whole_months = int(round(numeric_months))
+    end = date.fromisoformat(period_end)
+    month_index = end.year * 12 + end.month - 1 - whole_months
+    shifted_year, shifted_month_index = divmod(month_index, 12)
+    shifted_month = shifted_month_index + 1
+    shifted_day = min(end.day, monthrange(shifted_year, shifted_month)[1])
+    return (
+        date(shifted_year, shifted_month, shifted_day) + timedelta(days=1)
+    ).isoformat()
+
+
+def _record_unit(
+    label: str,
+    *,
+    statement: str | None,
+    currency: str | None,
+    monetary_scale: float,
+    fallback_unit: str | None,
+    fallback_scale: float,
+) -> tuple[str | None, str | None, float]:
+    token = _label_token(label)
+    lower = label.lower()
+    if token in {
+        "filingdate",
+        "filingcurrency",
+        "restatementtype",
+        "calculationtype",
+        "financialaccountingstandard",
+    }:
+        return None, None, 1.0
+    if "period length in months" in lower:
+        return "months", None, 1.0
+    if "(%)" in label or any(
+        marker in lower
+        for marker in ("margin", "yield", "return on", "growth", "rate")
+    ):
+        return "%", None, 0.01
+    if "per share" in lower or "/share" in lower or token.endswith("eps"):
+        return (f"{currency}/share" if currency else "currency/share"), currency, 1.0
+    if "shares" in lower:
+        return "shares", None, monetary_scale
+    if statement is not None and currency is not None:
+        return currency, currency, monetary_scale
+    return fallback_unit, (
+        fallback_unit
+        if fallback_unit is not None
+        and len(fallback_unit) == 3
+        and fallback_unit.isalpha()
+        else None
+    ), fallback_scale
 
 
 def _to_iso_date(value: Any) -> str | None:
@@ -218,9 +493,24 @@ def _parse_time_series_sheet(
     ws: Worksheet,
     ticker: str,
     source_file: str,
+    *,
+    workbook_currency: str | None = None,
+    workbook_scale: float = 1.0,
+    conversion_code: str | None = None,
 ) -> list[dict[str, Any]]:
-    data_start_row, period_cols, calc_types = _period_columns(ws)
+    data_start_row, period_cols, column_metadata = _period_columns(ws)
     records: list[dict[str, Any]] = []
+
+    clean_layout = (
+        _safe_str(ws.cell(1, 1).value).lower() == "period"
+        and _safe_str(ws.cell(2, 1).value).lower().startswith("period date")
+    )
+    spans = (
+        _find_clean_statement_spans(ws, data_start_row)
+        if clean_layout and ws.title == "Financial Statements"
+        else []
+    )
+    section_metadata = _section_column_metadata(ws, spans, period_cols)
 
     section = "Uncategorized"
     max_scan_row = min(ws.max_row, 5000)
@@ -238,28 +528,123 @@ def _parse_time_series_sheet(
             section = label
             continue
 
-        unit, scale = _default_unit_scale(ws.title, section)
+        clean_section = _statement_section_for_row(r, spans)
+        record_section = clean_section or section
+        statement = _statement_type(record_section)
+        statement_role = (
+            f"ciq:{ws.title}:{statement}" if statement is not None else None
+        )
+        default_unit, default_scale = _default_unit_scale(
+            ws.title,
+            record_section,
+        )
         row_metric_key = _metric_key(label)
+        canonical_role = (
+            _canonical_statement_role(label) if statement is not None else None
+        )
         for c, period_date in period_cols:
             raw_value = ws.cell(r, c).value
             if raw_value in (None, ""):
                 continue
             value_num = _to_num(raw_value)
+
+            period_label = (
+                _safe_str(column_metadata.get(c)) or None
+                if clean_layout
+                else None
+            )
+            section_meta = section_metadata.get(record_section, {})
+            calc_type = _safe_str(
+                section_meta.get("calculation_type", {}).get(c)
+            ) or (
+                _safe_str(column_metadata.get(c))
+                if not clean_layout
+                else period_label
+            )
+            calc_type = calc_type or None
+            period_kind, fiscal_year, fiscal_period = _fiscal_period_semantics(
+                period_label,
+                calc_type,
+                period_date,
+            )
+            period_type = (
+                "instant"
+                if statement == "BalanceSheet"
+                else "duration"
+                if statement in {"IncomeStatement", "CashFlowStatement"}
+                else None
+            )
+            period_length_months = section_meta.get(
+                "period_length_months",
+                {},
+            ).get(c)
+            if (
+                period_type == "duration"
+                and _to_num(period_length_months) is None
+                and period_kind in {"annual", "ltm"}
+            ):
+                period_length_months = 12
+            elif (
+                period_type == "duration"
+                and _to_num(period_length_months) is None
+                and period_kind == "quarterly"
+            ):
+                period_length_months = 3
+            period_start = (
+                _duration_period_start(period_date, period_length_months)
+                if period_type == "duration"
+                else None
+            )
+
+            period_currency = _safe_str(
+                section_meta.get("currency", {}).get(c)
+            ).upper() or workbook_currency
+            monetary_scale = (
+                workbook_scale
+                if conversion_code is not None or clean_layout
+                else default_scale
+            )
+            unit, currency, scale = _record_unit(
+                label,
+                statement=statement,
+                currency=period_currency,
+                monetary_scale=monetary_scale,
+                fallback_unit=default_unit,
+                fallback_scale=default_scale,
+            )
+            filing_date = _to_iso_date(
+                section_meta.get("filing_date", {}).get(c)
+            )
             records.append(
                 {
                     "ticker": ticker,
                     "sheet_name": ws.title,
-                    "section_name": section,
+                    "section_name": record_section,
+                    "statement": statement,
+                    "statement_role": statement_role,
                     "row_label": label,
                     "metric_key": row_metric_key,
+                    "canonical_role": canonical_role,
                     "period_date": period_date,
-                    "calc_type": calc_types.get(c),
+                    "period_label": period_label,
+                    "period_kind": period_kind,
+                    "period_type": period_type,
+                    "period_start": period_start,
+                    "period_end": period_date,
+                    "fiscal_year": fiscal_year,
+                    "fiscal_period": fiscal_period,
+                    "period_length_months": _to_num(period_length_months),
+                    "filing_date": filing_date,
+                    "calc_type": calc_type,
                     "column_label": period_date,
                     "column_index": c,
                     "value_raw": str(raw_value),
                     "value_num": value_num,
                     "unit": unit,
+                    "currency": currency,
                     "scale_factor": scale,
+                    "conversion_code": conversion_code,
+                    "presentation_order": r,
                     "source_file": source_file,
                 }
             )
@@ -363,6 +748,11 @@ def _parse_comps_sheet(
                 continue
 
             value_num = _to_num(raw_value)
+            unit_spec = (
+                ciq_comps_unit_spec(metric_key)
+                if value_num is not None
+                else None
+            )
 
             records.append(
                 {
@@ -377,8 +767,10 @@ def _parse_comps_sheet(
                     "column_index": c,
                     "value_raw": str(raw_value),
                     "value_num": value_num,
-                    "unit": None,
-                    "scale_factor": 1.0,
+                    "unit": unit_spec.raw_unit if unit_spec is not None else None,
+                    "scale_factor": (
+                        unit_spec.raw_scale if unit_spec is not None else 1.0
+                    ),
                     "source_file": source_file,
                 }
             )
@@ -395,7 +787,8 @@ def _parse_comps_sheet(
                         "metric_label": metric_label,
                         "value_raw": str(raw_value),
                         "value_num": value_num,
-                        "unit": None,
+                        "unit": unit_spec.raw_unit,
+                        "scale_factor": unit_spec.raw_scale,
                         "is_target": 1 if row_ticker == target_ticker else 0,
                         "source_file": source_file,
                     }
@@ -425,7 +818,11 @@ def _series(
         if mk in keys and pd and val is not None:
             out_with_cols.append((pd, int(row.get("column_index") or 0), float(val)))
 
-    out_with_cols.sort(key=lambda x: (x[0], x[1]), reverse=True)
+    # CIQ templates repeat several cash-flow labels (D&A, SBC, minority interest)
+    # as zero-filled placeholder rows elsewhere on the same sheet. Those collide on
+    # (period, column), so prefer the row that actually carries a value; otherwise a
+    # placeholder can win the dedupe and silently zero out a real driver.
+    out_with_cols.sort(key=lambda x: (x[0], x[1], x[2] != 0.0), reverse=True)
     deduped: list[tuple[str, float]] = []
     seen_periods: set[str] = set()
     for period_date, _column_index, value in out_with_cols:
@@ -568,6 +965,160 @@ def _build_valuation_snapshot(
     }
 
 
+def _coverage_entry_key(record: dict[str, Any]) -> str:
+    fields = (
+        record.get("statement_role"),
+        record.get("canonical_role"),
+        record.get("period_start") or "-",
+        record.get("period_end"),
+        record.get("period_kind"),
+        record.get("unit") or "-",
+        record.get("currency") or "-",
+    )
+    return "|".join(str(value) for value in fields)
+
+
+def _build_coverage_manifest(
+    *,
+    ticker: str,
+    source_file: str,
+    file_hash: str,
+    evidence_cutoff: str | None,
+    records: list[dict[str, Any]],
+) -> dict[str, Any]:
+    statement_records = [
+        record
+        for record in records
+        if record.get("statement") in _REQUIRED_CANONICAL_ROLES
+    ]
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for record in statement_records:
+        if record.get("canonical_role") is None:
+            continue
+        key = _coverage_entry_key(record)
+        record["coverage_entry_key"] = key
+        grouped.setdefault(key, []).append(record)
+
+    entries: dict[str, dict[str, Any]] = {}
+    errors: list[str] = []
+    for key in sorted(grouped):
+        facts = grouped[key]
+        exemplar = facts[0]
+        exact_period = bool(exemplar.get("period_end")) and (
+            exemplar.get("period_type") == "instant"
+            or bool(exemplar.get("period_start"))
+        )
+        comparable_unit = bool(exemplar.get("unit")) and bool(
+            exemplar.get("currency")
+        )
+        completion_status = (
+            "completed" if exact_period and comparable_unit else "partial"
+        )
+        if completion_status != "completed":
+            errors.append(f"incomplete metadata for {key}")
+        entries[key] = {
+            "statement": exemplar["statement"],
+            "statement_role": exemplar["statement_role"],
+            "canonical_role": exemplar["canonical_role"],
+            "canonical_roles": [exemplar["canonical_role"]],
+            "period_start": exemplar.get("period_start"),
+            "period_end": exemplar.get("period_end"),
+            "period_kind": exemplar.get("period_kind"),
+            "period_type": exemplar.get("period_type"),
+            "fiscal_year": exemplar.get("fiscal_year"),
+            "fiscal_period": exemplar.get("fiscal_period"),
+            "unit": exemplar.get("unit"),
+            "currency": exemplar.get("currency"),
+            "scale_factor": exemplar.get("scale_factor"),
+            "presented_fact_count": len(facts),
+            "completion_status": completion_status,
+            "source_locator": (
+                f"{source_file}#Financial Statements/"
+                f"{exemplar['statement']}/{exemplar.get('period_end')}"
+            ),
+        }
+
+    covered_statement_roles = sorted(
+        {
+            str(record["statement_role"])
+            for record in statement_records
+            if record.get("statement_role")
+        }
+    )
+    required_statement_roles = sorted(
+        f"ciq:Financial Statements:{statement}"
+        for statement in _REQUIRED_CANONICAL_ROLES
+    )
+
+    statement_periods: dict[
+        tuple[str, str | None, str, str], set[str]
+    ] = {}
+    for record in statement_records:
+        canonical_role = record.get("canonical_role")
+        if canonical_role is None:
+            continue
+        identity = (
+            str(record["statement"]),
+            record.get("period_start"),
+            str(record.get("period_end") or ""),
+            str(record.get("period_kind") or ""),
+        )
+        statement_periods.setdefault(identity, set()).add(str(canonical_role))
+
+    for identity, roles in sorted(statement_periods.items()):
+        statement, period_start, period_end, period_kind = identity
+        required = _REQUIRED_CANONICAL_ROLES[statement]
+        missing = sorted(required - roles)
+        if missing:
+            errors.append(
+                f"{statement} {period_start or 'instant'}..{period_end} "
+                f"({period_kind}) missing canonical roles: {', '.join(missing)}"
+            )
+
+    period_ends = sorted(
+        {
+            str(record["period_end"])
+            for record in statement_records
+            if record.get("period_end")
+        }
+    )
+    status = (
+        "completed"
+        if not errors
+        and covered_statement_roles == required_statement_roles
+        and bool(entries)
+        else "partial"
+    )
+    manifest: dict[str, Any] = {
+        "contract_version": COVERAGE_MANIFEST_CONTRACT_VERSION,
+        "ticker": ticker,
+        "source": "ciq_workbook_v1",
+        "source_run_id": None,
+        "source_file": source_file,
+        "parser_version": PARSER_VERSION,
+        "file_hash": file_hash,
+        "status": status,
+        "evidence_cutoff": evidence_cutoff
+        or (period_ends[-1] if period_ends else None),
+        "as_of_date": period_ends[-1] if period_ends else None,
+        "coverage": {
+            "entries": entries,
+            "required_statement_roles": required_statement_roles,
+            "covered_statement_roles": covered_statement_roles,
+        },
+        "errors": sorted(set(errors)),
+    }
+    manifest_hash = hashlib.sha256(
+        json.dumps(
+            manifest,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+    manifest["manifest_id"] = f"sha256:{manifest_hash}"
+    return manifest
+
+
 def _workbook_hash(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -685,10 +1236,32 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
 
     fingerprint = _validate_contract(wb)
     ticker = _resolve_ticker(wb)
+    workbook_currency, workbook_scale, conversion_code = (
+        _workbook_currency_scale(wb)
+    )
+    evidence_cutoff = _workbook_evidence_cutoff(wb)
 
     long_records: list[dict[str, Any]] = []
-    long_records.extend(_parse_time_series_sheet(wb["Financial Statements"], ticker, workbook_path.name))
-    long_records.extend(_parse_time_series_sheet(wb["Common Size"], ticker, workbook_path.name))
+    long_records.extend(
+        _parse_time_series_sheet(
+            wb["Financial Statements"],
+            ticker,
+            workbook_path.name,
+            workbook_currency=workbook_currency,
+            workbook_scale=workbook_scale,
+            conversion_code=conversion_code,
+        )
+    )
+    long_records.extend(
+        _parse_time_series_sheet(
+            wb["Common Size"],
+            ticker,
+            workbook_path.name,
+            workbook_currency=workbook_currency,
+            workbook_scale=workbook_scale,
+            conversion_code=conversion_code,
+        )
+    )
 
     detailed_records, detailed_comps = _parse_comps_sheet(
         wb["Detailed Comps"],
@@ -715,6 +1288,13 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
 
     valuation_snapshot = _build_valuation_snapshot(ticker, workbook_path.name, long_records)
     comps_snapshot = detailed_comps + summary_comps
+    coverage_manifest = _build_coverage_manifest(
+        ticker=ticker,
+        source_file=workbook_path.name,
+        file_hash=file_hash,
+        evidence_cutoff=evidence_cutoff,
+        records=long_records,
+    )
 
     return CIQWorkbookPayload(
         ticker=ticker,
@@ -725,5 +1305,6 @@ def parse_ciq_workbook(path: str | Path) -> CIQWorkbookPayload:
         long_form_records=long_records,
         valuation_snapshot=valuation_snapshot,
         comps_snapshot=comps_snapshot,
+        coverage_manifest=coverage_manifest,
         rows_parsed=len(long_records),
     )

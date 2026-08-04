@@ -100,11 +100,16 @@ The intended flow is:
 4. forecasting converts that into explicit forward assumptions
 5. DCF and comps consume those assumptions
 
-In Alpha Pod, forecasting should become the main bridge between:
+In Alpha Pod, forecasting is the main bridge between:
 
-- deterministic historical metrics
-- LLM-augmented evidence synthesis
-- PM-approved valuation assumptions
+- deterministic historical metrics (facts)
+- judgment-layer reasoning that turns those facts plus filing evidence into forward-looking
+  driver values (theses)
+- PM approval of each proposed assumption
+
+The section headings below use "LLM augmentation" and "PM judgment" throughout. Read
+"LLM augmentation" as *authoring the driver proposal with an evidence basis* — not as producing
+commentary alongside a number that something else chose.
 
 ## Ownership Model
 
@@ -120,30 +125,48 @@ Deterministic forecasting should own:
 - forecast bridge artifacts
 - validation checks
 
-### LLM-augmented
+### Judgment layer
 
-LLMs are useful for:
+Per [Vision Decision 13](../strategy/vision.md#the-division-of-labor), the judgment layer **sets
+the forward-looking assumptions** — it does not merely comment on them:
 
-- extracting likely revenue and margin drivers from filings
-- summarizing industry and macro context relevant to the forecast
-- explaining why a margin path might improve or deteriorate
-- highlighting disclosed management plans, backlog, utilization, expansion projects, pricing commentary, or capital programs
-- surfacing contradictions between management commentary and historical evidence
+- the target EBIT margin and the shape of the margin path
+- mid-term and terminal revenue growth
+- terminal reinvestment: what capex and D&A converge to, and why
+- working-capital targets where the sector default does not describe this business
+
+each with a named evidence basis drawn from:
+
+- disclosed management plans, backlog, utilization, expansion projects, pricing commentary, capital programs
+- revenue and margin drivers extracted from filings
+- industry and macro context relevant to the forecast
+- contradictions between management commentary and historical evidence
+
+It also explains *why* a margin path improves or deteriorates — but the explanation accompanies a
+number, rather than substituting for one. **A summary that does not resolve to a proposed driver
+value has not finished the job.**
 
 ### Human / PM Judgment
 
-PM judgment is still required for:
+PM judgment is required for:
 
+- approving, editing, or rejecting every proposed assumption
 - choosing the dominant driver model
-- deciding what is realistic, conservative, or aggressive
 - choosing representative periods
 - approving any normalization or override that changes the forecast base
 - deciding which scenario framing best fits the business
+- deciding whether the model is investable, and making the bet
+
+The PM's judgment is exercised **on the proposal**, not by authoring the number by hand. If the
+PM is typing in a year-10 margin because nothing proposed one, that is a gap in the pipeline.
 
 ### Hard Boundary
 
-LLM outputs may inform assumptions, but they should not directly mutate the deterministic forecast driver set.
-Any LLM-suggested assumption change should remain advisory until it is explicitly approved.
+Judgment-layer output must never directly mutate the deterministic forecast driver set — every
+proposed assumption passes through the PM Decision Queue first. That is a routing rule about how
+a number travels, not a claim that it is optional. Agent-authored, evidence-backed driver values
+are the *intended* source; sector constants and mechanical transforms are the fallback that
+signals missing judgment.
 
 ## Full Workflow
 
@@ -609,7 +632,10 @@ into forecast assumptions much more explicit.
 
 Current gaps include:
 
-- no first-class assumption register exposed to the user
+- ~~no first-class assumption register~~ — `src/stage_02_valuation/assumption_register.py` exists
+  with tests (`tests/test_assumption_register.py`) and carries impact metadata plus PM review
+  ranges. Remaining gap is *user-facing exposure* and its use as the enforced contract for
+  agent-authored drivers, not the module itself. (Corrected 2026-07-24.)
 - limited formal driver mapping from company analysis into forecast design
 - limited explicit funding-path logic
 - scenario design that is still more generic than company-specific

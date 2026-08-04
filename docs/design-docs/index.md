@@ -12,6 +12,13 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 
 ## Read First
 
+> Before any valuation, assumption, or judgment-agent work, read
+> [Vision: The Division Of Labor](../strategy/vision.md#the-division-of-labor) and
+> [Deterministic Vs LLM Boundary](../valuation/12_deterministic-vs-llm-boundary.md).
+> The design docs below describe structure and dependency rules; those two describe **who authors
+> the forward-looking assumptions** (the judgment layer, PM-approved), which several older pages
+> here predate.
+
 - [Architecture Overview](./architecture-overview.md)
 - [Core Beliefs](./core-beliefs.md)
 - [TickerDossier Contract](./ticker-dossier-contract.md)
@@ -30,6 +37,7 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 | [`deterministic-valuation-workflow.md`](./deterministic-valuation-workflow.md) | Current valuation system behavior |
 | [`deterministic-valuation-benchmark-and-gap-analysis.md`](./deterministic-valuation-benchmark-and-gap-analysis.md) | Best-practice valuation benchmark, gap register, and issue map |
 | [`valuation-methodology-critical-review-and-action-plan.md`](./valuation-methodology-critical-review-and-action-plan.md) | Consolidated critique and issue-ready action plan for valuation methodology |
+| [`context-and-adjustment-analyst-call-architecture-spec.md`](./context-and-adjustment-analyst-call-architecture-spec.md) | Broad context analysts plus losslessly compiled, micro-family adjustment calls |
 
 ## Specialized Design Docs
 

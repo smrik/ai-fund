@@ -19,6 +19,7 @@ ALLOWED_SCOPES = frozenset({
     "wacc",
     "terminal_value",
     "capital_structure",
+    "ev_bridge",
 })
 ALLOWED_FORECAST_LINES = frozenset({
     "revenue",

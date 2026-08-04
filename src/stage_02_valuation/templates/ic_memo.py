@@ -10,11 +10,23 @@ from src.stage_04_pipeline.templates.dossier_models import ThesisPillar, Tracked
 
 
 class ValuationRange(BaseModel):
-    bear: float = Field(description="Bear case intrinsic value per share")
-    base: float = Field(description="Base case intrinsic value per share")
-    bull: float = Field(description="Bull case intrinsic value per share")
+    bear: Optional[float] = Field(
+        default=None,
+        description="Bear case intrinsic value per share",
+    )
+    base: Optional[float] = Field(
+        default=None,
+        description="Base case intrinsic value per share",
+    )
+    bull: Optional[float] = Field(
+        default=None,
+        description="Bull case intrinsic value per share",
+    )
     current_price: Optional[float] = None
     upside_pct_base: Optional[float] = None  # (base - price) / price
+    valuation_status: str = "provisional"
+    valuation_output_mode: str = "shadow_preview"
+    blocker: Optional[dict] = None
 
 
 class FilingsSummary(BaseModel):
@@ -103,7 +115,7 @@ class ICMemo(BaseModel):
     # Structured sub-sections
     filings: FilingsSummary = Field(default_factory=FilingsSummary)
     earnings: EarningsSummary = Field(default_factory=EarningsSummary)
-    valuation: ValuationRange = Field(default_factory=lambda: ValuationRange(bear=0, base=0, bull=0))
+    valuation: ValuationRange = Field(default_factory=ValuationRange)
     sentiment: SentimentOutput = Field(default_factory=SentimentOutput)
     risk: RiskOutput = Field(default_factory=RiskOutput)
     risk_impact: RiskImpactOutput = Field(default_factory=RiskImpactOutput)
@@ -131,7 +143,25 @@ class ICMemo(BaseModel):
             f"  {self.one_liner}",
             "",
             "  VALUATION (per share)",
-            f"    Bear: ${self.valuation.bear:.2f}  |  Base: ${self.valuation.base:.2f}  |  Bull: ${self.valuation.bull:.2f}",
+            (
+                f"    Bear: ${self.valuation.bear:.2f}  |  "
+                f"Base: ${self.valuation.base:.2f}  |  "
+                f"Bull: ${self.valuation.bull:.2f}"
+                if (
+                    self.valuation.bear is not None
+                    and self.valuation.base is not None
+                    and self.valuation.bull is not None
+                )
+                else (
+                    "    BLOCKED: "
+                    + str(
+                        (self.valuation.blocker or {}).get(
+                            "message",
+                            "valuation unavailable",
+                        )
+                    )
+                )
+            ),
             f"    Current: ${self.valuation.current_price or 0:.2f}  |  Upside (base): {(self.valuation.upside_pct_base or 0)*100:.1f}%",
             "",
             "  POSITION SIZE",

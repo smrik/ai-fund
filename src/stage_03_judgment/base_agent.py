@@ -7,15 +7,23 @@ import json
 import logging
 import os
 import re
+import shutil
+import subprocess
+import tempfile
 import time
+from pathlib import Path
 from openai import OpenAI, RateLimitError, APITimeoutError, APIConnectionError
 from typing import Any, Callable
 
-from config import LLM_MODEL, LLM_BASE_URL
+from config.llm_routing import format_llm_resolution, resolve_llm_route
 
 # Retry config for transient API errors
 _MAX_RETRIES = 3
 _RETRY_BACKOFF = [5, 15, 30]  # seconds to wait before each retry attempt
+_CODEX_TIMEOUT_SECONDS = 120
+_CODEX_PROMPT_PREAMBLE = (
+	"Reply with plain text only. Do not use tools, do not read or write files, do not run commands."
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -35,9 +43,43 @@ class BaseAgent:
 	- self.tool_handlers: dict mapping tool name → callable(input_dict) → str
 	"""
 
-	def __init__(self, model: str | None = None):
-		resolved_base_url = os.getenv("LLM_BASE_URL") or LLM_BASE_URL
-		resolved_model = model or os.getenv("LLM_MODEL") or LLM_MODEL
+	def __init__(
+		self,
+		model: str | None = None,
+		*,
+		role: str = "judgment",
+		provider: str | None = None,
+		effort: str | None = None,
+		model_env_names: tuple[str, ...] = (),
+	):
+		class_name = self.__class__.__name__
+		legacy_model_env = f"{re.sub(r'(?<!^)(?=[A-Z])', '_', class_name).upper()}_MODEL"
+		route = resolve_llm_route(
+			role,
+			cli_provider=provider,
+			cli_model=model,
+			cli_effort=effort,
+			model_env_names=(*model_env_names, legacy_model_env),
+		)
+		self.llm_route = route
+		self.provider = str(route["provider"])
+		self._codex_enabled = self.provider == "codex"
+		self._codex_model = str(route["model"])
+		self._codex_effort = str(route.get("effort") or "low")
+		if self._codex_enabled:
+			# Codex's OpenAI-compatible fallback should use the judgment role,
+			# not the Codex model as an OpenAI model. Explicit environment values
+			# remain the highest-priority fallback inputs.
+			fallback_env = dict(os.environ)
+			fallback_env["ALPHA_POD_AGENT_BACKEND"] = "openrouter"
+			fallback_route = resolve_llm_route("judgment", env=fallback_env)
+			resolved_model = str(fallback_route["model"])
+			resolved_base_url = str(fallback_route.get("base_url") or "")
+		else:
+			resolved_model = str(route["model"])
+			resolved_base_url = str(route.get("base_url") or "")
+		self._fallback_model = resolved_model
+		_logger.info(format_llm_resolution(route))
 		openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
 		if openrouter_key and "openrouter.ai" in (resolved_base_url or ""):
 			api_key = openrouter_key
@@ -55,8 +97,9 @@ class BaseAgent:
 		if resolved_base_url:
 			kwargs["base_url"] = resolved_base_url
 		self.client = OpenAI(**kwargs)
-		self.model = resolved_model
+		self.model = self._codex_model if self._codex_enabled else resolved_model
 		self.last_used_model = self.model
+		self._skip_structured_parse = "openrouter.ai" in (resolved_base_url or "")
 		self.name = "BaseAgent"
 		self.prompt_version = "v1"
 		self.system_prompt = "You are a financial research assistant."
@@ -154,11 +197,98 @@ class BaseAgent:
 					raise
 		raise last_exc  # unreachable, satisfies type checkers
 
+	def _codex_command(self, output_path: Path) -> list[str]:
+		# On Windows the codex launcher is a .cmd shim; bare "codex" fails
+		# executable resolution under subprocess without shell=True.
+		codex_executable = shutil.which("codex") or "codex"
+		return [
+			codex_executable,
+			"exec",
+			"--ephemeral",
+			# Judgment calls are plain prompt->text: the user's MCP servers,
+			# apps, and skills only burn startup time and context budget
+			# (~12k tokens/call measured). Auth still resolves from CODEX_HOME.
+			"--ignore-user-config",
+			"-s",
+			"read-only",
+			"-m",
+			self._codex_model,
+			"-c",
+			f"model_reasoning_effort={self._codex_effort}",
+			"-o",
+			str(output_path),
+			"-",
+		]
+
+	def _codex_env(self, temp_dir: str) -> dict[str, str]:
+		# Point AGENTS_HOME at an empty directory so the ~/.agents/skills
+		# library (100+ skills) is not scanned into the context budget.
+		env = dict(os.environ)
+		agents_home = Path(temp_dir) / "agents-home"
+		(agents_home / "skills").mkdir(parents=True, exist_ok=True)
+		env["AGENTS_HOME"] = str(agents_home)
+		return env
+
+	def _codex_prompt(self, user_message: str) -> str:
+		return (
+			f"{_CODEX_PROMPT_PREAMBLE}\n\n"
+			f"System instructions:\n{self.system_prompt}\n\n"
+			f"User request:\n{user_message}"
+		)
+
+	def _run_codex(
+		self,
+		*,
+		user_message: str,
+		messages: list[dict[str, Any]],
+		artifact: dict[str, Any],
+	) -> str:
+		with tempfile.TemporaryDirectory(prefix="alpha-pod-codex-") as temp_dir:
+			output_path = Path(temp_dir) / "last-message.txt"
+			completed = subprocess.run(
+				self._codex_command(output_path),
+				input=self._codex_prompt(user_message),
+				text=True,
+				capture_output=True,
+				timeout=_CODEX_TIMEOUT_SECONDS,
+				check=False,
+				env=self._codex_env(temp_dir),
+			)
+			if completed.returncode != 0:
+				stderr = str(getattr(completed, "stderr", "") or "").strip()
+				raise RuntimeError(
+					f"codex exec exited with status {completed.returncode}"
+					+ (f": {stderr[:500]}" if stderr else "")
+				)
+			try:
+				final_text = output_path.read_text(encoding="utf-8").strip()
+			except OSError as exc:
+				raise RuntimeError(f"codex exec did not produce its output file: {exc}") from exc
+			if not final_text:
+				raise RuntimeError("codex exec produced empty output")
+
+		self.last_used_model = f"codex:{self._codex_model}@{self._codex_effort}"
+		artifact["api_trace"].append(
+			{
+				"request_messages": json.loads(json.dumps(messages)),
+				"finish_reason": "stop",
+				"model": self.last_used_model,
+				"backend": "codex",
+				"assistant_message": {"role": "assistant", "content": final_text},
+			}
+		)
+		artifact["raw_final_output"] = final_text
+		artifact["parsed_output"] = final_text
+		self.last_run_artifact = artifact
+		return final_text
+
 	def run_structured_payload(self, user_message: str, response_format: Any, max_tokens: int = 8192) -> tuple[dict[str, Any] | None, str | None]:
 		"""
 		Try strict structured output via chat.completions.parse.
 		Returns (payload_dict_or_none, model_used_or_none).
 		"""
+		if self._codex_enabled or self._skip_structured_parse:
+			return None, None
 		parser = getattr(self.client.chat.completions, "parse", None)
 		if parser is None:
 			return None, None
@@ -247,6 +377,8 @@ class BaseAgent:
 		artifact: dict[str, Any] = {
 			"system_prompt": self.system_prompt,
 			"user_prompt": user_message,
+			"provider": self.provider,
+			"model_resolution": self.llm_route,
 			"requested_model": self.model,
 			"candidate_models": self.candidate_models(self.model),
 			"tool_schema": self.tools,
@@ -259,9 +391,23 @@ class BaseAgent:
 		}
 		self.last_run_artifact = artifact
 
+		fallback_active = False
+		if self._codex_enabled:
+			try:
+				return self._run_codex(
+					user_message=user_message,
+					messages=messages,
+					artifact=artifact,
+				)
+			except Exception as exc:
+				fallback_active = True
+				_logger.warning(
+					f"{self.name} Codex backend failed; falling back to OpenAI-compatible client: {exc}"
+				)
+
 		for _ in range(max_iterations):
 			kwargs = {
-				"model": self.model,
+				"model": self._fallback_model if fallback_active else self.model,
 				"max_tokens": 8192,
 				"messages": messages,
 			}
@@ -269,16 +415,28 @@ class BaseAgent:
 				kwargs["tools"] = tools_param
 
 			response = self._create_with_retry(**kwargs)
+			actual_model = self.last_used_model
+			response_model = getattr(response, "model", None) or actual_model
+			if fallback_active:
+				self.last_used_model = f"{response_model} (fallback)"
+			if not response.choices:
+				_logger.warning(f"{self.name} received empty choices from API (model may have refused or returned a null response)")
+				artifact["raw_final_output"] = ""
+				self.last_run_artifact = artifact
+				return ""
 			choice = response.choices[0]
 			usage = getattr(response, "usage", None)
 			if usage is not None:
 				artifact["prompt_tokens"] = getattr(usage, "prompt_tokens", artifact["prompt_tokens"])
 				artifact["completion_tokens"] = getattr(usage, "completion_tokens", artifact["completion_tokens"])
 				artifact["total_tokens"] = getattr(usage, "total_tokens", artifact["total_tokens"])
+			trace_model = response_model
+			if fallback_active:
+				trace_model = f"{trace_model} (fallback)"
 			trace_row: dict[str, Any] = {
 				"request_messages": json.loads(json.dumps(messages)),
 				"finish_reason": choice.finish_reason,
-				"model": getattr(response, "model", self.last_used_model),
+				"model": trace_model,
 				"assistant_message": self._serialize_assistant_message(choice.message),
 			}
 

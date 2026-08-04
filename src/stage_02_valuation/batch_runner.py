@@ -7,13 +7,15 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import sqlite3
 import sys
 import time
 from collections.abc import Callable
 from dataclasses import asdict, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -26,8 +28,18 @@ from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
 from src.stage_02_valuation.comps_model import build_comps_detail_from_yfinance
 from src.stage_00_data.peer_similarity import score_peer_similarity
 from src.stage_02_valuation.comps_model import run_comps_model
+from src.stage_02_valuation.claim_ledger import (
+    ClaimLedger,
+    EV_BRIDGE_COMPONENTS,
+    ReconciledEVBridge,
+    UnreconciledClaimLedgerError,
+)
 from src.stage_02_valuation.driver_assessments import build_driver_consensus, consensus_to_jsonable
-from src.stage_02_valuation.input_assembler import build_valuation_inputs, load_valuation_overrides
+from src.stage_02_valuation.input_assembler import (
+    BridgeMutationPathError,
+    build_valuation_inputs,
+    load_valuation_overrides,
+)
 from src.stage_02_valuation.assumption_register import (
     build_assumption_register,
     summarize_assumption_register,
@@ -38,13 +50,26 @@ from src.stage_02_valuation.json_exporter import (
 )
 from src.stage_02_valuation.scenario_policy import build_context_scenario_policy
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
+from src.stage_04_pipeline.operating_reconciliation_service import (
+    ReconciledValuationInputs,
+    TickerOperatingReconciliation,
+    assemble_reconciled_valuation_inputs,
+)
+from src.stage_04_pipeline.approved_driver_family_bridge import (
+    ApprovedDriverFamilyResolution,
+    resolve_approved_driver_family_packs,
+)
 from src.stage_02_valuation.professional_dcf import (
     default_scenario_specs,
     reverse_dcf_professional,
     run_dcf_professional,
     run_probabilistic_valuation,
 )
-from src.stage_02_valuation.valuation_types import ForecastDrivers, ScenarioSpec
+from src.stage_02_valuation.valuation_types import (
+    ForecastDrivers,
+    ProbabilisticValuationResult,
+    ScenarioSpec,
+)
 from src.utils import safe_float
 
 
@@ -52,6 +77,148 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 UNIVERSE_CSV = ROOT_DIR / "config" / "universe.csv"
 OUTPUT_DIR = ROOT_DIR / "data" / "valuations"
 logger = logging.getLogger(__name__)
+
+
+def _approved_driver_family_resolution_for_inputs(
+    ticker: str,
+    inputs: Any,
+    connection: Any | None,
+) -> ApprovedDriverFamilyResolution:
+    if connection is not None:
+        return resolve_approved_driver_family_packs(
+            connection,
+            ticker,
+            inputs.drivers,
+            inputs.source_lineage,
+        )
+
+    db_path = Path(os.getenv("ALPHA_POD_DB_PATH") or DB_PATH).resolve()
+    owned_connection = sqlite3.connect(
+        f"{db_path.as_uri()}?mode=ro",
+        uri=True,
+    )
+    owned_connection.row_factory = sqlite3.Row
+    try:
+        return resolve_approved_driver_family_packs(
+            owned_connection,
+            ticker,
+            inputs.drivers,
+            inputs.source_lineage,
+        )
+    finally:
+        owned_connection.close()
+
+
+def _run_probabilistic_valuation_with_scenario_drivers(
+    scenario_drivers: dict[str, ForecastDrivers],
+    scenario_specs: list[ScenarioSpec],
+    current_price: float | None = None,
+) -> ProbabilisticValuationResult:
+    if not scenario_specs:
+        raise ValueError("scenario_specs must not be empty")
+
+    prob_sum = sum(max(0.0, spec.probability) for spec in scenario_specs)
+    if prob_sum <= 0:
+        raise ValueError("scenario probabilities must sum to > 0")
+
+    scenario_results = {}
+    expected_iv = 0.0
+    for spec in scenario_specs:
+        normalized_probability = max(0.0, spec.probability) / prob_sum
+        normalized_spec = replace(spec, probability=normalized_probability)
+        drivers = scenario_drivers.get(normalized_spec.name)
+        if drivers is None:
+            raise ValueError(
+                f"approved driver-family scenarios missing {normalized_spec.name!r} drivers"
+            )
+        result = run_dcf_professional(drivers, normalized_spec)
+        scenario_results[normalized_spec.name] = result
+        expected_iv += result.intrinsic_value_per_share * normalized_probability
+
+    expected_upside_pct = None
+    if current_price and current_price > 0:
+        expected_upside_pct = expected_iv / current_price - 1.0
+
+    return ProbabilisticValuationResult(
+        scenario_results=scenario_results,
+        expected_iv=expected_iv,
+        expected_upside_pct=expected_upside_pct,
+    )
+
+
+def _reconciled_bridge_for_inputs(
+    inputs,
+) -> tuple[ReconciledEVBridge, str]:
+    payload = getattr(inputs, "claim_ledger", None)
+    if payload:
+        ledger = ClaimLedger.from_dict(payload)
+        ledger.require_reconciled()
+        return ReconciledEVBridge.from_ledger(ledger), "claim_ledger"
+    # Compatibility for test fixtures and archived callers created before the
+    # ledger contract. Live input assembly always supplies the claim ledger.
+    return (
+        ReconciledEVBridge(
+            **{
+                component: float(
+                    getattr(inputs.drivers, component, 0.0) or 0.0
+                )
+                for component in EV_BRIDGE_COMPONENTS
+            }
+        ),
+        "driver_compatibility",
+    )
+
+
+def _blocked_ticker_result(ticker: str, exc: Exception) -> dict:
+    detail = (
+        exc.to_dict()
+        if hasattr(exc, "to_dict")
+        else {
+            "status": "blocked",
+            "reason_code": "valuation_execution_failed",
+            "message": str(exc),
+            "exception_type": type(exc).__name__,
+        }
+    )
+    return {
+        "ticker": ticker.upper().strip(),
+        "valuation_status": "blocked",
+        "valuation_output_mode": "none",
+        "valuation_blocker_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
+
+
+def _blocked_operating_reconciliation_result(
+    ticker: str,
+    operating: TickerOperatingReconciliation,
+) -> dict:
+    detail = operating.to_dict()
+    detail["reason_code"] = "operating.reconciliation_incomplete"
+    return {
+        "ticker": ticker.upper().strip(),
+        "valuation_status": "blocked",
+        "valuation_output_mode": "none",
+        "operating_reconciliation_status": operating.status,
+        "operating_reconciliation_reason_codes_json": json.dumps(
+            list(operating.reason_codes),
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "operating_reconciliation_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+        "valuation_blocker_json": json.dumps(
+            detail,
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
+    }
 
 def _ciq_workbook_candidates(ticker: str, result: dict) -> list[Path]:
     candidates: list[Path] = []
@@ -78,7 +245,10 @@ def _historical_financials_for_json(ticker: str, result: dict) -> list[dict]:
         if not path.exists():
             continue
         try:
-            return build_historical_financials_from_ciq_workbook(path)
+            return build_historical_financials_from_ciq_workbook(
+                path,
+                expected_ticker=ticker,
+            )
         except Exception as exc:
             logger.warning(
                 "  CIQ historical export failed for %s from %s: %s",
@@ -281,13 +451,76 @@ def _compute_qoe_for_ticker(ticker: str) -> dict | None:
         return None
 
 
-def value_single_ticker(ticker: str) -> dict | None:
+def value_single_ticker(
+    ticker: str,
+    *,
+    reconcile_operating: bool = True,
+    reconciled_inputs: ReconciledValuationInputs | None = None,
+    connection: Any | None = None,
+    statement_reconciliation_run: Any | None = None,
+    statement_reconciler: Callable[..., Any] | None = None,
+    operating_reconciler: Callable[..., Any] | None = None,
+) -> dict | None:
     try:
         ticker = ticker.upper().strip()
-        inputs = build_valuation_inputs(ticker)
+        operating: TickerOperatingReconciliation | None = None
+        if reconcile_operating:
+            if reconciled_inputs is not None:
+                reconciled_bundle = reconciled_inputs
+            else:
+                reconciliation_kwargs: dict[str, Any] = {
+                    "evidence_cutoff": datetime.now(timezone.utc).date().isoformat(),
+                    "input_builder": build_valuation_inputs,
+                    "statement_reconciliation_run": statement_reconciliation_run,
+                }
+                if statement_reconciler is not None:
+                    reconciliation_kwargs["statement_reconciler"] = statement_reconciler
+                if operating_reconciler is not None:
+                    reconciliation_kwargs["operating_reconciler"] = operating_reconciler
+
+                if connection is None:
+                    from db.schema import get_connection
+
+                    owned_connection = get_connection()
+                    try:
+                        with owned_connection:
+                            reconciled_bundle = assemble_reconciled_valuation_inputs(
+                                owned_connection,
+                                ticker,
+                                **reconciliation_kwargs,
+                            )
+                    finally:
+                        owned_connection.close()
+                else:
+                    reconciled_bundle = assemble_reconciled_valuation_inputs(
+                        connection,
+                        ticker,
+                        **reconciliation_kwargs,
+                    )
+
+            if reconciled_bundle is None:
+                return None
+            inputs = reconciled_bundle.valuation_inputs
+            operating = reconciled_bundle.operating_reconciliation
+            if operating.status != "reconciled":
+                return _blocked_operating_reconciliation_result(ticker, operating)
+        else:
+            inputs = build_valuation_inputs(ticker)
         if inputs is None:
             return None
 
+        approved_driver_resolution = _approved_driver_family_resolution_for_inputs(
+            ticker,
+            inputs,
+            connection,
+        )
+        inputs.drivers = approved_driver_resolution.base_drivers
+        inputs.source_lineage = approved_driver_resolution.source_lineage
+        approved_scenario_drivers = approved_driver_resolution.dcf_scenario_drivers
+
+        reconciled_bridge, bridge_source = _reconciled_bridge_for_inputs(
+            inputs
+        )
         mkt = md_client.get_market_data(ticker)
         price = inputs.current_price
         lineage = inputs.source_lineage
@@ -306,6 +539,8 @@ def value_single_ticker(ticker: str) -> dict | None:
 
         row = {
             "ticker": ticker,
+            "valuation_architecture_path": "legacy_provisional_diagnostic",
+            "valuation_trust_ceiling": "provisional",
             "company_name": inputs.company_name,
             "sector": inputs.sector,
             "industry": inputs.industry,
@@ -416,10 +651,65 @@ def value_single_ticker(ticker: str) -> dict | None:
             "comps_similarity_method": None,
             "comps_similarity_model": None,
             "comps_similarity_weighted_flag": None,
+            "comps_status": "unavailable",
+            "comps_blocker_json": None,
+            "comps_bridge_basis": bridge_source,
+            "comps_ev_to_equity_adjustment_mm": (
+                reconciled_bridge.ev_to_equity_adjustment / 1e6
+            ),
             "analyst_target": mkt.get("analyst_target_mean"),
             "analyst_recommendation": mkt.get("analyst_recommendation"),
             "num_analysts": mkt.get("number_of_analysts"),
             "drivers_json": json.dumps(asdict(inputs.drivers), separators=(",", ":")),
+            "claim_ledger_json": json.dumps(
+                getattr(inputs, "claim_ledger", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "operating_cash_policy_json": json.dumps(
+                getattr(inputs, "operating_cash_policy", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "bridge_cutover_json": json.dumps(
+                getattr(inputs, "bridge_cutover", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "valuation_readiness_json": json.dumps(
+                getattr(inputs, "valuation_readiness", {}) or {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "valuation_status": getattr(
+                inputs,
+                "valuation_status",
+                "provisional",
+            ),
+            "valuation_output_mode": (
+                "official"
+                if getattr(inputs, "valuation_status", "provisional")
+                == "decision_grade"
+                else "shadow_preview"
+            ),
+            "operating_reconciliation_status": (
+                operating.status if operating is not None else "not_requested"
+            ),
+            "operating_reconciliation_reason_codes_json": json.dumps(
+                list(operating.reason_codes) if operating is not None else [],
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "operating_reconciliation_json": json.dumps(
+                operating.to_dict() if operating is not None else {},
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            "source_lineage_json": json.dumps(
+                lineage,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
         }
 
         # ── Comps model (IQR-cleaned, similarity-weighted) ───────────────────
@@ -449,11 +739,14 @@ def value_single_ticker(ticker: str) -> dict | None:
                     )
                 comps_model_result = run_comps_model(
                     comps_detail_raw,
-                    net_debt_mm=inputs.drivers.net_debt / 1e6,
                     shares_mm=inputs.drivers.shares_outstanding / 1e6,
                     similarity_scores=similarity_scores,
+                    ev_to_equity_adjustment_mm=(
+                        reconciled_bridge.ev_to_equity_adjustment / 1e6
+                    ),
                 )
                 if comps_model_result:
+                    row["comps_status"] = "available"
                     row["comps_model_bear"] = comps_model_result.bear_iv
                     row["comps_model_base"] = comps_model_result.base_iv
                     row["comps_model_bull"] = comps_model_result.bull_iv
@@ -467,8 +760,24 @@ def value_single_ticker(ticker: str) -> dict | None:
                         row["comps_model_upside_pct"] = round(
                             (comps_model_result.base_iv / price - 1.0) * 100, 1
                         )
-        except Exception:
-            pass  # comps model is supplementary; never block DCF
+        except Exception as exc:
+            row["comps_status"] = "blocked"
+            row["comps_blocker_json"] = json.dumps(
+                {
+                    "status": "blocked",
+                    "reason_code": "comps_execution_failed",
+                    "message": str(exc),
+                    "exception_type": type(exc).__name__,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            logger.warning(
+                "  Comps blocked for %s: %s",
+                ticker,
+                exc,
+                extra={"ticker": ticker, "step": "comps"},
+            )
 
         if inputs.model_applicability_status != "dcf_applicable":
             row.update(
@@ -519,6 +828,10 @@ def value_single_ticker(ticker: str) -> dict | None:
                     "health_terminal_growth_guardrail_flag": None,
                     "health_terminal_ronic_guardrail_flag": None,
                     "health_terminal_denominator_guardrail_flag": None,
+                    "health_degenerate_dcf_guardrail_flag": None,
+                    "degenerate_scenarios_identical_flag": None,
+                    "degenerate_zero_tv_flag": None,
+                    "degenerate_ev_implausible_flag": None,
                     "health_fcff_interest_contamination_flag": None,
                     "scenario_prob_bear": 0.20,
                     "scenario_prob_base": 0.60,
@@ -554,12 +867,28 @@ def value_single_ticker(ticker: str) -> dict | None:
             regime_weights=regime_weights,
             driver_consensus=driver_consensus,
         )
-        probabilistic = run_probabilistic_valuation(inputs.drivers, scenario_specs, current_price=price)
-        context_probabilistic = run_probabilistic_valuation(
-            inputs.drivers,
-            scenario_policy.context_specs,
-            current_price=price,
-        )
+        if approved_scenario_drivers is None:
+            probabilistic = run_probabilistic_valuation(
+                inputs.drivers,
+                scenario_specs,
+                current_price=price,
+            )
+            context_probabilistic = run_probabilistic_valuation(
+                inputs.drivers,
+                scenario_policy.context_specs,
+                current_price=price,
+            )
+        else:
+            probabilistic = _run_probabilistic_valuation_with_scenario_drivers(
+                approved_scenario_drivers,
+                scenario_specs,
+                current_price=price,
+            )
+            context_probabilistic = _run_probabilistic_valuation_with_scenario_drivers(
+                approved_scenario_drivers,
+                scenario_policy.context_specs,
+                current_price=price,
+            )
 
         bear = _scenario_by_name(probabilistic.scenario_results, "bear")
         base = _scenario_by_name(probabilistic.scenario_results, "base")
@@ -630,6 +959,10 @@ def value_single_ticker(ticker: str) -> dict | None:
                 "health_terminal_growth_guardrail_flag": _flag(health.get("terminal_growth_guardrail_flag")),
                 "health_terminal_ronic_guardrail_flag": _flag(health.get("terminal_ronic_guardrail_flag")),
                 "health_terminal_denominator_guardrail_flag": _flag(health.get("terminal_denominator_guardrail_flag")),
+                "health_degenerate_dcf_guardrail_flag": _flag(health.get("health_degenerate_dcf_guardrail_flag") or health.get("degenerate_dcf_guardrail_flag") or (bear_iv is not None and base_iv is not None and bull_iv is not None and round(bear_iv, 2) == round(base_iv, 2) == round(bull_iv, 2))),
+                "degenerate_scenarios_identical_flag": _flag(bear_iv is not None and base_iv is not None and bull_iv is not None and round(bear_iv, 2) == round(base_iv, 2) == round(bull_iv, 2)),
+                "degenerate_zero_tv_flag": _flag(health.get("degenerate_zero_tv_flag")),
+                "degenerate_ev_implausible_flag": _flag(health.get("degenerate_ev_implausible_flag")),
                 "health_fcff_interest_contamination_flag": _flag(health.get("fcff_interest_contamination_flag")),
                 "scenario_prob_bear": next((s.probability for s in scenario_specs if s.name == "bear"), None),
                 "scenario_prob_base": next((s.probability for s in scenario_specs if s.name == "base"), None),
@@ -649,6 +982,11 @@ def value_single_ticker(ticker: str) -> dict | None:
             "health_terminal_growth_guardrail_flag": row.get("health_terminal_growth_guardrail_flag"),
             "health_terminal_ronic_guardrail_flag": row.get("health_terminal_ronic_guardrail_flag"),
             "health_terminal_denominator_guardrail_flag": row.get("health_terminal_denominator_guardrail_flag"),
+            "health_degenerate_dcf_guardrail_flag": row.get("health_degenerate_dcf_guardrail_flag"),
+            "degenerate_dcf_guardrail_flag": row.get("health_degenerate_dcf_guardrail_flag"),
+            "degenerate_scenarios_identical_flag": row.get("degenerate_scenarios_identical_flag"),
+            "degenerate_zero_tv_flag": row.get("degenerate_zero_tv_flag"),
+            "degenerate_ev_implausible_flag": row.get("degenerate_ev_implausible_flag"),
             "health_fcff_interest_contamination_flag": row.get("health_fcff_interest_contamination_flag"),
             "forensic_flag_severe": row.get("forensic_flag") == "red",
             "wacc_method_spread_high": getattr(inputs, "wacc_method_spread_high", False),
@@ -659,9 +997,17 @@ def value_single_ticker(ticker: str) -> dict | None:
 
         return row
 
+    except (BridgeMutationPathError, UnreconciledClaimLedgerError) as exc:
+        logger.warning(
+            "  Valuation bridge blocked for %s: %s",
+            ticker,
+            exc,
+            extra={"ticker": ticker, "step": "valuation"},
+        )
+        return _blocked_ticker_result(ticker, exc)
     except Exception as exc:
         logger.warning("  Failed to value %s: %s", ticker, exc, extra={"ticker": ticker, "step": "valuation"})
-        return None
+        return _blocked_ticker_result(ticker, exc)
 
 
 def export_to_excel(results: list[dict], output_path: Path):
@@ -988,7 +1334,7 @@ def run_batch(
     failed_tickers: list[str] = []
     for i, ticker in enumerate(tickers, 1):
         result = value_single_ticker(ticker)
-        if result:
+        if result and result.get("valuation_output_mode") != "none":
             results.append(result)
             iv = result.get("expected_iv") if result.get("expected_iv") is not None else result.get("iv_base")
             upside = result.get("expected_upside_pct")
@@ -1012,10 +1358,15 @@ def run_batch(
         else:
             failed_tickers.append(ticker)
             logger.warning(
-                "  [%3d/%d] %-8s skipped (insufficient data)",
+                "  [%3d/%d] %-8s skipped (%s)",
                 i,
                 len(tickers),
                 ticker,
+                (
+                    result.get("operating_reconciliation_reason_codes_json")
+                    if result
+                    else "insufficient data"
+                ),
                 extra={"ticker": ticker, "step": "run_batch"},
             )
 
@@ -1025,7 +1376,11 @@ def run_batch(
                     "completed": i,
                     "total": len(tickers),
                     "ticker": ticker,
-                    "status": "valued" if result else "skipped",
+                    "status": (
+                        "valued"
+                        if result and result.get("valuation_output_mode") != "none"
+                        else "skipped"
+                    ),
                 }
             )
 
@@ -1161,7 +1516,7 @@ def _print_ic_memo(memo) -> None:
         accounting_recast = getattr(memo, "accounting_recast", {}) or {}
         if accounting_recast:
             adjustments = len(accounting_recast.get("income_statement_adjustments") or [])
-            reclasses = len(accounting_recast.get("balance_sheet_reclassifications") or [])
+            reclasses = len(accounting_recast.get("reclassify") or [])
             confidence = accounting_recast.get("confidence", "low")
             t.add_row(
                 "Accounting recast",
@@ -1446,7 +1801,6 @@ if __name__ == "__main__":
         # ── --story-profile: generate LLM story driver profile ────────────────
         if getattr(args, "story_profile", False):
             from src.stage_03_judgment.thesis_agent import ThesisAgent, write_story_driver_pending
-            from src.stage_02_valuation.templates.ic_memo import FilingsSummary, EarningsSummary
             logger.info(
                 "\n%s\nStory Profile Generation — %s\n%s",
                 "=" * 60,
@@ -1455,18 +1809,38 @@ if __name__ == "__main__":
                 extra={"ticker": args.ticker.upper(), "step": "story_profile"},
             )
             try:
+                from src.stage_04_pipeline.evidence_packets import build_evidence_packet
+                from src.stage_04_pipeline.story_profile_context import build_story_profile_context
+
                 agent = ThesisAgent()
-                # Use lightweight stubs so we don't need a full pipeline run
-                filings = FilingsSummary(raw_summary="No filings context — direct story profile run")
-                earnings = EarningsSummary(raw_summary="No earnings context — direct story profile run")
                 mkt = __import__("src.stage_00_data.market_data", fromlist=["get_market_data"]).get_market_data(args.ticker)
-                profile = agent.generate_story_profile(
-                    ticker=args.ticker,
+
+                # Real filing evidence, not stubs. Scoring a moat from ticker + sector alone is
+                # model recall, and the resulting profile would carry full driver authority.
+                packet = build_evidence_packet(args.ticker, "company_analysis")
+                context = build_story_profile_context(
+                    packet,
                     company_name=mkt.get("name") or args.ticker,
                     sector=mkt.get("sector") or "Unknown",
-                    filings=filings,
-                    earnings=earnings,
+                    industry=mkt.get("industry") or "Unknown",
                 )
+                if not context.is_usable:
+                    logger.error(
+                        "  No story profile written - %s",
+                        context.detail or context.status,
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
+                    profile = None
+                else:
+                    logger.info(
+                        "  Evidence: %s filing excerpt(s), %s fact(s), %s anchor(s)",
+                        context.snippet_count,
+                        context.fact_count,
+                        len(context.evidence_anchor_ids),
+                        extra={"ticker": args.ticker.upper(), "step": "story_profile"},
+                    )
+                    profile = agent.generate_story_profile_from_evidence(context)
+
                 if profile:
                     path = write_story_driver_pending(args.ticker, profile)
                     logger.info(

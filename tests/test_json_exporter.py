@@ -617,6 +617,49 @@ class TestBuildNestedStructure:
         assert out["assumption_register"]["entries"][0]["assumption_name"] == "wacc"
         assert out["assumption_register_summary"]["model_trust_state"] == "clean"
 
+    def test_reconciled_bridge_contract_is_exposed_to_api_payload(self):
+        r = dict(MINIMAL_RESULT)
+        r.update(
+            {
+                "valuation_status": "provisional",
+                "valuation_output_mode": "shadow_preview",
+                "claim_ledger_json": json.dumps(
+                    {
+                        "fingerprint": "claim-ledger-hash",
+                        "reconciliation": {"is_reconciled": True},
+                    }
+                ),
+                "operating_cash_policy_json": json.dumps(
+                    {"rate": 0.02, "operating_cash_usd": 120.0}
+                ),
+                "bridge_cutover_json": json.dumps(
+                    {
+                        "mode": "shadow",
+                        "selected_bridge": "reconciled_shadow",
+                    }
+                ),
+                "valuation_readiness_json": json.dumps(
+                    {
+                        "trust_status": "provisional",
+                        "reason_codes": ["readiness.not_supplied"],
+                    }
+                ),
+            }
+        )
+
+        out = build_nested_structure(r)
+
+        assert out["valuation"]["status"] == "provisional"
+        assert out["valuation"]["output_mode"] == "shadow_preview"
+        assert out["claim_ledger"]["fingerprint"] == "claim-ledger-hash"
+        assert out["operating_cash_policy"]["rate"] == pytest.approx(0.02)
+        assert out["bridge_cutover"]["selected_bridge"] == (
+            "reconciled_shadow"
+        )
+        assert out["valuation_readiness"]["reason_codes"] == [
+            "readiness.not_supplied"
+        ]
+
 
 # ── Tests: export_ticker_json ─────────────────────────────────────────────────
 
@@ -717,6 +760,8 @@ class TestExportTickerJson:
         comps["B1"] = "Name"
         comps["A2"] = "ACN"
         comps["B2"] = "Accenture"
+        input_ws = wb.create_sheet("Input")
+        input_ws["B2"] = "IBM"
         wb.save(workbook_path)
 
         rows = build_historical_financials_from_ciq_workbook(workbook_path)
@@ -728,6 +773,15 @@ class TestExportTickerJson:
         assert rows[-1]["capex_mm"] == 6.0
         assert rows[-1]["tax_rate_pct"] == pytest.approx(2.5 / 9.6)
         assert rows[-1]["net_debt_mm"] == 35.0
+
+        with pytest.raises(
+            ValueError,
+            match=r"CIQ workbook ticker mismatch: expected MSFT, found IBM",
+        ):
+            build_historical_financials_from_ciq_workbook(
+                workbook_path,
+                expected_ticker="MSFT",
+            )
 
     def test_dated_and_latest_identical(self, tmp_dir):
         dated = export_ticker_json(MINIMAL_RESULT, output_dir=tmp_dir, date_str="2026-01-01")

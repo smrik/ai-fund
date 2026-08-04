@@ -54,6 +54,118 @@ Macro conditions remain uncertain.
 FIXTURES_DIR = Path(__file__).parent / "fixtures" / "filings"
 
 
+def _full_annual_filing_with_numbered_notes(note_count: int) -> str:
+    notes = "\n\n".join(
+        (
+            f"NOTE {number} - DISCLOSURE TOPIC {number}\n"
+            f"This is the complete source-backed disclosure for numbered note {number}. "
+            "It contains enough accounting context to remain useful without relying on a topic alias."
+        )
+        for number in range(1, note_count + 1)
+    )
+    return f"""
+    INDEX
+    Notes to Financial Statements (Part II, Item 8 of this Form 10-K).
+
+    PART II
+    Item 8
+    FINANCIAL STATEMENTS AND SUPPLEMENTARY DATA
+    Consolidated statements appear here.
+
+    NOTES TO FINANCI AL STATEMENTS
+    {notes}
+
+    REPORT OF INDEPENDENT REGISTERED PUBLIC ACCOUNTING FIRM
+    The auditor report begins after the complete numbered-note inventory.
+
+    PART II
+    Item 9
+    Changes in and disagreements with accountants begin here.
+
+    Notes to Financial Statements                                  55
+    """
+
+
+def test_build_filing_corpus_preserves_every_numbered_note_from_complete_10k(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    monkeypatch.setattr(
+        fr,
+        "_load_filing_payloads",
+        lambda ticker, include_10k=True, ten_q_limit=2: [
+            {
+                "ticker": ticker,
+                "cik": "0000789019",
+                "form_type": "10-K",
+                "accession_no": "annual-2025",
+                "doc_name": "annual-2025.htm",
+                "filing_date": "2025-07-30",
+                "text": _full_annual_filing_with_numbered_notes(18),
+            }
+        ],
+    )
+
+    corpus = fr.build_filing_corpus("MSFT")
+
+    numbered_notes = {
+        section.section_key: section
+        for section in corpus["sections"]
+        if section.section_key.removeprefix("note_").isdigit()
+    }
+    assert list(numbered_notes) == [f"note_{number:03d}" for number in range(1, 19)]
+    assert numbered_notes["note_001"].section_label == "NOTE 1 - DISCLOSURE TOPIC 1"
+    assert "complete source-backed disclosure for numbered note 18" in numbered_notes["note_018"].text
+    broad_notes = next(section for section in corpus["sections"] if section.section_key == "notes_to_financials")
+    assert "NOTE 18 - DISCLOSURE TOPIC 18" in broad_notes.text
+    assert "auditor report begins" not in broad_notes.text
+
+
+def test_build_filing_corpus_uses_complete_text_for_every_available_cached_filing(tmp_path, monkeypatch):
+    db_path = tmp_path / "alpha_pod.db"
+    monkeypatch.setenv("ALPHA_POD_DB_PATH", str(db_path))
+    filings = {
+        "10-K": [
+            {"accession_no": "annual-2025", "filing_date": "2025-07-30", "primary_doc": "annual-2025.htm"},
+            {"accession_no": "annual-2024", "filing_date": "2024-07-30", "primary_doc": "annual-2024.htm"},
+        ],
+        "10-Q": [
+            {"accession_no": "quarter-2026-q3", "filing_date": "2026-04-29", "primary_doc": "quarter-q3.htm"},
+            {"accession_no": "quarter-2026-q2", "filing_date": "2026-01-28", "primary_doc": "quarter-q2.htm"},
+        ],
+    }
+
+    def _metadata(ticker, form_type, limit=4):
+        available = filings[form_type]
+        return available if limit is None else available[:limit]
+
+    def _text(ticker, accession_no, max_chars=None):
+        source = ("x" * 260_000 + TEN_K_SAMPLE) if accession_no.startswith("annual") else ("x" * 190_000 + TEN_Q_SAMPLE)
+        return source if max_chars is None else source[:max_chars]
+
+    monkeypatch.setattr(fr.edgar_client, "get_cik", lambda ticker: "0000789019")
+    monkeypatch.setattr(fr.edgar_client, "get_recent_filing_metadata", _metadata)
+    monkeypatch.setattr(fr.edgar_client, "get_filing_text_by_accession", _text)
+
+    corpus = fr.build_filing_corpus("MSFT", ten_q_limit=None)
+
+    assert [source["accession_no"] for source in corpus["sources"]] == [
+        "annual-2025",
+        "annual-2024",
+        "quarter-2026-q3",
+        "quarter-2026-q2",
+    ]
+    numbered_accessions = {
+        section.accession_no for section in corpus["sections"] if section.section_key == "note_001"
+    }
+    assert numbered_accessions == {"annual-2025", "annual-2024", "quarter-2026-q3", "quarter-2026-q2"}
+    quarterly_note_one = [
+        section
+        for section in corpus["sections"]
+        if section.form_type == "10-Q" and section.section_key == "note_001"
+    ]
+    assert all("Demand remained solid" not in section.text for section in quarterly_note_one)
+
+
 def test_extract_sections_for_10k_and_note_subsections():
     sections = fr._extract_sections_for_filing("10-K", TEN_K_SAMPLE)
     keys = {key for key, _, _ in sections}
@@ -67,6 +179,59 @@ def test_extract_sections_for_10k_and_note_subsections():
     assert "note_acquisitions" in keys
 
 
+def test_extract_sections_handles_split_financial_heading_and_body_topic_headings():
+    text = """
+    INDEX
+    Notes to Financial Statements (Part II, Item 8 of this Form 10-K).
+
+    PART II
+    Item 8
+    NOTES TO FINANCI AL STATEMENTS
+    NOTE 1 - ACCOUNTING POLICIES
+
+    Revenue Recognition
+    Revenue is recognized as performance obligations are satisfied.
+
+    Goodwill
+    Goodwill is tested for impairment annually. The assessment compares the
+    reporting unit fair value with carrying value and records a charge when
+    the carrying amount is not recoverable.
+
+    Income Taxes
+    Uncertain tax positions require probability assessments. Management
+    recognizes benefits only when the technical position is more likely than
+    not to be sustained after examination.
+
+    Fair Value Measurements
+    Level 3 investments use unobservable inputs. The valuation process
+    includes internally developed assumptions and periodic control review.
+
+    Leases
+    Operating lease liabilities are disclosed. The company records right of
+    use assets and lease obligations over the contractual term.
+
+    Segment Information and Geographic Data
+    Reportable segment revenue and operating income are disclosed. Management
+    reviews the segment measures when allocating resources and assessing
+    performance.
+
+    PART II
+    Item 9
+    Changes in and disagreements with accountants begin here.
+    """
+
+    sections = {key: section_text for key, _, section_text in fr._extract_sections_for_filing("10-K", text)}
+
+    assert "INDEX" not in sections["notes_to_financials"]
+    assert "NOTES TO FINANCIAL STATEMENTS" in sections["notes_to_financials"]
+    assert "Revenue Recognition" in sections["note_revenue"]
+    assert "Goodwill" in sections["note_impairment"]
+    assert "Income Taxes" in sections["note_taxes"]
+    assert "Fair Value Measurements" in sections["note_fair_value"]
+    assert "Leases" in sections["note_leases"]
+    assert "Segment Information" in sections["note_segments"]
+
+
 def test_extract_sections_for_10q():
     sections = fr._extract_sections_for_filing("10-Q", TEN_Q_SAMPLE)
     keys = {key for key, _, _ in sections}
@@ -75,6 +240,95 @@ def test_extract_sections_for_10q():
     assert "notes_to_financials_q" in keys
     assert "mda_q" in keys
     assert "risk_factors_q" in keys
+
+
+def test_focused_profiles_diversify_available_topic_sections():
+    chunks = [
+        FilingChunk("10-K", "a1", "2025-12-31", "notes_to_financials", index, "broad", f"b{index}", score=1.0)
+        for index in range(4)
+    ] + [
+        FilingChunk("10-K", "a1", "2025-12-31", "note_leases", 0, "leases", "leases-0", score=0.8),
+        FilingChunk("10-K", "a1", "2025-12-31", "note_taxes", 0, "taxes", "taxes-0", score=0.7),
+        FilingChunk("10-K", "a1", "2025-12-31", "note_segments", 0, "segments", "segments-0", score=0.6),
+    ]
+
+    selected = fr._select_profile_chunks(
+        chunks,
+        profile_name="accounting_recast",
+        priorities=["note_leases", "note_taxes", "note_segments", "notes_to_financials"],
+    )
+
+    assert [chunk.section_key for chunk in selected[:4]] == [
+        "note_leases",
+        "note_taxes",
+        "note_segments",
+        "notes_to_financials",
+    ]
+    assert len(selected) == 7
+
+
+def test_accounting_selection_keeps_unmapped_numbered_notes_eligible():
+    priorities = list(fr._PROFILE_CONFIGS["accounting_recast"]["priorities"])
+    chunks = [
+        FilingChunk(
+            "10-K",
+            "a1",
+            "2025-12-31",
+            section_key,
+            0,
+            f"Known topic section {section_key}",
+            f"{section_key}-0",
+            score=1.0 - (index / 100),
+        )
+        for index, section_key in enumerate(priorities)
+    ]
+    chunks.insert(
+        0,
+        FilingChunk(
+            "10-K",
+            "a1",
+            "2025-12-31",
+            "note_017",
+            0,
+            "Unexpected supplier-financing arrangement requiring analyst judgment.",
+            "note-017-0",
+            score=1.1,
+        ),
+    )
+
+    selected = fr._select_profile_chunks(
+        chunks,
+        profile_name="accounting_recast",
+        priorities=priorities,
+    )
+
+    assert "note_017" in {chunk.section_key for chunk in selected}
+
+
+def test_fallback_lexical_score_prefers_relevant_raw_note():
+    queries = fr._PROFILE_CONFIGS["accounting_recast"]["queries"]
+
+    relevant = fr._lexical_query_score(
+        "The company reports operating and finance lease liabilities and right-of-use assets.",
+        queries,
+    )
+    unrelated = fr._lexical_query_score(
+        "The board declared its regular quarterly common stock dividend.",
+        queries,
+    )
+
+    assert relevant > unrelated
+
+
+def test_accounting_recast_profile_anchors_broad_evidence_not_named_treatments():
+    priorities = fr._PROFILE_CONFIGS["accounting_recast"]["priorities"]
+
+    assert priorities == [
+        "notes_to_financials",
+        "notes_to_financials_q",
+        "mda",
+        "mda_q",
+    ]
 
 
 def test_extract_sections_for_real_msft_10k_multiline_headings():
@@ -100,6 +354,10 @@ def test_extract_sections_for_real_msft_10q_multiline_headings():
     assert "notes_to_financials_q" in sections
     assert "mda_q" in sections
     assert "risk_factors_q" in sections
+    assert "note_001" in sections
+    assert "PART I" not in sections["note_001"]
+    assert "Auditor review text" not in sections["note_001"]
+    assert "Cloud revenue increased" not in sections["note_001"]
     assert "Condensed consolidated statements" in sections["financial_statements_q"]
     assert "Cloud revenue increased" in sections["mda_q"]
     assert "no material changes to the risk factors" in sections["risk_factors_q"]

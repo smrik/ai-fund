@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import HTTPException
@@ -455,6 +456,38 @@ def _valuation_payload(snapshot: dict[str, Any] | None) -> dict[str, Any]:
     return dict(valuation) if isinstance(valuation, dict) else {}
 
 
+def _intrinsic_value_bridge(
+    batch_row: dict[str, Any],
+    dcf_payload: dict[str, Any],
+) -> dict[str, Any]:
+    terminal_bridge = dcf_payload.get("terminal_bridge")
+    terminal = terminal_bridge if isinstance(terminal_bridge, dict) else {}
+    method_used = _pick_value(terminal.get("method_used"), dcf_payload.get("method_used"))
+
+    drivers_payload = batch_row.get("drivers_json")
+    if isinstance(drivers_payload, str):
+        try:
+            drivers = json.loads(drivers_payload)
+        except (TypeError, ValueError):
+            drivers = {}
+    elif isinstance(drivers_payload, dict):
+        drivers = drivers_payload
+    else:
+        drivers = {}
+    if not isinstance(drivers, dict):
+        drivers = {}
+
+    weights_applied = method_used == "blend"
+    return {
+        "iv_base": safe_float(_pick_value(batch_row.get("iv_base"), batch_row.get("iv_blended"))),
+        "iv_gordon": safe_float(batch_row.get("iv_gordon")),
+        "iv_exit": safe_float(batch_row.get("iv_exit")),
+        "method_used": method_used,
+        "gordon_weight": safe_float(drivers.get("terminal_blend_gordon_weight")) if weights_applied else None,
+        "exit_weight": safe_float(drivers.get("terminal_blend_exit_weight")) if weights_applied else None,
+    }
+
+
 def build_ticker_workspace_payload(ticker: str, dossier_payload: dict[str, Any] | None | object = _DOSSIER_NOT_PROVIDED) -> dict[str, Any]:
     ticker = api_coerce_ticker(ticker)
     if dossier_payload is _DOSSIER_NOT_PROVIDED:
@@ -612,7 +645,9 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
     snapshot = _snapshot_payload(ticker)
     memo = _memo_payload(snapshot)
     valuation = _valuation_payload(snapshot)
-    summary = build_dcf_audit_view(ticker)
+    dcf_payload = build_dcf_audit_view(ticker)
+    bridge = _intrinsic_value_bridge(watchlist_row, dcf_payload)
+    summary = dcf_payload
 
     analyst_target = watchlist_row.get("analyst_target")
     if analyst_target is None:
@@ -621,12 +656,20 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
         except Exception:
             analyst_target = None
 
+    base_iv = bridge["iv_base"]
+    current_price = safe_float(
+        _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
+    )
     payload = {
         "ticker": ticker,
-        "current_price": safe_float(
-            _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price"))
-        ),
-        "base_iv": safe_float(_pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base"))),
+        "current_price": current_price,
+        "base_iv": base_iv,
+        "iv_base": base_iv,
+        "iv_gordon": bridge["iv_gordon"],
+        "iv_exit": bridge["iv_exit"],
+        "method_used": bridge["method_used"],
+        "gordon_weight": bridge["gordon_weight"],
+        "exit_weight": bridge["exit_weight"],
         "bear_iv": safe_float(_pick_value(valuation.get("bear"), watchlist_row.get("iv_bear"))),
         "bull_iv": safe_float(_pick_value(valuation.get("bull"), watchlist_row.get("iv_bull"))),
         "weighted_iv": safe_float(_pick_value(watchlist_row.get("expected_iv"), watchlist_row.get("weighted_iv"))),
@@ -637,10 +680,9 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
         "conviction": _pick_value((snapshot or {}).get("conviction"), memo.get("conviction"), watchlist_row.get("latest_conviction")),
         "memo_date": _pick_value((snapshot or {}).get("created_at"), memo.get("date"), watchlist_row.get("latest_snapshot_date")),
         "why_it_matters": (
-            f"Base IV ${safe_float(_pick_value((snapshot or {}).get('base_iv'), valuation.get('base'), watchlist_row.get('iv_base'))) or 0:,.2f}"
-            f" versus current price ${safe_float(_pick_value((snapshot or {}).get('current_price'), valuation.get('current_price'), watchlist_row.get('price'))) or 0:,.2f}."
-            if _pick_value((snapshot or {}).get("base_iv"), valuation.get("base"), watchlist_row.get("iv_base")) is not None
-            and _pick_value((snapshot or {}).get("current_price"), valuation.get("current_price"), watchlist_row.get("price")) is not None
+            f"Base IV ${base_iv or 0:,.2f}"
+            f" versus current price ${current_price or 0:,.2f}."
+            if base_iv is not None and current_price is not None
             else None
         ),
         "readiness": summary.get("model_integrity") or {},
@@ -657,7 +699,6 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
             [
                 "ticker",
                 "current_price",
-                "base_iv",
                 "bear_iv",
                 "bull_iv",
                 "weighted_iv",
@@ -674,7 +715,13 @@ def build_valuation_summary_payload(ticker: str) -> dict[str, Any]:
 
 def build_valuation_dcf_payload(ticker: str) -> dict[str, Any]:
     ticker = api_coerce_ticker(ticker)
-    return build_dcf_audit_view(ticker)
+    dcf_payload = dict(build_dcf_audit_view(ticker))
+    bridge = _intrinsic_value_bridge(_watchlist_row_for_ticker(ticker), dcf_payload)
+    return {
+        **dcf_payload,
+        "base_iv": bridge["iv_base"],
+        **bridge,
+    }
 
 
 def build_valuation_comps_payload(ticker: str) -> dict[str, Any]:

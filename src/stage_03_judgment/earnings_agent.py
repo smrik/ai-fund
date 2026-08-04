@@ -7,7 +7,6 @@ Returns an EarningsSummary.
 from __future__ import annotations
 
 import json
-import os
 
 from src.stage_00_data import edgar_client, filing_retrieval, market_data
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
@@ -38,14 +37,11 @@ Focus on:
 
 Be direct. Identify tone shifts even if subtle. A management team that suddenly talks more about macro headwinds
 and less about specific product KPIs is usually sending a signal."""
-DEFAULT_EARNINGS_MODEL = "gemini-3-flash-preview"
 
 
 class EarningsAgent(BaseAgent):
     def __init__(self):
-        super().__init__(
-            model=os.getenv("EARNINGS_AGENT_MODEL", DEFAULT_EARNINGS_MODEL)
-        )
+        super().__init__()
         self.name = "EarningsAgent"
         self.system_prompt = SYSTEM_PROMPT
 

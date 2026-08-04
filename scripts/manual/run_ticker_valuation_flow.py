@@ -16,6 +16,11 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from config.llm_routing import (  # noqa: E402
+    format_llm_resolution,
+    resolve_llm_route,
+)
+
 
 DEFAULT_PROFILES = (
     "earnings_update",
@@ -32,7 +37,6 @@ AGENT_MODEL_ENV_VARS = (
     "GROUNDED_OBSERVATION_AGENT_MODEL",
     "EARNINGS_AGENT_MODEL",
     "FILINGS_AGENT_MODEL",
-    "INDUSTRY_AGENT_MODEL",
     "COMPS_AGENT_MODEL",
     "RISK_AGENT_MODEL",
     "VALUATION_AGENT_MODEL",
@@ -63,6 +67,48 @@ def _fmt_pct(value: Any) -> str:
         return f"{float(value):+.1f}%"
     except Exception:
         return "n/a"
+
+
+def _intrinsic_value_bridge(batch_row: dict[str, Any], dcf: dict[str, Any]) -> dict[str, Any]:
+    terminal_bridge = _as_dict(dcf.get("terminal_bridge"))
+    method_used = terminal_bridge.get("method_used") or dcf.get("method_used")
+    drivers_payload = batch_row.get("drivers_json")
+    if isinstance(drivers_payload, str):
+        try:
+            drivers = json.loads(drivers_payload)
+        except (TypeError, ValueError):
+            drivers = {}
+    elif isinstance(drivers_payload, dict):
+        drivers = drivers_payload
+    else:
+        drivers = {}
+    if not isinstance(drivers, dict):
+        drivers = {}
+
+    method_labels = {
+        "blend": "Blend",
+        "gordon_only": "Gordon-only",
+        "exit_only": "Exit-only",
+        "none": "None",
+    }
+    method_label = method_labels.get(str(method_used), str(method_used or "n/a"))
+    if method_used == "blend":
+        try:
+            gordon_weight = float(drivers["terminal_blend_gordon_weight"])
+            exit_weight = float(drivers["terminal_blend_exit_weight"])
+            weight_status = f"{gordon_weight:.0%} Gordon / {exit_weight:.0%} Exit"
+        except (KeyError, TypeError, ValueError):
+            weight_status = "Blend weights unavailable."
+    else:
+        weight_status = "Blend weights were not applied."
+
+    return {
+        "iv_base": batch_row.get("iv_base") if batch_row.get("iv_base") is not None else batch_row.get("iv_blended"),
+        "iv_gordon": batch_row.get("iv_gordon"),
+        "iv_exit": batch_row.get("iv_exit"),
+        "method_label": method_label,
+        "weight_status": weight_status,
+    }
 
 
 def _float_or_none(value: Any) -> float | None:
@@ -223,7 +269,14 @@ def collect_edgar_evidence_summary(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def configure_openrouter_free(model: str, fallback_models: list[str] | None = None) -> dict[str, Any]:
+def configure_openrouter_free(
+    model: str,
+    fallback_models: list[str] | None = None,
+    *,
+    set_backend: bool = True,
+) -> dict[str, Any]:
+    if set_backend:
+        os.environ["ALPHA_POD_AGENT_BACKEND"] = "openrouter"
     os.environ["LLM_BASE_URL"] = "https://openrouter.ai/api/v1"
     os.environ["LLM_MODEL"] = model
     os.environ["LLM_MODEL_FAST"] = model
@@ -372,10 +425,41 @@ def _run_ciq_template_ingest(args: argparse.Namespace) -> dict[str, Any] | None:
     return _jsonable(ingest_ciq_folder(args.ciq_template_folder))
 
 
-def refresh_current_ticker_dossier(ticker: str) -> dict[str, Any]:
+def _assemble_reconciled_ticker_inputs(ticker: str):
+    from db.schema import get_connection
+    from src.stage_02_valuation.input_assembler import build_valuation_inputs
+    from src.stage_04_pipeline.operating_reconciliation_service import (
+        assemble_reconciled_valuation_inputs,
+    )
+
+    conn = get_connection()
+    try:
+        with conn:
+            return assemble_reconciled_valuation_inputs(
+                conn,
+                ticker,
+                evidence_cutoff=datetime.now(timezone.utc).date().isoformat(),
+                input_builder=build_valuation_inputs,
+                input_builder_kwargs={"apply_overrides": True},
+            )
+    finally:
+        conn.close()
+
+
+def refresh_current_ticker_dossier(
+    ticker: str,
+    *,
+    reconciled_inputs=None,
+) -> dict[str, Any]:
     from src.stage_04_pipeline import export_service
 
-    payload = export_service._build_current_ticker_payload(ticker)
+    reconciled_inputs = reconciled_inputs or _assemble_reconciled_ticker_inputs(ticker)
+    if reconciled_inputs is None:
+        raise RuntimeError("reconciled valuation inputs are unavailable")
+    payload = export_service._build_current_ticker_payload(
+        ticker,
+        reconciled_inputs=reconciled_inputs,
+    )
     export_service._persist_attached_ticker_dossier(payload)
     dossier = _as_dict(payload.get("ticker_dossier"))
     latest = _as_dict(dossier.get("latest_snapshot"))
@@ -783,8 +867,14 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
+    llm_routing = resolve_llm_route(
+        "judgment",
+        cli_provider="openrouter" if args.use_openrouter_free else None,
+        cli_model=args.openrouter_model if args.use_openrouter_free else None,
+    )
     if args.use_openrouter_free:
-        configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+        configure_openrouter_free(llm_routing["model"], args.openrouter_fallback_models)
+    print(f"[ticker-flow] {format_llm_resolution(llm_routing)}", file=sys.stderr)
 
     preflight_errors: list[dict[str, str]] = []
     ciq_refresh_result: dict[str, Any] | None = None
@@ -822,13 +912,10 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         "ticker": ticker,
         "run_started_at": run_started_at,
         "openrouter_free": bool(args.use_openrouter_free),
+        "llm_routing": llm_routing,
         "edgar_cache_only": bool(args.edgar_cache_only),
         "market_cache_only": bool(args.market_cache_only),
-        "agent_model": (
-            "local_heuristic"
-            if args.agent_mode == "heuristic"
-            else args.openrouter_model if args.use_openrouter_free else os.getenv("LLM_MODEL")
-        ),
+        "agent_model": "local_heuristic" if args.agent_mode == "heuristic" else llm_routing["model"],
         "agent_mode": args.agent_mode,
         "deterministic": {},
         "profile_runs": [],
@@ -850,15 +937,26 @@ def run_flow(args: argparse.Namespace) -> dict[str, Any]:
         },
     }
 
+    reconciled_inputs = None
     try:
         print(f"[ticker-flow] Building deterministic valuation for {ticker}...", file=sys.stderr)
-        result["deterministic"]["batch_row"] = value_single_ticker(ticker)
+        reconciled_inputs = _assemble_reconciled_ticker_inputs(ticker)
+        result["deterministic"]["batch_row"] = value_single_ticker(
+            ticker,
+            reconcile_operating=True,
+            reconciled_inputs=reconciled_inputs,
+        )
     except Exception as exc:
         result["errors"].append({"step": "value_single_ticker", "message": str(exc)})
 
     try:
         print(f"[ticker-flow] Refreshing current ticker dossier for {ticker}...", file=sys.stderr)
-        result["deterministic"]["current_dossier_refresh"] = refresh_current_ticker_dossier(ticker)
+        if reconciled_inputs is None:
+            raise RuntimeError("shared reconciled valuation inputs are unavailable")
+        result["deterministic"]["current_dossier_refresh"] = refresh_current_ticker_dossier(
+            ticker,
+            reconciled_inputs=reconciled_inputs,
+        )
     except Exception as exc:
         result["deterministic"]["current_dossier_refresh"] = {"error": str(exc)}
         result["errors"].append({"step": "refresh_current_ticker_dossier", "message": str(exc)})
@@ -976,6 +1074,7 @@ def render_markdown(result: dict[str, Any]) -> str:
     comps = _as_dict(deterministic.get("comps"))
     assumptions = _as_dict(deterministic.get("assumptions"))
     batch_row = _as_dict(deterministic.get("batch_row"))
+    bridge = _intrinsic_value_bridge(batch_row, dcf)
     nums = _extract_summary_numbers(summary, dcf)
     price = nums.get("price") or batch_row.get("price")
     base_iv = nums.get("base_iv") or batch_row.get("iv_base")
@@ -1022,6 +1121,12 @@ def render_markdown(result: dict[str, Any]) -> str:
         "",
         f"- Current price: {_fmt_money(price)}",
         f"- Bear / Base / Bull IV: {_fmt_money(nums.get('bear_iv') or batch_row.get('iv_bear'))} / {_fmt_money(base_iv)} / {_fmt_money(nums.get('bull_iv') or batch_row.get('iv_bull'))}",
+        "### Intrinsic Value Bridge",
+        f"- Headline blended IV (Base): {_fmt_money(bridge['iv_base'])}",
+        f"- Gordon component: {_fmt_money(bridge['iv_gordon'])}",
+        f"- Exit component: {_fmt_money(bridge['iv_exit'])}",
+        f"- Method used: {bridge['method_label']}",
+        f"- Blend weights: {bridge['weight_status']}",
         f"- Base upside: {_fmt_pct(base_upside)}",
         f"- Initial deterministic read: {conclusion}",
         f"- Model trust state: {nums.get('trust_state') or batch_row.get('model_trust_state') or assumption_summary.get('model_trust_state') or 'n/a'}",
@@ -1406,7 +1511,8 @@ def main() -> int:
     parser.add_argument("--use-openrouter-free", action="store_true")
     parser.add_argument(
         "--openrouter-model",
-        default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"),
+        default=None,
+        help="OpenRouter model override; otherwise resolve from environment, config, then fallback.",
     )
     parser.add_argument(
         "--openrouter-fallback-models",

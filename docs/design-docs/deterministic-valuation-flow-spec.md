@@ -176,7 +176,7 @@ Terminal methods:
 - `TV_Exit = terminal_metric_10 * exit_multiple`
 
 Blend/fallback:
-- default blend `60% Gordon / 40% Exit` when both valid
+- default blend `60% Gordon / 40% Exit` when both valid; this weighting is a PM-level decision and remains the standing default pending PM review
 - deterministic fallback to single valid method
 - explicit `tv_method_fallback_flag`
 

@@ -23,7 +23,8 @@ python scripts/manual/build_advanced_dcf_model.py --ticker BAH
 ```
 
 The Base-case DCF is a transparent rebuild (PV of explicit FCFF + value-driver Gordon TV +
-exit-multiple TV, blended with the **story-derived** weight, equity bridge, diluted shares) and
+exit-multiple TV, blended `60% Gordon / 40% Exit` under a PM-level weighting decision,
+with 60/40 as the standing default pending PM review, plus the equity bridge and diluted shares) and
 the build **refuses to emit unless the workbook Base IV reconciles to the backend `iv_base` to
 within $0.10/share**. Tabs: Cover, Thesis_Drivers, PM_Review_Queue, Assumptions (with provenance
 + register flags), Historical_Financials, Input_Forecast, WACC, DCF_Base, Scenarios,
@@ -35,10 +36,12 @@ Valuation_Bridge, Sensitivity, Checks.
 python scripts/manual/build_advanced_dcf_model.py --ticker IBM --refresh path\to\BAH_model.xlsx --output-path IBM_model.xlsx
 ```
 
-Refresh rebuilds **only the data sheets** and preserves:
+Refresh rebuilds **only the data sheets**. It preserves:
 
 - the MODEL sheets — `WACC`, `DCF_Base`, `Sensitivity`, and **any sheet you added**;
-- the **PM Override** column on `Assumptions` (overrides flow through the formulas);
+- the workbook-local **PM Override** column on `Assumptions` only when refreshing the
+  same ticker; cross-ticker refreshes clear these values so one company's assumptions
+  cannot leak into another;
 - the canonical sheet order.
 
 Hard rules that keep this safe:
@@ -49,7 +52,8 @@ Hard rules that keep this safe:
 - **Do not hand-edit the data sheets** (`Assumptions` source column, `Input_Forecast`,
   `Historical_Financials`, `Thesis_Drivers`, `PM_Review_Queue`, `Scenarios`, `Valuation_Bridge`,
   `Cover`, `Checks`); a refresh rebuilds them. Put your model changes on the formula sheets or new
-  sheets, and your assumption changes in the PM Override column.
+  sheets. The PM Override column is a workbook-local what-if surface only; it does not
+  approve or update Alpha Pod's canonical assumptions.
 
 To grow the model, edit the formula sheets / add tabs once, then keep refreshing data underneath.
 
@@ -67,8 +71,9 @@ from `output/guided_workups/<TICKER>/` or `output/analyst_prep/<TICKER>/`, or pa
 `--guided-workup`), the model surfaces it **read-only**: the **Thesis_Drivers** tab leads with the
 agent thesis cards (claim, model implication, confidence, what-would-change-mind), and
 **PM_Review_Queue** leads with the agent driver proposals (current → proposed value, rationale,
-PM-queue item, `review_required` status) plus missing-data flags. These never change the model —
-to act on a proposal, type the proposed value into the Assumptions **PM Override** column. When no
+PM-queue item, `review_required` status) plus missing-data flags. These never change the canonical
+model. Preview and approve a proposal through the PM Decision Queue; use the Assumptions **PM
+Override** column only for a temporary workbook-local what-if. When no
 guided-workup run is found, the Thesis tab falls back to the deterministic story/sector layer and
 says so.
 

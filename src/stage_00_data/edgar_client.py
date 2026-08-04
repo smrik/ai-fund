@@ -52,7 +52,7 @@ def _read_cached_text(path_value: str | None, max_chars: Optional[int] = None) -
     return text[:max_chars] if max_chars is not None else text
 
 
-def _cached_filing_rows(ticker: str, form_type: str, limit: int = 4) -> list[dict]:
+def _cached_filing_rows(ticker: str, form_type: str, limit: int | None = 4) -> list[dict]:
     try:
         cached_cik = _cached_cik(ticker)
         with get_connection() as conn:
@@ -61,7 +61,10 @@ def _cached_filing_rows(ticker: str, form_type: str, limit: int = 4) -> list[dic
             if cached_cik:
                 cik_clause = "AND cik = ?"
                 params.append(cached_cik)
-            params.append(int(limit))
+            limit_clause = ""
+            if limit is not None:
+                limit_clause = "LIMIT ?"
+                params.append(int(limit))
             rows = conn.execute(
                 f"""
                 SELECT cik, form_type, accession_no, filing_date, doc_name, clean_path, raw_path
@@ -69,7 +72,7 @@ def _cached_filing_rows(ticker: str, form_type: str, limit: int = 4) -> list[dic
                 WHERE ticker = ? AND form_type = ?
                   {cik_clause}
                 ORDER BY COALESCE(filing_date, '') DESC, fetched_at DESC
-                LIMIT ?
+                {limit_clause}
                 """,
                 params,
             ).fetchall()
@@ -161,7 +164,7 @@ def get_recent_filings(cik: str, form_type: str, limit: int = 4) -> list[dict]:
     return []
 
 
-def get_recent_filing_metadata(ticker: str, form_type: str, limit: int = 4) -> list[dict]:
+def get_recent_filing_metadata(ticker: str, form_type: str, limit: int | None = 4) -> list[dict]:
     """
     Return metadata for recent filings of the given form type.
     Each dict has: accession_no, filing_date, primary_doc.
@@ -175,9 +178,21 @@ def get_recent_filing_metadata(ticker: str, form_type: str, limit: int = 4) -> l
             }
             for row in _cached_filing_rows(ticker, form_type, limit)
         ]
+    if limit is None:
+        cached_rows = _cached_filing_rows(ticker, form_type, None)
+        if cached_rows:
+            return [
+                {
+                    "accession_no": row["accession_no"],
+                    "filing_date": row.get("filing_date"),
+                    "primary_doc": row.get("doc_name") or row["accession_no"],
+                }
+                for row in cached_rows
+            ]
+    effective_limit = limit if limit is not None else 4
     try:
         results = []
-        filings = Company(ticker).get_filings(form=form_type).head(limit)
+        filings = Company(ticker).get_filings(form=form_type).head(effective_limit)
         for filing in filings:
             results.append({
                 "accession_no": str(filing.accession_no),

@@ -51,30 +51,65 @@ Project-relative locations resolved against the repo root.
 
 ### `llm`
 
-Model defaults used by the judgment layer.
+The shared model-routing block for judgment, valuation, and accounting agents. The PM should edit
+the role block when the price/performance trade-off changes; `last_reviewed` records when that
+choice was last checked.
 
 | Key | Meaning |
 |---|---|
-| `model` | Primary model for standard agent runs |
-| `fast_model` | Lower-cost / faster fallback model |
+| `last_reviewed` | Date the role choices were last reviewed |
+| `roles.<role>.provider` | Provider/backend for the role (`openrouter` or `codex`) |
+| `roles.<role>.model` | Exact replayable model identifier for the role |
+| `roles.<role>.effort` | Reasoning effort for providers that support it, currently Codex |
+
+Current role block:
+
+```yaml
+llm:
+  # These models are chosen for price/performance and are expected to change often.
+  last_reviewed: 2026-08-01
+  roles:
+    judgment:
+      provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+    valuation:
+      provider: openrouter
+      model: deepseek/deepseek-v4-flash-0731
+    accounting:
+      provider: codex
+      model: gpt-5.6-luna
+      effort: low
+  base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+```
+
+Every entry point resolves each field with this exact precedence:
+
+`explicit CLI flag > environment variable > config role block > hard-coded fallback`.
+
+The resolved provider, model, effort, and source layer are written to the run log and included in
+run artifacts. Model IDs are intentionally dated/pinned; do not replace them with `-latest` aliases.
 
 Supported local overrides in `.env`:
 - `LLM_MODEL`
 - `LLM_MODEL_FAST`
 - `LLM_BASE_URL`
 - `OPENAI_BASE_URL` as an OpenAI-compatible alias when `LLM_BASE_URL` is unset
-- `OPENROUTER_FREE_MODEL` for the manual ticker-flow script when using OpenRouter free model variants
+- `OPENROUTER_FREE_MODEL` for OpenRouter model selection
+- `ALPHA_POD_AGENT_BACKEND`, `ALPHA_POD_LLM_PROVIDER`, or `ALPHA_POD_JUDGMENT_BACKEND` for provider selection
+- `ALPHA_POD_CODEX_MODEL` and `ALPHA_POD_CODEX_EFFORT` for Codex selection
+- `ALPHA_POD_JUDGMENT_PRIMARY_MODEL` for the valuation CLI's primary model override
+- `LLM_REASONING_EFFORT` as a generic effort override
 
-For no/low-cost live agent testing through OpenRouter, set:
+For an explicit OpenRouter override, set:
 
 ```dotenv
 OPENROUTER_API_KEY=...
 LLM_BASE_URL=https://openrouter.ai/api/v1
-LLM_MODEL=openrouter/free
-LLM_MODEL_FAST=openrouter/free
+OPENROUTER_FREE_MODEL=deepseek/deepseek-v4-flash-0731
 ```
 
-OpenRouter free model variants often use the `:free` suffix; `openrouter/free` lets OpenRouter select an available free route. Availability and rate limits can vary by model.
+The manual guided workup and ticker-flow scripts still expose per-run model flags. Those flags are
+overrides; they do not rewrite the committed role block.
 
 ### Logging Overrides
 
@@ -155,6 +190,9 @@ Important:
 - `ciq.drop_folder` is for live CIQ workbook ingestion into SQLite.
 - It should point at the export/drop directory, not `ciq/templates`.
 - The Power Query Excel review path is separate and reads valuation JSON outputs, not CIQ workbooks.
+- `scripts/manual/run_guided_ticker_workup.py` keeps Excel launch opt-in through `--auto-refresh-ciq`.
+- Without that flag, a staged non-interactive run records `skipped-by-flag` and does not ingest.
+- With the flag, outcomes are recorded as `refreshed-and-ingested`, `refresh-failed`, or `refresh-timed-out`.
 
 ### `risk_limits`
 
@@ -212,12 +250,18 @@ Subsections:
 
 ## Safe Examples
 
-### Change the default fast LLM
+### Change the default judgment or valuation LLM
 
 ```yaml
 llm:
-  model: claude-haiku-4-5-20251001
-  fast_model: claude-haiku-4-5-20251001
+  last_reviewed: 2026-08-01
+  roles:
+    judgment:
+      provider: openrouter
+      model: provider/model-id
+    valuation:
+      provider: openrouter
+      model: provider/model-id
 ```
 
 ### Tighten max position sizing

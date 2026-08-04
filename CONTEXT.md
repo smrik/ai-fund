@@ -69,6 +69,42 @@ _Avoid_: Agent name, queue item type
 The per-agent configuration that defines which Evidence Packet Kinds an agent consumes, which prompt to use, which observation types it may emit, and which translator rules can turn those observations into PM Decision Queue items.
 _Avoid_: One-off agent workflow, hardcoded prompt path
 
+**Context Analyst**:
+A broad judgment-layer analyst that produces an evidence-anchored Business or Industry Context Report without authoring actionable forecast values.
+_Avoid_: Adjustment analyst, generic summarizer
+
+**Context Analysis Report**:
+A durable business- or industry-level assessment containing anchored claims, uncertainties, evidence gaps, and driver relevance for downstream adjustment work.
+_Avoid_: Assumption Change Proposal, unstructured summary
+
+**Adjustment Reasoning Analyst**:
+A focused judgment-layer analyst that authors the financial logic and explicitly declared scenario values for one Adjustment Micro-Family.
+_Avoid_: Context analyst, proposal formatter
+
+**Adjustment Reasoning Draft**:
+The human-readable analytical argument and explicit field/scenario/unit declarations authored by an Adjustment Reasoning Analyst before compilation.
+_Avoid_: Compiled proposal, raw chain of thought
+
+**Adjustment Micro-Family**:
+A small set of economically inseparable judgment-owned assumptions that must be reasoned about and reviewed together.
+_Avoid_: Full driver registry, unrelated assumption bundle
+
+**Proposal Compiler**:
+A lossless formatting role that converts one Adjustment Reasoning Draft into the strict proposal contract without inferring, calculating, repairing, or changing values.
+_Avoid_: Adjustment analyst, deterministic translator
+
+**Compiled Adjustment Proposal**:
+The strict machine-readable representation of an Adjustment Reasoning Draft after lossless compilation and before deterministic verification.
+_Avoid_: Reasoning draft, approved assumption
+
+**Proposal Verification**:
+The deterministic proof that a Compiled Adjustment Proposal preserves the reasoning draft's fields, values, units, scenarios, and evidence anchors exactly.
+_Avoid_: Critic review, model self-check
+
+**Critic Analyst**:
+A judgment-layer reviewer that accepts, requests revision of, or blocks a verified adjustment proposal without editing its values.
+_Avoid_: Proposal compiler, PM approver
+
 **Earnings Update Evidence Packet**:
 The MVP Evidence Packet Kind for a recent earnings event, combining earnings-release or transcript source references, mechanically gathered earnings facts, and agent observations about tone, guidance, demand, pricing, and disclosure changes.
 _Avoid_: Full ticker analysis packet, market context packet
@@ -86,12 +122,12 @@ An Evidence Packet Kind for peer universe, peer similarity, valuation multiples,
 _Avoid_: Base-case override, raw peer table only
 
 **Observation-To-Assumption Translator**:
-A deterministic adapter that converts anchored Evidence Packet Observations into conservative, whitelisted Assumption Change Proposals or Assumption Change Packs.
-_Avoid_: LLM-written model mutation, free-form agent override
+A legacy compatibility adapter that converts older anchored observations into provisional proposals. It is not the author of decision-grade forward assumptions.
+_Avoid_: Adjustment Reasoning Analyst, Proposal Compiler
 
 **Translator Rule**:
-A fixed, testable MVP mapping from specific observation types and confidence levels to conservative assumption proposal deltas.
-_Avoid_: Prompt-only numeric judgment, hidden heuristic
+A fixed compatibility mapping used by the legacy Observation-To-Assumption Translator. It must not supply numeric authority to the new adjustment workflow.
+_Avoid_: Agent-authored assumption, Proposal Verification
 
 **Symmetric Assumption Proposal**:
 An Assumption Change Proposal that may move an official model input either upward or downward when anchored evidence supports the direction and the PM approves it.
@@ -248,9 +284,10 @@ _Avoid_: Generic audit rows, mixed audit list
 - A V1 **Evidence Packet** should separate **Evidence Packet Facts** from **Evidence Packet Observations**. The deterministic pipeline builds the factual skeleton; judgment-layer agents may add observations and parsed outputs tied back to facts and source references.
 - V1 **Evidence Packets** should be source- or event-specific and linked by an **Evidence Packet Bundle** for each ticker analysis run, so evidence with different refresh cadences can age independently.
 - The MVP should implement one unified agentic handoff framework across judgment agents using **Agentic Handoff Profiles**. Earnings, company analysis, industry analysis, comps, QoE, risk, and valuation review should share Evidence Packet, observation, translator, queue, preview, approval, and search mechanics; only packet inputs, observation taxonomy, prompts, and translator rules vary by profile.
-- Judgment agents should produce anchored observations rather than numeric driver edits. An **Observation-To-Assumption Translator** should create conservative, testable driver proposals from those observations to reduce hallucination and context-fog risk.
-- The MVP **Observation-To-Assumption Translator** should use fixed **Translator Rules** first. If the loop works, those constants can later move into editable policy.
-- MVP **Translator Rules** may create **Symmetric Assumption Proposals**. Upside and downside proposals use the same safety boundary: anchored evidence, conservative deltas, valuation preview, and separate PM approval.
+- **Context Analysts** produce broad, anchored **Context Analysis Reports** in business-then-industry order. They identify driver relevance but do not author actionable forecast values.
+- An **Adjustment Reasoning Analyst** authors the logic and low/base/high values for one **Adjustment Micro-Family**. The **Proposal Compiler** only formats those declarations, and **Proposal Verification** proves that compilation was lossless.
+- A **Critic Analyst** may accept, request a new reasoning draft, or block a verified proposal. It never edits the values itself.
+- The **Observation-To-Assumption Translator** and fixed **Translator Rules** remain legacy compatibility paths only. They cannot establish decision-grade numeric authority for judgment-owned forward assumptions.
 - **Assumption Change Proposals** may use either delta or target **Proposal Mode**. The preview layer must resolve both modes into concrete proposed values before PM approval.
 - PM review must support **PM-Edited Proposals** so the PM can approve a different magnitude without losing the original proposal audit trail.
 - A **PM-Edited Proposal** updates the existing PM Decision Queue item rather than creating a separate decision item. The item should preserve the original proposal, PM-edited value, final approved value, and decision history.

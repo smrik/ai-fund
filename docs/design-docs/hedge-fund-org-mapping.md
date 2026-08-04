@@ -98,7 +98,7 @@ The senior analyst is the engine of the fund. At a typical Tiger Cub, a senior a
 | Watch unusual movers | **Deterministic alerts** | Price/volume threshold → notification. |
 | Filing deep-dive (10-K, 10-Q) | **LLM extraction + your review** | LLM pulls structured data + MD&A summary. You read the summary. |
 | Management meetings / channel checks | **NOT AUTOMATABLE** | Relationship-based, qualitative. This is a real gap for a solo operator. |
-| Build/maintain financial models | **Hybrid** | Historical data auto-populated. Forward assumptions = you. |
+| Build/maintain financial models | **Hybrid** | Historical data auto-populated. Forward assumptions are **authored by the judgment layer from filing evidence and management guidance, and approved by you** — see [Vision Decision 13](../strategy/vision.md#the-division-of-labor). (Corrected 2026-07-24: this row previously read "Forward assumptions = you", which predates Decision 13 and describes the workflow that Decision 13 replaced.) |
 | Write IC memo / pitch | **LLM first draft + you edit** | LLM assembles from agent outputs. You write the variant perception. |
 | Pattern recognition across names | **YOU** | "I've seen this before" requires experience, not data. |
 | Sector expertise / industry knowledge | **YOU + web search** | LLMs can surface info, but deep sector intuition is human. |
@@ -322,7 +322,9 @@ Putting it all together — how a name flows through your "fund":
 │  ★ HUMAN CHECKPOINT ★                    │
 │                                           │
 │  You review the memo draft.               │
-│  You set forward model assumptions.       │
+│  You approve/edit/reject the proposed     │
+│  forward assumptions (agents author them; │
+│  Vision Decision 13).                     │
 │  You write the variant perception.        │
 │  You identify catalysts and kill criteria. │
 └───────────────────┬───────────────────────┘

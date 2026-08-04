@@ -141,27 +141,31 @@ def test_minority_interest_from_edgar_xbrl():
 
 
 def test_lease_liabilities_from_yfinance():
-    """P0 fix: when yfinance is net_debt source, leases are folded into net_debt (not double-counted)."""
+    """Public-market leases remain a separate exactly-once claim."""
     with _patch_all(hist_kwargs={"lease_liabilities_bs": 5_000e6}):
         result = build_valuation_inputs("FAKE", apply_overrides=False)
 
     assert result is not None
-    # Leases folded into net_debt — standalone field must be zero to prevent double-count
-    assert result.drivers.lease_liabilities == 0.0
-    assert result.source_lineage["lease_liabilities"] == "folded_into_net_debt"
-    assert result.source_lineage["net_debt"] == "yfinance+leases"
+    assert result.drivers.lease_liabilities == 5_000e6
+    assert result.source_lineage["lease_liabilities"] == "yfinance_separate_claim"
+    assert (
+        result.source_lineage["net_debt"]
+        == "yfinance_debt_ex_leases_minus_operating_cash"
+    )
 
 
 def test_lease_liabilities_from_edgar():
-    """P0 fix: EDGAR lease liabilities are also folded when yfinance is net_debt source."""
+    """Filing-sourced leases remain a separate exactly-once claim."""
     with _patch_all(edgar_bridge={"lease_liabilities": 4_000e6}):
         result = build_valuation_inputs("FAKE", apply_overrides=False)
 
     assert result is not None
-    # EDGAR leases folded into yfinance net_debt — standalone field must be zero
-    assert result.drivers.lease_liabilities == 0.0
-    assert result.source_lineage["lease_liabilities"] == "folded_into_net_debt"
-    assert result.source_lineage["net_debt"] == "yfinance+leases"
+    assert result.drivers.lease_liabilities == 4_000e6
+    assert result.source_lineage["lease_liabilities"] == "edgar_xbrl_separate_claim"
+    assert (
+        result.source_lineage["net_debt"]
+        == "yfinance_debt_ex_leases_minus_operating_cash"
+    )
 
 
 def test_options_value_sbc_proxy():
@@ -198,16 +202,21 @@ def test_no_bridge_data_defaults_to_zero():
     assert result.source_lineage["minority_interest"] == "default"
 
 
-def test_net_debt_includes_leases_when_yfinance_source():
-    """#1: Lease liabilities are added to yfinance net debt (yfinance excludes op leases)."""
-    # mkt: total_debt=2500e6, cash=500e6 → raw net_debt = 2000e6
-    # lease_liabilities_bs = 5000e6 → adjusted net_debt = 7000e6
+def test_yfinance_bridge_split_preserves_total_debt_cash_adjustment():
+    """Debt, cash, and leases are separate while the total bridge remains unchanged."""
     with _patch_all(hist_kwargs={"lease_liabilities_bs": 5_000e6}):
         result = build_valuation_inputs("FAKE", apply_overrides=False)
 
     assert result is not None
-    assert abs(result.drivers.net_debt - 7_000e6) < 1
-    assert result.source_lineage["net_debt"] == "yfinance+leases"
+    assert result.drivers.net_debt == 2_300e6
+    assert result.drivers.non_operating_assets == 300e6
+    assert result.drivers.lease_liabilities == 5_000e6
+    assert (
+        result.drivers.net_debt
+        + result.drivers.lease_liabilities
+        - result.drivers.non_operating_assets
+        == 7_000e6
+    )
 
 
 def test_build_valuation_inputs_prefers_cached_market_data_calls():

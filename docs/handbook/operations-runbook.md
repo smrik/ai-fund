@@ -66,6 +66,44 @@ python -m src.stage_02_valuation.batch_runner --top 50 --xlsx
 
 Run this from the host PowerShell `ai-fund` environment, not WSL. It stages a ticker-specific workbook from `ciq/templates/ciq_cleandata.xlsx`, updates `financials_input.json`, refreshes the workbook in desktop Excel, then ingests the result into SQLite.
 
+#### Where the Standard workbook lives
+
+The word `Standard` refers to the staged Capital IQ data-loading workbook. It is not the final valuation export.
+
+| Role | Canonical path | What it does |
+|---|---|---|
+| Standard source template | `ciq/templates/ciq_cleandata.xlsx` | Workbook copied at the start of a ticker refresh. Do not use it as the ticker-specific saved output. |
+| Power Query control file | `ciq/templates/financials_input.json` | Supplies the CIQ symbol, requested date, and currency. The current workbook query reads this exact file path. |
+| Staged Standard workbook | `data/exports/{TICKER}_Standard.xlsx` | Ticker-specific workbook refreshed in Excel and ingested into SQLite. It can contain licensed Capital IQ data. |
+| Refresh archive | `data/ciq_archive/{TICKER}_{as_of_date}_{timestamp}.xlsx` | Timestamped copy retained after a successful refresh. |
+| PM review exports | `data/exports/generated/ticker/{TICKER}/...` | Downstream valuation and review workbooks. These are separate from the CIQ Standard workbook. |
+
+The flow is:
+
+```text
+ciq/templates/financials_input.json
+            +
+ciq/templates/ciq_cleandata.xlsx
+            |
+            v
+data/exports/{TICKER}_Standard.xlsx
+            |
+            +--> SQLite ingest
+            +--> data/ciq_archive/...
+```
+
+Important: copying the workbook to another folder does not currently redirect its Power Query input. The query still reads `C:\Projects\03-Finance\ai-fund\ciq\templates\financials_input.json`. Verify that file's ticker and requested date before refreshing any staged or scratch workbook.
+
+Keep the three CIQ dates separate:
+
+| Date | Meaning |
+|---|---|
+| Requested date in `financials_input.json` | Cutoff requested from Capital IQ when Excel refreshes. |
+| Parsed CIQ `as_of_date` | Latest financial period actually present in the refreshed workbook. This is the financial-data date that downstream analysis should cite. |
+| Ingestion timestamp | Time the workbook was loaded into SQLite. This says when the pipeline ran, not when the financials are from. |
+
+For example, a workbook refreshed on August 4 with a requested date of August 2 may still have June 30 as its latest financial period. Do not present the refresh or ingestion date as the financial-data `as_of_date`.
+
 Explicit CIQ symbol:
 ```powershell
 ca ai-fund

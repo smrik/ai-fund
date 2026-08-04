@@ -353,3 +353,21 @@ def test_run_comps_model_derives_net_debt_from_tev_mktcap():
     # base_iv should be 160 (10×1000 - 2000)/50
     if result.primary_metric in ("tev_ebitda_ltm", "tev_ebitda_fwd"):
         assert result.base_iv == pytest.approx(160.0, abs=1.0)
+
+
+def test_ev_comps_use_full_reconciled_bridge_adjustment_not_net_debt_only():
+    detail = _make_comps_detail(
+        ebitda_mm=1000.0,
+        peer_tev_ebitda=[10.0, 10.0, 10.0, 10.0, 10.0],
+    )
+
+    result = run_comps_model(
+        detail,
+        net_debt_mm=2000.0,
+        ev_to_equity_adjustment_mm=2300.0,
+        shares_mm=50.0,
+    )
+
+    assert result is not None
+    # 10x $1,000mm EV less the complete $2,300mm bridge, divided by 50mm.
+    assert result.metrics["tev_ebitda_ltm"].base_iv == pytest.approx(154.0)

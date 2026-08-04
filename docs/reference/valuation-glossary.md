@@ -15,7 +15,7 @@ This glossary maps deterministic Stage 02 valuation fields to finance meaning.
 | `wacc` | Discount rate for FCFF valuation. |
 | `cost_of_equity` | Discount rate for FCFE branch (if missing, deterministic fallback from WACC). |
 | `exit_metric`, `exit_multiple` | Exit terminal method denominator and multiple. |
-| `terminal_blend_gordon_weight`, `terminal_blend_exit_weight` | Terminal blending policy (default 60/40). |
+| `terminal_blend_gordon_weight`, `terminal_blend_exit_weight` | PM-level terminal blending decision: 60% Gordon / 40% Exit standing default pending PM review. |
 | `invested_capital_start` | Starting invested capital for ROIC/EP diagnostics. |
 | `ronic_terminal` | Terminal return on new invested capital for value-driver terminal FCFF. |
 | `non_operating_assets` | Added to operations EV in EV->Equity bridge. |

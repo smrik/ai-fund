@@ -7,7 +7,6 @@ Returns a FilingsSummary.
 from __future__ import annotations
 
 import json
-import os
 
 from src.stage_00_data import edgar_client, filing_retrieval
 from src.contracts.evidence_packet import EvidencePacket, EvidencePacketObservation
@@ -37,12 +36,11 @@ Focus on:
 
 Be specific. Use numbers. Flag anomalies explicitly.
 Output a structured analysis. Do not hedge excessively — make a clear directional call on quality."""
-DEFAULT_FILINGS_MODEL = "gemini-3-flash-preview"
 
 
 class FilingsAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("FILINGS_AGENT_MODEL", DEFAULT_FILINGS_MODEL))
+        super().__init__()
         self.name = "FilingsAgent"
         self.system_prompt = SYSTEM_PROMPT
 

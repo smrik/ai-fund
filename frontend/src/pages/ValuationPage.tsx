@@ -657,6 +657,71 @@ function CompactThesisBridge({ ticker, pack }: { ticker: string; pack?: AnalystP
   );
 }
 
+function formatIntrinsicWeight(value: unknown): string | null {
+  const weight = asNumber(value);
+  return weight == null ? null : `${Math.round(weight * 100)}%`;
+}
+
+export function IntrinsicValueBridgePanel({ payload }: { payload: Record<string, unknown> | null | undefined }) {
+  const baseValue = asNumber(payload?.iv_base ?? payload?.base_iv);
+  const method = asText(payload?.method_used);
+  const gordonValue = asNumber(method === "exit_only" || method === "none" ? null : payload?.iv_gordon);
+  const exitValue = asNumber(method === "gordon_only" || method === "none" ? null : payload?.iv_exit);
+  const methodLabel =
+    method === "blend"
+      ? "Blend"
+      : method === "gordon_only"
+        ? "Gordon-only"
+        : method === "exit_only"
+          ? "Exit-only"
+          : method === "none"
+            ? "None"
+            : method ?? "Unavailable";
+  const gordonWeight = formatIntrinsicWeight(payload?.gordon_weight);
+  const exitWeight = formatIntrinsicWeight(payload?.exit_weight);
+  const weightStatus =
+    method === "blend" && gordonWeight != null && exitWeight != null
+      ? `${gordonWeight} Gordon / ${exitWeight} Exit`
+      : method === "blend"
+        ? "Blend weights unavailable."
+        : "Blend weights were not applied.";
+
+  return (
+    <section className="panel intrinsic-value-bridge">
+      <h2>Intrinsic Value Bridge</h2>
+      <div className="grid-cards grid-cards--tight">
+        <article className="mini-card scenario-base">
+          <span>Blended IV (Headline)</span>
+          <strong>{formatCurrency(baseValue)}</strong>
+          <p>Base IV headline</p>
+        </article>
+        <article className="mini-card">
+          <span>Gordon component</span>
+          <strong>{formatCurrency(gordonValue)}</strong>
+          <p>Component of the headline blend</p>
+        </article>
+        <article className="mini-card">
+          <span>Exit component</span>
+          <strong>{formatCurrency(exitValue)}</strong>
+          <p>Component of the headline blend</p>
+        </article>
+      </div>
+      <p>
+        Method used: <strong>{methodLabel}</strong>
+      </p>
+      <p>
+        {method === "blend" ? (
+          <>
+            Applied weights: <strong>{weightStatus}</strong>
+          </>
+        ) : (
+          weightStatus
+        )}
+      </p>
+    </section>
+  );
+}
+
 function SummaryPanel({
   summary,
   workspace,
@@ -672,18 +737,38 @@ function SummaryPanel({
   const financeQuality = asRecord(summary?.finance_quality);
   const financeFlags = asRows(financeQuality?.flags);
   const financeStatus = asText(financeQuality?.status);
+  const scenarioNames = new Set(["bear", "base", "bull"]);
+  const payloadScenarioRows = asRows(asRecord(summary?.summary)?.scenario_summary).filter((row) =>
+    scenarioNames.has(String(row.scenario ?? "").toLowerCase()),
+  );
+  const dossierValuation = asRecord(
+    asRecord(asRecord(summary?.ticker_dossier)?.latest_snapshot)?.valuation_snapshot,
+  );
+  const scenarioProbabilities = asRecord(dossierValuation?.scenario_probabilities);
+  const currentPrice = asNumber(summary?.current_price ?? workspace?.current_price);
+  const fallbackScenarioRows = [
+    { scenario: "bear", intrinsic_value: summary?.bear_iv ?? workspace?.bear_iv },
+    { scenario: "base", intrinsic_value: summary?.base_iv ?? workspace?.base_iv },
+    { scenario: "bull", intrinsic_value: summary?.bull_iv ?? workspace?.bull_iv },
+  ].map((row) => {
+    const intrinsicValue = asNumber(row.intrinsic_value);
+    const probability = asNumber(scenarioProbabilities?.[row.scenario]);
+    return {
+      ...row,
+      probability_pct: probability == null ? null : Math.abs(probability) <= 1 ? probability * 100 : probability,
+      upside_pct:
+        currentPrice != null && currentPrice > 0 && intrinsicValue != null
+          ? (intrinsicValue / currentPrice - 1) * 100
+          : null,
+    };
+  });
   return (
     <section className="page-stack">
       <section className="panel">
         <h2>Scenario Summary</h2>
-        <ScenarioCards
-          rows={[
-            { scenario: "Bear", intrinsic_value: summary?.bear_iv, probability_pct: 25, upside_pct: -10 },
-            { scenario: "Base", intrinsic_value: summary?.base_iv, probability_pct: 50, upside_pct: summary?.upside_pct_base },
-            { scenario: "Bull", intrinsic_value: summary?.bull_iv, probability_pct: 25, upside_pct: 50 },
-          ]}
-        />
+        <ScenarioCards rows={payloadScenarioRows.length ? payloadScenarioRows : fallbackScenarioRows} />
       </section>
+      <IntrinsicValueBridgePanel payload={summary} />
       <section className="grid-cards">
         <article className="panel">
           <h2>Decision Snapshot</h2>
@@ -769,6 +854,7 @@ function DcfPanel({
   return (
     <section className="page-stack">
       <CompactThesisBridge ticker={ticker} pack={analystPrep} />
+      <IntrinsicValueBridgePanel payload={dcf} />
       <section className="panel">
         <h2>Scenario Summary</h2>
         {renderValueTable(scenarioRows, [

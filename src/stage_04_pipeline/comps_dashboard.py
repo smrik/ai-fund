@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from src.stage_00_data import market_data, peer_similarity
 from src.stage_00_data.ciq_adapter import get_ciq_comps_detail
+from src.stage_02_valuation.claim_ledger import (
+    ClaimLedger,
+    EV_BRIDGE_COMPONENTS,
+    ReconciledEVBridge,
+    UnreconciledClaimLedgerError,
+)
 from src.stage_02_valuation.comps_model import run_comps_model
+from src.stage_02_valuation.input_assembler import (
+    BridgeMutationPathError,
+    build_valuation_inputs,
+)
 from src.stage_02_valuation.public_comps_fallback import build_public_market_fallback_comps_detail as build_public_fallback_detail
 from src.stage_04_pipeline.multiples_dashboard import build_multiples_dashboard_view
 
@@ -24,6 +34,94 @@ COMPARISON_LABELS = {
     "ebit_margin": "EBIT Margin",
     "net_debt_to_ebitda": "Net Debt / EBITDA",
 }
+
+
+def _bridge_context(ticker: str) -> dict:
+    inputs = build_valuation_inputs(ticker)
+    if inputs is None:
+        raise ValueError(
+            f"valuation inputs unavailable for {ticker}; "
+            "the comps EV-to-equity bridge cannot be reconciled"
+        )
+    ledger_payload = getattr(inputs, "claim_ledger", None)
+    if ledger_payload:
+        ledger = ClaimLedger.from_dict(ledger_payload)
+        ledger.require_reconciled()
+        bridge = ReconciledEVBridge.from_ledger(ledger)
+        bridge_basis = "reconciled_claim_ledger"
+    else:
+        # Compatibility only for archived/test input objects. Live assembly
+        # always supplies the reconciled claim ledger.
+        bridge = ReconciledEVBridge(
+            **{
+                component: float(
+                    getattr(inputs.drivers, component, 0.0) or 0.0
+                )
+                for component in EV_BRIDGE_COMPONENTS
+            }
+        )
+        bridge_basis = "driver_compatibility"
+    return {
+        "inputs": inputs,
+        "bridge": bridge,
+        "bridge_basis": bridge_basis,
+        "claim_ledger": ledger_payload or {},
+        "operating_cash_policy": getattr(
+            inputs,
+            "operating_cash_policy",
+            {},
+        )
+        or {},
+        "bridge_cutover": getattr(inputs, "bridge_cutover", {}) or {},
+        "valuation_readiness": getattr(
+            inputs,
+            "valuation_readiness",
+            {},
+        )
+        or {},
+        "valuation_status": getattr(
+            inputs,
+            "valuation_status",
+            "provisional",
+        ),
+    }
+
+
+def _blocked_bridge_view(ticker: str, exc: Exception) -> dict:
+    blocker = (
+        exc.to_dict()
+        if hasattr(exc, "to_dict")
+        else {
+            "status": "blocked",
+            "reason_code": "comps_bridge_unavailable",
+            "message": str(exc),
+            "exception_type": type(exc).__name__,
+        }
+    )
+    return {
+        "ticker": ticker,
+        "available": False,
+        "valuation_status": "blocked",
+        "valuation_output_mode": "none",
+        "blocker": blocker,
+        "target": {},
+        "peers": [],
+        "peer_table": [],
+        "metric_options": [],
+        "selected_metric_default": None,
+        "valuation_range": {},
+        "valuation_range_by_metric": {},
+        "valuation_by_metric_rows": [],
+        "comparison_summary": [],
+        "metric_status_rows": [],
+        "football_field": {
+            "ranges": [],
+            "markers": [],
+            "range_min": None,
+            "range_max": None,
+        },
+        "audit_flags": [str(exc)],
+    }
 
 
 def _safe_round(value: float | None, digits: int = 2) -> float | None:
@@ -434,6 +532,16 @@ def build_comps_dashboard_view(ticker: str) -> dict:
 
     if market is None:
         market = market_data.get_market_data(ticker)
+    try:
+        bridge_context = _bridge_context(ticker)
+    except (
+        BridgeMutationPathError,
+        UnreconciledClaimLedgerError,
+        ValueError,
+    ) as exc:
+        return _blocked_bridge_view(ticker, exc)
+    except Exception as exc:
+        return _blocked_bridge_view(ticker, exc)
     peer_rows_source = [row for row in comps_detail.get("peers", []) if row.get("ticker")]
     similarity_scores: dict[str, float] = {}
     similarity_warning: str | None = None
@@ -446,19 +554,23 @@ def build_comps_dashboard_view(ticker: str) -> dict:
             )
         except Exception as exc:
             similarity_warning = f"Peer similarity unavailable: {exc}"
-    shares_mm = None
-    if market.get("shares_outstanding"):
-        shares_mm = float(market["shares_outstanding"]) / 1_000_000.0
+    bridge_inputs = bridge_context["inputs"]
+    shares = getattr(bridge_inputs.drivers, "shares_outstanding", None)
+    shares_mm = (
+        float(shares) / 1_000_000.0
+        if shares is not None and float(shares) > 0
+        else None
+    )
 
     target = _enrich_operating_context(comps_detail.get("target") or {})
-    tev_mm = target.get("tev_mm")
-    market_cap_mm = target.get("market_cap_mm")
-    net_debt_mm = (tev_mm - market_cap_mm) if tev_mm is not None and market_cap_mm is not None else None
+    bridge = bridge_context["bridge"]
     comps_result = run_comps_model(
         comps_detail,
-        net_debt_mm=net_debt_mm,
         shares_mm=shares_mm,
         similarity_scores=similarity_scores or None,
+        ev_to_equity_adjustment_mm=(
+            bridge.ev_to_equity_adjustment / 1_000_000.0
+        ),
     )
 
     model_weights = _normalise_similarity_weights(similarity_scores)
@@ -524,6 +636,26 @@ def build_comps_dashboard_view(ticker: str) -> dict:
     return {
         "ticker": ticker,
         "available": True,
+        "valuation_status": bridge_context["valuation_status"],
+        "valuation_output_mode": (
+            "official"
+            if bridge_context["valuation_status"] == "decision_grade"
+            else "shadow_preview"
+        ),
+        "claim_ledger": bridge_context["claim_ledger"],
+        "operating_cash_policy": bridge_context[
+            "operating_cash_policy"
+        ],
+        "bridge_cutover": bridge_context["bridge_cutover"],
+        "valuation_readiness": bridge_context[
+            "valuation_readiness"
+        ],
+        "comps_bridge": {
+            "basis": bridge_context["bridge_basis"],
+            "ev_to_equity_adjustment_mm": (
+                bridge.ev_to_equity_adjustment / 1_000_000.0
+            ),
+        },
         "target": {
             **target,
             "current_price": market.get("current_price"),

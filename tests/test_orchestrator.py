@@ -54,7 +54,20 @@ class _StubQoEAgent:
 
 
 class _StubAccountingRecastAgent:
-    def analyze(self, ticker, reported_ebit=None, filing_text=None):
+    last_business_context = ""
+    last_industry_context = ""
+
+    def analyze(
+        self,
+        ticker,
+        reported_ebit=None,
+        filing_text=None,
+        business_context="",
+        industry_context="",
+        current_model_context="",
+    ):
+        type(self).last_business_context = business_context
+        type(self).last_industry_context = industry_context
         return {
             "ticker": ticker,
             "source": "sec_edgar_10k",
@@ -248,11 +261,13 @@ def test_orchestrator_includes_accounting_recast_without_mutating_valuation(monk
         lambda ticker, limit=3: [{"filing_date": "2026-01-31", "text": "Earnings release"}],
     )
 
-    memo = orch_mod.PipelineOrchestrator().run("IBM")
+    memo = orch_mod.PipelineOrchestrator().run("IBM", use_cache=False)
 
     assert memo.valuation.base == 100.0
     assert memo.accounting_recast["approval_required"] is True
     assert memo.accounting_recast["override_candidates"]["lease_liabilities"] == 900000000.0
+    assert _StubAccountingRecastAgent.last_business_context == "clean"
+    assert "Valuation framework: DCF" in _StubAccountingRecastAgent.last_industry_context
     assert "Accounting recast" in memo.variant_thesis_prompt
     assert memo.risk_impact.overlays[0].risk_name == "Competitive Displacement"
     assert "Risk-adjusted expected IV" in memo.variant_thesis_prompt

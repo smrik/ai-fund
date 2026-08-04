@@ -5,13 +5,11 @@ Follows BaseAgent pattern. Output is a structured markdown document.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from datetime import date
 from typing import Optional
 
 from src.stage_03_judgment.base_agent import BaseAgent
-from config import LLM_SYNTHESIS_MODEL
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +60,6 @@ _SYSTEM_PROMPT = (
     "You write precise, concise, institutional-quality research notes. "
     "Be factual, data-driven, and direct. Write for a sophisticated audience."
 )
-DEFAULT_RESEARCH_NOTE_MODEL = "gemini-2.5-pro"
 
 
 # ---------------------------------------------------------------------------
@@ -76,9 +73,7 @@ class ResearchNoteAgent(BaseAgent):
     """
 
     def __init__(self):
-        super().__init__(
-            model=os.getenv("RESEARCH_NOTE_AGENT_MODEL", LLM_SYNTHESIS_MODEL or DEFAULT_RESEARCH_NOTE_MODEL)
-        )
+        super().__init__()
         self.name = "ResearchNoteAgent"
         self.prompt_version = "v1"
         self.system_prompt = _SYSTEM_PROMPT

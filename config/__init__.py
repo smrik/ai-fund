@@ -39,6 +39,7 @@ def _env_float(name: str, default: float) -> float:
 _paths = _RAW_CONFIG["paths"]
 _research_workspace = _RAW_CONFIG.get("research_workspace", {})
 _llm = _RAW_CONFIG["llm"]
+_llm_roles = _llm.get("roles", {})
 _portfolio = _RAW_CONFIG["portfolio"]
 _edgar = _RAW_CONFIG["edgar"]
 _filings_cache = _RAW_CONFIG.get("filings_cache", {})
@@ -66,9 +67,10 @@ DOSSIER_NOTE_EXTENSION = str(_research_workspace.get("note_extension", ".md"))
 SCREENING_RULES_PATH = CONFIG_PATH
 SCREENING_RULES = copy.deepcopy(_RAW_CONFIG["screening"])
 
-LLM_MODEL = _env_str("LLM_MODEL", _llm["model"])
-LLM_MODEL_FAST = _env_str("LLM_MODEL_FAST", _llm["fast_model"])
-LLM_SYNTHESIS_MODEL = _env_str("LLM_SYNTHESIS_MODEL", _llm.get("synthesis_model", _llm["model"]))
+_judgment_model = str((_llm_roles.get("judgment") or {}).get("model", "gemini-3-flash-preview"))
+LLM_MODEL = _env_str("LLM_MODEL", _judgment_model)
+LLM_MODEL_FAST = _env_str("LLM_MODEL_FAST", _judgment_model)
+LLM_SYNTHESIS_MODEL = _env_str("LLM_SYNTHESIS_MODEL", _judgment_model)
 LLM_BASE_URL = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL") or str(_llm.get("base_url", ""))
 
 PORTFOLIO_SIZE_USD = _env_float("PORTFOLIO_SIZE_USD", _portfolio["size_usd"])

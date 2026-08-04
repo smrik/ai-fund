@@ -10,14 +10,12 @@ config/story_drivers_pending.yaml for PM review and approval.
 
 from __future__ import annotations
 
-import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
 
 from src.stage_03_judgment.base_agent import BaseAgent
-from config import LLM_SYNTHESIS_MODEL
 from src.stage_02_valuation.templates.ic_memo import (
     ICMemo, FilingsSummary, EarningsSummary,
     ValuationRange, SentimentOutput, RiskOutput,
@@ -46,7 +44,6 @@ The variant thesis prompt is the most important output. Examples of good prompts
 
 Avoid generic analysis. Be specific to THIS company. Do not hedge everything.
 A good IC memo is a forcing function — it makes you decide."""
-DEFAULT_THESIS_MODEL = "gemini-2.5-pro"
 
 
 def _normalize_structured_fields(data: dict) -> dict:
@@ -90,7 +87,7 @@ def _normalize_structured_fields(data: dict) -> dict:
 
 class ThesisAgent(BaseAgent):
     def __init__(self):
-        super().__init__(model=os.getenv("THESIS_AGENT_MODEL", LLM_SYNTHESIS_MODEL or DEFAULT_THESIS_MODEL))
+        super().__init__()
         self.name = "ThesisAgent"
         self.system_prompt = SYSTEM_PROMPT
         # No external tools — synthesizes from context only
@@ -230,6 +227,27 @@ Return your synthesis as a JSON object with EXACTLY these fields:
                 "structured_catalysts": [],
             }
         data = _normalize_structured_fields(data)
+        if valuation.valuation_status == "blocked":
+            blocker_message = str(
+                (valuation.blocker or {}).get(
+                    "message",
+                    "deterministic valuation is unavailable",
+                )
+            )
+            data["action"] = "WATCH"
+            data["conviction"] = "low"
+            data["one_liner"] = (
+                "Valuation blocked pending reconciled evidence: "
+                + blocker_message
+            )
+            data["open_questions"] = [
+                blocker_message,
+                *[
+                    question
+                    for question in data.get("open_questions", [])
+                    if question != blocker_message
+                ],
+            ][:3]
 
         return ICMemo(
             ticker=ticker.upper(),
@@ -243,6 +261,79 @@ Return your synthesis as a JSON object with EXACTLY these fields:
             **data,
         )
 
+    def generate_story_profile_from_evidence(self, context) -> dict | None:
+        """Author a story profile from marshalled filing evidence (Vision Decision 13).
+
+        `context` is a `StoryProfileContext` from
+        `src.stage_04_pipeline.story_profile_context`. It carries real filing excerpts with
+        anchor IDs, so the agent scores this company's disclosures rather than recalling a
+        well-known ticker.
+
+        Refuses when the context is not usable: a profile scored without evidence would look
+        identical to a reasoned one and would carry full driver authority.
+
+        Returns a dict with the six scores plus `notes`, `evidence_basis`, and
+        `evidence_anchor_ids`, or None on failure.
+        """
+        if context is None or not getattr(context, "is_usable", False):
+            return None
+
+        prompt = f"""Assess the qualitative competitive characteristics of {context.ticker} using
+ONLY the filing evidence below, and produce a structured story driver profile.
+
+{context.context_text}
+
+This profile feeds directly into the DCF: it adjusts growth, margins, WACC, and terminal value
+weighting. Score this company from its own disclosures. Do not fall back on what you know about
+the company from memory, and do not default to sector averages — a sector-average answer is the
+thing this call exists to replace.
+
+Field definitions:
+  moat_strength (1-5): 1=commodity/no moat, 3=average, 5=wide moat (network effects, IP, switching costs)
+  pricing_power (1-5): 1=pure price taker, 3=moderate, 5=strong premium pricing with demand inelasticity
+  cyclicality (low|medium|high): sensitivity of revenue/margins to economic cycle
+  capital_intensity (low|medium|high): capex as % of revenue; R&D-heavy = medium not high
+  governance_risk (low|medium|high): quality of capital allocation, management track record, related-party risk
+  competitive_advantage_years (1-20): how many years is the moat likely to be durable?
+
+For `evidence_basis`, quote or name the specific disclosures that drove your scores, using the
+[anchor] labels shown above. If the evidence does not support a confident score on a field, say
+so there and score it 3 / medium rather than guessing high or low.
+
+`notes` is for what the six scores cannot express — a pending patent cliff, a founder transition,
+a segment that behaves nothing like the consolidated entity, a disclosed capital program that
+changes the reinvestment picture. These are read by later driver agents as context. Return an
+empty list if the filing genuinely surfaces nothing of the kind.
+
+Return ONLY this JSON:
+{{
+  "moat_strength": <int 1-5>,
+  "pricing_power": <int 1-5>,
+  "cyclicality": "<low|medium|high>",
+  "capital_intensity": "<low|medium|high>",
+  "governance_risk": "<low|medium|high>",
+  "competitive_advantage_years": <int 1-20>,
+  "rationale": "<2-3 sentences justifying the scores, specific to this company>",
+  "evidence_basis": "<which disclosures drove the scores, citing [anchor] labels>",
+  "notes": ["<qualitative point the scores cannot capture>", "..."]
+}}"""
+
+        try:
+            raw = self.run(prompt)
+        except Exception:
+            return None
+
+        try:
+            parsed = self.extract_json(raw)
+        except Exception:
+            return None
+
+        if not isinstance(parsed, dict):
+            return None
+        parsed["evidence_anchor_ids"] = list(context.evidence_anchor_ids)
+        parsed["source_ref_ids"] = list(context.source_ref_ids)
+        return parsed
+
     def generate_story_profile(
         self,
         ticker: str,
@@ -253,6 +344,11 @@ Return your synthesis as a JSON object with EXACTLY these fields:
     ) -> dict | None:
         """
         Produce a structured StoryDriverProfile for the ticker.
+
+        DEPRECATED for evidence-backed use — prefer `generate_story_profile_from_evidence`.
+        This variant accepts pre-summarised filings/earnings and has historically been called
+        with placeholder stubs, which yields a profile grounded in nothing. Kept for callers
+        that genuinely hold real summaries.
 
         Focused call — does not require a full pipeline run. Uses only the
         filings and earnings summaries as context.
@@ -310,6 +406,15 @@ Return ONLY this JSON:
             return None
 
 
+def _coerce_notes(value) -> list[str]:
+    """Accept a list or a single string; drop blanks. Bounds are enforced downstream by
+    `story_drivers._sanitize_notes`, which is the contract boundary for this field."""
+    if value is None:
+        return []
+    items = value if isinstance(value, (list, tuple)) else [value]
+    return [str(item).strip() for item in items if str(item).strip()]
+
+
 def write_story_driver_pending(
     ticker: str,
     profile: dict,
@@ -350,10 +455,22 @@ def write_story_driver_pending(
             "capital_intensity": profile.get("capital_intensity", "medium"),
             "governance_risk": profile.get("governance_risk", "medium"),
             "competitive_advantage_years": profile.get("competitive_advantage_years", 7),
+            # Free text the six scores cannot express. Carried into StoryDriverProfile.notes and
+            # read by downstream driver agents; never enters the numeric mapping.
+            "notes": _coerce_notes(profile.get("notes")),
         },
     }
     if profile.get("rationale"):
         entry["rationale"] = profile["rationale"]
+    # Evidence trail: without these a PM reviewing `moat_strength: 5` cannot see which
+    # disclosure supports it, and an evidence-free profile is indistinguishable from a
+    # reasoned one.
+    if profile.get("evidence_basis"):
+        entry["evidence_basis"] = profile["evidence_basis"]
+    if profile.get("evidence_anchor_ids"):
+        entry["evidence_anchor_ids"] = list(profile["evidence_anchor_ids"])
+    if profile.get("source_ref_ids"):
+        entry["source_ref_ids"] = list(profile["source_ref_ids"])
 
     existing[ticker.upper()] = entry
 

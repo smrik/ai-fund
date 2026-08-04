@@ -68,6 +68,15 @@
 
 **`input_assembler.py` assumption priority chains:**
 
+> These chains are how the deterministic layer **seeds** a driver before judgment runs. For
+> historical `*_start` values that is the whole story — they are extracts. For forward-looking
+> values (`*_target`, terminal growth, growth fade, RONIC) a chain terminating in
+> `sector default` marks an **unfilled slot**: under
+> [Vision Decision 13](../strategy/vision.md#the-division-of-labor) those are meant to be
+> authored by the judgment layer from filing evidence and management guidance, then PM-approved
+> through the Decision Queue. The chains below describe today's fallback behaviour, not the
+> target design.
+
 | Assumption | Priority order |
 |---|---|
 | Near-term revenue growth | CIQ consensus FY1/FY2 → CIQ 3yr CAGR → yfinance 3yr CAGR → yfinance TTM YoY → sector default |
@@ -84,6 +93,9 @@ Every assumption is tracked in `source_lineage` in the output.
 
 **Computation rules:**
 - All monetary values in absolute USD (not millions) inside functions; converted for display only
+- Step 1 persists valuation-reachable values in `canonical_valuation_facts`: money is absolute USD,
+  shares are absolute shares, rates/margins are decimals, and raw source scale is provenance only.
+  Step 2 must read `canonical_value` and must not apply `raw_scale`, `scale_factor`, or `unit_scale`.
 - `SECTOR_DEFAULTS` in `input_assembler.py` are fallbacks — actual data always wins
 - Every output record includes full `source_lineage` audit dict
 - WACC Rf/ERP configurable in `config/config.yaml` → `wacc_params` section

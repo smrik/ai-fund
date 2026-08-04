@@ -21,6 +21,7 @@ from src.stage_04_pipeline.batch_funnel import load_saved_watchlist
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 from src.stage_04_pipeline.dossier_view import build_publishable_memo_context, build_research_board_view
+from src.stage_04_pipeline.operating_reconciliation_service import ReconciledValuationInputs
 from src.stage_04_pipeline.override_workbench import build_override_workbench
 from src.stage_04_pipeline.report_archive import list_report_snapshots, load_report_snapshot
 from src.stage_04_pipeline.ticker_dossier import build_ticker_dossier_from_export_payload, ticker_dossier_to_payload
@@ -1773,10 +1774,18 @@ def resolve_export_artifact_path(export_id: str, artifact_key: str | None = None
     raise FileNotFoundError(f"Artifact {artifact_key!r} not found for export {export_id}")
 
 
-def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
+def _build_current_ticker_payload(
+    ticker: str,
+    *,
+    reconciled_inputs: ReconciledValuationInputs | None = None,
+) -> dict[str, Any]:
     ticker = coerce_ticker(ticker)
     workbench = build_override_workbench(ticker)
-    dcf = build_dcf_audit_view(ticker)
+    dcf = (
+        build_dcf_audit_view(ticker, reconciled_inputs=reconciled_inputs)
+        if reconciled_inputs is not None
+        else build_dcf_audit_view(ticker)
+    )
     comps = build_comps_dashboard_view(ticker)
     wacc = build_wacc_workbench(ticker, apply_overrides=True)
     research = build_research_board_view(ticker)
@@ -1785,11 +1794,40 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         row["field"]: row.get("effective_value")
         for row in workbench.get("fields") or []
     }
-    source_lineage = {
-        row["field"]: row.get("effective_source")
-        for row in workbench.get("fields") or []
-        if row.get("effective_source")
-    }
+    source_lineage = dict(workbench.get("source_lineage") or {})
+    source_lineage.update(
+        {
+            row["field"]: row.get("effective_source")
+            for row in workbench.get("fields") or []
+            if row.get("effective_source")
+        }
+    )
+    if reconciled_inputs is not None:
+        adopted_inputs = reconciled_inputs.valuation_inputs
+        source_lineage.update(dict(adopted_inputs.source_lineage))
+        adopted_drivers = adopted_inputs.drivers
+        for field in (
+            "capex_pct_start",
+            "da_pct_start",
+            "dso_start",
+            "dio_start",
+            "dpo_start",
+        ):
+            assumption_map[field] = getattr(adopted_drivers, field)
+    elif dcf.get("available") is True:
+        dcf_drivers = dcf.get("base_drivers") or {}
+        dcf_lineage = dcf.get("source_lineage") or {}
+        for field in (
+            "capex_pct_start",
+            "da_pct_start",
+            "dso_start",
+            "dio_start",
+            "dpo_start",
+        ):
+            if field in dcf_drivers:
+                assumption_map[field] = dcf_drivers[field]
+            if field in dcf_lineage:
+                source_lineage[field] = dcf_lineage[field]
     scenario_map = {
         str(row.get("scenario") or "").lower(): {
             "probability": row.get("probability"),
@@ -1811,6 +1849,11 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "comps_source_file": comps_lineage.get("source_file") or valuation_ciq_lineage.get("comps_source_file"),
         "comps_as_of_date": comps_lineage.get("as_of_date") or valuation_ciq_lineage.get("comps_as_of_date"),
     }
+    operating_reconciliation = (
+        getattr(reconciled_inputs, "operating_reconciliation", None)
+        if reconciled_inputs is not None
+        else None
+    )
     payload = {
         "$schema_version": "1.0",
         "generated_at": _now(),
@@ -1862,8 +1905,23 @@ def _build_current_ticker_payload(ticker: str) -> dict[str, Any]:
         "sensitivity": dcf.get("sensitivity") or {},
         "terminal": dcf.get("terminal_bridge") or {},
         "health_flags": dcf.get("health_flags") or {},
+        "valuation_status": dcf.get("valuation_status") or "provisional",
+        "valuation_output_mode": dcf.get("valuation_output_mode") or "shadow_preview",
+        "valuation_readiness": dcf.get("valuation_readiness") or {},
+        "operating_reconciliation": dcf.get("operating_reconciliation")
+        or (
+            operating_reconciliation.to_dict()
+            if operating_reconciliation is not None
+            and hasattr(operating_reconciliation, "to_dict")
+            else {}
+        ),
         "forecast_bridge": dcf.get("forecast_bridge") or [],
         "source_lineage": source_lineage,
+        "judgment_driver_verdicts": (
+            workbench.get("judgment_driver_verdicts")
+            or dcf.get("judgment_driver_verdicts")
+            or []
+        ),
         "default_resolution": workbench.get("default_resolution") or {},
         "ciq_lineage": ciq_lineage,
         "comps_detail": {

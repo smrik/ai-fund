@@ -1,5 +1,16 @@
 # Quality Score
 
+> **STALE — do not trust these grades. Last updated 2026-03-06, roughly five months ago.**
+> Several modules graded "D / Not built yet" have since shipped and are core to the system —
+> `qoe_agent.py`, `comps_agent.py`, and `industry_agent.py` among them; the QoE agent is
+> described as one of the most integrated components in
+> [architecture-overview.md](../design-docs/architecture-overview.md).
+>
+> For current module status use `docs/design-docs/architecture-overview.md` and
+> `docs/plans/index.md`. This page needs a re-grade or archiving (per the AGENTS.md rule that
+> stale docs are archived rather than left beside current guidance) — flagged 2026-07-24, not
+> actioned because a re-grade is a judgment call about the whole codebase.
+
 Graded per layer and module. Updated each sprint.
 Grade: A (production-ready) / B (works, gaps noted) / C (functional but incomplete) / D (stub)
 

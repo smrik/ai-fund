@@ -27,7 +27,7 @@ Primary objective: make the weekly PM research loop runnable end-to-end with one
 
 Non-negotiables:
 - No new Streamlit features (dashboard/ is frozen; Vision Decision 7).
-- LLM code never touches the deterministic computation layer.
+- LLM code never *executes inside* the deterministic computation layer; the PM Decision Queue is the only bridge to model mutation. (Scope: where code runs. The judgment layer still sets the key forward-looking assumptions — Vision Decision 13.)
 - Engineering ambiguities: decide conservatively and log in the plan/PR. Finance semantics (thresholds, ranges, metric meaning): stop and ask the PM.
 - Every task ships with verification commands and targeted tests where code changes.
 - Smallest working version first; the runbook documents existing commands before anyone builds new orchestration.

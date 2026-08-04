@@ -494,12 +494,20 @@ def run_dcf_professional(drivers: ForecastDrivers, scenario_spec: ScenarioSpec) 
         shares_out=terminal_shares,
     )
 
+    degenerate_zero_tv_flag = bool(tv_blended is not None and tv_blended <= 0.0 and any(p.revenue > 0 for p in projections))
+    degenerate_ev_implausible_flag = bool(enterprise_value_operations is not None and enterprise_value_operations <= 1.0)
+    degenerate_dcf_guardrail_flag = bool(degenerate_zero_tv_flag or degenerate_ev_implausible_flag)
+
     health_flags = {
         "tv_high_flag": bool(tv_pct_of_ev is not None and tv_pct_of_ev > 0.75),
         "tv_extreme_flag": bool(tv_pct_of_ev is not None and tv_pct_of_ev > 0.90),
         "terminal_growth_guardrail_flag": bool(terminal_growth > 0.04),
         "terminal_ronic_guardrail_flag": bool(d.ronic_terminal <= terminal_growth + 0.005),
         "terminal_denominator_guardrail_flag": bool(denominator <= 0.002),
+        "degenerate_zero_tv_flag": degenerate_zero_tv_flag,
+        "degenerate_ev_implausible_flag": degenerate_ev_implausible_flag,
+        "degenerate_dcf_guardrail_flag": degenerate_dcf_guardrail_flag,
+        "health_degenerate_dcf_guardrail_flag": degenerate_dcf_guardrail_flag,
         "tv_method_fallback_flag": bool(method_used != "blend"),
         "fcff_interest_contamination_flag": False,
         "ep_reconcile_flag": bool(ep_reconcile_flag) if ep_reconcile_flag is not None else False,

@@ -4,6 +4,8 @@ import argparse
 import json
 import os
 import sys
+from collections.abc import Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.manual.run_ticker_valuation_flow import (  # noqa: E402
     DEFAULT_PROFILES,
+    _assemble_reconciled_ticker_inputs,
     attach_finance_quality_review,
     collect_data_freshness,
     configure_isolated_db,
@@ -27,6 +30,13 @@ from src.stage_04_pipeline.analyst_prep_pack import (  # noqa: E402
     build_analyst_prep_payload,
     render_analyst_prep_markdown,
 )
+from src.contracts.valuation_readiness import (  # noqa: E402
+    assess_judgment_driver_provenance,
+)
+from config.llm_routing import (  # noqa: E402
+    format_llm_resolution,
+    resolve_llm_route,
+)
 
 
 GUIDED_OUTPUT_DIR = ROOT / "output" / "guided_workups"
@@ -35,6 +45,8 @@ FRICTION_LOG_DIR = ROOT / "docs" / "reviews" / "weekly-loop"
 # Engineering display default aligned with scripts/manual/weekly_preflight.py.
 # M1 only warns in PM-facing markdown; staleness gating belongs to Milestone 3.
 MARKET_CACHE_STALE_WARN_DAYS = 1.0
+ANALYST_PREP_SYNTHESIS_PROFILE = "analyst_prep_synthesis"
+NON_INTERACTIVE_PROFILE_WORKERS = 4
 
 
 def _now_iso() -> str:
@@ -99,44 +111,53 @@ def _historical_financials_for_guided_json(ticker: str, result: dict[str, Any]) 
         if not path.exists():
             continue
         try:
-            return build_historical_financials_from_ciq_workbook(path)
+            return build_historical_financials_from_ciq_workbook(
+                path,
+                expected_ticker=ticker,
+            )
         except Exception:
             continue
     return []
 
 
-def _config_llm_defaults() -> dict[str, str]:
+def _config_llm_defaults() -> dict[str, Any]:
     try:
-        from config import LLM_BASE_URL, LLM_MODEL
-
-        return {"model": str(LLM_MODEL or ""), "base_url": str(LLM_BASE_URL or "")}
+        route = resolve_llm_route("judgment")
+        return {
+            "provider": str(route["provider"]),
+            "model": str(route["model"]),
+            "effort": route.get("effort"),
+            "base_url": str(route["base_url"]),
+        }
     except Exception:
-        return {"model": "", "base_url": ""}
+        return {"provider": "", "model": "", "effort": None, "base_url": ""}
 
 
 def build_llm_routing(
     *,
     source: str,
     configured: dict[str, Any] | None = None,
+    role: str = "judgment",
 ) -> dict[str, Any]:
-    defaults = _config_llm_defaults()
     configured = configured or {}
-    model = str(configured.get("model") or os.getenv("LLM_MODEL") or defaults.get("model") or "not configured")
-    base_url = (
-        configured.get("base_url")
-        or os.getenv("LLM_BASE_URL")
-        or os.getenv("OPENAI_BASE_URL")
-        or defaults.get("base_url")
-        or ""
+    route = resolve_llm_route(
+        role,
+        cli_provider=configured.get("backend") or configured.get("provider"),
+        cli_model=configured.get("model"),
+        cli_effort=configured.get("effort"),
     )
     fallback_models = configured.get("fallback_models")
     if fallback_models is None:
         fallback_models = _split_model_list(os.getenv("LLM_FALLBACK_MODELS"))
+    fallback_values = _split_model_list(fallback_models)
+    fallback = str(configured.get("fallback") or (fallback_values[0] if fallback_values else ""))
     return {
-        "model": model,
-        "base_url": _host_only(base_url),
-        "fallbacks": _split_model_list(fallback_models),
-        "source": source,
+        **route,
+        "base_url": _host_only(route.get("base_url")),
+        "fallback": fallback or "not configured",
+        "fallbacks": fallback_values,
+        "cost": str(configured.get("cost") or ("subscription" if route["provider"] == "codex" else "metered")),
+        "run_source": source,
     }
 
 
@@ -144,10 +165,11 @@ def format_llm_routing_line(routing: dict[str, Any]) -> str:
     fallbacks = _as_list(routing.get("fallbacks"))
     fallback_label = ", ".join(str(value) for value in fallbacks) if fallbacks else "none"
     return (
-        f"Agent LLM routing: model={routing.get('model') or 'not configured'} "
+        f"{format_llm_resolution(routing)} "
         f"base_url={routing.get('base_url') or 'not configured'} "
-        f"fallbacks={fallback_label} "
-        f"(source: {routing.get('source') or 'unknown'})"
+        f"fallback={routing.get('fallback') or fallback_label} "
+        f"fallbacks={fallback_label} cost={routing.get('cost') or 'metered'} "
+        f"(run source: {routing.get('run_source') or 'unknown'})"
     )
 
 
@@ -194,6 +216,48 @@ def _fmt_pct(value: Any) -> str:
         return f"{float(value):+.1f}%"
     except Exception:
         return "n/a"
+
+
+def _intrinsic_value_bridge(batch_row: dict[str, Any], dcf: dict[str, Any]) -> dict[str, Any]:
+    terminal_bridge = _as_dict(dcf.get("terminal_bridge"))
+    method_used = terminal_bridge.get("method_used") or dcf.get("method_used")
+    drivers_payload = batch_row.get("drivers_json")
+    if isinstance(drivers_payload, str):
+        try:
+            drivers = json.loads(drivers_payload)
+        except (TypeError, ValueError):
+            drivers = {}
+    elif isinstance(drivers_payload, dict):
+        drivers = drivers_payload
+    else:
+        drivers = {}
+    if not isinstance(drivers, dict):
+        drivers = {}
+
+    method_labels = {
+        "blend": "Blend",
+        "gordon_only": "Gordon-only",
+        "exit_only": "Exit-only",
+        "none": "None",
+    }
+    method_label = method_labels.get(str(method_used), str(method_used or "n/a"))
+    if method_used == "blend":
+        try:
+            gordon_weight = float(drivers["terminal_blend_gordon_weight"])
+            exit_weight = float(drivers["terminal_blend_exit_weight"])
+            weight_status = f"{gordon_weight:.0%} Gordon / {exit_weight:.0%} Exit"
+        except (KeyError, TypeError, ValueError):
+            weight_status = "Blend weights unavailable."
+    else:
+        weight_status = "Blend weights were not applied."
+
+    return {
+        "iv_base": batch_row.get("iv_base") if batch_row.get("iv_base") is not None else batch_row.get("iv_blended"),
+        "iv_gordon": batch_row.get("iv_gordon"),
+        "iv_exit": batch_row.get("iv_exit"),
+        "method_label": method_label,
+        "weight_status": weight_status,
+    }
 
 
 def _parse_run_datetime(value: Any) -> datetime | None:
@@ -345,6 +409,7 @@ class GuidedIO:
 @dataclass(slots=True)
 class GuidedDependencies:
     prepare_ciq_refresh: Callable[..., Path] | None = None
+    refresh_and_ingest_ciq: Callable[..., dict[str, Any]] | None = None
     resolve_ciq_symbol: Callable[..., str] | None = None
     ingest_ciq_folder: Callable[..., Any] | None = None
     prefetch_filings: Callable[..., Any] | None = None
@@ -366,12 +431,22 @@ class GuidedDependencies:
     export_xlsx: Callable[..., dict[str, Any]] | None = None
     refresh_dossier: Callable[[str], dict[str, Any]] = refresh_current_ticker_dossier
     collect_freshness: Callable[[str], dict[str, Any]] = collect_data_freshness
+    reconciled_inputs: Any = field(default=None, init=False, repr=False)
 
     def resolve(self) -> "GuidedDependencies":
-        if self.prepare_ciq_refresh is None or self.resolve_ciq_symbol is None:
-            from ciq.ciq_refresh import prepare_single_ticker_refresh, resolve_ciq_symbol
+        if (
+            self.prepare_ciq_refresh is None
+            or self.refresh_and_ingest_ciq is None
+            or self.resolve_ciq_symbol is None
+        ):
+            from ciq.ciq_refresh import (
+                prepare_single_ticker_refresh,
+                refresh_and_ingest_single_ticker,
+                resolve_ciq_symbol,
+            )
 
             self.prepare_ciq_refresh = self.prepare_ciq_refresh or prepare_single_ticker_refresh
+            self.refresh_and_ingest_ciq = self.refresh_and_ingest_ciq or refresh_and_ingest_single_ticker
             self.resolve_ciq_symbol = self.resolve_ciq_symbol or resolve_ciq_symbol
         if self.ingest_ciq_folder is None:
             from ciq.ingest import ingest_ciq_folder
@@ -384,7 +459,25 @@ class GuidedDependencies:
         if self.value_single_ticker is None:
             from src.stage_02_valuation.batch_runner import value_single_ticker
 
-            self.value_single_ticker = value_single_ticker
+            def _shared_inputs(ticker: str):
+                normalized_ticker = ticker.upper().strip()
+                current = self.reconciled_inputs
+                if current is None or current.valuation_inputs.ticker != normalized_ticker:
+                    current = _assemble_reconciled_ticker_inputs(normalized_ticker)
+                    self.reconciled_inputs = current
+                return current
+
+            self.value_single_ticker = lambda ticker: value_single_ticker(
+                ticker,
+                reconcile_operating=True,
+                reconciled_inputs=_shared_inputs(ticker),
+            )
+        if self.refresh_dossier is refresh_current_ticker_dossier:
+            self.refresh_dossier = lambda ticker: refresh_current_ticker_dossier(
+                ticker,
+                reconciled_inputs=self.reconciled_inputs
+                or _assemble_reconciled_ticker_inputs(ticker),
+            )
         if any(
             value is None
             for value in (self.build_summary, self.build_dcf, self.build_comps, self.build_assumptions)
@@ -603,7 +696,69 @@ def build_model_snapshot(
 
 def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedDependencies, io: GuidedIO) -> dict[str, Any]:
     if args.skip_ciq_stage:
-        return {"skipped": True, "reason": "skip_ciq_stage"}
+        return {
+            "skipped": True,
+            "staged": False,
+            "ingested": False,
+            "reason": "skipped-by-flag",
+            "auto_refresh": False,
+        }
+
+    if getattr(args, "auto_refresh_ciq", False):
+        try:
+            if deps.refresh_and_ingest_ciq is None:
+                raise RuntimeError("CIQ auto-refresh dependency is not configured")
+            refresh_result = _as_dict(
+                deps.refresh_and_ingest_ciq(
+                    ticker=ticker,
+                    ciq_symbol=args.ciq_symbol,
+                    exchange=args.exchange,
+                    as_of_date=args.as_of_date,
+                    currency=args.currency,
+                    template_path=args.ciq_template,
+                    input_json_path=args.ciq_input_json,
+                    output_folder=args.ciq_folder,
+                )
+            )
+        except Exception as exc:
+            io.write(f"CIQ auto-refresh failed after staging attempt: {exc}")
+            return {
+                "skipped": False,
+                "staged": True,
+                "ingested": False,
+                "reason": "refresh-failed",
+                "auto_refresh": True,
+                "error": str(exc),
+            }
+
+        ingest_report = _as_dict(_jsonable(refresh_result.get("ingest_report")))
+        refresh_timed_out = bool(
+            refresh_result.get("refresh_timed_out")
+            or refresh_result.get("refresh_status") == "timed_out"
+        )
+        ingested = bool(refresh_result.get("refreshed")) and (
+            int(ingest_report.get("failed") or 0) == 0
+            and int(ingest_report.get("processed") or 0) + int(ingest_report.get("skipped") or 0) > 0
+        )
+        reason = "refresh-timed-out" if refresh_timed_out else (
+            "refreshed-and-ingested" if ingested else "refresh-failed"
+        )
+        io.write(
+            "CIQ auto-refresh outcome: "
+            f"{reason} (symbol={refresh_result.get('ciq_symbol') or args.ciq_symbol or 'resolved'})"
+        )
+        return {
+            "skipped": False,
+            "staged": bool(refresh_result.get("workbook_path")),
+            "ingested": ingested,
+            "reason": reason,
+            "auto_refresh": True,
+            "ciq_symbol": refresh_result.get("ciq_symbol") or args.ciq_symbol,
+            "workbook_path": refresh_result.get("workbook_path"),
+            "input_json_path": refresh_result.get("input_json_path") or str(args.ciq_input_json),
+            "archive_path": refresh_result.get("archive_path"),
+            "refresh_result": _jsonable(refresh_result),
+        }
 
     symbol = deps.resolve_ciq_symbol(ticker, ciq_symbol=args.ciq_symbol, exchange=args.exchange)  # type: ignore[misc]
     workbook_path = deps.prepare_ciq_refresh(  # type: ignore[misc]
@@ -624,7 +779,10 @@ def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedD
         io.write("- Non-interactive mode: CIQ workbook was staged, ingest is skipped.")
         return {
             "skipped": True,
-            "reason": "non_interactive_after_stage",
+            "staged": True,
+            "ingested": False,
+            "reason": "skipped-by-flag",
+            "auto_refresh": False,
             "ciq_symbol": symbol,
             "workbook_path": str(workbook_path),
             "input_json_path": str(args.ciq_input_json),
@@ -637,6 +795,10 @@ def stage_and_ingest_ciq(args: argparse.Namespace, ticker: str, *, deps: GuidedD
     report = deps.ingest_ciq_folder(args.ciq_folder)  # type: ignore[misc]
     return {
         "skipped": False,
+        "staged": True,
+        "ingested": True,
+        "reason": "manual-ingested",
+        "auto_refresh": False,
         "ciq_symbol": symbol,
         "workbook_path": str(workbook_path),
         "input_json_path": str(args.ciq_input_json),
@@ -672,6 +834,8 @@ def _print_profile_summary(io: GuidedIO, run_payload: dict[str, Any]) -> None:
     io.write(f"Profile `{run_payload.get('profile_name')}`")
     io.write(f"- Status: {run_payload.get('status')}")
     io.write(f"- Reason: {run_payload.get('reason') or 'n/a'}")
+    for err in run_payload.get("errors") or []:
+        io.write(f"- Error: {err.get('code')}: {err.get('message')}")
     io.write(
         "- Evidence: "
         f"quality={packet_summary.get('source_quality') or 'unknown'} "
@@ -1087,11 +1251,69 @@ def review_queue_items(
     return result
 
 
+def _render_judgment_driver_provenance(
+    verdict_rows: list[dict[str, Any]],
+) -> list[str]:
+    if not verdict_rows:
+        return []
+
+    decision_grade = all(
+        row.get("status") in {"approved", "unused"}
+        for row in verdict_rows
+        if row.get("used", True)
+    )
+    lines = [
+        "## Judgment-Owned Driver Provenance",
+        "",
+        f"- Driver gate: {'decision_grade' if decision_grade else 'provisional'}",
+        "- Decision-grade requires every used judgment-owned driver to be PM-approved.",
+        "",
+        "| Driver | Source lineage | Strength | Verdict | Severity | Usage |",
+        "|---|---|---|---|---|---|",
+    ]
+    for row in verdict_rows:
+        source = row.get("source") or "not recorded"
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    f"`{row.get('field', 'unknown')}`",
+                    f"`{source}`",
+                    str(row.get("source_strength") or "unrecorded"),
+                    str(row.get("status") or "provisional"),
+                    str(row.get("severity") or "critical"),
+                    "used" if row.get("used", True) else "unused",
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    return lines
+
+
 def render_guided_markdown(result: dict[str, Any]) -> str:
     ticker = result["ticker"]
     latest_model = _as_dict(result.get("latest_model"))
     deterministic = _as_dict(latest_model.get("deterministic"))
     batch_row = _as_dict(deterministic.get("batch_row"))
+    dcf = _as_dict(deterministic.get("dcf"))
+    bridge = _intrinsic_value_bridge(batch_row, dcf)
+    judgment_driver_verdicts = _as_list(dcf.get("judgment_driver_verdicts"))
+    if not judgment_driver_verdicts:
+        source_lineage = _as_dict(dcf.get("source_lineage"))
+        summary = _as_dict(deterministic.get("summary"))
+        dossier = _as_dict(summary.get("ticker_dossier"))
+        latest_snapshot = _as_dict(dossier.get("latest_snapshot"))
+        snapshot_lineage = _as_dict(
+            _as_dict(latest_snapshot.get("source_lineage")).get(
+                "valuation_snapshot"
+            )
+        )
+        source_lineage = source_lineage or snapshot_lineage
+        judgment_driver_verdicts = [
+            verdict.model_dump(mode="json")
+            for verdict in assess_judgment_driver_provenance(source_lineage)
+        ]
     lines = [
         f"# {ticker} Guided Full-Ticker Workup",
         "",
@@ -1119,6 +1341,12 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
             "",
             f"- Current price: {_fmt_money(batch_row.get('price'))}",
             f"- Bear / Base / Bull IV: {_fmt_money(batch_row.get('iv_bear'))} / {_fmt_money(batch_row.get('iv_base'))} / {_fmt_money(batch_row.get('iv_bull'))}",
+            "### Intrinsic Value Bridge",
+            f"- Headline blended IV (Base): {_fmt_money(bridge['iv_base'])}",
+            f"- Gordon component: {_fmt_money(bridge['iv_gordon'])}",
+            f"- Exit component: {_fmt_money(bridge['iv_exit'])}",
+            f"- Method used: {bridge['method_label']}",
+            f"- Blend weights: {bridge['weight_status']}",
             f"- Base upside: {_fmt_pct(batch_row.get('upside_base_pct'))}",
             f"- Growth near/mid: {batch_row.get('growth_near', 'n/a')} / {batch_row.get('growth_mid', 'n/a')}",
             f"- EBIT margin: {batch_row.get('ebit_margin_used', 'n/a')}",
@@ -1129,6 +1357,7 @@ def render_guided_markdown(result: dict[str, Any]) -> str:
             "",
         ]
     )
+    lines.extend(_render_judgment_driver_provenance(judgment_driver_verdicts))
     for run in _as_list(result.get("profile_runs")):
         packet_summary = _summarize_packet(_as_dict(run.get("evidence_packet")))
         lines.extend(
@@ -1238,17 +1467,124 @@ def write_artifacts(
     }
 
 
+def _profile_failure_payload(ticker: str, profile: str, exc: Exception) -> dict[str, Any]:
+    return {
+        "ticker": ticker,
+        "profile_name": profile,
+        "status": "failed",
+        "reason": "script_exception",
+        "errors": [{"code": "script_exception", "message": str(exc)}],
+        "observation_count": 0,
+        "queue_item_count": 0,
+        "queue_item_ids": [],
+    }
+
+
+def _run_profile_payload(
+    deps: GuidedDependencies,
+    ticker: str,
+    profile: str,
+) -> tuple[dict[str, Any], str | None]:
+    try:
+        payload = _jsonable(deps.run_profile(ticker, profile, include_agent_artifact=True))  # type: ignore[misc]
+        return payload, None
+    except Exception as exc:
+        return _profile_failure_payload(ticker, profile, exc), str(exc)
+
+
+def _split_parallel_profiles(profiles: list[str]) -> tuple[list[str], list[str]]:
+    regular = [profile for profile in profiles if profile != ANALYST_PREP_SYNTHESIS_PROFILE]
+    synthesis = [profile for profile in profiles if profile == ANALYST_PREP_SYNTHESIS_PROFILE]
+    return regular, synthesis
+
+
+def _run_profiles_for_mode(
+    args: argparse.Namespace,
+    *,
+    deps: GuidedDependencies,
+    io: GuidedIO,
+    ticker: str,
+) -> Iterator[tuple[str, dict[str, Any], str | None]]:
+    profiles = list(dict.fromkeys(args.profiles))
+    if not args.non_interactive:
+        for profile in profiles:
+            io.write("")
+            io.write(f"Running {profile} ({args.agent_mode})...")
+            run_payload, error = _run_profile_payload(deps, ticker, profile)
+            yield profile, run_payload, error
+        return
+
+    regular_profiles, synthesis_profiles = _split_parallel_profiles(profiles)
+    if regular_profiles:
+        worker_count = min(NON_INTERACTIVE_PROFILE_WORKERS, len(regular_profiles))
+        io.write("")
+        io.write(f"Running {len(regular_profiles)} profiles in parallel ({args.agent_mode}, workers={worker_count})...")
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures: dict[str, Future[tuple[dict[str, Any], str | None]]] = {
+                profile: executor.submit(_run_profile_payload, deps, ticker, profile)
+                for profile in regular_profiles
+            }
+            for profile in regular_profiles:
+                run_payload, error = futures[profile].result()
+                yield profile, run_payload, error
+
+    for profile in synthesis_profiles:
+        io.write("")
+        io.write(f"Running {profile} ({args.agent_mode}) after parallel profiles...")
+        run_payload, error = _run_profile_payload(deps, ticker, profile)
+        yield profile, run_payload, error
+
+
+# Lines the script writes as TODO placeholders. A draft that still carries all
+# of them was never touched by the PM and may be overwritten by a same-day re-run.
+_FRICTION_TEMPLATE_MARKERS = (
+    "- Total time: TODO",
+    "| TODO | TODO | TODO | TODO | TODO |",
+    "- Keep: TODO",
+    "- Change: TODO",
+)
+
+
+def _is_pristine_friction_draft(path: Path) -> bool:
+    try:
+        content = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    if not all(marker in content for marker in _FRICTION_TEMPLATE_MARKERS):
+        return False
+
+    prefix = path.stem.split("-friction-draft", 1)[0]
+    ticker = prefix[11:] if len(prefix) > 11 else ""
+    if not ticker:
+        return False
+    reference = render_friction_draft({"ticker": ticker, "queue_decisions": []})
+
+    def comparable_lines(value: str) -> list[str]:
+        ignored_prefixes = (
+            "# Weekly Loop Friction Draft - ",
+            "- Approved/applied:",
+            "- Edited:",
+            "- Rejected:",
+            "- Deferred:",
+        )
+        return [
+            line for line in value.splitlines() if not line.startswith(ignored_prefixes)
+        ]
+
+    return comparable_lines(content) == comparable_lines(reference)
+
+
 def next_friction_draft_path(friction_log_dir: Path, ticker: str) -> Path:
     today = datetime.now(timezone.utc).date().isoformat()
     base = friction_log_dir / f"{today}-{ticker}-friction-draft.md"
-    if not base.exists():
-        return base
+    candidate = base
     index = 2
-    while True:
-        candidate = friction_log_dir / f"{today}-{ticker}-friction-draft-{index}.md"
-        if not candidate.exists():
+    while candidate.exists():
+        if _is_pristine_friction_draft(candidate):
             return candidate
+        candidate = friction_log_dir / f"{today}-{ticker}-friction-draft-{index}.md"
         index += 1
+    return candidate
 
 
 def run_guided_workup(
@@ -1267,13 +1603,60 @@ def run_guided_workup(
     if args.market_cache_only:
         os.environ["ALPHA_POD_MARKET_CACHE_ONLY"] = "1"
         os.environ["ALPHA_POD_ALLOW_STALE_MARKET_CACHE"] = "1"
-    configured_llm_routing: dict[str, Any] | None = None
-    if args.use_openrouter_free:
-        configured_llm_routing = configure_openrouter_free(args.openrouter_model, args.openrouter_fallback_models)
+    # --model MODEL_ID implies OpenRouter routing, unless Codex was explicitly selected.
+    if args.model_shortcut and not args.use_codex:
+        args.use_openrouter_free = True
+        args.openrouter_model = args.model_shortcut
+
+    # Evidence budget
+    evidence_chars = _EVIDENCE_BUDGETS.get(args.evidence_budget, _EVIDENCE_BUDGETS["standard"])
+    os.environ["ALPHA_POD_EVIDENCE_CHARS"] = str(evidence_chars)
+
+    configured_llm_routing: dict[str, Any] = {}
+    if args.use_codex:
+        configured_llm_routing = {
+            "backend": "codex",
+            "model": args.codex_model,
+            "effort": args.codex_effort,
+        }
+        routing_source = "--use-codex"
+    elif args.use_openrouter_free:
+        configured_llm_routing = {
+            "backend": "openrouter",
+            "model": args.openrouter_model,
+            "fallback_models": args.openrouter_fallback_models,
+        }
+        routing_source = f"--model {args.model_shortcut}" if args.model_shortcut else "--use-openrouter-free"
+    else:
+        routing_source = ".env/config"
     llm_routing = build_llm_routing(
-        source="--use-openrouter-free" if args.use_openrouter_free else ".env/config",
+        source=routing_source,
         configured=configured_llm_routing,
     )
+
+    if args.use_codex:
+        os.environ["ALPHA_POD_AGENT_BACKEND"] = "codex"
+        os.environ["ALPHA_POD_CODEX_MODEL"] = str(llm_routing["model"])
+        os.environ["ALPHA_POD_CODEX_EFFORT"] = str(llm_routing.get("effort") or "low")
+        fallback_route = resolve_llm_route(
+            "judgment",
+            cli_provider="openrouter",
+            cli_model=args.openrouter_model,
+        )
+        fallback_routing = configure_openrouter_free(
+            fallback_route["model"],
+            args.openrouter_fallback_models,
+            set_backend=False,
+        )
+        fallback_models: list[str] = []
+        for candidate in [fallback_route["model"], *fallback_routing.get("fallback_models", [])]:
+            candidate_text = str(candidate).strip()
+            if candidate_text and candidate_text not in fallback_models:
+                fallback_models.append(candidate_text)
+        llm_routing["fallback"] = fallback_models[0] if fallback_models else "not configured"
+        llm_routing["fallbacks"] = fallback_models
+    elif args.use_openrouter_free:
+        configure_openrouter_free(llm_routing["model"], args.openrouter_fallback_models)
     io.write(format_llm_routing_line(llm_routing))
 
     result: dict[str, Any] = {
@@ -1331,30 +1714,29 @@ def run_guided_workup(
     seen_queue_ids = set(initial_queue_ids)
 
     with heuristic_agent_runs(args.agent_mode == "heuristic"):
-        for profile in args.profiles:
-            io.write("")
-            io.write(f"Running {profile} ({args.agent_mode})...")
-            try:
-                run_payload = _jsonable(deps.run_profile(ticker, profile, include_agent_artifact=True))  # type: ignore[misc]
-            except Exception as exc:
-                run_payload = {
-                    "ticker": ticker,
-                    "profile_name": profile,
-                    "status": "failed",
-                    "reason": "script_exception",
-                    "errors": [{"code": "script_exception", "message": str(exc)}],
-                    "observation_count": 0,
-                    "queue_item_count": 0,
-                    "queue_item_ids": [],
-                }
-                result["errors"].append({"step": f"profile:{profile}", "message": str(exc)})
+        profile_runs = _run_profiles_for_mode(args, deps=deps, io=io, ticker=ticker)
+        for profile, run_payload, run_error in profile_runs:
+            if run_error:
+                result["errors"].append({"step": f"profile:{profile}", "message": run_error})
             result["profile_runs"].append(run_payload)
             _print_profile_summary(io, run_payload)
 
             queue_ids = _int_set(run_payload.get("queue_item_ids"))
             current_items = _list_queue_items(deps, ticker)
             if not queue_ids:
-                queue_ids = {int(item["item_id"]) for item in current_items if int(item.get("item_id") or 0) not in seen_queue_ids}
+                if args.non_interactive:
+                    queue_ids = {
+                        int(item["item_id"])
+                        for item in current_items
+                        if str(item.get("profile_name") or "") == profile
+                        and int(item.get("item_id") or 0) not in seen_queue_ids
+                    }
+                else:
+                    queue_ids = {
+                        int(item["item_id"])
+                        for item in current_items
+                        if int(item.get("item_id") or 0) not in seen_queue_ids
+                    }
             new_items = _items_by_ids(current_items, queue_ids)
             seen_queue_ids.update(queue_ids)
             previews = _build_item_previews(ticker, new_items, deps=deps)
@@ -1438,6 +1820,14 @@ def run_guided_workup(
     return result
 
 
+# chars per filing snippet; env var ALPHA_POD_EVIDENCE_CHARS overrides
+_EVIDENCE_BUDGETS: dict[str, int] = {
+    "lean": 1_500,    # fast smoke runs, low token cost
+    "standard": 6_000,  # default for weekly sessions
+    "large": 15_000,  # high-conviction research, flagship models
+}
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a guided PM-driven full ticker workup.")
     parser.add_argument("--ticker", required=True)
@@ -1460,9 +1850,54 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--ciq-template", default=str(ROOT / "ciq" / "templates" / "ciq_cleandata.xlsx"))
     parser.add_argument("--ciq-input-json", default=str(ROOT / "ciq" / "templates" / "financials_input.json"))
     parser.add_argument("--ciq-folder", default=str(ROOT / "data" / "exports"))
+    parser.add_argument(
+        "--auto-refresh-ciq",
+        action="store_true",
+        help="Explicitly launch Excel to refresh and ingest CIQ before the workup; off by default.",
+    )
+
+    # --- Model routing ---
+    parser.add_argument(
+        "--use-codex",
+        action="store_true",
+        help="Use the local Codex CLI; configures OpenRouter free as the fallback even when both routing flags are passed.",
+    )
+    parser.add_argument(
+        "--codex-model",
+        default=None,
+        help="Codex CLI model; otherwise resolve from environment, config, then fallback.",
+    )
+    parser.add_argument(
+        "--codex-effort",
+        choices=["low", "medium", "high", "xhigh"],
+        default=None,
+        help="Codex reasoning effort; otherwise resolve from environment, config, then fallback.",
+    )
     parser.add_argument("--use-openrouter-free", action="store_true")
-    parser.add_argument("--openrouter-model", default=os.getenv("OPENROUTER_FREE_MODEL", "openrouter/free"))
+    parser.add_argument(
+        "--openrouter-model",
+        default=None,
+        help="OpenRouter model; otherwise resolve from environment, config, then fallback.",
+    )
     parser.add_argument("--openrouter-fallback-models", nargs="*", default=[])
+    parser.add_argument(
+        "--model",
+        dest="model_shortcut",
+        default=None,
+        metavar="MODEL_ID",
+        help="Route via OpenRouter with this model ID, e.g. deepseek/deepseek-v4-flash",
+    )
+
+    # --- Evidence budget ---
+    parser.add_argument(
+        "--context",
+        dest="evidence_budget",
+        choices=list(_EVIDENCE_BUDGETS),
+        default="standard",
+        metavar="BUDGET",
+        help=f"Evidence chars per filing snippet: lean={_EVIDENCE_BUDGETS['lean']:,}, standard={_EVIDENCE_BUDGETS['standard']:,} (default), large={_EVIDENCE_BUDGETS['large']:,}",
+    )
+
     parser.add_argument("--export-xlsx", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument(
         "--non-interactive",

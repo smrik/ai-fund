@@ -6,7 +6,6 @@ Returns a SentimentOutput with direction, score, and key themes.
 from __future__ import annotations
 
 import json
-import os
 from src.stage_03_judgment.base_agent import BaseAgent
 from src.stage_00_data import market_data as md_client
 from src.stage_02_valuation.templates.ic_memo import SentimentOutput
@@ -28,14 +27,11 @@ Key patterns to watch:
 - Rapid sentiment shift from bullish to cautious = potential turning point
 - Analyst upgrades/downgrades clustering = herd behavior, fades quickly
 - Macro blame for company-specific problems = red flag for management credibility"""
-DEFAULT_SENTIMENT_MODEL = "gemini-3-flash-preview"
 
 
 class SentimentAgent(BaseAgent):
     def __init__(self):
-        super().__init__(
-            model=os.getenv("SENTIMENT_AGENT_MODEL", DEFAULT_SENTIMENT_MODEL)
-        )
+        super().__init__()
         self.name = "SentimentAgent"
         self.system_prompt = SYSTEM_PROMPT
 

@@ -23,6 +23,7 @@ from src.stage_02_valuation.professional_dcf import (
     default_scenario_specs,
     run_dcf_professional,
 )
+from src.stage_02_valuation.claim_ledger import EV_BRIDGE_COMPONENTS
 from src.stage_02_valuation.valuation_types import ForecastDrivers
 from src.contracts.assumption_policy import QoEProposal, QoEProposalStatus
 
@@ -155,6 +156,7 @@ def extract_recommendations(
     current_drivers: ForecastDrivers | None,
     current_iv_base: float | None = None,
     filings_metrics: SecFilingMetrics | None = None,
+    source_lineage: dict[str, str] | None = None,
 ) -> TickerRecommendations:
     """Collect agent recommendations into a unified structure.
 
@@ -178,6 +180,7 @@ def extract_recommendations(
 
     recs: list[Recommendation] = []
     revenue_base = getattr(current_drivers, "revenue_base", None)
+    source_lineage = source_lineage or {}
 
     # ── QoE → ebit_margin_start ───────────────────────────────────────────────
     if qoe_result:
@@ -218,72 +221,9 @@ def extract_recommendations(
                     qoe_proposal=qoe_proposal.model_dump(mode="json"),
                 ))
 
-    # ── AccountingRecast → EV bridge items + optional EBIT ───────────────────
-    if accounting_recast_result:
-        candidates = accounting_recast_result.get("override_candidates") or {}
-        confidence = accounting_recast_result.get("confidence") or "low"
-        pm_notes = accounting_recast_result.get("pm_review_notes") or ""
-        reclasses = accounting_recast_result.get("balance_sheet_reclassifications") or []
-
-        ev_bridge_fields = [
-            "non_operating_assets",
-            "lease_liabilities",
-            "minority_interest",
-            "preferred_equity",
-            "pension_deficit",
-        ]
-        for fld in ev_bridge_fields:
-            proposed = candidates.get(fld)
-            if proposed is None:
-                continue
-            current = getattr(current_drivers, fld, None)
-            if current is not None and abs(float(proposed) - float(current)) <= 1_000_000:
-                continue  # immaterial delta
-            field_rationale = next(
-                (r.get("rationale") or "" for r in reclasses if r.get("proposed_driver_field") == fld),
-                pm_notes or f"Accounting recast: {fld} reclassification",
-            )
-            citation = next(
-                (r.get("citation_text") for r in reclasses if r.get("proposed_driver_field") == fld),
-                None,
-            )
-            key = f"accounting_recast:{fld}"
-            recs.append(Recommendation(
-                agent="accounting_recast",
-                field=fld,
-                current_value=float(current) if current is not None else None,
-                proposed_value=float(proposed),
-                confidence=confidence,
-                rationale=field_rationale,
-                citation=citation,
-                status=existing_statuses.get(key, "pending"),
-            ))
-
-        # EBIT normalisation from recast (may conflict with QoE — keep as alternative)
-        recast_ebit = candidates.get("normalized_ebit")
-        if recast_ebit is not None and revenue_base and revenue_base > 0:
-            proposed_margin = round(float(recast_ebit) / float(revenue_base), 6)
-            current_margin = getattr(current_drivers, "ebit_margin_start", None)
-            if current_margin is None or abs(proposed_margin - float(current_margin)) > 0.005:
-                adj_list = accounting_recast_result.get("income_statement_adjustments") or []
-                if adj_list:
-                    rationale = "Accounting recast EBIT: " + "; ".join(
-                        f"{a.get('item', '')} "
-                        f"({a.get('proposed_ebit_direction', '')}{abs(a.get('amount') or 0):.1f}M)"
-                        for a in adj_list[:3]
-                    )
-                else:
-                    rationale = pm_notes or "Accounting recast EBIT normalisation"
-                key = "accounting_recast:ebit_margin_start"
-                recs.append(Recommendation(
-                    agent="accounting_recast",
-                    field="ebit_margin_start",
-                    current_value=float(current_margin) if current_margin is not None else None,
-                    proposed_value=proposed_margin,
-                    confidence=confidence,
-                    rationale=rationale,
-                    status=existing_statuses.get(key, "pending"),
-                ))
+    # Accounting recasts do not travel through this legacy scalar-recommendation
+    # channel. Identity-only bridge treatments are translated by
+    # accounting_discovery_ledger into one reconciled, atomic PM queue pack.
 
     # ── Industry → growth + margin benchmarks ────────────────────────────────
     if industry_result:
@@ -476,8 +416,22 @@ def apply_approved_to_overrides(
         for r in recs.recommendations
         if r.status == "approved" and (not selected_field_set or r.field in selected_field_set)
     ]
+    blocked_fields = sorted(
+        {rec.field for rec in approved if rec.field in EV_BRIDGE_COMPONENTS}
+    )
+    approved = [
+        rec for rec in approved if rec.field not in EV_BRIDGE_COMPONENTS
+    ]
     if not approved:
-        return ApplyResult({"ticker": ticker, "applied_count": 0, "approved_fields": selected_fields, "actor": actor})
+        return ApplyResult(
+            {
+                "ticker": ticker,
+                "applied_count": 0,
+                "approved_fields": selected_fields,
+                "blocked_fields": blocked_fields,
+                "actor": actor,
+            }
+        )
 
     overrides: dict = {"global": {}, "sectors": {}, "tickers": {}}
     if OVERRIDES_PATH.exists():
@@ -520,6 +474,7 @@ def apply_approved_to_overrides(
         "ticker": ticker,
         "applied_count": count,
         "approved_fields": selected_fields,
+        "blocked_fields": blocked_fields,
         "actor": actor,
     })
 
@@ -580,6 +535,7 @@ def preview_with_approvals(
         r.field: r.proposed_value
         for r in recs.recommendations
         if r.field in approved_fields and isinstance(r.proposed_value, (int, float))
+        and r.field not in EV_BRIDGE_COMPONENTS
         and hasattr(inputs.drivers, r.field)
     }
 
