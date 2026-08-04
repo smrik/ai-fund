@@ -1,42 +1,47 @@
 # Session State
 
-**Updated:** 2026-08-04 20:56 +02:00
+**Updated:** 2026-08-04 22:04 +02:00
 **Agent:** Codex CLI
 **Project:** C:/Projects/03-Finance/ai-fund
 
 ## Current Task
 
-Complete the Step 1 unit contract for the MSFT valuation ride-along before starting the
-DB-only deterministic valuation step.
+Ride along the MSFT valuation from the completed Step 1 database through deterministic Step 2.
 
 ## Recent Actions
 
-- Added a finite canonical unit contract with fail-closed normalization and raw provenance.
-- Added `canonical_valuation_facts` and projected CIQ valuation/comps, CIQ/SEC statement facts,
-  market/historical caches, FRED macro series, and SEC metric snapshots during Step 1 writes.
-- Added idempotent legacy backfill and database validation.
-- Preserved the original MSFT ride-along DB and produced the validated copy
-  `output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z-canonical.db`.
-- Validated run 20 / 2026-06-30 across 23,346 persisted ticker/global facts with zero unit errors.
-- Committed each green slice locally; nothing was pushed.
+- Added and committed the DB-only `build_valuation_inputs_from_db(db_path, ticker)` seam.
+- Removed compute-layer `unit_scale` handling from the claim ledger, operating reconciliation,
+  accounting discovery, and CIQ EV-bridge repricing paths.
+- Verified 48 focused regressions across canonical input loading, claim/operating reconciliation,
+  CIQ adapters, and bridge behavior.
+- Preserved the validated DB and created the writable Step 2 copy
+  `output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z-step2.db`.
+- Ran MSFT through statement readiness (`decision_grade`) and operating reconciliation
+  (`reconciled`, no reasons), retaining revenue of 331,839,000,000 USD.
+- Ran the reconciled DCF: bear 111.45, base 172.88, bull 268.28, expected 179.67 per share.
+- Committed the regression (`4f26543`) and implementation (`626cf3b`) locally; nothing was pushed.
 
 ## Next Steps
 
-- Start Task U5: Step 2 accepts only `db_path + ticker`, resolves run/date internally, and reads
-  canonical values without downstream scale multiplication/division.
-- Re-run the MSFT deterministic valuation and verify distinct bear/base/bull results with
-  reconciled revenue still 331,839,000,000 USD.
+- Review the reconciled deterministic input pack with the PM before any LLM agent receives it.
+- Bind canonical CIQ comps medians into the DB-only entrypoint; the current DCF uses the Technology
+  default exit multiple of 16.0 and should remain labeled provisional.
+- Then begin the judgment-layer ride-along, showing the exact evidence and numeric fields passed
+  to each MSFT agent before invoking it.
 - Do not push unless the PM requests it.
 
 ## Known Issues
 
 - `.pytest_cache` cannot be written in this sandbox; focused tests pass with a warning.
+- The broad legacy valuation test batch can hang on network-capable paths; the affected offline
+  groups passed (48 tests total), and the DB-only run itself made no provider calls.
 - Existing user edits in `ciq/templates/financials_input.json` and
   `data/exports/MSFT_Standard.xlsx` remain untouched.
 - Existing generated/cache/untracked artifacts remain untouched.
 
 ## Notes
 
-- Canonical units are absolute USD, absolute shares, decimal rates/margins, USD/share prices,
-  and unscaled semantic multiples/days/months/index/count values.
-- Raw scale remains only in provenance columns and must not be consumed by Step 2.
+- The selected D&A start is the CIQ fact (34.3bn, 10.336% of revenue) rather than EDGAR's broader
+  `depreciation, amortization, and other` fact; the cross-source difference remains visible.
+- The current reconciled capex start is 115.948bn, or 34.941% of revenue.

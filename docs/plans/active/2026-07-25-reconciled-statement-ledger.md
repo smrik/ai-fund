@@ -770,6 +770,18 @@ passes after reproducing 23,346 persisted ticker/global facts from raw value/uni
 The only unitless numeric source rows were two `financial_accounting_standard` metadata flags; they
 are explicitly non-quantitative and do not enter the canonical fact table. Task U5 is next.
 
+**Task U5 checkpoint — 2026-08-04:** complete. The public Step 2 assembler now accepts only
+`db_path + ticker`, resolves CIQ run 20 and 2026-06-30 internally, and reads provider numerics from
+`canonical_valuation_facts`. Claim-ledger and operating-reconciliation values remain absolute USD;
+`unit_scale` has been removed from compute-layer payloads. On the writable Step 2 copy
+`output/ridealong_msft_20260804/_isolated_db/MSFT-20260804T173819Z-step2.db`, statement readiness is
+`decision_grade`, operating reconciliation is `reconciled` with no reason codes, and revenue remains
+331,839,000,000 USD. The reconciled DCF produces distinct per-share values: bear 111.45, base 172.88,
+bull 268.28, and probability-weighted 179.67. This run is still a provisional diagnostic: its exit
+multiple is the current Technology default because the DB-only comps median adapter is not yet bound
+into this new entrypoint, and forward targets remain mechanically authored until the judgment/PM
+approval stages run.
+
 ## Exit Criteria
 
 1. No reported balance can be credited to equity twice; the attempt fails closed with both
