@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import functools
+import json
 import math
+import sqlite3
 from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from typing import Any, Mapping
 
 import yaml
@@ -134,6 +137,236 @@ class ValuationInputsWithLineage:
     valuation_status: str = "provisional"
 
 
+@dataclass(frozen=True, slots=True)
+class _CanonicalDbSourceBundle:
+    """Frozen Step 1 values consumed by the deterministic Step 2 assembler."""
+
+    financial_as_of_date: str
+    ciq_run_id: int
+    ciq_source_file: str
+    market: dict[str, Any]
+    historical: dict[str, Any]
+    ciq: dict[str, Any]
+    risk_free_rate: float | None
+
+
+_CANONICAL_CIQ_OUTPUT_KEYS = {
+    "revenue": "revenue_ttm",
+    "operating_income": "operating_income_ttm",
+    "capex": "capex_ttm",
+    "da": "da_ttm",
+    "diluted_shares": "shares_outstanding",
+}
+
+_CANONICAL_REQUIRED_UNITS = {
+    "revenue": "USD",
+    "total_debt": "USD",
+    "cash": "USD",
+    "diluted_shares": "shares",
+    "current_price": "USD/share",
+    "market_cap": "USD",
+    "beta": "multiple",
+}
+
+
+def _read_latest_canonical_source(
+    conn: sqlite3.Connection,
+    *,
+    ticker: str,
+    source: str,
+    source_snapshot_id: str | None = None,
+) -> dict[str, tuple[float, str]]:
+    clauses = ["ticker = ?", "source = ?", "subject_key = ?"]
+    params: list[Any] = [ticker, source, ticker]
+    if source_snapshot_id is not None:
+        clauses.append("source_snapshot_id = ?")
+        params.append(source_snapshot_id)
+    rows = conn.execute(
+        f"""
+        SELECT metric_key, canonical_value, canonical_unit
+        FROM canonical_valuation_facts
+        WHERE {' AND '.join(clauses)}
+        ORDER BY as_of_date DESC, period_date DESC, recorded_at DESC
+        """,
+        params,
+    ).fetchall()
+    values: dict[str, tuple[float, str]] = {}
+    for row in rows:
+        metric = str(row["metric_key"])
+        if metric not in values:
+            values[metric] = (
+                float(row["canonical_value"]),
+                str(row["canonical_unit"]),
+            )
+    return values
+
+
+def _canonical_values_only(
+    values: Mapping[str, tuple[float, str]],
+) -> dict[str, float]:
+    return {metric: value for metric, (value, _unit) in values.items()}
+
+
+def _require_canonical_units(
+    *,
+    source_name: str,
+    values: Mapping[str, tuple[float, str]],
+    required: Mapping[str, str],
+) -> None:
+    failures: list[str] = []
+    for metric, expected_unit in required.items():
+        stored = values.get(metric)
+        if stored is None:
+            failures.append(f"{metric}=missing")
+        elif stored[1] != expected_unit:
+            failures.append(
+                f"{metric}={stored[1]} (expected {expected_unit})"
+            )
+    if failures:
+        raise ValueError(
+            f"canonical DB source {source_name!r} is incomplete: "
+            + ", ".join(failures)
+        )
+
+
+def _load_canonical_db_source_bundle(
+    conn: sqlite3.Connection,
+    ticker: str,
+) -> _CanonicalDbSourceBundle:
+    run = conn.execute(
+        """
+        SELECT id, as_of_date, source_file
+        FROM ciq_ingest_runs
+        WHERE ticker = ? AND status = 'completed' AND as_of_date IS NOT NULL
+        ORDER BY as_of_date DESC, id DESC
+        LIMIT 1
+        """,
+        [ticker],
+    ).fetchone()
+    if run is None:
+        raise ValueError(f"no completed CIQ run for {ticker}")
+
+    run_id = int(run["id"])
+    financial_as_of_date = str(run["as_of_date"])
+    source_file = str(run["source_file"])
+    ciq_values = _read_latest_canonical_source(
+        conn,
+        ticker=ticker,
+        source="ciq_valuation_snapshot",
+        source_snapshot_id=f"ciq:{run_id}",
+    )
+    market_values = _read_latest_canonical_source(
+        conn,
+        ticker=ticker,
+        source="market_data_cache:market_data",
+    )
+    historical_values = _read_latest_canonical_source(
+        conn,
+        ticker=ticker,
+        source="market_data_cache:historical_financials",
+    )
+    _require_canonical_units(
+        source_name=f"ciq:{run_id}",
+        values=ciq_values,
+        required={
+            key: unit
+            for key, unit in _CANONICAL_REQUIRED_UNITS.items()
+            if key in {"revenue", "total_debt", "cash", "diluted_shares"}
+        },
+    )
+    _require_canonical_units(
+        source_name="market_data_cache:market_data",
+        values=market_values,
+        required={
+            key: unit
+            for key, unit in _CANONICAL_REQUIRED_UNITS.items()
+            if key in {"current_price", "market_cap", "beta"}
+        },
+    )
+
+    metadata_row = conn.execute(
+        """
+        SELECT data_json
+        FROM market_data_cache
+        WHERE ticker = ? AND data_type = 'market_data'
+        LIMIT 1
+        """,
+        [ticker],
+    ).fetchone()
+    metadata: dict[str, Any] = {}
+    if metadata_row is not None:
+        try:
+            raw_metadata = json.loads(str(metadata_row["data_json"]))
+            if isinstance(raw_metadata, dict):
+                metadata = {
+                    key: raw_metadata.get(key)
+                    for key in ("ticker", "name", "sector", "industry")
+                }
+        except (TypeError, ValueError):
+            metadata = {}
+
+    market = {
+        **metadata,
+        **_canonical_values_only(market_values),
+    }
+    historical = _canonical_values_only(historical_values)
+    ciq = {
+        _CANONICAL_CIQ_OUTPUT_KEYS.get(metric, metric): value
+        for metric, (value, _unit) in ciq_values.items()
+    }
+    ciq.update(
+        {
+            "ticker": ticker,
+            "as_of_date": financial_as_of_date,
+            "run_id": run_id,
+            "source_file": source_file,
+            "currency": "USD",
+        }
+    )
+
+    target_comps = _read_latest_canonical_source(
+        conn,
+        ticker=ticker,
+        source="ciq_comps_snapshot",
+        source_snapshot_id=f"ciq:{run_id}",
+    )
+    for output_key, aliases in {
+        "revenue_fy1": ("total_revenue_cy_1", "revenue_cy_1", "revenue_fy1"),
+        "revenue_fy2": ("total_revenue_cy_2", "revenue_cy_2", "revenue_fy2"),
+    }.items():
+        for alias in aliases:
+            if alias in target_comps:
+                ciq[output_key] = target_comps[alias][0]
+                break
+
+    risk_free_row = conn.execute(
+        """
+        SELECT canonical_value, canonical_unit
+        FROM canonical_valuation_facts
+        WHERE ticker = '__GLOBAL__'
+          AND source = 'macro_series'
+          AND metric_key = 'dgs10'
+        ORDER BY period_date DESC, recorded_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    risk_free_rate: float | None = None
+    if risk_free_row is not None:
+        if str(risk_free_row["canonical_unit"]) != "decimal":
+            raise ValueError("canonical DGS10 must use decimal units")
+        risk_free_rate = float(risk_free_row["canonical_value"])
+
+    return _CanonicalDbSourceBundle(
+        financial_as_of_date=financial_as_of_date,
+        ciq_run_id=run_id,
+        ciq_source_file=source_file,
+        market=market,
+        historical=historical,
+        ciq=ciq,
+        risk_free_rate=risk_free_rate,
+    )
+
+
 class BridgeMutationPathError(ValueError):
     """A raw scalar attempted to bypass the reconciled claim-ledger queue."""
 
@@ -249,15 +482,6 @@ def apply_reconciled_operating_starts(
                 + driver_name
             )
 
-    unit_scale = float(
-        (getattr(valuation_inputs, "claim_ledger", {}) or {}).get(
-            "unit_scale"
-        )
-        or 0.0
-    )
-    if not math.isfinite(unit_scale) or unit_scale <= 0:
-        raise ValueError("operating.valuation_unit_scale_invalid")
-
     def _base_value(role: str) -> float:
         amount = selected_amounts[role]
         try:
@@ -280,7 +504,7 @@ def apply_reconciled_operating_starts(
         )
 
     reconciled_values = {
-        _RECONCILED_OPERATING_START_BY_ROLE["revenue"]: revenue / unit_scale,
+        _RECONCILED_OPERATING_START_BY_ROLE["revenue"]: revenue,
         _RECONCILED_OPERATING_START_BY_ROLE["accounts_receivable"]: (
             _base_value("accounts_receivable") / revenue * 365.0
         ),
@@ -359,18 +583,17 @@ def _reprice_ciq_comps_with_bridge(
     *,
     bridge: ReconciledEVBridge,
 ) -> dict[str, Any] | None:
-    """Replace every EV-based legacy preview with the reconciled bridge.
+    """Replace every EV-based preview with the canonical-USD bridge.
 
-    CIQ financial and share fields in this payload are already expressed in
-    USD millions. P/E is retained because it does not cross the EV-to-equity
-    bridge; the blended value is rebuilt from only the prices supported by the
-    current payload.
+    Financial and share fields in this payload use absolute USD and shares.
+    P/E is retained because it does not cross the EV-to-equity bridge; the
+    blended value is rebuilt from only prices supported by the current payload.
     """
 
     if comps is None:
         return None
     updated = dict(comps)
-    adjustment_mm = float(bridge.ev_to_equity_adjustment)
+    adjustment_usd = float(bridge.ev_to_equity_adjustment)
 
     def _positive(key: str) -> float | None:
         value = updated.get(key)
@@ -379,34 +602,34 @@ def _reprice_ciq_comps_with_bridge(
         numeric = float(value)
         return numeric if numeric > 0 else None
 
-    shares_mm = _positive("target_shares_out")
-    ebitda_mm = _positive("target_ebitda_ltm")
-    ebit_mm = _positive("target_ebit_ltm")
+    shares = _positive("target_shares_out")
+    ebitda = _positive("target_ebitda_ltm")
+    ebit = _positive("target_ebit_ltm")
     ebitda_multiple = _positive("peer_median_tev_ebitda_ltm")
     ebit_multiple = _positive("peer_median_tev_ebit_ltm")
 
     def _ev_price(
         multiple: float | None,
-        target_metric_mm: float | None,
+        target_metric_usd: float | None,
     ) -> float | None:
-        if multiple is None or target_metric_mm is None or shares_mm is None:
+        if multiple is None or target_metric_usd is None or shares is None:
             return None
         return round(
             (
-                multiple * target_metric_mm
-                - adjustment_mm
+                multiple * target_metric_usd
+                - adjustment_usd
             )
-            / shares_mm,
+            / shares,
             4,
         )
 
     updated["implied_price_ev_ebitda"] = _ev_price(
         ebitda_multiple,
-        ebitda_mm,
+        ebitda,
     )
     updated["implied_price_ev_ebit"] = _ev_price(
         ebit_multiple,
-        ebit_mm,
+        ebit,
     )
     prices = [
         value
@@ -422,7 +645,7 @@ def _reprice_ciq_comps_with_bridge(
         if prices
         else None
     )
-    updated["target_ev_to_equity_adjustment"] = adjustment_mm
+    updated["target_ev_to_equity_adjustment"] = adjustment_usd
     updated["bridge_basis"] = "reconciled_claim_ledger"
     return updated
 
@@ -889,18 +1112,14 @@ def _unclaimed_bridge_lines_from_snapshots(
 
 def _bridge_payload(
     bridge: ReconciledEVBridge,
-    *,
-    unit_scale: float,
 ) -> dict[str, Any]:
     components = {
-        component: float(getattr(bridge, component)) * unit_scale
+        component: float(getattr(bridge, component))
         for component in EV_BRIDGE_COMPONENTS
     }
     return {
         "components_usd": components,
-        "ev_to_equity_adjustment_usd": (
-            bridge.ev_to_equity_adjustment * unit_scale
-        ),
+        "ev_to_equity_adjustment_usd": bridge.ev_to_equity_adjustment,
     }
 
 
@@ -951,20 +1170,11 @@ def _bridge_cutover_and_readiness(
         ),
         "reason_codes": list(dict.fromkeys(reason_codes)),
         "claim_ledger_fingerprint": ledger.fingerprint,
-        "legacy": _bridge_payload(
-            legacy_bridge,
-            unit_scale=ledger.unit_scale,
-        ),
-        "reconciled": _bridge_payload(
-            reconciled_bridge,
-            unit_scale=ledger.unit_scale,
-        ),
+        "legacy": _bridge_payload(legacy_bridge),
+        "reconciled": _bridge_payload(reconciled_bridge),
         "equity_value_delta_usd": (
-            (
-                legacy_bridge.ev_to_equity_adjustment
-                - reconciled_bridge.ev_to_equity_adjustment
-            )
-            * ledger.unit_scale
+            legacy_bridge.ev_to_equity_adjustment
+            - reconciled_bridge.ev_to_equity_adjustment
         ),
     }
     readiness_payload = {
@@ -999,41 +1209,39 @@ def _build_ev_bridge_claim_ledger(
     currency: str = "USD",
     period_end: str | None = None,
 ) -> ClaimLedger:
-    """Build the exact-once bridge ledger in USD millions.
+    """Build the exact-once bridge ledger in canonical absolute USD.
 
     CIQ's total-debt fact is lease-inclusive, so its parent line is split between
     funded debt and leases. Public-market debt is treated as debt ex operating
     leases and the separately sourced lease line gets its own parent.
     """
 
-    scale = 1_000_000.0
     reported_lines: list[ReportedLine] = []
     allocations: list[ClaimAllocation] = []
 
-    total_debt_mm = float(total_debt) / scale
-    total_cash_mm = float(total_cash) / scale
-    lease_mm = float(lease_liabilities) / scale
+    total_debt_usd = float(total_debt)
+    total_cash_usd = float(total_cash)
+    lease_usd = float(lease_liabilities)
     operating_cash_usd, excess_cash_usd = _split_cash(
         component_values_usd["revenue_base"],
         total_cash,
     )
-    operating_cash_mm = operating_cash_usd / scale
-    excess_cash_mm = excess_cash_usd / scale
 
     reported_lines.append(
         ReportedLine(
             "total_debt",
-            total_debt_mm,
+            total_debt_usd,
             _source_ref("total_debt", total_debt_source),
             currency=currency,
             period_end=period_end,
             period_type="instant",
             semantic_type="liability",
-            unit_scale=scale,
         )
     )
-    debt_ex_leases_mm = (
-        total_debt_mm - lease_mm if debt_includes_leases else total_debt_mm
+    debt_ex_leases_usd = (
+        total_debt_usd - lease_usd
+        if debt_includes_leases
+        else total_debt_usd
     )
     allocations.append(
         ClaimAllocation(
@@ -1041,24 +1249,24 @@ def _build_ev_bridge_claim_ledger(
             allocation_id="total_debt:funded",
             component="net_debt",
             sign=1,
-            value=debt_ex_leases_mm,
+            value=debt_ex_leases_usd,
         )
     )
-    if debt_includes_leases and lease_mm:
+    if debt_includes_leases and lease_usd:
         allocations.append(
             ClaimAllocation(
                 parent_line_id="total_debt",
                 allocation_id="total_debt:leases",
                 component="lease_liabilities",
                 sign=1,
-                value=lease_mm,
+                value=lease_usd,
             )
         )
-    elif lease_mm:
+    elif lease_usd:
         reported_lines.append(
             ReportedLine(
                 "lease_liabilities",
-                lease_mm,
+                lease_usd,
                 _source_ref(
                     "lease_liabilities",
                     lease_liabilities_source,
@@ -1067,7 +1275,6 @@ def _build_ev_bridge_claim_ledger(
                 period_end=period_end,
                 period_type="instant",
                 semantic_type="lease_liability",
-                unit_scale=scale,
             )
         )
         allocations.append(
@@ -1076,20 +1283,19 @@ def _build_ev_bridge_claim_ledger(
                 allocation_id="lease_liabilities",
                 component="lease_liabilities",
                 sign=1,
-                value=lease_mm,
+                value=lease_usd,
             )
         )
 
     reported_lines.append(
         ReportedLine(
             "cash",
-            total_cash_mm,
+            total_cash_usd,
             _source_ref("cash", cash_source),
             currency=currency,
             period_end=period_end,
             period_type="instant",
             semantic_type="asset",
-            unit_scale=scale,
         )
     )
     allocations.extend(
@@ -1099,14 +1305,14 @@ def _build_ev_bridge_claim_ledger(
                 allocation_id="cash:operating",
                 component="net_debt",
                 sign=-1,
-                value=operating_cash_mm,
+                value=operating_cash_usd,
             ),
             ClaimAllocation(
                 parent_line_id="cash",
                 allocation_id="cash:excess",
                 component="non_operating_assets",
                 sign=1,
-                value=excess_cash_mm,
+                value=excess_cash_usd,
             ),
         ]
     )
@@ -1118,15 +1324,15 @@ def _build_ev_bridge_claim_ledger(
         "options_value",
         "convertibles_value",
     ):
-        reported_value_mm = (
-            float(reported_component_values_usd.get(component, 0.0)) / scale
+        reported_value_usd = float(
+            reported_component_values_usd.get(component, 0.0)
         )
-        if not reported_value_mm:
+        if not reported_value_usd:
             continue
         reported_lines.append(
             ReportedLine(
                 component,
-                reported_value_mm,
+                reported_value_usd,
                 _source_ref(component, component_sources.get(component, "unknown")),
                 currency=currency,
                 period_end=period_end,
@@ -1137,7 +1343,6 @@ def _build_ev_bridge_claim_ledger(
                     in {"pension_deficit", "convertibles_value"}
                     else "equity_claim"
                 ),
-                unit_scale=scale,
             )
         )
         allocations.append(
@@ -1146,22 +1351,22 @@ def _build_ev_bridge_claim_ledger(
                 allocation_id=component,
                 component=component,
                 sign=1,
-                value=reported_value_mm,
+                value=reported_value_usd,
             )
         )
 
-    unclaimed_total_mm = 0.0
+    unclaimed_total_usd = 0.0
     for raw_line in unclaimed_reported_lines_usd or []:
         line_id = str(raw_line.get("line_id") or "").strip()
         if not line_id:
             continue
-        value_mm = abs(float(raw_line.get("value") or 0.0)) / scale
-        if not value_mm:
+        value_usd = abs(float(raw_line.get("value") or 0.0))
+        if not value_usd:
             continue
         reported_lines.append(
             ReportedLine(
                 line_id=line_id,
-                value=value_mm,
+                value=value_usd,
                 source_ref=str(raw_line.get("source_ref") or line_id),
                 currency=str(raw_line.get("currency") or currency),
                 period_end=(
@@ -1175,7 +1380,6 @@ def _build_ev_bridge_claim_ledger(
                 semantic_type=str(
                     raw_line.get("semantic_type") or "unknown"
                 ),
-                unit_scale=scale,
             )
         )
         allocations.append(
@@ -1184,25 +1388,24 @@ def _build_ev_bridge_claim_ledger(
                 allocation_id=line_id,
                 component="unclaimed",
                 sign=1,
-                value=value_mm,
+                value=value_usd,
             )
         )
-        unclaimed_total_mm += value_mm
+        unclaimed_total_usd += value_usd
 
     resolved_component_values = {
-        component: float(value) / scale
+        component: float(value)
         for component, value in component_values_usd.items()
         if component != "revenue_base"
     }
-    if unclaimed_total_mm or unclaimed_reported_lines_usd:
-        resolved_component_values["unclaimed"] = unclaimed_total_mm
+    if unclaimed_total_usd or unclaimed_reported_lines_usd:
+        resolved_component_values["unclaimed"] = unclaimed_total_usd
 
     ledger = ClaimLedger(
         reported_lines=reported_lines,
         allocations=allocations,
         component_values=resolved_component_values,
-        unit="USD millions",
-        unit_scale=scale,
+        unit="USD",
         currency=currency,
         period_end=period_end,
         period_type="instant",
@@ -1218,15 +1421,25 @@ def build_valuation_inputs(
     readiness: ValuationReadinessEvidence | None = None,
     apply_story_overlay: bool = False,
     allow_public_comps_fallback: bool = False,
+    _canonical_db_bundle: _CanonicalDbSourceBundle | None = None,
 ) -> ValuationInputsWithLineage | None:
     ticker = ticker.upper().strip()
     clamp_events: list[ClampEvent] = []
-    mkt = _get_market_data_cached(ticker)
-    hist = _get_historical_financials_cached(ticker)
-    ciq = get_ciq_snapshot(ticker, as_of_date=as_of_date)
-    ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
-    ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)
-    edgar_bridge = get_bridge_items_from_xbrl(ticker)
+    if _canonical_db_bundle is None:
+        mkt = _get_market_data_cached(ticker)
+        hist = _get_historical_financials_cached(ticker)
+        ciq = get_ciq_snapshot(ticker, as_of_date=as_of_date)
+        ciq_comps = get_ciq_comps_valuation(ticker, as_of_date=as_of_date)
+        ciq_comps_detail = get_ciq_comps_detail(ticker, as_of_date=as_of_date)
+        edgar_bridge = get_bridge_items_from_xbrl(ticker)
+    else:
+        mkt = dict(_canonical_db_bundle.market)
+        hist = dict(_canonical_db_bundle.historical)
+        ciq = dict(_canonical_db_bundle.ciq)
+        ciq_comps = None
+        ciq_comps_detail = None
+        edgar_bridge = {}
+        as_of_date = _canonical_db_bundle.financial_as_of_date
 
     price = float(mkt.get("current_price") or 0)
     sector = mkt.get("sector", "") or ""
@@ -1241,27 +1454,33 @@ def build_valuation_inputs(
         ciq_comps_detail = _build_public_market_fallback_comps_detail(ticker, sector, mkt)
         public_comps_fallback_used = bool(ciq_comps_detail)
 
-    # FRED live Rf override (best-effort — falls back to config if unavailable)
-    _fred_rf: float | None = None
-    try:
-        from src.stage_00_data.fred_client import get_macro_snapshot
-        _snap = get_macro_snapshot(lookback_days=5)
-        if _snap.get("available"):
-            _dgs10_series = _snap.get("series", {}).get("DGS10", {})
-            _fred_rf = _dgs10_series.get("latest_value")
-            if _fred_rf is not None:
-                _fred_rf = _fred_rf / 100.0  # FRED returns as percent
-    except Exception:
-        pass
+    if _canonical_db_bundle is None:
+        # Legacy path: use the live FRED helper and the configured default DB.
+        _fred_rf: float | None = None
+        try:
+            from src.stage_00_data.fred_client import get_macro_snapshot
 
-    try:
-        from db.loader import get_valuation_policy_rf_erp, get_valuation_policy_sector_defaults
+            _snap = get_macro_snapshot(lookback_days=5)
+            if _snap.get("available"):
+                _dgs10_series = _snap.get("series", {}).get("DGS10", {})
+                _fred_rf = _dgs10_series.get("latest_value")
+                if _fred_rf is not None:
+                    _fred_rf = _fred_rf / 100.0
+        except Exception:
+            pass
 
-        policy_rf, policy_erp = get_valuation_policy_rf_erp()
-        saved_sector = get_valuation_policy_sector_defaults(sector)
-        if saved_sector:
-            defaults = {**defaults, **saved_sector}
-    except Exception:
+        try:
+            from db.loader import get_valuation_policy_rf_erp, get_valuation_policy_sector_defaults
+
+            policy_rf, policy_erp = get_valuation_policy_rf_erp()
+            saved_sector = get_valuation_policy_sector_defaults(sector)
+            if saved_sector:
+                defaults = {**defaults, **saved_sector}
+        except Exception:
+            policy_rf = 0.045
+            policy_erp = 0.05
+    else:
+        _fred_rf = _canonical_db_bundle.risk_free_rate
         policy_rf = 0.045
         policy_erp = 0.05
 
@@ -1333,14 +1552,16 @@ def build_valuation_inputs(
     )
 
     # Revision momentum bias (bounded ±2%)
-    try:
-        from src.stage_02_valuation.revision_signals import get_revision_growth_bias
-        _rev_bias, _rev_source = get_revision_growth_bias(ticker)
-        if abs(_rev_bias) > 0.001:
-            growth_near = max(0.0, min(0.40, growth_near + _rev_bias))
-            growth_source_detail = growth_source_detail + f"|{_rev_source}"
-    except Exception:
-        pass
+    if _canonical_db_bundle is None:
+        try:
+            from src.stage_02_valuation.revision_signals import get_revision_growth_bias
+
+            _rev_bias, _rev_source = get_revision_growth_bias(ticker)
+            if abs(_rev_bias) > 0.001:
+                growth_near = max(0.0, min(0.40, growth_near + _rev_bias))
+                growth_source_detail = growth_source_detail + f"|{_rev_source}"
+        except Exception:
+            pass
 
     fade = defaults.get("growth_fade_ratio", 0.65)
     growth_mid = _bounded(
@@ -2208,18 +2429,13 @@ def build_valuation_inputs(
     )
     reconciled_bridge = ReconciledEVBridge.from_ledger(claim_ledger)
     legacy_bridge = ReconciledEVBridge(
-        net_debt=(
-            float(total_debt_raw) - float(cash_raw)
-        )
-        / claim_ledger.unit_scale,
+        net_debt=float(total_debt_raw) - float(cash_raw),
         lease_liabilities=(
             0.0
             if debt_includes_leases
-            else float(lease_liabilities_raw) / claim_ledger.unit_scale
+            else float(lease_liabilities_raw)
         ),
-        non_operating_assets=(
-            ledger_excess_cash / claim_ledger.unit_scale
-        ),
+        non_operating_assets=ledger_excess_cash,
         minority_interest=reconciled_bridge.minority_interest,
         preferred_equity=reconciled_bridge.preferred_equity,
         pension_deficit=reconciled_bridge.pension_deficit,
@@ -2240,7 +2456,7 @@ def build_valuation_inputs(
         setattr(
             drivers,
             component,
-            float(getattr(reconciled_bridge, component)) * claim_ledger.unit_scale,
+            float(getattr(reconciled_bridge, component)),
         )
     ciq_comps = _reprice_ciq_comps_with_bridge(
         ciq_comps,
@@ -2293,7 +2509,7 @@ def build_valuation_inputs(
             "comps_iv_pe": (ciq_comps or {}).get("implied_price_pe") if ciq_comps else None,
             "comps_iv_base": (ciq_comps or {}).get("implied_price_base") if ciq_comps else None,
             "comps_bridge_basis": (ciq_comps or {}).get("bridge_basis") if ciq_comps else None,
-            "comps_ev_to_equity_adjustment_mm": (ciq_comps or {}).get("target_ev_to_equity_adjustment") if ciq_comps else None,
+            "comps_ev_to_equity_adjustment_usd": (ciq_comps or {}).get("target_ev_to_equity_adjustment") if ciq_comps else None,
             "public_comps_fallback_used": public_comps_fallback_used,
             "public_comps_fallback_source_file": ((ciq_comps_detail or {}).get("source_lineage") or {}).get("source_file") if public_comps_fallback_used else None,
             "public_comps_fallback_peer_count": len((ciq_comps_detail or {}).get("peers") or []) if public_comps_fallback_used else None,
@@ -2337,3 +2553,51 @@ def build_valuation_inputs(
         valuation_readiness=valuation_readiness,
         valuation_status=valuation_status,
     )
+
+
+def build_valuation_inputs_from_db(
+    db_path: str | Path,
+    ticker: str,
+) -> ValuationInputsWithLineage | None:
+    """Build Step 2 inputs from one validated Step 1 database.
+
+    The public data contract is deliberately limited to ``db_path + ticker``.
+    The latest completed CIQ run and financial date are resolved inside this
+    boundary, and every numeric provider value is read from
+    ``canonical_valuation_facts``.
+    """
+
+    normalized_ticker = str(ticker).strip().upper()
+    if not normalized_ticker:
+        raise ValueError("ticker is required")
+    resolved_path = Path(db_path).expanduser().resolve()
+    if not resolved_path.is_file():
+        raise FileNotFoundError(resolved_path)
+
+    conn = sqlite3.connect(f"{resolved_path.as_uri()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    try:
+        bundle = _load_canonical_db_source_bundle(conn, normalized_ticker)
+    finally:
+        conn.close()
+
+    result = build_valuation_inputs(
+        normalized_ticker,
+        as_of_date=bundle.financial_as_of_date,
+        apply_overrides=False,
+        apply_story_overlay=False,
+        allow_public_comps_fallback=False,
+        _canonical_db_bundle=bundle,
+    )
+    if result is None:
+        return None
+
+    result.source_lineage = {
+        key: (
+            value
+            if str(value).startswith("canonical_db:")
+            else f"canonical_db:{value}"
+        )
+        for key, value in result.source_lineage.items()
+    }
+    return result

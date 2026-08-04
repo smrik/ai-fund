@@ -111,14 +111,16 @@ def test_duplicate_allocation_reports_both_claimants_and_blocks_bridge() -> None
 
 @pytest.mark.parametrize(
     ("allocated_value", "expected_reconciled"),
-    [(10_005.0, True), (10_005.01, False)],
+    [(10_005_000_000.0, True), (10_005_010_000.0, False)],
 )
 def test_parent_tie_uses_dual_absolute_or_relative_tolerance(
     allocated_value: float,
     expected_reconciled: bool,
 ) -> None:
     ledger = ClaimLedger(
-        reported_lines=[ReportedLine("debt", 10_000.0, "xbrl:debt")],
+        reported_lines=[
+            ReportedLine("debt", 10_000_000_000.0, "xbrl:debt")
+        ],
         allocations=[
             ClaimAllocation(
                 parent_line_id="debt",
@@ -214,17 +216,19 @@ def test_reclassification_rejects_parent_split_across_named_claimants() -> None:
 
 def test_component_tie_failure_names_component_and_values() -> None:
     ledger = ClaimLedger(
-        reported_lines=[ReportedLine("debt", 80.0, "xbrl:debt")],
+        reported_lines=[
+            ReportedLine("debt", 80_000_000.0, "xbrl:debt")
+        ],
         allocations=[
             ClaimAllocation(
                 parent_line_id="debt",
                 allocation_id="debt",
                 component="net_debt",
                 sign=1,
-                value=80.0,
+                value=80_000_000.0,
             )
         ],
-        component_values={"net_debt": 100.0},
+        component_values={"net_debt": 100_000_000.0},
     )
 
     with pytest.raises(ValueError) as exc_info:
@@ -232,8 +236,8 @@ def test_component_tie_failure_names_component_and_values() -> None:
 
     message = str(exc_info.value)
     assert "component 'net_debt' does not tie" in message
-    assert "expected=100.0" in message
-    assert "derived=80.0" in message
+    assert "expected=100000000.0" in message
+    assert "derived=80000000.0" in message
 
 
 def test_duplicate_reported_line_ids_fail_before_tie_out() -> None:
@@ -376,7 +380,7 @@ def test_material_unclaimed_line_is_reconciled_but_not_decision_grade() -> None:
         reported_lines=[
             ReportedLine(
                 "investment",
-                50.0,
+                50_000_000.0,
                 "xbrl:MarketableSecurities",
                 semantic_type="asset",
             )
@@ -387,10 +391,10 @@ def test_material_unclaimed_line_is_reconciled_but_not_decision_grade() -> None:
                 "investment",
                 "unclaimed",
                 1,
-                50.0,
+                50_000_000.0,
             )
         ],
-        component_values={"unclaimed": 50.0},
+        component_values={"unclaimed": 50_000_000.0},
     )
 
     result = ledger.reconcile()

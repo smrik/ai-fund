@@ -427,17 +427,12 @@ def _claim_reclassification_finding(
         finding["reported_value"] = None
         return finding
 
-    target_value = (
-        float(reclassified.derived_component_values[to_component])
-        * reclassified.ledger.unit_scale
-    )
-    finding["reported_value"] = (
-        float(reclassified.reported_value) * reclassified.ledger.unit_scale
-    )
+    target_value = float(reclassified.derived_component_values[to_component])
+    finding["reported_value"] = float(reclassified.reported_value)
     finding["proposed_value"] = target_value
     finding["metadata"]["reconciled_ledger"] = reclassified.ledger.to_dict()
     finding["metadata"]["derived_component_values"] = {
-        component: float(value) * reclassified.ledger.unit_scale
+        component: float(value)
         for component, value in reclassified.derived_component_values.items()
     }
     return finding
@@ -768,9 +763,8 @@ def _coalesce_reclassification_queue_items(
         AssumptionChangeProposal(
             assumption_name=component,
             proposal_mode=ProposalMode.target,
-            proposed_target_value=(
-                float(final.component_values.get(component, 0.0))
-                * final.unit_scale
+            proposed_target_value=float(
+                final.component_values.get(component, 0.0)
             ),
             unit=get_assumption_definition(component).unit,
             evidence_anchor_ids=anchors,
@@ -896,15 +890,14 @@ def build_discovery_accounting_ledger(
             if metadata.get("derived_from_claim_ledger") is not True:
                 continue
             target = _text(metadata.get("to_component"))
-            finding["proposed_value"] = (
-                float(final_components.get(target, 0.0))
-                * final_claim_ledger.unit_scale
+            finding["proposed_value"] = float(
+                final_components.get(target, 0.0)
             )
             finding["metadata"]["reconciled_ledger"] = (
                 final_claim_ledger.to_dict()
             )
             finding["metadata"]["derived_component_values"] = {
-                component: float(value) * final_claim_ledger.unit_scale
+                component: float(value)
                 for component, value in final_components.items()
             }
 

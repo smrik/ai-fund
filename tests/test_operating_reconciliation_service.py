@@ -43,7 +43,7 @@ def _inputs() -> SimpleNamespace:
     return SimpleNamespace(
         ticker="TEST",
         drivers=_drivers(),
-        claim_ledger={"unit_scale": 1_000_000.0},
+        claim_ledger={"unit": "USD"},
         clamp_events=(),
     )
 
@@ -270,7 +270,7 @@ def test_reconciled_statement_facts_replace_unreconciled_observed_starts() -> No
     )
 
     assert artifact.status == "reconciled"
-    assert inputs.drivers.revenue_base == pytest.approx(1_000.0)
+    assert inputs.drivers.revenue_base == pytest.approx(1_000_000_000.0)
     assert inputs.drivers.dso_start == pytest.approx(73.0)
     assert inputs.drivers.dio_start == pytest.approx(73.0)
     assert inputs.drivers.dpo_start == pytest.approx(182.5)

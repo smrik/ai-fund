@@ -453,10 +453,21 @@ def _fetch_ciq_comps_rows(ticker: str, as_of_date: str | None = None) -> list[di
             return []
         as_of_date = resolved["as_of_date"]
 
+        columns = {
+            str(row["name"])
+            for row in conn.execute(
+                "PRAGMA table_info(ciq_comps_snapshot)"
+            ).fetchall()
+        }
+        scale_projection = (
+            "scale_factor"
+            if "scale_factor" in columns
+            else "1.0 AS scale_factor"
+        )
         rows = conn.execute(
-            """
+            f"""
             SELECT target_ticker, peer_ticker, as_of_date, run_id, source_file,
-                   metric_key, value_num, is_target
+                   metric_key, value_num, {scale_projection}, is_target
             FROM ciq_comps_snapshot
             WHERE target_ticker = ? AND as_of_date = ?
             ORDER BY run_id DESC
@@ -542,7 +553,8 @@ def get_ciq_comps_valuation(ticker: str, as_of_date: str | None = None) -> dict[
         metric_key = row.get("metric_key")
         value_num = _to_float(row.get("value_num"))
         if metric_key and value_num is not None:
-            bucket["metrics"][str(metric_key)] = value_num
+            scale_factor = _to_float(row.get("scale_factor")) or 1.0
+            bucket["metrics"][str(metric_key)] = value_num * scale_factor
         if int(row.get("is_target") or 0) == 1:
             bucket["is_target"] = 1
 

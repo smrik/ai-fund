@@ -1352,22 +1352,22 @@ def test_ciq_comps_prices_use_same_full_reconciled_bridge_as_dcf(monkeypatch):
         hist={},
         ciq_comps={
             "peer_median_tev_ebitda_ltm": 10.0,
-            "target_ebitda_ltm": 1_000.0,
-            "target_shares_out": 100.0,
-            "target_net_debt": 1_000.0,
+            "target_ebitda_ltm": 1_000_000_000.0,
+            "target_shares_out": 100_000_000.0,
+            "target_net_debt": 1_000_000_000.0,
             "implied_price_ev_ebitda": 90.0,
             "implied_price_base": 90.0,
         },
     )
 
-    # 10x $1,000mm less debt/cash plus the $300mm minority claim.
+    # 10x $1bn less debt/cash plus the $300m minority claim.
     assert out.ciq_lineage["comps_iv_ev_ebitda"] == pytest.approx(87.0)
     assert out.ciq_lineage["comps_iv_base"] == pytest.approx(87.0)
     assert out.ciq_lineage["comps_bridge_basis"] == (
         "reconciled_claim_ledger"
     )
-    assert out.ciq_lineage["comps_ev_to_equity_adjustment_mm"] == (
-        pytest.approx(1_300.0)
+    assert out.ciq_lineage["comps_ev_to_equity_adjustment_usd"] == (
+        pytest.approx(1_300_000_000.0)
     )
 
 

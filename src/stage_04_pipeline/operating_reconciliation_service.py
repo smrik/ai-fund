@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from src.contracts.judgment_runs import canonical_semantic_hash
@@ -450,20 +450,6 @@ def reconcile_operating_statement_facts(
             selected=selected_fact_ids,
         )
 
-    unit_scale = float(
-        valuation_inputs.claim_ledger.get("unit_scale") or 0.0
-    )
-    if unit_scale <= 0:
-        return _empty_artifact(
-            valuation_inputs=valuation_inputs,
-            reasons=("operating.valuation_unit_scale_invalid",),
-            failed=True,
-            period_start=window[0],
-            period_end=window[1],
-            period_kind=window[2],
-            inventory_applicable=inventory_applicable,
-            selected=selected_fact_ids,
-        )
     reported = {
         role: amount
         for role, amount in selected.items()
@@ -496,14 +482,8 @@ def reconcile_operating_statement_facts(
             inventory_applicable=inventory_applicable,
             selected=selected_fact_ids,
         )
-    scaled_drivers = replace(
-        valuation_inputs.drivers,
-        revenue_base=(
-            float(valuation_inputs.drivers.revenue_base) * unit_scale
-        ),
-    )
     result = reconcile_operating_model(
-        drivers=scaled_drivers,
+        drivers=valuation_inputs.drivers,
         reported=reported,
         inventory_applicable=bool(inventory_applicable),
         clamp_events=valuation_inputs.clamp_events,

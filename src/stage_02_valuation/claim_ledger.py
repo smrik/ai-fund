@@ -10,7 +10,7 @@ from math import isclose
 from typing import Any, Iterable, Mapping
 
 
-ABSOLUTE_TOLERANCE_MM = 1.0
+ABSOLUTE_TOLERANCE_USD = 1_000_000.0
 RELATIVE_TOLERANCE = 0.0005
 EV_BRIDGE_COMPONENTS = frozenset(
     {
@@ -35,7 +35,6 @@ class ReportedLine:
     period_end: str | None = None
     period_type: str | None = None
     semantic_type: str = "unknown"
-    unit_scale: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,7 +68,6 @@ class ReconciliationResult:
     currency_mismatches: tuple[str, ...] = ()
     period_mismatches: tuple[str, ...] = ()
     period_type_mismatches: tuple[str, ...] = ()
-    scale_mismatches: tuple[str, ...] = ()
     semantic_errors: tuple[str, ...] = ()
     untied_parents: tuple[TieOut, ...] = ()
     untied_components: tuple[TieOut, ...] = ()
@@ -85,7 +83,6 @@ class ReconciliationResult:
             or self.currency_mismatches
             or self.period_mismatches
             or self.period_type_mismatches
-            or self.scale_mismatches
             or self.semantic_errors
             or self.untied_parents
             or self.untied_components
@@ -153,7 +150,7 @@ class ReclassificationBatchResult:
 
 def reconciliation_tolerance(expected: float, actual_gross: float) -> float:
     return max(
-        ABSOLUTE_TOLERANCE_MM,
+        ABSOLUTE_TOLERANCE_USD,
         RELATIVE_TOLERANCE * max(abs(expected), abs(actual_gross)),
     )
 
@@ -243,7 +240,6 @@ def _reconciliation_to_dict(result: ReconciliationResult) -> dict[str, Any]:
         "currency_mismatches": list(result.currency_mismatches),
         "period_mismatches": list(result.period_mismatches),
         "period_type_mismatches": list(result.period_type_mismatches),
-        "scale_mismatches": list(result.scale_mismatches),
         "semantic_errors": list(result.semantic_errors),
         "untied_parents": [asdict(item) for item in result.untied_parents],
         "untied_components": [
@@ -265,8 +261,7 @@ class ClaimLedger:
         reported_lines: Iterable[ReportedLine],
         allocations: Iterable[ClaimAllocation],
         component_values: Mapping[str, float],
-        unit: str = "USD millions",
-        unit_scale: float = 1_000_000.0,
+        unit: str = "USD",
         currency: str = "USD",
         period_end: str | None = None,
         period_type: str = "instant",
@@ -278,7 +273,6 @@ class ClaimLedger:
             for component, value in component_values.items()
         }
         self.unit = str(unit)
-        self.unit_scale = float(unit_scale)
         self.currency = str(currency).strip().upper()
         self.period_end = (
             str(period_end).strip() if period_end is not None else None
@@ -354,19 +348,6 @@ class ClaimLedger:
                 for line in self.reported_lines
                 if line.period_type is not None
                 and str(line.period_type).strip().lower() != self.period_type
-            )
-        )
-        scale_mismatches = tuple(
-            sorted(
-                line.line_id
-                for line in self.reported_lines
-                if line.unit_scale is not None
-                and not isclose(
-                    float(line.unit_scale),
-                    self.unit_scale,
-                    rel_tol=0.0,
-                    abs_tol=0.0,
-                )
             )
         )
         semantic_errors: list[str] = []
@@ -461,7 +442,6 @@ class ClaimLedger:
             currency_mismatches=currency_mismatches,
             period_mismatches=period_mismatches,
             period_type_mismatches=period_type_mismatches,
-            scale_mismatches=scale_mismatches,
             semantic_errors=tuple(sorted(semantic_errors)),
             untied_parents=tuple(untied_parents),
             untied_components=tuple(untied_components),
@@ -503,11 +483,6 @@ class ClaimLedger:
                 f"period semantics mismatch against {self.period_type}: "
                 + ", ".join(result.period_type_mismatches)
             )
-        if result.scale_mismatches:
-            failures.append(
-                f"unit-scale mismatch against {self.unit_scale}: "
-                + ", ".join(result.scale_mismatches)
-            )
         failures.extend(result.semantic_errors)
         for tie in result.untied_parents:
             failures.append(
@@ -547,7 +522,6 @@ class ClaimLedger:
         result = self.reconcile()
         return {
             "unit": self.unit,
-            "unit_scale": self.unit_scale,
             "currency": self.currency,
             "period_end": self.period_end,
             "period_type": self.period_type,
@@ -565,6 +539,11 @@ class ClaimLedger:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "ClaimLedger":
+        unit = str(payload.get("unit") or "USD")
+        if unit != "USD":
+            raise ValueError(
+                "claim ledger is not in canonical USD; rebuild it from Step 1"
+            )
         return cls(
             reported_lines=[
                 ReportedLine(**dict(item))
@@ -575,8 +554,7 @@ class ClaimLedger:
                 for item in payload.get("allocations") or []
             ],
             component_values=payload.get("component_values") or {},
-            unit=str(payload.get("unit") or "USD millions"),
-            unit_scale=float(payload.get("unit_scale") or 1_000_000.0),
+            unit=unit,
             currency=str(payload.get("currency") or "USD"),
             period_end=(
                 str(payload["period_end"])
@@ -593,7 +571,6 @@ class ClaimLedger:
             "allocations": [asdict(item) for item in self.allocations],
             "component_values": dict(sorted(self.component_values.items())),
             "unit": self.unit,
-            "unit_scale": self.unit_scale,
             "currency": self.currency,
             "period_end": self.period_end,
             "period_type": self.period_type,
@@ -718,7 +695,6 @@ class ClaimLedger:
             allocations=updated_allocations,
             component_values=component_values,
             unit=self.unit,
-            unit_scale=self.unit_scale,
             currency=self.currency,
             period_end=self.period_end,
             period_type=self.period_type,
