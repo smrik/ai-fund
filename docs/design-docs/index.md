@@ -37,6 +37,7 @@ Use design docs for architecture, boundaries, data flow, and implementation-faci
 | [`deterministic-valuation-workflow.md`](./deterministic-valuation-workflow.md) | Current valuation system behavior |
 | [`deterministic-valuation-benchmark-and-gap-analysis.md`](./deterministic-valuation-benchmark-and-gap-analysis.md) | Best-practice valuation benchmark, gap register, and issue map |
 | [`valuation-methodology-critical-review-and-action-plan.md`](./valuation-methodology-critical-review-and-action-plan.md) | Consolidated critique and issue-ready action plan for valuation methodology |
+| [`context-and-adjustment-analyst-call-architecture-spec.md`](./context-and-adjustment-analyst-call-architecture-spec.md) | Broad context analysts plus losslessly compiled, micro-family adjustment calls |
 
 ## Specialized Design Docs
 
