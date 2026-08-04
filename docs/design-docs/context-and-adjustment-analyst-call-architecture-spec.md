@@ -224,4 +224,3 @@ Role-specific projections and output contracts differ.
   but the underlying source anchors remain available for inspection.
 - The current glossary language that gives fixed Translator Rules numeric authority is superseded by
   Vision Decision 13 and this spec. The legacy translator is compatibility-only.
-
