@@ -150,6 +150,10 @@ _SEC_SCALAR_SPECS: dict[str, _Spec] = {
     "net_debt_to_ebitda": (CanonicalUnit.MULTIPLE, "multiple", 1.0),
 }
 
+_NON_QUANTITATIVE_STATEMENT_CONCEPTS = {
+    "financial_accounting_standard",
+}
+
 
 def canonicalize_sec_filing_metrics_snapshot(
     row: dict[str, Any],
@@ -264,6 +268,8 @@ def canonicalize_statement_facts(
         ticker = str(record.get("ticker") or "").strip().upper()
         source = str(record.get("source") or "").strip()
         concept = str(record.get("concept") or "").strip()
+        if concept.casefold() in _NON_QUANTITATIVE_STATEMENT_CONCEPTS:
+            continue
         period_date = str(
             record.get("period_end") or record.get("period_label") or ""
         ).strip()[:10]

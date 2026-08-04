@@ -354,3 +354,25 @@ def test_numeric_statement_fact_without_unit_fails_closed() -> None:
                 }
             ]
         )
+
+
+def test_non_quantitative_statement_metadata_is_not_a_canonical_fact() -> None:
+    facts = canonicalize_statement_facts(
+        [
+            {
+                "fact_id": "accounting-standard",
+                "ingestion_fingerprint": "accounting-standard-fingerprint",
+                "ticker": "MSFT",
+                "source": "ciq_workbook_v1",
+                "source_run_id": "20",
+                "concept": "financial_accounting_standard",
+                "numeric_value": 0.0,
+                "unit": None,
+                "scale_factor": 1.0,
+                "period_end": "2026-06-30",
+                "ingested_at": "2026-08-04T17:38:19+00:00",
+            }
+        ]
+    )
+
+    assert facts == []
