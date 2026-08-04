@@ -13,6 +13,8 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from src.stage_00_data.ciq_unit_mapping import ciq_comps_unit_spec
+
 
 # v4: clean CIQ exports now carry statement, unit, currency, scale, and exact
 # period semantics instead of being emitted as unclassified scalar rows.
@@ -746,6 +748,11 @@ def _parse_comps_sheet(
                 continue
 
             value_num = _to_num(raw_value)
+            unit_spec = (
+                ciq_comps_unit_spec(metric_key)
+                if value_num is not None
+                else None
+            )
 
             records.append(
                 {
@@ -760,8 +767,10 @@ def _parse_comps_sheet(
                     "column_index": c,
                     "value_raw": str(raw_value),
                     "value_num": value_num,
-                    "unit": None,
-                    "scale_factor": 1.0,
+                    "unit": unit_spec.raw_unit if unit_spec is not None else None,
+                    "scale_factor": (
+                        unit_spec.raw_scale if unit_spec is not None else 1.0
+                    ),
                     "source_file": source_file,
                 }
             )
@@ -778,7 +787,8 @@ def _parse_comps_sheet(
                         "metric_label": metric_label,
                         "value_raw": str(raw_value),
                         "value_num": value_num,
-                        "unit": None,
+                        "unit": unit_spec.raw_unit,
+                        "scale_factor": unit_spec.raw_scale,
                         "is_target": 1 if row_ticker == target_ticker else 0,
                         "source_file": source_file,
                     }

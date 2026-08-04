@@ -19,6 +19,7 @@ from db.loader import (
 from db.schema import create_tables, get_connection
 from ciq.workbook_parser import CIQTemplateContractError, parse_ciq_workbook
 from src.stage_00_data.ciq_unit_mapping import (
+    canonicalize_ciq_comps_snapshot,
     canonicalize_ciq_valuation_snapshot,
 )
 from src.stage_04_pipeline.statement_reconciliation_store import (
@@ -206,8 +207,11 @@ def ingest_ciq_folder(
                     item = dict(row)
                     item["run_id"] = run_id
                     item["as_of_date"] = snapshot_row["as_of_date"]
+                    item["recorded_at"] = snapshot_row["pulled_at"]
                     comps_rows.append(item)
+                canonical_comps_facts = canonicalize_ciq_comps_snapshot(comps_rows)
                 upsert_ciq_comps_snapshot(conn, comps_rows)
+                upsert_canonical_valuation_facts(conn, canonical_comps_facts)
 
                 finalize_ciq_ingest_run(conn, run_id, "completed", None, payload.rows_parsed)
                 persist_statement_source_manifest(

@@ -2,9 +2,16 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from db.loader import upsert_canonical_valuation_facts
 from db.schema import create_tables
-from src.stage_00_data.ciq_unit_mapping import canonicalize_ciq_valuation_snapshot
+from src.stage_00_data.ciq_unit_mapping import (
+    canonicalize_ciq_comps_snapshot,
+    canonicalize_ciq_valuation_snapshot,
+    ciq_comps_unit_spec,
+)
+from src.stage_00_data.unit_contract import CanonicalUnit, UnitContractError
 
 
 def _msft_snapshot() -> dict[str, object]:
@@ -98,3 +105,73 @@ def test_canonical_table_has_no_downstream_scale_column() -> None:
     assert "unit_scale" not in columns
     assert "scale_factor" not in columns
     assert "raw_scale" in columns
+
+
+@pytest.mark.parametrize(
+    ("metric_key", "canonical_unit", "raw_unit", "raw_scale"),
+    [
+        ("market_cap", CanonicalUnit.USD, "USD", 1_000_000.0),
+        ("shares_out", CanonicalUnit.SHARES, "shares", 1_000_000.0),
+        ("stock_price", CanonicalUnit.USD_PER_SHARE, "USD/share", 1.0),
+        ("diluted_eps_ltm", CanonicalUnit.USD_PER_SHARE, "USD/share", 1.0),
+        ("gross_margin_fy", CanonicalUnit.DECIMAL, "%", 0.01),
+        ("total_revenue_ltm__2", CanonicalUnit.DECIMAL, "%", 0.01),
+        ("of_52w_high", CanonicalUnit.DECIMAL, "decimal", 1.0),
+        ("avg_days_sales_out", CanonicalUnit.DAYS, "days", 1.0),
+        ("tev_ebitda_ltm", CanonicalUnit.MULTIPLE, "multiple", 1.0),
+    ],
+)
+def test_ciq_comps_metrics_have_explicit_units(
+    metric_key: str,
+    canonical_unit: CanonicalUnit,
+    raw_unit: str,
+    raw_scale: float,
+) -> None:
+    spec = ciq_comps_unit_spec(metric_key)
+
+    assert spec.canonical_unit is canonical_unit
+    assert spec.raw_unit == raw_unit
+    assert spec.raw_scale == raw_scale
+
+
+def test_unknown_numeric_ciq_comps_metric_fails_closed() -> None:
+    with pytest.raises(UnitContractError, match="comps_metric_unmapped"):
+        ciq_comps_unit_spec("mystery_numeric_metric")
+
+
+def test_ciq_comps_rows_are_canonicalized_without_mixed_scales() -> None:
+    rows = [
+        {
+            "target_ticker": "MSFT",
+            "peer_ticker": "MSFT",
+            "as_of_date": "2026-06-30",
+            "run_id": 20,
+            "source_file": "MSFT_Standard.xlsx",
+            "metric_key": "market_cap",
+            "value_num": 3_671_338.0,
+            "unit": "USD",
+            "scale_factor": 1_000_000.0,
+        },
+        {
+            "target_ticker": "MSFT",
+            "peer_ticker": "MSFT",
+            "as_of_date": "2026-06-30",
+            "run_id": 20,
+            "source_file": "MSFT_Standard.xlsx",
+            "metric_key": "gross_margin_fy",
+            "value_num": 67.944,
+            "unit": "%",
+            "scale_factor": 0.01,
+        },
+    ]
+
+    facts = canonicalize_ciq_comps_snapshot(rows)
+    by_metric = {fact["metric_key"]: fact for fact in facts}
+
+    assert by_metric["market_cap"]["canonical_value"] == 3_671_338_000_000.0
+    assert by_metric["market_cap"]["canonical_unit"] == "USD"
+    assert by_metric["gross_margin_fy"]["canonical_value"] == pytest.approx(
+        0.67944
+    )
+    assert by_metric["gross_margin_fy"]["canonical_unit"] == "decimal"
+    assert all(fact["subject_key"] == "MSFT" for fact in facts)

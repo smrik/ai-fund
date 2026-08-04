@@ -1065,6 +1065,7 @@ def create_tables(conn: sqlite3.Connection | None = None):
         value_raw        TEXT,
         value_num        REAL,
         unit             TEXT,
+        scale_factor     REAL NOT NULL DEFAULT 1.0,
         is_target        INTEGER DEFAULT 0,
         PRIMARY KEY (target_ticker, peer_ticker, as_of_date, source_sheet, metric_key),
         FOREIGN KEY (run_id) REFERENCES ciq_ingest_runs(id)
@@ -1266,6 +1267,16 @@ def create_tables(conn: sqlite3.Connection | None = None):
             conn.execute(
                 f"ALTER TABLE statement_facts ADD COLUMN {column} {definition}"
             )
+
+    ciq_comps_columns = {
+        row["name"] if isinstance(row, sqlite3.Row) else row[1]
+        for row in conn.execute("PRAGMA table_info(ciq_comps_snapshot)").fetchall()
+    }
+    if "scale_factor" not in ciq_comps_columns:
+        conn.execute(
+            "ALTER TABLE ciq_comps_snapshot "
+            "ADD COLUMN scale_factor REAL NOT NULL DEFAULT 1.0"
+        )
 
     conn.commit()
     if close_after:

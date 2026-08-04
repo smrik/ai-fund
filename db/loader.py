@@ -736,11 +736,11 @@ def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any
         INSERT INTO ciq_comps_snapshot (
             target_ticker, peer_ticker, as_of_date, run_id, source_file,
             source_sheet, peer_name, section_name, metric_key, metric_label,
-            value_raw, value_num, unit, is_target
+            value_raw, value_num, unit, scale_factor, is_target
         ) VALUES (
             :target_ticker, :peer_ticker, :as_of_date, :run_id, :source_file,
             :source_sheet, :peer_name, :section_name, :metric_key, :metric_label,
-            :value_raw, :value_num, :unit, :is_target
+            :value_raw, :value_num, :unit, :scale_factor, :is_target
         )
         ON CONFLICT(target_ticker, peer_ticker, as_of_date, source_sheet, metric_key)
         DO UPDATE SET
@@ -752,6 +752,7 @@ def upsert_ciq_comps_snapshot(conn: sqlite3.Connection, rows: list[dict[str, Any
             value_raw = excluded.value_raw,
             value_num = excluded.value_num,
             unit = excluded.unit,
+            scale_factor = excluded.scale_factor,
             is_target = excluded.is_target
         """,
         rows,
