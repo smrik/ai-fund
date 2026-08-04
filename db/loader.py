@@ -890,6 +890,11 @@ def upsert_filing_context_cache(conn: sqlite3.Connection, row: dict[str, Any]):
 
 def upsert_sec_filing_metrics_snapshot(conn: sqlite3.Connection, row: dict[str, Any]):
     """Upsert deterministic SEC/XBRL metrics snapshot."""
+    from src.stage_00_data.source_unit_mapping import (
+        canonicalize_sec_filing_metrics_snapshot,
+    )
+
+    canonical_facts = canonicalize_sec_filing_metrics_snapshot(row)
     conn.execute(
         """
         INSERT INTO sec_filing_metrics_snapshot (
@@ -920,6 +925,7 @@ def upsert_sec_filing_metrics_snapshot(conn: sqlite3.Connection, row: dict[str, 
         row,
     )
     conn.commit()
+    upsert_canonical_valuation_facts(conn, canonical_facts)
 
 
 def upsert_company_text_cache(conn: sqlite3.Connection, row: dict[str, Any]):

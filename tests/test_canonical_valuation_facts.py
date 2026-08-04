@@ -15,6 +15,7 @@ from src.stage_00_data.unit_contract import CanonicalUnit, UnitContractError
 from src.stage_00_data.source_unit_mapping import (
     canonicalize_macro_observation,
     canonicalize_market_cache,
+    canonicalize_sec_filing_metrics_snapshot,
     macro_series_unit_spec,
 )
 
@@ -263,3 +264,33 @@ def test_macro_series_are_normalized_from_declared_native_units(
 def test_unknown_macro_series_fails_closed() -> None:
     with pytest.raises(UnitContractError, match="macro_series_unmapped"):
         macro_series_unit_spec("UNKNOWN_SERIES")
+
+
+def test_sec_filing_metrics_and_series_use_canonical_units() -> None:
+    facts = canonicalize_sec_filing_metrics_snapshot(
+        {
+            "ticker": "MSFT",
+            "as_of_date": "2026-06-30",
+            "metric_source": "sec_xbrl_companyfacts",
+            "pulled_at": "2026-08-04T17:38:19+00:00",
+            "revenue_cagr_3y": 0.143,
+            "ebit_margin_avg_3y": 0.451,
+            "gross_margin_avg_3y": 0.69,
+            "net_debt_to_ebitda": 0.25,
+            "fcf_yield": 0.021,
+            "revenue_series_json": (
+                '[{"period":"2026-06-30","value":331839000000.0}]'
+            ),
+            "ebit_series_json": (
+                '[{"period":"2026-06-30","value":155237000000.0}]'
+            ),
+        }
+    )
+    by_metric = {fact["metric_key"]: fact for fact in facts}
+
+    assert by_metric["revenue_cagr_3y"]["canonical_unit"] == "decimal"
+    assert by_metric["net_debt_to_ebitda"]["canonical_unit"] == "multiple"
+    assert by_metric["revenue"]["canonical_value"] == 331_839_000_000.0
+    assert by_metric["revenue"]["canonical_unit"] == "USD"
+    assert by_metric["operating_income"]["canonical_value"] == 155_237_000_000.0
+    assert by_metric["operating_income"]["period_date"] == "2026-06-30"

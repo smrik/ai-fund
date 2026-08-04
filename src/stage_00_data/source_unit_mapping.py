@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from src.stage_00_data.unit_contract import (
@@ -139,6 +140,109 @@ def canonicalize_macro_observation(
         "source_ref": source_ref,
         "recorded_at": fetched_at,
     }
+
+
+_SEC_SCALAR_SPECS: dict[str, _Spec] = {
+    "revenue_cagr_3y": (CanonicalUnit.DECIMAL, "decimal", 1.0),
+    "ebit_margin_avg_3y": (CanonicalUnit.DECIMAL, "decimal", 1.0),
+    "gross_margin_avg_3y": (CanonicalUnit.DECIMAL, "decimal", 1.0),
+    "fcf_yield": (CanonicalUnit.DECIMAL, "decimal", 1.0),
+    "net_debt_to_ebitda": (CanonicalUnit.MULTIPLE, "multiple", 1.0),
+}
+
+
+def canonicalize_sec_filing_metrics_snapshot(
+    row: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Project SEC metric scalars and reported series into canonical facts."""
+    ticker = str(row.get("ticker") or "").strip().upper()
+    as_of_date = str(row.get("as_of_date") or "").strip()
+    metric_source = str(row.get("metric_source") or "").strip()
+    recorded_at = str(row.get("pulled_at") or as_of_date)
+    if not ticker:
+        raise UnitContractError("unit_contract.ticker_missing")
+    if not as_of_date:
+        raise UnitContractError("unit_contract.as_of_date_missing")
+    if not metric_source:
+        raise UnitContractError("unit_contract.source_snapshot_missing")
+
+    source_snapshot_id = f"sec:{metric_source}:{as_of_date}"
+    facts: list[dict[str, Any]] = []
+
+    def append_fact(
+        *,
+        metric_key: str,
+        raw_value: float,
+        period_date: str,
+        canonical_unit: CanonicalUnit,
+        raw_unit: str,
+        raw_scale: float,
+        source_ref: str,
+    ) -> None:
+        normalized = normalize_source_value(
+            value=raw_value,
+            raw_unit=raw_unit,
+            raw_scale=raw_scale,
+            canonical_unit=canonical_unit,
+            source_ref=source_ref,
+        )
+        facts.append(
+            {
+                "ticker": ticker,
+                "subject_key": ticker,
+                "as_of_date": as_of_date,
+                "period_date": period_date,
+                "source": "sec_filing_metrics_snapshot",
+                "source_snapshot_id": source_snapshot_id,
+                "metric_key": metric_key,
+                "canonical_value": normalized.value,
+                "canonical_unit": normalized.unit.value,
+                "raw_value": normalized.raw_value,
+                "raw_unit": normalized.raw_unit,
+                "raw_scale": normalized.raw_scale,
+                "source_ref": source_ref,
+                "recorded_at": recorded_at,
+            }
+        )
+
+    for metric_key, (canonical_unit, raw_unit, raw_scale) in _SEC_SCALAR_SPECS.items():
+        raw_value = row.get(metric_key)
+        if raw_value is None:
+            continue
+        append_fact(
+            metric_key=metric_key,
+            raw_value=float(raw_value),
+            period_date=as_of_date,
+            canonical_unit=canonical_unit,
+            raw_unit=raw_unit,
+            raw_scale=raw_scale,
+            source_ref=f"sec_filing_metrics_snapshot:{ticker}:{metric_key}",
+        )
+
+    series_specs = {
+        "revenue_series_json": "revenue",
+        "ebit_series_json": "operating_income",
+    }
+    for field_name, metric_key in series_specs.items():
+        payload = row.get(field_name) or "[]"
+        series = json.loads(payload) if isinstance(payload, str) else payload
+        for item in series:
+            period_date = str(item.get("period") or "").strip()
+            raw_value = item.get("value")
+            if not period_date or raw_value is None:
+                raise UnitContractError("unit_contract.sec_series_invalid")
+            append_fact(
+                metric_key=metric_key,
+                raw_value=float(raw_value),
+                period_date=period_date,
+                canonical_unit=CanonicalUnit.USD,
+                raw_unit="USD",
+                raw_scale=1.0,
+                source_ref=(
+                    f"sec_filing_metrics_snapshot:{ticker}:{metric_key}:{period_date}"
+                ),
+            )
+    return facts
 
 
 def canonicalize_market_cache(
