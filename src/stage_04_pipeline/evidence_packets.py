@@ -10,11 +10,8 @@ from db.schema import create_tables, get_connection, get_read_only_connection
 from src.contracts.accounting_evidence import AccountingTopic
 from src.contracts.evidence_packet import (
     EvidencePacket,
-    EvidencePacketFact,
     EvidencePacketKind,
     EvidenceSourceQuality,
-    EvidenceSourceRef,
-    TextEvidenceSnippet,
 )
 from src.stage_00_data.edgar_client import get_8k_texts, get_recent_10q_texts
 from src.stage_00_data.ciq_adapter import get_ciq_nwc_history, get_ciq_snapshot
@@ -30,7 +27,7 @@ from src.stage_02_valuation.professional_dcf import default_scenario_specs, run_
 from src.stage_03_judgment.qoe_signals import compute_qoe_signals
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
-from src.stage_04_pipeline.agentic_handoff_profiles import get_agentic_handoff_profile
+from src.stage_04_pipeline.evidence.assembly import PacketMaterial, assemble_packet
 
 
 def _evidence_chars() -> int:
@@ -2631,15 +2628,11 @@ def _build_profile_packet(
     *,
     db_path: str | None = None,
 ) -> EvidencePacket:
-    profile = get_agentic_handoff_profile(profile_name)
-    # Keep the legacy two-argument call shape intact when no database is given,
-    # so existing callers and test doubles are unaffected.
     inputs = (
         _collect_profile_inputs(ticker, profile_name)
         if db_path is None
         else _collect_profile_inputs(ticker, profile_name, db_path=db_path)
     )
-    generated_at = _now()
     source_quality = str(
         inputs.get("source_quality")
         or (inputs.get("run_metadata") or {}).get("source_quality")
@@ -2647,15 +2640,16 @@ def _build_profile_packet(
     ).strip().lower()
     run_metadata = dict(inputs.get("run_metadata") or {})
     run_metadata["source_quality"] = source_quality
-    return EvidencePacket(
-        ticker=ticker,
-        profile_name=profile.profile_name,
-        packet_kind=profile.evidence_packet_kinds[0],
-        generated_at=generated_at,
-        source_refs=[EvidenceSourceRef.model_validate(row) for row in inputs.get("source_refs") or []],
-        facts=[EvidencePacketFact.model_validate(row) for row in inputs.get("facts") or []],
-        snippets=[TextEvidenceSnippet.model_validate(row) for row in inputs.get("snippets") or []],
+    material = PacketMaterial(
+        source_refs=tuple(inputs.get("source_refs") or []),
+        facts=tuple(inputs.get("facts") or []),
+        snippets=tuple(inputs.get("snippets") or []),
         run_metadata=run_metadata,
+    )
+    return assemble_packet(
+        ticker=ticker,
+        profile_name=profile_name,
+        material=material,
     )
 
 
