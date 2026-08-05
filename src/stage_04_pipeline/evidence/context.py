@@ -5,8 +5,12 @@ from typing import Any
 
 from db.schema import get_read_only_connection
 from src.contracts.evidence_packet import EvidencePacket, EvidenceSourceQuality
-from src.stage_02_valuation.input_assembler import build_valuation_inputs_from_db
+from src.stage_02_valuation.input_assembler import (
+    build_valuation_inputs_from_db,
+)
 from src.stage_04_pipeline.evidence.assembly import PacketMaterial, assemble_packet
+
+
 
 
 _CANONICAL_SERIES_CONCEPTS = {
@@ -72,9 +76,16 @@ def _canonical_annual_series_from_db(
     return []
 
 
-def load_context_snapshot(db_path: str, ticker: str) -> ContextEvidenceSnapshot:
+def load_context_snapshot(db_path: str | None, ticker: str) -> ContextEvidenceSnapshot:
     """Read one frozen, cache-only evidence snapshot from the supplied SQLite DB."""
-    inputs = build_valuation_inputs_from_db(db_path, ticker)
+    import src.stage_04_pipeline.evidence_packets as facade
+
+    inputs = (
+        facade.build_valuation_inputs(ticker)
+        if db_path is None
+        else build_valuation_inputs_from_db(db_path, ticker)
+    )
+
     financial_as_of_date = str(getattr(inputs, "as_of_date", None) or "")
     ciq_run_id = int((getattr(inputs, "ciq_lineage", {}) or {}).get("snapshot_run_id") or 0)
 
@@ -82,7 +93,7 @@ def load_context_snapshot(db_path: str, ticker: str) -> ContextEvidenceSnapshot:
     reported_facts: list[dict[str, Any]] = []
     filing_sections: list[dict[str, Any]] = []
 
-    if ciq_run_id > 0:
+    if ciq_run_id > 0 and db_path is not None:
         series_ref_id = f"canonical-db:ciq:{ciq_run_id}"
         source_refs.append(
             {
@@ -110,22 +121,23 @@ def load_context_snapshot(db_path: str, ticker: str) -> ContextEvidenceSnapshot:
                     }
                 )
 
-    conn = get_read_only_connection(db_path)
-    try:
-        rows = conn.execute(
-            """
-            SELECT ticker, cik, form_type, accession_no, doc_name, filing_date,
-                   section_key, section_label, section_text
-            FROM edgar_section_cache
-            WHERE UPPER(ticker) = ?
-            ORDER BY filing_date DESC, section_key
-            """,
-            [ticker.upper()],
-        ).fetchall()
-        for row in rows:
-            filing_sections.append(dict(row))
-    finally:
-        conn.close()
+    if db_path is not None:
+        conn = get_read_only_connection(db_path)
+        try:
+            rows = conn.execute(
+                """
+                SELECT ticker, cik, form_type, accession_no, doc_name, filing_date,
+                       section_key, section_label, section_text
+                FROM edgar_section_cache
+                WHERE UPPER(ticker) = ?
+                ORDER BY filing_date DESC, section_key
+                """,
+                [ticker.upper()],
+            ).fetchall()
+            for row in rows:
+                filing_sections.append(dict(row))
+        finally:
+            conn.close()
 
     # Create filing source refs from section rows
     seen_accessions: set[str] = set()
@@ -152,11 +164,10 @@ def load_context_snapshot(db_path: str, ticker: str) -> ContextEvidenceSnapshot:
 
     if not filing_sections:
         try:
-            from src.stage_00_data.filing_retrieval import get_agent_filing_context
-
-            bundle = get_agent_filing_context(
+            bundle = facade.get_agent_filing_context(
                 ticker, profile_name="filings", include_10k=True, ten_q_limit=2, use_cache=True
             )
+
             if bundle is not None:
                 if getattr(bundle, "sources", None):
                     for src in bundle.sources:
@@ -189,10 +200,94 @@ def load_context_snapshot(db_path: str, ticker: str) -> ContextEvidenceSnapshot:
                             "filing_date": getattr(chunk, "filing_date", None),
                             "section_key": getattr(chunk, "section_key", "business"),
                             "section_text": getattr(chunk, "text", ""),
+                            "is_fallback": True,
                         }
                     )
+                if db_path is None and source_refs:
+                    base_values = {
+                        "filing_source_count": len(getattr(bundle, "sources", []) or []),
+                        "filing_selected_chunk_count": len(chunks),
+                    }
+                    for fact_name, value in base_values.items():
+                        reported_facts.append(
+                            {
+                                "fact_id": f"fact:company_analysis:{fact_name}",
+                                "fact_name": fact_name,
+                                "value": value,
+                                "metadata": {"source_ref_id": source_refs[0]["source_ref_id"]},
+                            }
+                        )
         except Exception:
             pass
+
+    if db_path is None:
+        try:
+            metrics = facade.get_sec_filing_metrics(ticker)
+        except Exception:
+            metrics = None
+        if metrics is not None:
+            source_ref_id = f"sec-metrics:{metrics.source_form}:{metrics.source_filing_date}"
+            source_refs.append(
+                {
+                    "source_ref_id": source_ref_id,
+                    "source_kind": "sec_xbrl",
+                    "source_label": f"{metrics.source_form} XBRL metrics {metrics.source_filing_date}",
+                    "source_locator": f"sec://{ticker}/{metrics.source_form}/{metrics.source_filing_date}",
+                    "metadata": {"metric_source": metrics.metric_source},
+                }
+            )
+            metric_map = {
+                "revenue_cagr_3y": metrics.revenue_cagr_3y,
+                "ebit_margin_avg_3y": metrics.ebit_margin_avg_3y,
+                "gross_margin_avg_3y": metrics.gross_margin_avg_3y,
+                "net_debt_to_ebitda": metrics.net_debt_to_ebitda,
+                "fcf_yield": metrics.fcf_yield,
+                "revenue_series_annual": metrics.revenue_series or None,
+                "ebit_series_annual": metrics.ebit_series or None,
+            }
+            for fact_name, value in metric_map.items():
+                if value is None:
+                    continue
+                reported_facts.append(
+                    {
+                        "fact_id": f"fact:company_analysis:{fact_name}",
+                        "fact_name": fact_name,
+                        "value": value,
+                        "metadata": {"source_ref_id": source_ref_id},
+                    }
+                )
+
+        try:
+            val_inputs = facade.build_valuation_inputs(ticker)
+        except Exception:
+            val_inputs = None
+        if val_inputs is not None:
+            model_ref_id = f"model-assumptions:{ticker}"
+            source_refs.append(
+                {
+                    "source_ref_id": model_ref_id,
+                    "source_kind": "valuation_inputs",
+                    "source_label": "Current model growth and margin assumptions",
+                    "source_locator": f"valuation://{ticker}/inputs",
+                    "metadata": {"as_of_date": getattr(val_inputs, "as_of_date", None)},
+                }
+            )
+            for field_name in (
+                "revenue_growth_near",
+                "ebit_margin_start",
+                "ebit_margin_target",
+            ):
+                if hasattr(getattr(val_inputs, "drivers", None), field_name):
+                    val = getattr(val_inputs.drivers, field_name)
+                    if val is not None:
+                        reported_facts.append(
+                            {
+                                "fact_id": f"fact:company_analysis:model_assumption_{field_name}",
+                                "fact_name": f"model_assumption_{field_name}",
+                                "value": val,
+                                "metadata": {"source_ref_id": model_ref_id},
+                            }
+                        )
 
     return ContextEvidenceSnapshot(
         ticker=ticker.upper(),
@@ -211,12 +306,15 @@ def project_business_context(snapshot: ContextEvidenceSnapshot) -> PacketMateria
     seen_sections: set[str] = set()
     has_business_section = False
     has_mda_section = False
+    has_fallback_sections = False
 
     for sec in snapshot.filing_sections:
         sec_key = sec.get("section_key") or ""
         form = sec.get("form_type") or ""
         text = sec.get("section_text") or ""
         acc = sec.get("accession_no") or ""
+        if sec.get("is_fallback"):
+            has_fallback_sections = True
         if not text.strip():
             continue
 
@@ -251,25 +349,33 @@ def project_business_context(snapshot: ContextEvidenceSnapshot) -> PacketMateria
             )
 
     gaps: list[str] = []
-    if not has_business_section:
-        gaps.append("missing_latest_business_section")
-    if not has_mda_section:
-        gaps.append("missing_latest_mda")
+    if snapshot.db_path is not None and not has_fallback_sections:
+        if not has_business_section:
+            gaps.append("missing_latest_business_section")
+        if not has_mda_section:
+            gaps.append("missing_latest_mda")
+    elif not snippets:
+        gaps.append("missing_filing_excerpts")
 
     revenue_series: list[dict[str, Any]] = []
     for fact in snapshot.reported_facts:
-        if fact.get("fact_name") == "revenue_series_annual":
-            revenue_series = fact.get("value") or []
+        fact_name = fact.get("fact_name") if isinstance(fact, dict) else getattr(fact, "fact_name", None)
+        if fact_name == "revenue_series_annual":
+            revenue_series = (fact.get("value") if isinstance(fact, dict) else getattr(fact, "value", None)) or []
             break
 
     if not revenue_series:
         gaps.append("missing_reported_revenue_history")
     elif snapshot.financial_as_of_date:
-        latest_period = str(revenue_series[-1].get("period") or "")
+        latest_period = str(
+            (revenue_series[-1].get("period") if isinstance(revenue_series[-1], dict) else getattr(revenue_series[-1], "period", None)) or ""
+        )
         if latest_period[:4] < str(snapshot.financial_as_of_date)[:4]:
             gaps.append("history_behind_resolved_period")
 
     sufficiency = "sufficient" if not gaps else "insufficient_evidence"
+
+
     if snapshot.filing_sections or snippets:
         quality = EvidenceSourceQuality.real.value
     elif snapshot.source_refs or snapshot.reported_facts:
@@ -297,7 +403,7 @@ def project_business_context(snapshot: ContextEvidenceSnapshot) -> PacketMateria
     )
 
 
-def build_business_context_packet(db_path: str, ticker: str) -> EvidencePacket:
+def build_business_context_packet(db_path: str | None, ticker: str) -> EvidencePacket:
     """Public DB-backed Business Context interface used by the MSFT ride-along."""
     snapshot = load_context_snapshot(db_path, ticker)
     material = project_business_context(snapshot)
