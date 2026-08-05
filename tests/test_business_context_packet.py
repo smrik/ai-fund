@@ -3,7 +3,12 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-from src.stage_04_pipeline.evidence.context import build_business_context_packet
+from src.stage_04_pipeline.evidence.assembly import assemble_packet
+from src.stage_04_pipeline.evidence.context import (
+    ContextEvidenceSnapshot,
+    build_business_context_packet,
+    project_business_context,
+)
 from tests.test_db_only_valuation_inputs import _build_fixture_db
 
 
@@ -67,3 +72,105 @@ def test_build_business_context_packet_from_db(tmp_path: Path) -> None:
     assert packet.run_metadata["ciq_run_id"] == 20
     assert packet.run_metadata["financial_as_of_date"] == "2026-06-30"
     assert packet.run_metadata["retrieval_mode"] == "db_only"
+
+
+def test_project_business_context_selects_current_sections_and_ignores_stale_passages() -> None:
+    snapshot = ContextEvidenceSnapshot(
+        ticker="MSFT",
+        db_path=":memory:",
+        financial_as_of_date="2026-06-30",
+        ciq_run_id=20,
+        source_refs=(
+            {
+                "source_ref_id": "filing:2026",
+                "source_kind": "10-K",
+                "source_label": "10-K 2026-07-30",
+                "source_locator": "edgar://MSFT/2026/msft.htm",
+            },
+        ),
+        reported_facts=(
+            {
+                "fact_id": "fact:revenue",
+                "fact_name": "revenue_series_annual",
+                "value": [{"period": "2026-06-30", "value": 331_839_000_000.0}],
+            },
+        ),
+        filing_sections=(
+            {
+                "ticker": "MSFT",
+                "form_type": "10-K",
+                "accession_no": "2022",
+                "filing_date": "2022-07-28",
+                "section_key": "notes_to_financials",
+                "section_text": "Company credit default swap disclosures.",
+            },
+            {
+                "ticker": "MSFT",
+                "form_type": "10-K",
+                "accession_no": "2026",
+                "filing_date": "2026-07-30",
+                "section_key": "business",
+                "section_text": "Microsoft operates in three operating segments.",
+            },
+            {
+                "ticker": "MSFT",
+                "form_type": "10-K",
+                "accession_no": "2026",
+                "filing_date": "2026-07-30",
+                "section_key": "mda",
+                "section_text": "Discussion of AI infrastructure investment acceleration.",
+            },
+        ),
+    )
+
+    material = project_business_context(snapshot)
+    packet = assemble_packet(
+        ticker="MSFT",
+        profile_name="company_analysis",
+        material=material,
+    )
+    texts = [snippet.text for snippet in packet.snippets]
+    assert any("three operating segments" in text for text in texts)
+    assert any("AI infrastructure investment" in text for text in texts)
+    assert not any("credit default swap" in text for text in texts)
+    assert packet.run_metadata["evidence_sufficiency"] == "sufficient"
+
+
+def test_insufficient_evidence_when_required_sections_missing() -> None:
+    snapshot = ContextEvidenceSnapshot(
+        ticker="MSFT",
+        db_path=":memory:",
+        financial_as_of_date="2026-06-30",
+        ciq_run_id=20,
+        source_refs=(
+            {
+                "source_ref_id": "filing:2022",
+                "source_kind": "10-K",
+                "source_label": "10-K 2022-07-28",
+                "source_locator": "edgar://MSFT/2022/msft.htm",
+            },
+        ),
+        reported_facts=(
+            {
+                "fact_id": "fact:revenue",
+                "fact_name": "revenue_series_annual",
+                "value": [{"period": "2026-06-30", "value": 331_839_000_000.0}],
+            },
+        ),
+        filing_sections=(
+            {
+                "ticker": "MSFT",
+                "form_type": "10-K",
+                "accession_no": "2022",
+                "filing_date": "2022-07-28",
+                "section_key": "notes_to_financials",
+                "section_text": "Stale note snippet.",
+            },
+        ),
+    )
+
+    material = project_business_context(snapshot)
+    assert material.run_metadata["source_quality"] == "real"
+    assert material.run_metadata["evidence_sufficiency"] == "insufficient_evidence"
+    assert "missing_latest_business_section" in material.run_metadata["evidence_gaps"]
+    assert "missing_latest_mda" in material.run_metadata["evidence_gaps"]

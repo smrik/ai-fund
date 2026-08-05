@@ -270,7 +270,7 @@ def project_business_context(snapshot: ContextEvidenceSnapshot) -> PacketMateria
             gaps.append("history_behind_resolved_period")
 
     sufficiency = "sufficient" if not gaps else "insufficient_evidence"
-    if snippets:
+    if snapshot.filing_sections or snippets:
         quality = EvidenceSourceQuality.real.value
     elif snapshot.source_refs or snapshot.reported_facts:
         quality = EvidenceSourceQuality.partial.value
