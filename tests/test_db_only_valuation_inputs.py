@@ -4,10 +4,12 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from db.loader import upsert_canonical_valuation_facts
 from db.schema import create_tables
 from src.stage_02_valuation.input_assembler import build_valuation_inputs_from_db
+from src.stage_04_pipeline.evidence_packets import build_company_analysis_packet
 
 
 def _fact(
@@ -167,6 +169,60 @@ def _build_fixture_db(path: Path) -> None:
         )
     )
     upsert_canonical_valuation_facts(conn, facts)
+
+    annual_history = {
+        "revenue": [
+            ("2022-06-30", 198_270_000_000.0),
+            ("2023-06-30", 211_915_000_000.0),
+            ("2024-06-30", 245_122_000_000.0),
+            ("2025-06-30", 281_724_000_000.0),
+            ("2026-06-30", 331_839_000_000.0),
+        ],
+        "operating_income": [
+            ("2022-06-30", 83_383_000_000.0),
+            ("2023-06-30", 88_523_000_000.0),
+            ("2024-06-30", 109_433_000_000.0),
+            ("2025-06-30", 128_528_000_000.0),
+            ("2026-06-30", 155_237_000_000.0),
+        ],
+    }
+    for concept, series in annual_history.items():
+        for period_end, value in series:
+            fingerprint = f"fixture:ciq:20:{concept}:{period_end}"
+            conn.execute(
+                """
+                INSERT INTO statement_facts (
+                    fact_id, ingestion_fingerprint, ticker, source, source_run_id,
+                    statement, concept, numeric_value, unit, currency, scale,
+                    scale_factor, period_kind, period_end, context_json,
+                    fiscal_calendar_json, dimensions_json, hierarchy_json,
+                    is_derived, ingested_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    fingerprint,
+                    fingerprint,
+                    "MSFT",
+                    "ciq_workbook_v1",
+                    20,
+                    "income_statement",
+                    concept,
+                    value,
+                    "USD",
+                    "USD",
+                    0.0,
+                    1.0,
+                    "annual",
+                    period_end,
+                    "{}",
+                    "{}",
+                    "{}",
+                    "{}",
+                    0,
+                    "2026-08-04T17:45:05Z",
+                ),
+            )
+    conn.commit()
     conn.close()
 
 
@@ -186,3 +242,53 @@ def test_db_only_entrypoint_resolves_latest_snapshot_and_uses_canonical_values(
     assert result.source_lineage["revenue_base"].startswith("canonical_db:")
     assert result.claim_ledger["unit"] == "USD"
     assert "unit_scale" not in result.claim_ledger
+
+
+def test_business_context_packet_exposes_reported_history_without_forecast_targets(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    db_path = tmp_path / "msft-canonical.db"
+    _build_fixture_db(db_path)
+    monkeypatch.setattr(
+        "src.stage_04_pipeline.evidence_packets.get_agent_filing_context",
+        lambda ticker, **kwargs: SimpleNamespace(
+            sources=[
+                {
+                    "accession_no": "msft-2026-10k",
+                    "form_type": "10-K",
+                    "doc_name": "msft-2026-10k.htm",
+                    "filing_date": "2026-07-29",
+                }
+            ],
+            selected_chunks=[
+                SimpleNamespace(
+                    accession_no="msft-2026-10k",
+                    chunk_index=1,
+                    text=(
+                        "Microsoft operates three segments and reports that AI infrastructure "
+                        "investment is affecting revenue growth, mix, and operating leverage."
+                    ),
+                    section_key="business",
+                    filing_date="2026-07-29",
+                    score=0.95,
+                )
+            ],
+            retrieval_summary={"selected_chunk_count": 1},
+        ),
+    )
+
+    packet = build_company_analysis_packet("MSFT", db_path=str(db_path))
+
+    facts = {fact.fact_name: fact.value for fact in packet.facts}
+    assert facts["revenue_series_annual"][-1] == {
+        "period": "2026-06-30",
+        "value": 331_839_000_000.0,
+    }
+    assert facts["ebit_series_annual"][-1] == {
+        "period": "2026-06-30",
+        "value": 155_237_000_000.0,
+    }
+    assert not any(name.startswith("model_assumption_") for name in facts)
+    assert not any(ref.source_kind == "valuation_inputs" for ref in packet.source_refs)
+    assert packet.run_metadata["evidence_sufficiency"] == "sufficient"

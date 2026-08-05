@@ -523,29 +523,39 @@ def _collect_company_analysis_inputs(
         statuses.append(_collector_status("model_assumptions", "error", message=str(exc)))
     else:
         if inputs is not None:
-            source_ref_id = f"model-assumptions:{ticker}"
-            source_refs.append(
-                {
-                    "source_ref_id": source_ref_id,
-                    "source_kind": "valuation_inputs",
-                    "source_label": "Current model growth and margin assumptions",
-                    "source_locator": f"valuation://{ticker}/inputs",
-                    "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
-                }
-            )
-            for field_name in ("revenue_growth_near", "ebit_margin_start", "ebit_margin_target"):
-                if not hasattr(inputs.drivers, field_name):
-                    continue
-                fact = _driver_fact(
-                    "company_analysis",
-                    source_ref_id,
-                    f"model_assumption_{field_name}",
-                    getattr(inputs.drivers, field_name),
-                    source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
+            if db_path is None:
+                source_ref_id = f"model-assumptions:{ticker}"
+                source_refs.append(
+                    {
+                        "source_ref_id": source_ref_id,
+                        "source_kind": "valuation_inputs",
+                        "source_label": "Current model growth and margin assumptions",
+                        "source_locator": f"valuation://{ticker}/inputs",
+                        "metadata": {"as_of_date": getattr(inputs, "as_of_date", None)},
+                    }
                 )
-                if fact is not None:
-                    facts.append(fact)
-            statuses.append(_collector_status("model_assumptions", "ok"))
+                for field_name in (
+                    "revenue_growth_near",
+                    "ebit_margin_start",
+                    "ebit_margin_target",
+                ):
+                    if not hasattr(inputs.drivers, field_name):
+                        continue
+                    fact = _driver_fact(
+                        "company_analysis",
+                        source_ref_id,
+                        f"model_assumption_{field_name}",
+                        getattr(inputs.drivers, field_name),
+                        source_lineage=(getattr(inputs, "source_lineage", {}) or {}).get(field_name),
+                    )
+                    if fact is not None:
+                        facts.append(fact)
+                statuses.append(_collector_status("model_assumptions", "ok"))
+            else:
+                # Context analysis must not be anchored by the forecast values it
+                # will later help adjustment analysts challenge. The Step 2 input
+                # object is used here only to freeze source-run and date lineage.
+                statuses.append(_collector_status("valuation_lineage", "ok"))
 
             if db_path is not None:
                 # Reuse the run the assembler already resolved. Re-resolving
