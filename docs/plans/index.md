@@ -26,10 +26,12 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Active
 
+- [Business Context Evidence Packet Split](./active/2026-08-05-business-context-evidence-packet-split.md) — split the evidence-packet god module, enforce DB-only business context, and print the literal pre-LLM MSFT packet
 - [Judgment-Driver Provenance Gate](./active/2026-08-02-judgment-driver-provenance-gate.md) — make every judgment-owned driver explicit and prevent non-judgment provenance from claiming decision-grade status
 - [Runtime Model Routing And CIQ Auto-Refresh](./active/2026-08-01-runtime-model-routing-and-ciq-auto-refresh.md) — role-based LLM selection with traced precedence and opt-in guided CIQ Excel refresh outcomes
 - [Intrinsic-Value Bridge](./active/2026-08-01-intrinsic-value-bridge.md) — expose Gordon, exit, and blended DCF values together on PM review surfaces without changing valuation math
 - [Reconciled, Judgment-Authored Valuation](./active/2026-07-25-reconciled-statement-ledger.md) — complete reconciled statements, exact-once DCF/comps bridge, direct evidence-grounded driver packs, provider-independent replay, and universe-scale execution
+  - Step 3 design is governed by [Context And Adjustment Analyst Call Architecture](../design-docs/context-and-adjustment-analyst-call-architecture-spec.md) — context analysts, micro-family reasoning, lossless proposal compiler, deterministic verifier, critic. Spec is settled; the execution plan for it still needs a PM interview before drafting
 - [Weekly Loop v1 (Milestone 1)](./active/2026-06-12-weekly-loop-v1.md) — session runbook, preflight, friction log, full-suite CI, queue-in-anger verification
 - [Evidence Acquisition: EDGAR End-To-End And Quartr Transcripts](./active/2026-06-13-evidence-acquisition-edgar-quartr.md) — unblocks 4 of 6 agent profiles; transcript contract with REST/import dual transport
 - [Accounting Evidence Packs And Focused Repair](./active/2026-07-11-accounting-evidence-packs-focused-repair.md) — broad classification discovery, focused evidence judgment, semantic repair, durable treatments/model-change requests, and PM-safe queue candidates

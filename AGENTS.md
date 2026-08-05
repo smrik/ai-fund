@@ -92,6 +92,14 @@ Use these locations consistently:
 - `docs/exec-plans/` for archived execution artifacts only
 - `docs/archive/` for deprecated or scratch material that is kept only for history
 
+## Agent Skills Configuration
+
+Per-repo conventions the engineering skills read. Configured in [`CLAUDE.md`](./CLAUDE.md#agent-skills); the details live in:
+
+- [`docs/agents/issue-tracker.md`](./docs/agents/issue-tracker.md) — issues and PRDs are GitHub Issues, via the `gh` CLI
+- [`docs/agents/triage-labels.md`](./docs/agents/triage-labels.md) — the five canonical triage labels
+- [`docs/agents/domain.md`](./docs/agents/domain.md) — single-context domain-doc layout rooted at `CONTEXT.md`
+
 ## Maintenance Rules
 
 - `AGENTS.md` must stay short and point to canonical docs instead of duplicating them
