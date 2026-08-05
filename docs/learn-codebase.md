@@ -4,6 +4,10 @@ Use this guide to find the correct file without reading the full repository.
 
 ## The Six-Step Workflow
 
+This is the workflow for one selected ticker. Universe screening happens before this workflow.
+
+Screening code is in `src/stage_01_screening/`.
+
 | Step | Owner | Main paths | Input | Output |
 | --- | --- | --- | --- | --- |
 | 1. Get data | Deterministic code | `ciq/`, `src/stage_00_data/`, `db/` | CIQ, EDGAR, market data, and transcripts | Source data in SQLite |
@@ -13,7 +17,7 @@ Use this guide to find the correct file without reading the full repository.
 | 5. Run DCF and comps | Deterministic code | `src/stage_02_valuation/` | PM-approved assumptions | DCF, comps, scenarios, and source records |
 | 6. Review decisions and outputs | PM | `api/`, `frontend/`, `data/exports/generated/` | Valuation and queue data | PM decisions and review files |
 
-The output of each step is the input of the next step.
+The output of each step supports the next step.
 
 LLM agents propose future assumptions. They do not write directly to the model.
 

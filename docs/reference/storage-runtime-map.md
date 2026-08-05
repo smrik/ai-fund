@@ -9,6 +9,7 @@ Use this page before you move or delete a data file.
 | `ciq/templates/ciq_cleandata.xlsx` | Main CIQ Standard source template | No |
 | `ciq/templates/financials_input.json` | Power Query control file | No |
 | `data/exports/{TICKER}_Standard.xlsx` | Refreshed CIQ workbook for database loading | Not without another CIQ refresh |
+| `data/ciq_archive/{TICKER}_{date}_{ts}.xlsx` | Saved copy of a successful CIQ refresh | No |
 | `data/alpha_pod.db` | Main local SQLite database | Not fully |
 | `templates/ticker_review.xlsx` | Main PM review template | No |
 | `data/exports/generated/` | Generated PM review files | Yes |
@@ -18,9 +19,10 @@ Use this page before you move or delete a data file.
 
 ```text
 ciq/templates/financials_input.json
-  -> ciq/templates/ciq_cleandata.xlsx
+  + ciq/templates/ciq_cleandata.xlsx
   -> data/exports/{TICKER}_Standard.xlsx
-  -> data/alpha_pod.db
+       +-> data/alpha_pod.db
+       +-> data/ciq_archive/{TICKER}_{date}_{ts}.xlsx
 ```
 
 The Standard workbook is an input to the database. It is not a PM review workbook.
@@ -39,13 +41,14 @@ Check the ticker and date before each Excel refresh. Do not move this file.
 | --- | --- |
 | `data/alpha_pod.db` | Contains saved source data, run history, and PM Queue data |
 | `data/exports/{TICKER}_Standard.xlsx` | Contains refreshed CIQ vendor data |
+| `data/ciq_archive/` | Contains saved copies of successful CIQ refreshes |
 | `config/config.yaml` | Contains system settings |
 | `config/universe.csv` | Defines the research universe |
 | `config/story_drivers.yaml` | Contains PM-approved story drivers |
 | `config/valuation_overrides.yaml` | Contains PM-approved valuation changes |
 | `.env` | Contains local secrets. Never commit it. |
 
-Back up the database and refreshed CIQ workbooks. The system cannot fully rebuild them from Git.
+Back up the database, refreshed CIQ workbooks, and CIQ archive. Git cannot rebuild them.
 
 ## Files The System Can Rebuild
 

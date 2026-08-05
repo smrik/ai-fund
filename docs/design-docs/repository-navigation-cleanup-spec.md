@@ -39,6 +39,7 @@ The numbers show analysis order. They are not Python package names.
 3. Use the same storage terms in all changed documents.
 4. Correct old text that says LLM agents only write summaries.
 5. Make the changed documents short and simple.
+6. Add practical simple-English rules to `AGENTS.md` and `CLAUDE.md`.
 
 ## Storage Terms
 
@@ -47,6 +48,7 @@ The numbers show analysis order. They are not Python package names.
 | `ciq/templates/ciq_cleandata.xlsx` | Main CIQ Standard source template |
 | `ciq/templates/financials_input.json` | Power Query control file |
 | `data/exports/{TICKER}_Standard.xlsx` | Refreshed CIQ workbook for database loading |
+| `data/ciq_archive/{TICKER}_{date}_{ts}.xlsx` | Saved copy of a successful CIQ refresh |
 | `data/alpha_pod.db` | Main local SQLite database |
 | `templates/ticker_review.xlsx` | Main PM review template |
 | `data/exports/generated/` | Generated PM review files |
@@ -64,7 +66,7 @@ Do not move this file in this work.
 
 - Do not move or rename Python packages.
 - Do not change database tables or valuation calculations.
-- Do not change agent prompts or PM Queue behavior.
+- Do not change LLM analysis prompts or PM Queue behavior.
 - Do not delete old user interfaces or bundled skills.
 - Do not reorganize generated files.
 

@@ -6,9 +6,10 @@ The loading chain is:
 
 ```text
 ciq/templates/financials_input.json
-  -> ciq/templates/ciq_cleandata.xlsx
+  + ciq/templates/ciq_cleandata.xlsx
   -> data/exports/{TICKER}_Standard.xlsx
-  -> data/alpha_pod.db
+       +-> data/alpha_pod.db
+       +-> data/ciq_archive/{TICKER}_{date}_{ts}.xlsx
 ```
 
 `ciq/templates/ciq_cleandata.xlsx` is the main CIQ Standard source template.

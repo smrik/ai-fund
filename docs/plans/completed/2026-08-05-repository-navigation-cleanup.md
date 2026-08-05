@@ -21,6 +21,8 @@ Keep all working paths and system behavior unchanged.
 - Corrected old text about LLM agent roles.
 - Added simple-English rules to `AGENTS.md` and `CLAUDE.md`.
 - Removed unsafe advice to delete all of `data/exports/`.
+- Marked the workflow as a selected-ticker workflow after screening.
+- Added the saved CIQ archive to the storage map.
 
 ## Checks
 

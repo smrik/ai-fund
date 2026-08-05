@@ -15,6 +15,7 @@ Prepare the repository navigation cleanup pull request.
 - Shortened the main codebase, storage, design, and docs-home pages.
 - Added simple-English rules to `AGENTS.md` and `CLAUDE.md`.
 - Passed MkDocs strict build, 4 architecture tests, and all pre-commit hooks.
+- Fixed review gaps for pre-workflow screening and the saved CIQ archive.
 
 ## Next Steps
 

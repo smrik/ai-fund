@@ -6,6 +6,7 @@ This folder contains saved local data and generated files.
 | --- | --- | --- |
 | `alpha_pod.db` | Main local SQLite database | Yes |
 | `exports/{TICKER}_Standard.xlsx` | Refreshed CIQ workbook for database loading | Yes |
+| `ciq_archive/` | Saved copies of successful CIQ refreshes | Yes |
 | `exports/generated/` | Generated PM review files | Can rebuild |
 | `valuations/` | Generated valuation files | Can rebuild |
 | `cache/` | Downloaded source cache | Can rebuild |
