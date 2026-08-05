@@ -10,6 +10,7 @@ Non-negotiables, restated for emphasis:
 4. **LLM boundary:** LLM code never *executes inside* the deterministic computation layer, and the PM Decision Queue is the only bridge from judgment output to model mutation. This is a rule about where code runs — the judgment layer is nonetheless what *sets* the key forward-looking assumptions, reasoning over qualitative and quantitative evidence ([Vision Decision 13](./docs/strategy/vision.md#the-division-of-labor)). Sector constants and mechanical transforms in `*_target` drivers are fallbacks that signal missing judgment, not the intended design.
 5. **One planning system:** active work lives in `docs/plans/active/` with an entry in `docs/plans/index.md`; current sequencing is the [Six-Month Execution Roadmap](./docs/plans/future/2026-06-12-six-month-execution-roadmap.md).
 6. **Streamlit is frozen** (bugfix-only, retiring). New UI work goes to `frontend/` + `api/`.
+7. **Simple English:** use the ASD-STE100 writing rules in `AGENTS.md`. Use short sentences, active voice, and consistent terms.
 
 ## Agent skills
 
