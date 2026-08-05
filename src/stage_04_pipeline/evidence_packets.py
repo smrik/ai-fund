@@ -6,7 +6,7 @@ from dataclasses import asdict, is_dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from db.schema import create_tables, get_connection
+from db.schema import create_tables, get_connection, get_read_only_connection
 from src.contracts.accounting_evidence import AccountingTopic
 from src.contracts.evidence_packet import (
     EvidencePacket,
@@ -22,7 +22,10 @@ from src.stage_00_data.filing_retrieval import get_agent_filing_context
 from src.stage_00_data.market_data import get_historical_financials, get_market_data
 from src.stage_00_data.sec_filing_metrics import get_sec_filing_metrics
 from src.stage_00_data.xbrl_evidence import get_xbrl_fact_evidence
-from src.stage_02_valuation.input_assembler import build_valuation_inputs
+from src.stage_02_valuation.input_assembler import (
+    build_valuation_inputs,
+    build_valuation_inputs_from_db,
+)
 from src.stage_02_valuation.professional_dcf import default_scenario_specs, run_dcf_professional
 from src.stage_03_judgment.qoe_signals import compute_qoe_signals
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
@@ -294,11 +297,106 @@ def _missing_packet(
     }
 
 
-def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
+# Concepts carrying the reported annual series in the canonical statement ledger.
+# Ordered by preference; the first alias with data wins, aliases are never blended.
+_CANONICAL_SERIES_CONCEPTS: dict[str, tuple[str, ...]] = {
+    "revenue_series_annual": ("as_reported_total_revenue", "total_revenue", "revenue"),
+    "ebit_series_annual": ("operating_income",),
+}
+
+_CANONICAL_SERIES_YEARS = 5
+
+
+def _canonical_annual_series(
+    db_path: str,
+    ticker: str,
+    *,
+    run_id: int,
+    concepts: tuple[str, ...],
+    years: int = _CANONICAL_SERIES_YEARS,
+) -> list[dict[str, float | str]]:
+    """Reported annual series read from the canonical statement ledger.
+
+    Scoped to the CIQ run the Step 2 assembler already resolved, so history and
+    drivers can never be paired from different ingests. Values are returned in
+    absolute USD, oldest first.
+    """
+    placeholders = ",".join("?" for _ in concepts)
+    conn = get_read_only_connection(db_path)
+    try:
+        rows = conn.execute(
+            f"""
+            SELECT concept, period_end, numeric_value, scale_factor
+            FROM statement_facts
+            WHERE ticker = ?
+              AND source = 'ciq_workbook_v1'
+              AND source_run_id = ?
+              AND period_kind = 'annual'
+              AND numeric_value IS NOT NULL
+              AND period_end IS NOT NULL
+              AND concept IN ({placeholders})
+            """,
+            [ticker.upper(), int(run_id), *concepts],
+        ).fetchall()
+    finally:
+        conn.close()
+
+    by_concept: dict[str, dict[str, float]] = {}
+    for row in rows:
+        data = dict(row)
+        scale = data.get("scale_factor")
+        by_concept.setdefault(str(data["concept"]), {})[str(data["period_end"])] = float(
+            data["numeric_value"]
+        ) * float(1.0 if scale is None else scale)
+
+    for concept in concepts:
+        periods = by_concept.get(concept)
+        if not periods:
+            continue
+        latest = sorted(periods.items(), reverse=True)[:years]
+        return [{"period": period, "value": value} for period, value in sorted(latest)]
+    return []
+
+
+def _context_evidence_sufficiency(
+    *,
+    snippets: list[dict[str, Any]],
+    revenue_series: list[dict[str, float | str]],
+    resolved_as_of_date: str | None,
+) -> dict[str, Any]:
+    """Whether the selected evidence can actually support context analysis.
+
+    Distinct from ``source_quality``, which only attests authenticity: six
+    authentic but boilerplate excerpts still make a packet look ``real``. This
+    reports what the packet can currently prove — that the reported history
+    reaches the period the model was built on.
+    """
+    gaps: list[str] = []
+    if not snippets:
+        gaps.append("no_filing_excerpts")
+    if not revenue_series:
+        gaps.append("no_reported_revenue_history")
+    elif resolved_as_of_date:
+        latest_period = str(revenue_series[-1].get("period") or "")
+        if latest_period[:4] < str(resolved_as_of_date)[:4]:
+            gaps.append("history_behind_resolved_period")
+    return {
+        "evidence_sufficiency": "sufficient" if not gaps else "insufficient_evidence",
+        "evidence_gaps": gaps,
+    }
+
+
+def _collect_company_analysis_inputs(
+    ticker: str,
+    *,
+    db_path: str | None = None,
+) -> dict[str, Any]:
     source_refs: list[dict[str, Any]] = []
     facts: list[dict[str, Any]] = []
     snippets: list[dict[str, Any]] = []
     statuses: list[dict[str, Any]] = []
+    revenue_series: list[dict[str, float | str]] = []
+    resolved_as_of_date: str | None = None
 
     bundle = None
     try:
@@ -363,13 +461,19 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
         else:
             statuses.append(_collector_status("filing_context", "missing"))
 
+    # Legacy path only. `sec_filing_metrics_snapshot` is a derived cache that is
+    # never invalidated, so it can lag the loaded filings by a full fiscal year.
+    # When a Step 1/2 database is supplied, the history comes from the canonical
+    # statement ledger below instead.
     metrics = None
     try:
-        metrics = get_sec_filing_metrics(ticker)
+        metrics = get_sec_filing_metrics(ticker) if db_path is None else None
     except Exception as exc:
         statuses.append(_collector_status("sec_metrics", "error", message=str(exc)))
     else:
-        if metrics is not None:
+        if db_path is not None:
+            statuses.append(_collector_status("sec_metrics", "skipped_for_canonical_db"))
+        elif metrics is not None:
             source_ref_id = f"sec-metrics:{metrics.source_form}:{metrics.source_filing_date}"
             source_refs.append(
                 {
@@ -402,6 +506,7 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                         "metadata": {"source_ref_id": source_ref_id},
                     }
                 )
+            revenue_series = list(metrics.revenue_series or [])
             statuses.append(_collector_status("sec_metrics", "ok", fact_count=len(facts)))
         else:
             statuses.append(_collector_status("sec_metrics", "missing"))
@@ -409,7 +514,11 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
     # Current model assumptions, so historical quality can be judged against
     # what the model actually assumes rather than in the abstract.
     try:
-        inputs = build_valuation_inputs(ticker)
+        inputs = (
+            build_valuation_inputs(ticker)
+            if db_path is None
+            else build_valuation_inputs_from_db(db_path, ticker)
+        )
     except Exception as exc:
         statuses.append(_collector_status("model_assumptions", "error", message=str(exc)))
     else:
@@ -437,6 +546,57 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
                 if fact is not None:
                     facts.append(fact)
             statuses.append(_collector_status("model_assumptions", "ok"))
+
+            if db_path is not None:
+                # Reuse the run the assembler already resolved. Re-resolving
+                # "latest" here is how history and drivers drift onto different
+                # ingests.
+                resolved_as_of_date = getattr(inputs, "as_of_date", None)
+                run_id = (getattr(inputs, "ciq_lineage", {}) or {}).get("snapshot_run_id")
+                if run_id is None:
+                    statuses.append(
+                        _collector_status("canonical_series", "missing", reason="unresolved_run")
+                    )
+                else:
+                    series_ref_id = f"canonical-db:ciq:{run_id}"
+                    source_refs.append(
+                        {
+                            "source_ref_id": series_ref_id,
+                            "source_kind": "canonical_statement_ledger",
+                            "source_label": (
+                                f"Reported annual series, CIQ run {run_id}"
+                                f" as of {resolved_as_of_date}"
+                            ),
+                            "source_locator": f"canonical://{ticker}/ciq/{run_id}",
+                            "metadata": {
+                                "ciq_run_id": run_id,
+                                "financial_as_of_date": resolved_as_of_date,
+                            },
+                        }
+                    )
+                    for fact_name, concepts in _CANONICAL_SERIES_CONCEPTS.items():
+                        series = _canonical_annual_series(
+                            db_path, ticker, run_id=int(run_id), concepts=concepts
+                        )
+                        if not series:
+                            continue
+                        if fact_name == "revenue_series_annual":
+                            revenue_series = series
+                        facts.append(
+                            {
+                                "fact_id": f"fact:company_analysis:{fact_name}",
+                                "fact_name": fact_name,
+                                "value": series,
+                                "metadata": {"source_ref_id": series_ref_id},
+                            }
+                        )
+                    statuses.append(
+                        _collector_status(
+                            "canonical_series",
+                            "ok" if revenue_series else "missing",
+                            period_count=len(revenue_series),
+                        )
+                    )
         else:
             statuses.append(_collector_status("model_assumptions", "missing"))
 
@@ -467,6 +627,13 @@ def _collect_company_analysis_inputs(ticker: str) -> dict[str, Any]:
             "profile_name": "company_analysis",
             "collector_statuses": statuses,
             "selected_chunk_count": len(snippets),
+            "canonical_db_path": db_path,
+            "financial_as_of_date": resolved_as_of_date,
+            **_context_evidence_sufficiency(
+                snippets=snippets,
+                revenue_series=revenue_series,
+                resolved_as_of_date=resolved_as_of_date,
+            ),
         },
     }
 
@@ -2415,9 +2582,16 @@ def _collect_analyst_prep_synthesis_inputs(ticker: str) -> dict[str, Any]:
     }
 
 
-def _collect_profile_inputs(ticker: str, profile_name: str) -> dict[str, Any]:
+def _collect_profile_inputs(
+    ticker: str,
+    profile_name: str,
+    *,
+    db_path: str | None = None,
+) -> dict[str, Any]:
     collectors: dict[str, Callable[[str], dict[str, Any]]] = {
-        "company_analysis": _collect_company_analysis_inputs,
+        "company_analysis": lambda current_ticker: _collect_company_analysis_inputs(
+            current_ticker, db_path=db_path
+        ),
         "earnings_update": _collect_earnings_update_inputs,
         "industry_analysis": _collect_industry_analysis_inputs,
         "valuation_review": _collect_valuation_review_inputs,
@@ -2441,9 +2615,20 @@ def _collect_profile_inputs(ticker: str, profile_name: str) -> dict[str, Any]:
     return collector(ticker)
 
 
-def _build_profile_packet(ticker: str, profile_name: str) -> EvidencePacket:
+def _build_profile_packet(
+    ticker: str,
+    profile_name: str,
+    *,
+    db_path: str | None = None,
+) -> EvidencePacket:
     profile = get_agentic_handoff_profile(profile_name)
-    inputs = _collect_profile_inputs(ticker, profile_name)
+    # Keep the legacy two-argument call shape intact when no database is given,
+    # so existing callers and test doubles are unaffected.
+    inputs = (
+        _collect_profile_inputs(ticker, profile_name)
+        if db_path is None
+        else _collect_profile_inputs(ticker, profile_name, db_path=db_path)
+    )
     generated_at = _now()
     source_quality = str(
         inputs.get("source_quality")
@@ -2468,8 +2653,17 @@ def build_earnings_update_packet(ticker: str) -> EvidencePacket:
     return _build_profile_packet(ticker, "earnings_update")
 
 
-def build_company_analysis_packet(ticker: str) -> EvidencePacket:
-    return _build_profile_packet(ticker, "company_analysis")
+def build_company_analysis_packet(
+    ticker: str,
+    *,
+    db_path: str | None = None,
+) -> EvidencePacket:
+    """Business-context packet.
+
+    Pass ``db_path`` to source the reported history and model assumptions from a
+    validated Step 1/2 database instead of the process-global legacy path.
+    """
+    return _build_profile_packet(ticker, "company_analysis", db_path=db_path)
 
 
 def build_industry_analysis_packet(ticker: str) -> EvidencePacket:
@@ -2523,11 +2717,19 @@ _PROFILE_BUILDERS: dict[str, Callable[[str], EvidencePacket]] = {
 }
 
 
-def build_evidence_packet(ticker: str, profile_name: str) -> EvidencePacket:
+def build_evidence_packet(
+    ticker: str,
+    profile_name: str,
+    *,
+    db_path: str | None = None,
+) -> EvidencePacket:
     key = str(profile_name).strip()
     if key not in _PROFILE_BUILDERS:
         raise KeyError(f"unsupported evidence packet profile: {profile_name}")
-    packet = _PROFILE_BUILDERS[key](ticker)
+    if db_path is not None and key == "company_analysis":
+        packet = build_company_analysis_packet(ticker, db_path=db_path)
+    else:
+        packet = _PROFILE_BUILDERS[key](ticker)
     from db.loader import insert_evidence_packet
 
     created_at = _now()
