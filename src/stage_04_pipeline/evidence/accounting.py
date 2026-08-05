@@ -670,11 +670,17 @@ def build_accounting_packet(ticker: str, profile_name: str) -> EvidencePacket:
     if profile_name not in ACCOUNTING_PROFILE_NAMES:
         raise KeyError(f"unsupported accounting evidence profile: {profile_name}")
     inputs = _collect_accounting_inputs(ticker, profile_name)
+    run_metadata = dict(inputs.get("run_metadata") or {})
+    run_metadata["source_quality"] = str(
+        inputs.get("source_quality")
+        or run_metadata.get("source_quality")
+        or EvidenceSourceQuality.placeholder.value
+    ).strip().lower()
     material = PacketMaterial(
         source_refs=tuple(inputs.get("source_refs") or []),
         facts=tuple(inputs.get("facts") or []),
         snippets=tuple(inputs.get("snippets") or []),
-        run_metadata=dict(inputs.get("run_metadata") or {}),
+        run_metadata=run_metadata,
     )
     return assemble_packet(
         ticker=ticker,
