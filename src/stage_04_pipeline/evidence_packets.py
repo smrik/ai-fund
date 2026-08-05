@@ -28,6 +28,7 @@ from src.stage_03_judgment.qoe_signals import compute_qoe_signals
 from src.stage_04_pipeline.comps_dashboard import build_comps_dashboard_view
 from src.stage_04_pipeline.dcf_audit import build_dcf_audit_view
 from src.stage_04_pipeline.evidence.assembly import PacketMaterial, assemble_packet
+from src.stage_04_pipeline.evidence.context import build_business_context_packet
 
 
 def _evidence_chars() -> int:
@@ -2667,7 +2668,9 @@ def build_company_analysis_packet(
     Pass ``db_path`` to source the reported history and model assumptions from a
     validated Step 1/2 database instead of the process-global legacy path.
     """
-    return _build_profile_packet(ticker, "company_analysis", db_path=db_path)
+    if db_path is not None:
+        return build_business_context_packet(db_path, ticker)
+    return _build_profile_packet(ticker, "company_analysis")
 
 
 def build_industry_analysis_packet(ticker: str) -> EvidencePacket:
