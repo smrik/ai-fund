@@ -172,7 +172,7 @@ Expected: clean worktree; `58e5804` is present.
   -q -p no:cacheprovider
 ```
 
-Expected: PASS. Record the exact count in this plan before moving code.
+Expected: PASS (47 passed). Record the exact count in this plan before moving code.
 
 **Step 3: Create only the package marker**
 
