@@ -43,6 +43,7 @@ If you need to know what is being built, what shipped, and what is queued, use t
 
 ## Completed
 
+- [Repository Navigation Cleanup](./completed/2026-08-05-repository-navigation-cleanup.md) — added a short analyst workflow and clear folder guides without moving working files
 - [Assumption Register Contract](./completed/2026-05-06-assumption-register-contract.md) — shipped deterministic assumption registry, range/trust metadata, and audit contract; later judgment ownership is governed by Decisions 13–16
 - [Codex CLI Judgment Backend](./completed/2026-07-11-codex-cli-judgment-backend.md) — subscription-backed Codex routing with OpenRouter fallback and model provenance
 - [Analyst Prep Pack MVP](./completed/2026-06-07-analyst-prep-pack.md)

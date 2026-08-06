@@ -4,6 +4,17 @@ This file is the short map, not the full manual.
 
 Read this first, then follow the canonical docs it points to. Keep this file concise and keep the detailed truth in `docs/`.
 
+## Writing Style
+
+Use ASD-STE100 Simplified Technical English principles in user messages and new documentation.
+Apply the rules as much as practical. Clear communication is more important than formal compliance.
+
+- Use short sentences, active voice, and one instruction in each sentence.
+- Use one simple term for one meaning. Explain uncommon technical terms.
+- Remove words that do not add information. Do not use semicolons.
+- Keep exact code, file paths, commands, field names, and quoted text unchanged.
+- Do not run an STE checker unless the PM asks for one.
+
 ## Vision Compliance (mandatory)
 
 The PM's settled product decisions live in [`docs/strategy/vision.md`](./docs/strategy/vision.md). They are not suggestions:
